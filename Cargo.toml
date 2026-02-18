@@ -36,7 +36,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 clap = { version = "4", features = ["derive"] }
 futures-util = "0.3"
 async-stream = "0.3"
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", features = ["sync"] }
 nix = { version = "0.30", features = ["signal", "process"] }
 
 [profile.release]

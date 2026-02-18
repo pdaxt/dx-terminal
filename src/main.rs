@@ -58,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
             eprintln!("TUI mode coming in Phase 4");
         }
         Some(Commands::Web { port }) => {
-            eprintln!("Web mode coming in Phase 3 (port {})", port);
+            web::run_web_server(application, port).await?;
         }
     }
 

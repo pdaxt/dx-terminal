@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentOS</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0d1117;--surface:#161b22;--border:#30363d;--text:#c9d1d9;--muted:#8b949e;--dim:#484f58;
+--blue:#58a6ff;--green:#3fb950;--yellow:#d29922;--red:#f85149;--purple:#a371f7;--teal:#00cec9}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+
+/* Header */
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.header h1{font-size:16px;color:var(--blue);font-weight:700;letter-spacing:-.3px}
+.header h1 span{color:var(--muted);font-weight:400}
+.controls{display:flex;gap:12px;align-items:center}
+.live-dot{width:7px;height:7px;background:var(--green);border-radius:50%;display:inline-block;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.live-label{font-size:11px;color:var(--green);font-weight:600;letter-spacing:.5px}
+select{background:#21262d;color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:6px;font-size:12px;cursor:pointer}
+
+/* Layout */
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:16px 24px}
+.grid-3-1{display:grid;grid-template-columns:1fr 300px;gap:16px;padding:0 24px 16px}
+.section{padding:0 24px 16px}
+
+/* Cards */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px}
+.card h3{font-size:11px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;letter-spacing:.6px;font-weight:600}
+.gauge-val{font-size:28px;font-weight:700;line-height:1.1}
+.gauge-sub{font-size:11px;color:var(--muted);margin-top:2px}
+.gauge-bar{height:5px;background:#21262d;border-radius:3px;margin-top:8px;overflow:hidden}
+.gauge-fill{height:100%;border-radius:3px;transition:width .6s ease}
+.c-green{color:var(--green)}.c-green .gauge-fill{background:var(--green)}
+.c-yellow{color:var(--yellow)}.c-yellow .gauge-fill{background:var(--yellow)}
+.c-red{color:var(--red)}.c-red .gauge-fill{background:var(--red)}
+.c-blue{color:var(--blue)}
+
+/* Pane Grid */
+.pane-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.pane-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;cursor:pointer;transition:border-color .2s,transform .1s}
+.pane-card:hover{border-color:var(--blue);transform:translateY(-1px)}
+.pane-card.active{border-left:3px solid}
+.pane-card.idle{opacity:.5}
+.pane-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.pane-num{font-size:11px;font-weight:700;padding:1px 5px;border-radius:3px;color:#000}
+.pane-status{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+.pane-status.s-active{color:var(--green)}
+.pane-status.s-idle{color:var(--dim)}
+.pane-status.s-done{color:var(--blue)}
+.pane-status.s-error{color:var(--red)}
+.pane-project{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pane-task{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.pane-meta{display:flex;gap:6px;margin-top:6px;align-items:center}
+.badge{font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;text-transform:uppercase;letter-spacing:.3px}
+.badge-role{background:#1f6feb22;color:var(--blue)}
+.badge-pty{background:#3fb95022;color:var(--green)}
+.badge-lines{background:#21262d;color:var(--muted)}
+
+/* Sidebar */
+.sidebar{display:flex;flex-direction:column;gap:12px}
+.log-list{max-height:300px;overflow-y:auto}
+.log-entry{font-size:11px;padding:5px 0;border-bottom:1px solid #21262d;display:flex;gap:8px}
+.log-entry:last-child{border-bottom:none}
+.log-ts{color:var(--dim);font-family:monospace;flex-shrink:0}
+.log-pane{color:var(--blue);font-weight:600;flex-shrink:0}
+.log-msg{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Role bars */
+.role-bar{margin-bottom:8px}
+.role-bar:last-child{margin-bottom:0}
+.role-label{display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px}
+.role-track{height:6px;background:#21262d;border-radius:3px;overflow:hidden}
+.role-fill{height:100%;background:var(--blue);border-radius:3px;transition:width .5s}
+
+/* Kanban */
+.kanban{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px}
+.kanban-col{min-width:170px;flex:1}
+.kanban-col h4{font-size:11px;text-transform:uppercase;color:var(--muted);padding:6px 8px;text-align:center;background:var(--surface);border:1px solid var(--border);border-radius:6px 6px 0 0;letter-spacing:.4px}
+.kanban-cards{background:var(--bg);border:1px solid var(--border);border-top:none;border-radius:0 0 6px 6px;padding:6px;min-height:60px}
+.k-card{background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:8px;margin-bottom:6px;font-size:11px}
+.k-card:last-child{margin-bottom:0}
+.k-id{color:var(--dim);font-size:10px;font-family:monospace}
+.k-title{font-weight:500;margin:2px 0}
+.k-tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+.tag{padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;letter-spacing:.2px}
+.tag-critical{background:#f8514922;color:var(--red)}
+.tag-high{background:#d2992222;color:var(--yellow)}
+.tag-medium{background:#58a6ff22;color:var(--blue)}
+.tag-low{background:#3fb95022;color:var(--green)}
+.tag-acu{background:#a371f722;color:var(--purple)}
+.tag-role{background:#1f6feb22;color:var(--blue)}
+
+/* Output modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:10px;width:90%;max-width:900px;max-height:85vh;display:flex;flex-direction:column}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border)}
+.modal-header h2{font-size:14px;display:flex;align-items:center;gap:8px}
+.modal-close{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:2px 8px;border-radius:4px}
+.modal-close:hover{background:#21262d;color:var(--text)}
+.modal-body{flex:1;overflow-y:auto;padding:14px 18px}
+.terminal{background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:12px;font-family:'SF Mono',Monaco,'Cascadia Code',monospace;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-all;color:#e6edf3;max-height:400px;overflow-y:auto}
+.modal-meta{display:flex;gap:16px;margin-bottom:12px;font-size:12px}
+.modal-meta dt{color:var(--muted);font-size:10px;text-transform:uppercase}
+.modal-meta dd{font-weight:600}
+
+/* Sprint */
+.sprint-info{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+.sprint-name{font-size:14px;font-weight:700;color:var(--blue)}
+.sprint-stat{text-align:center}
+.sprint-stat .val{font-size:20px;font-weight:700}
+.sprint-stat .label{font-size:10px;color:var(--muted);text-transform:uppercase}
+
+.no-data{color:var(--dim);font-size:12px;text-align:center;padding:24px}
+.section-title{font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px}
+
+/* Burndown */
+.burndown-wrap{position:relative}
+canvas{width:100%;display:block}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--dim)}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>AgentOS <span>Runtime</span></h1>
+  <div class="controls">
+    <span class="live-dot"></span>
+    <span class="live-label">LIVE</span>
+    <select id="space-select" onchange="refresh()"></select>
+  </div>
+</div>
+
+<div class="grid-4" id="gauges"></div>
+
+<div class="grid-3-1">
+  <div>
+    <div class="section-title">Agent Panes</div>
+    <div class="pane-grid" id="panes"></div>
+  </div>
+  <div class="sidebar">
+    <div class="card" id="roles-card">
+      <h3>Role Utilization</h3>
+      <div id="roles"></div>
+    </div>
+    <div class="card">
+      <h3>Activity Log</h3>
+      <div class="log-list" id="logs"></div>
+    </div>
+  </div>
+</div>
+
+<div class="section" id="sprint-section"></div>
+
+<div class="section">
+  <div class="section-title">Board</div>
+  <div class="kanban" id="kanban"></div>
+</div>
+
+<div class="section burndown-wrap" id="burndown-section" style="display:none">
+  <div class="card">
+    <h3>Sprint Burndown</h3>
+    <canvas id="burndown-chart" width="700" height="160"></canvas>
+  </div>
+</div>
+
+<!-- Pane output modal -->
+<div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modal-title">Pane Output</h2>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-meta" id="modal-meta"></div>
+      <div class="terminal" id="modal-output"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API='';
+let currentSpace='';
+let pollTimer=null;
+
+async function fetchJSON(url){
+  try{const r=await fetch(API+url);if(!r.ok)return null;return await r.json();}catch(e){return null;}
+}
+
+function gc(pct){return pct>80?'c-red':pct>50?'c-yellow':'c-green'}
+
+// === Spaces ===
+async function loadSpaces(){
+  const sel=document.getElementById('space-select');
+  const spaces=await fetchJSON('/api/spaces');
+  if(!spaces||!spaces.length){sel.innerHTML='<option>No spaces</option>';return;}
+  sel.innerHTML=spaces.map(s=>`<option value="${s}">${s}</option>`).join('');
+  currentSpace=spaces[0];sel.value=currentSpace;
+}
+
+// === Gauges ===
+async function renderGauges(){
+  const d=await fetchJSON(`/api/capacity/dashboard?space=${currentSpace}`);
+  const st=await fetchJSON('/api/status');
+  if(!d)return;
+  const bn=d.bottleneck==='review'?'REVIEW':d.bottleneck==='compute'?'COMPUTE':'BALANCED';
+  const bnC=d.bottleneck==='review'?'c-red':d.bottleneck==='compute'?'c-yellow':'c-green';
+  const acuC=gc(d.acu_pct);const revC=gc(d.reviews_pct);
+  const active=st?st.summary.active:0;
+  const ptyR=st?st.summary.pty_running:0;
+  document.getElementById('gauges').innerHTML=`
+    <div class="card ${acuC}"><h3>ACU Today</h3><div class="gauge-val">${d.acu_used}</div>
+      <div class="gauge-sub">of ${d.acu_total} capacity</div>
+      <div class="gauge-bar"><div class="gauge-fill" style="width:${Math.min(d.acu_pct,100)}%"></div></div></div>
+    <div class="card ${revC}"><h3>Reviews</h3><div class="gauge-val">${d.reviews_used}</div>
+      <div class="gauge-sub">of ${d.reviews_total} bandwidth</div>
+      <div class="gauge-bar"><div class="gauge-fill" style="width:${Math.min(d.reviews_pct,100)}%"></div></div></div>
+    <div class="card ${bnC}"><h3>Bottleneck</h3><div class="gauge-val" style="font-size:22px">${bn}</div>
+      <div class="gauge-sub">limiting factor</div></div>
+    <div class="card c-blue"><h3>Agents</h3><div class="gauge-val">${active}<span style="font-size:14px;color:var(--muted)"> / 9</span></div>
+      <div class="gauge-sub">${ptyR} PTY running</div>
+      <div class="gauge-bar"><div class="gauge-fill" style="width:${active/9*100}%;background:var(--blue)"></div></div></div>`;
+}
+
+// === Pane Grid ===
+async function renderPanes(){
+  const st=await fetchJSON('/api/status');
+  if(!st||!st.panes)return;
+  const el=document.getElementById('panes');
+  let html='';
+  for(const p of st.panes){
+    const isActive=p.status==='active';
+    const cls=isActive?'active':'idle';
+    const sc=isActive?'s-active':p.status==='done'?'s-done':p.status==='error'?'s-error':'s-idle';
+    html+=`<div class="pane-card ${cls}" style="border-left-color:${p.theme_color}" onclick="openPane(${p.pane})">
+      <div class="pane-top">
+        <span class="pane-num" style="background:${p.theme_color}">${p.pane}</span>
+        <span class="pane-status ${sc}">${p.status||'idle'}</span>
+      </div>
+      <div class="pane-project">${p.project||'--'}</div>
+      <div class="pane-task">${p.task||'No task assigned'}</div>
+      <div class="pane-meta">
+        ${p.role&&p.role!=='--'?`<span class="badge badge-role">${p.role}</span>`:''}
+        ${p.pty_running?'<span class="badge badge-pty">PTY</span>':''}
+        ${p.line_count>0?`<span class="badge badge-lines">${p.line_count} lines</span>`:''}
+      </div>
+    </div>`;
+  }
+  el.innerHTML=html;
+}
+
+// === Pane Modal ===
+async function openPane(paneNum){
+  const d=await fetchJSON(`/api/pane/${paneNum}`);
+  if(!d)return;
+  document.getElementById('modal-title').innerHTML=
+    `<span class="pane-num" style="background:${d.theme_color}">${d.pane}</span> ${d.theme} &mdash; ${d.project||'idle'}`;
+  document.getElementById('modal-meta').innerHTML=`
+    <div><dt>Role</dt><dd>${d.role||'--'}</dd></div>
+    <div><dt>Status</dt><dd>${d.status||'idle'}</dd></div>
+    <div><dt>Task</dt><dd>${d.task||'--'}</dd></div>
+    <div><dt>PTY</dt><dd>${d.pty_running?'Running':'Off'}</dd></div>
+    <div><dt>Lines</dt><dd>${d.line_count}</dd></div>`;
+  const out=d.screen||d.output||'[No output yet]';
+  document.getElementById('modal-output').textContent=out;
+  document.getElementById('modal').classList.add('open');
+  // Auto-refresh modal
+  if(pollTimer)clearInterval(pollTimer);
+  pollTimer=setInterval(async()=>{
+    const u=await fetchJSON(`/api/pane/${paneNum}/output?lines=100`);
+    if(u){
+      const t=u.screen||u.output||'[No output]';
+      const el=document.getElementById('modal-output');
+      el.textContent=t;
+      el.scrollTop=el.scrollHeight;
+    }
+  },3000);
+}
+function closeModal(){
+  document.getElementById('modal').classList.remove('open');
+  if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+
+// === Roles ===
+async function renderRoles(){
+  const d=await fetchJSON(`/api/capacity/dashboard?space=${currentSpace}`);
+  if(!d||!d.roles)return;
+  const el=document.getElementById('roles');
+  let html='';
+  for(const[k,v]of Object.entries(d.roles)){
+    html+=`<div class="role-bar"><div class="role-label"><span>${v.name}</span><span>${v.pct}%</span></div>
+      <div class="role-track"><div class="role-fill" style="width:${v.pct}%"></div></div></div>`;
+  }
+  if(!html)html='<div class="no-data">No roles configured</div>';
+  el.innerHTML=html;
+}
+
+// === Logs ===
+async function renderLogs(){
+  const logs=await fetchJSON('/api/logs');
+  if(!logs)return;
+  const el=document.getElementById('logs');
+  let html='';
+  for(const l of logs.slice(0,15)){
+    const ts=l.ts&&l.ts.length>=16?l.ts.slice(11,16):l.ts||'';
+    html+=`<div class="log-entry"><span class="log-ts">${ts}</span><span class="log-pane">P${l.pane}</span><span class="log-msg">${l.summary||l.event}</span></div>`;
+  }
+  if(!html)html='<div class="no-data">No activity yet</div>';
+  el.innerHTML=html;
+}
+
+// === Board ===
+async function renderBoard(){
+  const d=await fetchJSON(`/api/board?space=${currentSpace}`);
+  if(!d){document.getElementById('kanban').innerHTML='<div class="no-data">Select a space</div>';return;}
+  const order=['backlog','todo','in_progress','review','done'];
+  const labels={backlog:'Backlog',todo:'To Do',in_progress:'In Progress',review:'Review',done:'Done'};
+  let html='';
+  for(const col of order){
+    const cards=d[col]||[];
+    html+=`<div class="kanban-col"><h4>${labels[col]} (${cards.length})</h4><div class="kanban-cards">`;
+    for(const c of cards){
+      const acu=c.estimated_acu?`<span class="tag tag-acu">${c.estimated_acu} ACU</span>`:'';
+      const role=c.role?`<span class="tag tag-role">${c.role.toUpperCase()}</span>`:'';
+      html+=`<div class="k-card"><div class="k-id">${c.id}</div><div class="k-title">${(c.title||'').slice(0,50)}</div>
+        <div class="k-tags"><span class="tag tag-${c.priority}">${(c.priority||'').toUpperCase()}</span>${acu}${role}</div></div>`;
+    }
+    if(!cards.length)html+='<div class="no-data">Empty</div>';
+    html+='</div></div>';
+  }
+  document.getElementById('kanban').innerHTML=html;
+}
+
+// === Sprint ===
+async function renderSprint(){
+  const sprints=await fetchJSON(`/api/sprints?space=${currentSpace}`);
+  const el=document.getElementById('sprint-section');
+  const bdEl=document.getElementById('burndown-section');
+  if(!sprints||!sprints.length){el.innerHTML='';bdEl.style.display='none';return;}
+  const active=sprints.find(s=>s.status==='active')||sprints[sprints.length-1];
+  const planned=active.planned||{};
+  el.innerHTML=`<div class="card"><div class="sprint-info">
+    <div class="sprint-name">${active.name||active.id}</div>
+    <div class="sprint-stat"><div class="val">${planned.total_acu||0}</div><div class="label">Planned ACU</div></div>
+    <div class="sprint-stat"><div class="val">${planned.total_reviews||0}</div><div class="label">Reviews</div></div>
+    <div class="sprint-stat"><div class="val">${(planned.issues||[]).length}</div><div class="label">Issues</div></div>
+  </div></div>`;
+
+  const bd=await fetchJSON(`/api/burndown?sprint=${active.id}`);
+  if(bd&&bd.ideal&&bd.ideal.length){bdEl.style.display='block';drawBurndown(bd);}
+  else{bdEl.style.display='none';}
+}
+
+function drawBurndown(bd){
+  const canvas=document.getElementById('burndown-chart');
+  if(!canvas)return;
+  const ctx=canvas.getContext('2d');
+  const dpr=window.devicePixelRatio||1;
+  canvas.width=canvas.offsetWidth*dpr;canvas.height=160*dpr;
+  ctx.scale(dpr,dpr);
+  const W=canvas.offsetWidth,H=160;
+  ctx.clearRect(0,0,W,H);
+  const max=bd.planned_acu||1;const days=bd.ideal.length;
+  const pad={l:40,r:10,t:15,b:25};
+  const xS=(W-pad.l-pad.r)/Math.max(days-1,1);
+
+  ctx.strokeStyle='#21262d';ctx.lineWidth=1;
+  for(let i=0;i<5;i++){const y=pad.t+i*(H-pad.t-pad.b)/4;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();}
+  ctx.fillStyle='#484f58';ctx.font='10px sans-serif';ctx.textAlign='right';
+  for(let i=0;i<5;i++){const v=max-i*max/4;ctx.fillText(v.toFixed(0),pad.l-5,pad.t+4+i*(H-pad.t-pad.b)/4);}
+  ctx.textAlign='center';
+  for(let i=0;i<days;i+=Math.max(1,Math.floor(days/6))){
+    ctx.fillText(bd.ideal[i].date.slice(5),pad.l+i*xS,H-5);
+  }
+
+  ctx.strokeStyle='#30363d';ctx.lineWidth=1.5;ctx.setLineDash([4,4]);ctx.beginPath();
+  for(let i=0;i<days;i++){const x=pad.l+i*xS,y=pad.t+(1-bd.ideal[i].remaining/max)*(H-pad.t-pad.b);i?ctx.lineTo(x,y):ctx.moveTo(x,y);}
+  ctx.stroke();ctx.setLineDash([]);
+
+  if(bd.actual&&bd.actual.length){
+    ctx.strokeStyle='#58a6ff';ctx.lineWidth=2;ctx.beginPath();
+    for(let i=0;i<bd.actual.length;i++){const x=pad.l+i*xS,y=pad.t+(1-bd.actual[i].remaining/max)*(H-pad.t-pad.b);i?ctx.lineTo(x,y):ctx.moveTo(x,y);}
+    ctx.stroke();
+    ctx.fillStyle='#58a6ff';
+    for(let i=0;i<bd.actual.length;i++){const x=pad.l+i*xS,y=pad.t+(1-bd.actual[i].remaining/max)*(H-pad.t-pad.b);ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fill();}
+  }
+}
+
+// === SSE ===
+function connectSSE(){
+  const es=new EventSource('/api/events');
+  es.onmessage=()=>refresh();
+  es.onerror=()=>{setTimeout(connectSSE,5000);es.close();};
+}
+
+// === Refresh ===
+async function refresh(){
+  currentSpace=document.getElementById('space-select').value;
+  await Promise.all([renderGauges(),renderPanes(),renderRoles(),renderLogs(),renderBoard(),renderSprint()]);
+}
+
+async function init(){
+  await loadSpaces();
+  await refresh();
+  connectSSE();
+  setInterval(refresh,8000);
+}
+init();
+</script>
+</body>
+</html>
