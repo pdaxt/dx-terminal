@@ -11,6 +11,7 @@ mod mcp_registry;
 mod pty;
 mod tui;
 mod web;
+mod workspace;
 
 use std::sync::Arc;
 use clap::{Parser, Subcommand};
@@ -46,6 +47,13 @@ enum Commands {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let application = Arc::new(app::App::new());
+
+    // Clean up stale worktrees from previous crashed sessions
+    if let Ok(cleaned) = workspace::cleanup_stale_worktrees() {
+        if !cleaned.is_empty() {
+            eprintln!("Cleaned {} stale worktrees", cleaned.len());
+        }
+    }
 
     // Graceful shutdown: kill all PTY children when process exits
     let shutdown_app = Arc::clone(&application);

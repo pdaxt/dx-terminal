@@ -140,3 +140,35 @@ pub struct McpSearchRequest {
     #[schemars(description = "Search query (matches name, description, capabilities, keywords)")]
     pub query: String,
 }
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GitSyncRequest {
+    #[schemars(description = "Pane reference")]
+    pub pane: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GitStatusRequest {
+    #[schemars(description = "Pane reference")]
+    pub pane: String,
+    #[schemars(description = "Include full diff output")]
+    pub verbose: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GitPushRequest {
+    #[schemars(description = "Pane reference")]
+    pub pane: String,
+    #[schemars(description = "Commit message (default: auto-generated)")]
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GitPrRequest {
+    #[schemars(description = "Pane reference")]
+    pub pane: String,
+    #[schemars(description = "PR title (default: task description)")]
+    pub title: Option<String>,
+    #[schemars(description = "PR body/description")]
+    pub body: Option<String>,
+}

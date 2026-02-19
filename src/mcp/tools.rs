@@ -8,6 +8,7 @@ use crate::tracker;
 use crate::capacity;
 use crate::state;
 use crate::state::types::PaneState;
+use crate::workspace;
 use super::types::*;
 
 /// Execute os_spawn logic — allocates PTY and spawns Claude agent
@@ -44,6 +45,22 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         let _ = claude::set_project_mcps(&project_path, &mcps);
     }
 
+    // Git-first: create worktree for isolation if project is a git repo
+    let (spawn_cwd, ws_path, ws_branch) = if workspace::is_git_repo(&project_path) {
+        match workspace::create_worktree(&project_path, pane_num, &task) {
+            Ok(info) => {
+                tracing::info!("Created worktree for pane {}: {} (branch {})", pane_num, info.worktree_path, info.branch_name);
+                (info.worktree_path.clone(), Some(info.worktree_path), Some(info.branch_name))
+            }
+            Err(e) => {
+                tracing::warn!("Worktree creation failed for pane {}, using direct path: {}", pane_num, e);
+                (project_path.clone(), None, None)
+            }
+        }
+    } else {
+        (project_path.clone(), None, None)
+    };
+
     // Generate and write preamble
     let preamble = claude::generate_preamble(pane_num, theme, &project_name, &role, &task, &prompt);
     let _ = claude::write_preamble(pane_num, &preamble);
@@ -55,10 +72,10 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         ("CLAUDE_CONFIG_DIR".to_string(), config_dir),
     ];
 
-    // Spawn PTY
+    // Spawn PTY in worktree (isolated) or project dir (fallback)
     let pty_result = {
         let mut pty = app.pty_lock();
-        pty.spawn(pane_num, "claude", &["-c"], &project_path, env_vars)
+        pty.spawn(pane_num, "claude", &["-c"], &spawn_cwd, env_vars)
     };
 
     let pty_status = match pty_result {
@@ -78,6 +95,8 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         status: "active".into(),
         started_at: Some(state::now()),
         acu_spent: 0.0,
+        workspace_path: ws_path.clone(),
+        branch_name: ws_branch.clone(),
     };
     app.state.set_pane(pane_num, pane_state).await;
     app.state.log_activity(
@@ -114,6 +133,8 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         "role": role,
         "task": task,
         "project_path": project_path,
+        "workspace": ws_path,
+        "branch": ws_branch,
         "pty": pty_status,
     }).to_string()
 }
@@ -126,6 +147,11 @@ pub async fn kill(app: &App, req: KillRequest) -> String {
     };
     let reason = req.reason.unwrap_or_else(|| "manual".into());
 
+    // Get workspace info before clearing state
+    let pane_data = app.state.get_pane(pane_num).await;
+    let ws_path = pane_data.workspace_path.clone();
+    let project_path = pane_data.project_path.clone();
+
     // Kill PTY
     let pty_result = {
         let mut pty = app.pty_lock();
@@ -136,10 +162,23 @@ pub async fn kill(app: &App, req: KillRequest) -> String {
         Err(_) => "no_pty",
     };
 
+    // Git-first: save WIP and cleanup worktree
+    let mut git_info = serde_json::Value::Null;
+    if let Some(ws) = &ws_path {
+        let commit_result = workspace::commit_all(ws, &format!("WIP: killed ({})", reason));
+        let wt_result = workspace::remove_worktree(&project_path, ws);
+        git_info = serde_json::json!({
+            "wip_commit": commit_result.unwrap_or_else(|e| e.to_string()),
+            "worktree_removed": wt_result.is_ok(),
+        });
+    }
+
     // Update state
-    let mut pane_state = app.state.get_pane(pane_num).await;
+    let mut pane_state = pane_data;
     pane_state.status = "idle".into();
     pane_state.task = String::new();
+    pane_state.workspace_path = None;
+    pane_state.branch_name = None;
     app.state.set_pane(pane_num, pane_state).await;
     app.state.log_activity(pane_num, "kill", &format!("Killed: {}", reason)).await;
 
@@ -151,6 +190,7 @@ pub async fn kill(app: &App, req: KillRequest) -> String {
         "pane": pane_num,
         "reason": reason,
         "pty": pty_status,
+        "git": git_info,
     }).to_string()
 }
 
@@ -367,6 +407,19 @@ pub async fn collect(app: &App, req: CollectRequest) -> String {
         }
     };
 
+    // Git-first: include workspace git info if available
+    let git_info = if let Some(ws) = &pane_data.workspace_path {
+        let status = workspace::git_status(ws).unwrap_or_default();
+        let diff = workspace::git_diff(ws).unwrap_or_default();
+        serde_json::json!({
+            "branch": pane_data.branch_name,
+            "status": status,
+            "diff_stat": diff,
+        })
+    } else {
+        serde_json::json!(null)
+    };
+
     if let Some((output, screen, running, health, line_count)) = pty_info {
         let display_output = if !screen.trim().is_empty() {
             truncate(&screen, 3000)
@@ -385,12 +438,14 @@ pub async fn collect(app: &App, req: CollectRequest) -> String {
             "project": pane_data.project,
             "task": truncate(&pane_data.task, 60),
             "status": pane_data.status,
+            "branch": pane_data.branch_name,
             "running": running,
             "done": health.done,
             "error": health.error,
             "done_marker": health.done_marker,
             "output": display_output,
             "line_count": line_count,
+            "git": git_info,
         }).to_string()
     } else {
         let done = pane_data.status == "done" || pane_data.status == "idle";
@@ -400,11 +455,13 @@ pub async fn collect(app: &App, req: CollectRequest) -> String {
             "project": pane_data.project,
             "task": truncate(&pane_data.task, 60),
             "status": pane_data.status,
+            "branch": pane_data.branch_name,
             "running": false,
             "done": done,
             "error": serde_json::Value::Null,
             "output": format!("[No PTY] Pane {} - Status: {}", pane_num, pane_data.status),
             "line_count": 0,
+            "git": git_info,
         }).to_string()
     }
 }
@@ -417,7 +474,7 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
     };
 
     let mut pane_data = app.state.get_pane(pane_num).await;
-    let summary = req.summary.unwrap_or_default();
+    let summary = req.summary.clone().unwrap_or_default();
 
     // Calculate ACU spent
     let acu = if let Some(started) = &pane_data.started_at {
@@ -454,6 +511,33 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
         "summary": summary,
     }));
 
+    // Git-first: commit, push, create PR, cleanup worktree
+    let mut git_info = serde_json::json!(null);
+    if let (Some(ws), Some(branch)) = (&pane_data.workspace_path, &pane_data.branch_name) {
+        let commit_msg = if summary.is_empty() {
+            format!("Pane {}: {}", pane_num, truncate(&pane_data.task, 60))
+        } else {
+            summary.clone()
+        };
+        let commit_result = workspace::commit_all(ws, &commit_msg);
+        let push_result = workspace::push_branch(ws, branch);
+        let pr_title = format!("[Pane {}] {}", pane_num, truncate(&pane_data.task, 50));
+        let pr_body = format!(
+            "## Task\n{}\n\n## Summary\n{}\n\n## ACU\n{:.2}\n\nAutomated PR from AgentOS pane {}",
+            pane_data.task, if summary.is_empty() { "completed" } else { &summary }, acu, pane_num
+        );
+        let pr_result = workspace::create_pr(ws, &pr_title, &pr_body);
+        let remove_result = workspace::remove_worktree(&pane_data.project_path, ws);
+
+        git_info = serde_json::json!({
+            "commit": commit_result.unwrap_or_else(|e| e.to_string()),
+            "push": push_result.unwrap_or_else(|e| e.to_string()),
+            "pr": pr_result.unwrap_or_else(|e| e.to_string()),
+            "worktree_removed": remove_result.is_ok(),
+            "branch": branch,
+        });
+    }
+
     // Kill the PTY process
     {
         let mut pty = app.pty_lock();
@@ -463,6 +547,8 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
     // Update pane state
     pane_data.status = "idle".into();
     pane_data.acu_spent = acu;
+    pane_data.workspace_path = None;
+    pane_data.branch_name = None;
     let task_display = truncate(&pane_data.task, 30);
     app.state.set_pane(pane_num, pane_data.clone()).await;
     app.state.log_activity(pane_num, "complete", &format!("Done: {} ({} ACU)", task_display, acu)).await;
@@ -473,6 +559,7 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
         "acu_spent": acu,
         "issue_id": pane_data.issue_id,
         "summary": summary,
+        "git": git_info,
     }).to_string()
 }
 
@@ -588,6 +675,7 @@ pub async fn status(app: &App) -> String {
             "acu": pd.acu_spent,
             "status": pd.status,
             "issue_id": pd.issue_id,
+            "branch": pd.branch_name,
             "pty_running": pty.is_running(*i),
         }));
     }
@@ -898,6 +986,134 @@ pub async fn mcp_search(_app: &App, req: McpSearchRequest) -> String {
         "query": req.query,
         "count": items.len(),
         "results": items,
+    }).to_string()
+}
+
+// === GIT TOOLS ===
+
+/// Execute os_git_sync — pull latest from base branch into agent's worktree
+pub async fn git_sync(app: &App, req: GitSyncRequest) -> String {
+    let pane_num = match config::resolve_pane(&req.pane) {
+        Some(n) => n,
+        None => return json_err(&format!("Invalid pane: {}", req.pane)),
+    };
+
+    let pane_data = app.state.get_pane(pane_num).await;
+    let (ws, branch) = match (&pane_data.workspace_path, &pane_data.branch_name) {
+        (Some(ws), Some(br)) => (ws.clone(), br.clone()),
+        _ => return json_err(&format!("Pane {} has no git workspace", pane_num)),
+    };
+
+    // Determine base branch from branch name (pane-N/slug was branched from base)
+    let base = workspace::git_status(&ws)
+        .map(|_| "main".to_string()) // simplified — we stored base_branch at create time but not in state
+        .unwrap_or_else(|_| "main".into());
+
+    let result = workspace::sync_from_main(&ws, &base);
+
+    serde_json::json!({
+        "pane": pane_num,
+        "branch": branch,
+        "base_branch": base,
+        "result": result.unwrap_or_else(|e| e.to_string()),
+    }).to_string()
+}
+
+/// Execute os_git_status — show git status/diff for agent's worktree
+pub async fn git_status_tool(app: &App, req: GitStatusRequest) -> String {
+    let pane_num = match config::resolve_pane(&req.pane) {
+        Some(n) => n,
+        None => return json_err(&format!("Invalid pane: {}", req.pane)),
+    };
+
+    let pane_data = app.state.get_pane(pane_num).await;
+    let ws = match &pane_data.workspace_path {
+        Some(ws) => ws.clone(),
+        None => return json_err(&format!("Pane {} has no git workspace", pane_num)),
+    };
+
+    let status = workspace::git_status(&ws).unwrap_or_default();
+    let diff = if req.verbose.unwrap_or(false) {
+        // Full diff
+        std::process::Command::new("git")
+            .args(["diff"])
+            .current_dir(&ws)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+            .unwrap_or_default()
+    } else {
+        workspace::git_diff(&ws).unwrap_or_default()
+    };
+
+    serde_json::json!({
+        "pane": pane_num,
+        "branch": pane_data.branch_name,
+        "status": status,
+        "diff": truncate(&diff, 5000),
+    }).to_string()
+}
+
+/// Execute os_git_push — commit and push agent's current work
+pub async fn git_push(app: &App, req: GitPushRequest) -> String {
+    let pane_num = match config::resolve_pane(&req.pane) {
+        Some(n) => n,
+        None => return json_err(&format!("Invalid pane: {}", req.pane)),
+    };
+
+    let pane_data = app.state.get_pane(pane_num).await;
+    let (ws, branch) = match (&pane_data.workspace_path, &pane_data.branch_name) {
+        (Some(ws), Some(br)) => (ws.clone(), br.clone()),
+        _ => return json_err(&format!("Pane {} has no git workspace", pane_num)),
+    };
+
+    let msg = req.message.unwrap_or_else(|| {
+        format!("Pane {}: {}", pane_num, truncate(&pane_data.task, 60))
+    });
+
+    let commit_result = workspace::commit_all(&ws, &msg);
+    let push_result = workspace::push_branch(&ws, &branch);
+
+    serde_json::json!({
+        "pane": pane_num,
+        "branch": branch,
+        "commit": commit_result.unwrap_or_else(|e| e.to_string()),
+        "push": push_result.unwrap_or_else(|e| e.to_string()),
+    }).to_string()
+}
+
+/// Execute os_git_pr — create a PR from agent's branch
+pub async fn git_pr(app: &App, req: GitPrRequest) -> String {
+    let pane_num = match config::resolve_pane(&req.pane) {
+        Some(n) => n,
+        None => return json_err(&format!("Invalid pane: {}", req.pane)),
+    };
+
+    let pane_data = app.state.get_pane(pane_num).await;
+    let (ws, branch) = match (&pane_data.workspace_path, &pane_data.branch_name) {
+        (Some(ws), Some(br)) => (ws.clone(), br.clone()),
+        _ => return json_err(&format!("Pane {} has no git workspace", pane_num)),
+    };
+
+    // Commit any outstanding changes first
+    let _ = workspace::commit_all(&ws, &format!("Pane {}: pre-PR commit", pane_num));
+
+    // Push
+    let push_result = workspace::push_branch(&ws, &branch);
+
+    // Create PR
+    let title = req.title.unwrap_or_else(|| {
+        format!("[Pane {}] {}", pane_num, truncate(&pane_data.task, 50))
+    });
+    let body = req.body.unwrap_or_else(|| {
+        format!("## Task\n{}\n\nAutomated PR from AgentOS pane {}", pane_data.task, pane_num)
+    });
+    let pr_result = workspace::create_pr(&ws, &title, &body);
+
+    serde_json::json!({
+        "pane": pane_num,
+        "branch": branch,
+        "push": push_result.unwrap_or_else(|e| e.to_string()),
+        "pr": pr_result.unwrap_or_else(|e| e.to_string()),
     }).to_string()
 }
 

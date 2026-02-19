@@ -192,6 +192,44 @@ impl AgentOSService {
         let result = tools::mcp_search(&self.app, req).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
+
+    // === GIT ISOLATION ===
+
+    #[tool(description = "Sync agent's worktree with latest from base branch (fetch + rebase).")]
+    async fn os_git_sync(
+        &self,
+        Parameters(req): Parameters<GitSyncRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::git_sync(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Show git status and diff for an agent's isolated worktree.")]
+    async fn os_git_status(
+        &self,
+        Parameters(req): Parameters<GitStatusRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::git_status_tool(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Commit and push an agent's current work to its branch.")]
+    async fn os_git_push(
+        &self,
+        Parameters(req): Parameters<GitPushRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::git_push(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Create a pull request from an agent's branch. Commits and pushes first.")]
+    async fn os_git_pr(
+        &self,
+        Parameters(req): Parameters<GitPrRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::git_pr(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
 }
 
 #[tool_handler]

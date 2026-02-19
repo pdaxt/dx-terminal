@@ -59,12 +59,19 @@ pub fn pane_line<'a>(
     role: &str,
     task: &str,
     status: &str,
+    branch: Option<&str>,
     pty_running: bool,
     selected: bool,
 ) -> Line<'a> {
     let tc = theme_color(theme_fg);
     let sc = status_color(status);
     let pty_indicator = if pty_running { "▶" } else { "·" };
+
+    // Show branch if available, otherwise task
+    let task_display = match branch {
+        Some(b) if !b.is_empty() => format!("{} | {}", truncate(b, 20), truncate(task, 15)),
+        _ => truncate(task, 30),
+    };
 
     let mut spans = vec![
         Span::styled(
@@ -94,7 +101,7 @@ pub fn pane_line<'a>(
         ),
         Span::raw(" "),
         Span::styled(
-            truncate(task, 30).to_string(),
+            task_display,
             Style::default().fg(Color::DarkGray),
         ),
     ];

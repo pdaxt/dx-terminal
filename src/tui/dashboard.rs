@@ -20,6 +20,7 @@ pub struct PaneSnapshot {
     pub role: String,
     pub task: String,
     pub status: String,
+    pub branch: Option<String>,
     pub pty_running: bool,
     pub line_count: usize,
 }
@@ -60,6 +61,7 @@ pub fn collect_data(app: &App, selected: u8) -> DashboardData {
             role: config::role_short(&pd.role).to_string(),
             task: pd.task,
             status: pd.status,
+            branch: pd.branch_name,
             pty_running: false,
             line_count: 0,
         });
@@ -184,7 +186,7 @@ fn render_pane_table(f: &mut Frame, area: Rect, data: &DashboardData) {
             Span::styled("Role ", Style::default().fg(Color::DarkGray)),
             Span::styled("Status  ", Style::default().fg(Color::DarkGray)),
             Span::styled("▶ ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Task", Style::default().fg(Color::DarkGray)),
+            Span::styled("Branch/Task", Style::default().fg(Color::DarkGray)),
         ]),
     ];
 
@@ -197,6 +199,7 @@ fn render_pane_table(f: &mut Frame, area: Rect, data: &DashboardData) {
             &ps.role,
             &ps.task,
             &ps.status,
+            ps.branch.as_deref(),
             ps.pty_running,
             ps.pane == data.selected,
         ));
@@ -212,12 +215,15 @@ fn render_pane_table(f: &mut Frame, area: Rect, data: &DashboardData) {
 
 fn render_pty_output(f: &mut Frame, area: Rect, data: &DashboardData) {
     let sel = &data.panes[(data.selected - 1) as usize];
-    let title = format!(
-        " P{} {} — {} ",
-        sel.pane,
-        sel.theme,
-        if sel.project.is_empty() || sel.project == "--" { "idle" } else { &sel.project }
-    );
+    let branch_display = sel.branch.as_deref().unwrap_or("");
+    let title = if !branch_display.is_empty() {
+        format!(" P{} {} — {} [{}] ", sel.pane, sel.theme,
+            if sel.project.is_empty() || sel.project == "--" { "idle" } else { &sel.project },
+            branch_display)
+    } else {
+        format!(" P{} {} — {} ", sel.pane, sel.theme,
+            if sel.project.is_empty() || sel.project == "--" { "idle" } else { &sel.project })
+    };
 
     let tc = widgets::theme_color(&sel.theme_fg);
 

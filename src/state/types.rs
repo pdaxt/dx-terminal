@@ -70,6 +70,10 @@ pub struct PaneState {
     pub started_at: Option<String>,
     #[serde(default)]
     pub acu_spent: f64,
+    #[serde(default)]
+    pub workspace_path: Option<String>,
+    #[serde(default)]
+    pub branch_name: Option<String>,
 }
 
 fn default_idle() -> String {
@@ -89,6 +93,8 @@ impl Default for PaneState {
             status: "idle".into(),
             started_at: None,
             acu_spent: 0.0,
+            workspace_path: None,
+            branch_name: None,
         }
     }
 }
