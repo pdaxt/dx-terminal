@@ -420,6 +420,64 @@ pub async fn get_burndown(Query(params): Query<SprintQuery>) -> Json<Value> {
     Json(json!(data))
 }
 
+/// GET /api/mcps — List all available MCPs
+pub async fn get_mcps(Query(params): Query<SpaceQuery>) -> Json<Value> {
+    let registry = crate::mcp_registry::load_registry();
+    let filtered: Vec<_> = if let Some(project) = &params.space {
+        registry.into_iter().filter(|mcp| {
+            mcp.projects.iter().any(|p| p.eq_ignore_ascii_case(project))
+        }).collect()
+    } else {
+        registry
+    };
+
+    let items: Vec<Value> = filtered.iter().map(|mcp| {
+        json!({
+            "name": mcp.name,
+            "description": mcp.description,
+            "category": mcp.category,
+            "capabilities": mcp.capabilities,
+            "projects": mcp.projects,
+        })
+    }).collect();
+    Json(json!(items))
+}
+
+/// GET /api/mcps/route — Smart route MCPs for a project+task
+#[derive(Deserialize, Default)]
+pub struct McpRouteQuery {
+    pub project: Option<String>,
+    pub task: Option<String>,
+    pub role: Option<String>,
+}
+
+pub async fn get_mcp_route(Query(params): Query<McpRouteQuery>) -> Json<Value> {
+    let project = params.project.unwrap_or_default();
+    let task = params.task.unwrap_or_default();
+    let role = params.role.unwrap_or_else(|| "developer".into());
+
+    if project.is_empty() {
+        return Json(json!({"error": "missing project parameter"}));
+    }
+
+    let matches = crate::mcp_registry::route_mcps(&project, &task, &role);
+    let suggestions: Vec<Value> = matches.iter().take(10).map(|m| {
+        json!({
+            "name": m.name,
+            "score": m.score,
+            "reasons": m.reasons,
+            "description": m.description,
+        })
+    }).collect();
+
+    Json(json!({
+        "project": project,
+        "task": task,
+        "role": role,
+        "suggestions": suggestions,
+    }))
+}
+
 /// GET /api/roles — Role config
 pub async fn get_roles() -> Json<Value> {
     let cfg_path = config::capacity_root().join("config.json");

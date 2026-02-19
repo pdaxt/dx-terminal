@@ -114,3 +114,29 @@ pub struct LogsRequest {
     #[schemars(description = "Number of entries (default 20)")]
     pub lines: Option<usize>,
 }
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct McpListRequest {
+    #[schemars(description = "Filter by category (e.g. 'data', 'infrastructure', 'monitoring')")]
+    pub category: Option<String>,
+    #[schemars(description = "Filter by project name")]
+    pub project: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct McpRouteRequest {
+    #[schemars(description = "Project name")]
+    pub project: String,
+    #[schemars(description = "Task description to route MCPs for")]
+    pub task: String,
+    #[schemars(description = "Agent role (helps refine MCP selection)")]
+    pub role: Option<String>,
+    #[schemars(description = "If true, auto-apply the routed MCPs to the project config")]
+    pub apply: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct McpSearchRequest {
+    #[schemars(description = "Search query (matches name, description, capabilities, keywords)")]
+    pub query: String,
+}

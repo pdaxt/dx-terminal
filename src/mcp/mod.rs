@@ -163,6 +163,35 @@ impl AgentOSService {
         let result = tools::health(&self.app).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
+
+    // === MCP ROUTING ===
+
+    #[tool(description = "List all available MCPs with descriptions, capabilities, and categories. Filter by category or project.")]
+    async fn os_mcp_list(
+        &self,
+        Parameters(req): Parameters<McpListRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::mcp_list(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Smart MCP routing: given a project, task, and role, suggests the best MCPs to enable. Set apply=true to auto-configure.")]
+    async fn os_mcp_route(
+        &self,
+        Parameters(req): Parameters<McpRouteRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::mcp_route(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Search MCPs by name, description, capability, or keyword.")]
+    async fn os_mcp_search(
+        &self,
+        Parameters(req): Parameters<McpSearchRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::mcp_search(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
 }
 
 #[tool_handler]

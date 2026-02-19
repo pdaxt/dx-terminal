@@ -30,6 +30,8 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/sprints", get(api::get_sprints))
         .route("/api/burndown", get(api::get_burndown))
         .route("/api/roles", get(api::get_roles))
+        .route("/api/mcps", get(api::get_mcps))
+        .route("/api/mcps/route", get(api::get_mcp_route))
         // SSE events
         .route("/api/events", get(sse::event_stream))
         .layer(CorsLayer::permissive())

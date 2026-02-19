@@ -7,6 +7,7 @@ mod tracker;
 mod capacity;
 mod state;
 mod mcp;
+mod mcp_registry;
 mod pty;
 mod tui;
 mod web;
