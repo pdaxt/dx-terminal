@@ -46,7 +46,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
 
     // Spawn PTY
     let pty_result = {
-        let mut pty = app.pty.lock().unwrap();
+        let mut pty = app.pty_lock();
         pty.spawn(pane_num, "claude", &["-c"], &project_path, env_vars)
     };
 
@@ -90,9 +90,8 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         let pty_arc = std::sync::Arc::clone(&app.pty);
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_secs(10));
-            if let Ok(mut pty) = pty_arc.lock() {
-                let _ = pty.send_line(pane_num, &initial_msg);
-            }
+            let mut pty = pty_arc.lock().unwrap_or_else(|e| e.into_inner());
+            let _ = pty.send_line(pane_num, &initial_msg);
         });
     }
 
@@ -118,7 +117,7 @@ pub async fn kill(app: &App, req: KillRequest) -> String {
 
     // Kill PTY
     let pty_result = {
-        let mut pty = app.pty.lock().unwrap();
+        let mut pty = app.pty_lock();
         pty.kill(pane_num)
     };
     let pty_status = match pty_result {
@@ -210,7 +209,7 @@ pub async fn reassign(app: &App, req: ReassignRequest) -> String {
             task, pane_data.role, pane_data.project
         );
         let send_result = {
-            let mut pty = app.pty.lock().unwrap();
+            let mut pty = app.pty_lock();
             pty.send_line(pane_num, &msg)
         };
         if let Err(e) = send_result {
@@ -344,7 +343,7 @@ pub async fn collect(app: &App, req: CollectRequest) -> String {
 
     // Collect PTY info under lock, then drop immediately
     let pty_info = {
-        let pty = app.pty.lock().unwrap();
+        let pty = app.pty_lock();
         if pty.has_agent(pane_num) {
             let output = pty.last_output(pane_num, 50).unwrap_or_default();
             let screen = pty.screen_text(pane_num).unwrap_or_default();
@@ -446,7 +445,7 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
 
     // Kill the PTY process
     {
-        let mut pty = app.pty.lock().unwrap();
+        let mut pty = app.pty_lock();
         let _ = pty.kill(pane_num);
     }
 
@@ -515,7 +514,7 @@ pub async fn config_show(app: &App, req: ConfigShowRequest) -> String {
             let pane_data = app.state.get_pane(pane_num).await;
             let mcps = app.state.get_project_mcps(&pane_data.project).await;
             let (has_pty, running) = {
-                let pty = app.pty.lock().unwrap();
+                let pty = app.pty_lock();
                 (pty.has_agent(pane_num), pty.is_running(pane_num))
             };
 
@@ -542,7 +541,7 @@ pub async fn config_show(app: &App, req: ConfigShowRequest) -> String {
     }
 
     // Then check PTY (sync)
-    let pty = app.pty.lock().unwrap();
+    let pty = app.pty_lock();
     let mut result = serde_json::Map::new();
     for (i, pd) in &pane_states {
         result.insert(i.to_string(), serde_json::json!({
@@ -566,7 +565,7 @@ pub async fn status(app: &App) -> String {
         pane_states.push((i, app.state.get_pane(i).await));
     }
 
-    let pty = app.pty.lock().unwrap();
+    let pty = app.pty_lock();
     let mut panes = Vec::new();
     for (i, pd) in &pane_states {
         panes.push(serde_json::json!({
@@ -609,7 +608,7 @@ pub async fn dashboard(app: &App, req: DashboardRequest) -> String {
     let log: Vec<_> = state_snap.activity_log.iter().take(8).cloned().collect();
 
     // Then PTY info (sync)
-    let pty = app.pty.lock().unwrap();
+    let pty = app.pty_lock();
     let mut panes = Vec::new();
     for (i, pd) in &pane_states {
         panes.push(serde_json::json!({
@@ -648,8 +647,10 @@ pub async fn dashboard(app: &App, req: DashboardRequest) -> String {
     } else { 0 };
     let bn = if rev_pct > 80 { "REVIEW" } else if acu_pct > 90 { "COMPUTE" } else { "BALANCED" };
 
+    let now_str = state::now();
+    let display_ts = now_str.get(..16).unwrap_or(&now_str);
     let mut lines = vec![
-        format!("AgentOS Dashboard — {}", &state::now()[..16]),
+        format!("AgentOS Dashboard — {}", display_ts),
         format!("ACU: {}/{} ({}%)  Reviews: {}/{}  Bottleneck: {}",
             cap.acu_used, cap.acu_total, acu_pct, cap.reviews_used, cap.reviews_total, bn),
         String::new(),
@@ -677,7 +678,7 @@ pub async fn dashboard(app: &App, req: DashboardRequest) -> String {
         lines.push(String::new());
         lines.push("Recent:".into());
         for entry in log.iter().take(5) {
-            let ts = if entry.ts.len() >= 16 { &entry.ts[11..16] } else { &entry.ts };
+            let ts = entry.ts.get(11..16).unwrap_or(&entry.ts);
             lines.push(format!("  {} P{} {}", ts, entry.pane, truncate(&entry.summary, 50)));
         }
     }
@@ -714,7 +715,7 @@ pub async fn health(app: &App) -> String {
     }
 
     // Then collect PTY health info (sync)
-    let pty = app.pty.lock().unwrap();
+    let pty = app.pty_lock();
     let mut results = Vec::new();
     for (i, pd) in &pane_states {
         let has_pty = pty.has_agent(*i);
@@ -803,7 +804,12 @@ fn json_err(msg: &str) -> String {
 }
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max { s.to_string() } else { format!("{}...", &s[..max-3]) }
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let end: String = s.chars().take(max.saturating_sub(3)).collect();
+        format!("{}...", end)
+    }
 }
 
 fn update_agents_json(pane_num: u8, project: &str, task: &str) {

@@ -66,14 +66,14 @@ pub fn collect_data(app: &App, selected: u8) -> DashboardData {
     }
 
     let log_lines: Vec<String> = state.activity_log.iter().take(5).map(|e| {
-        let ts = if e.ts.len() >= 16 { &e.ts[11..16] } else { &e.ts };
+        let ts = e.ts.get(11..16).unwrap_or(&e.ts);
         format!("{} P{} {}", ts, e.pane, &e.summary)
     }).collect();
 
     drop(state);
 
     // PTY data
-    let pty = app.pty.lock().unwrap();
+    let pty = app.pty_lock();
     let mut pty_count = 0;
     for ps in panes.iter_mut() {
         ps.pty_running = pty.is_running(ps.pane);

@@ -39,7 +39,7 @@ pub fn build_router(app: Arc<App>) -> Router {
 /// Start the web server
 pub async fn run_web_server(app: Arc<App>, port: u16) -> anyhow::Result<()> {
     let router = build_router(app);
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
+    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
     tracing::info!("AgentOS web dashboard: http://localhost:{}", port);
     eprintln!("AgentOS web dashboard: http://localhost:{}", port);
     axum::serve(listener, router).await?;

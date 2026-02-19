@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub const SESSION_NAME: &str = "claude6";
@@ -43,17 +42,19 @@ pub fn resolve_pane(pane_ref: &str) -> Option<u8> {
             return Some(n);
         }
     }
-    // Theme name or shortcut
-    let lower = pane_ref.to_lowercase();
-    let mapping: HashMap<&str, u8> = HashMap::from([
-        ("cyan", 1), ("green", 2), ("purple", 3),
-        ("orange", 4), ("red", 5), ("yellow", 6),
-        ("silver", 7), ("teal", 8), ("pink", 9),
-        ("c", 1), ("g", 2), ("p", 3),
-        ("o", 4), ("r", 5), ("y", 6),
-        ("s", 7), ("t", 8), ("k", 9),
-    ]);
-    mapping.get(lower.as_str()).copied()
+    // Theme name or shortcut — O(1) match, no heap allocation
+    match pane_ref.to_lowercase().as_str() {
+        "cyan" | "c" => Some(1),
+        "green" | "g" => Some(2),
+        "purple" | "p" => Some(3),
+        "orange" | "o" => Some(4),
+        "red" | "r" => Some(5),
+        "yellow" | "y" => Some(6),
+        "silver" | "s" => Some(7),
+        "teal" | "t" => Some(8),
+        "pink" | "k" => Some(9),
+        _ => None,
+    }
 }
 
 pub fn role_short(role: &str) -> &'static str {

@@ -157,17 +157,13 @@ impl AgentHandle {
         self.reader_handle.as_ref().map_or(false, |h| !h.is_finished())
     }
 
-    /// Kill the child process
+    /// Kill the child process (non-blocking — signals then force-kills immediately)
     pub fn kill(&mut self) -> anyhow::Result<()> {
-        // Try graceful first: send /exit
+        // Try graceful signals first (non-blocking)
         let _ = self.send_line("/exit");
-        std::thread::sleep(std::time::Duration::from_secs(2));
-
-        // Then Ctrl-C
         let _ = self.send_ctrl_c();
-        std::thread::sleep(std::time::Duration::from_millis(500));
 
-        // Force kill
+        // Force kill immediately — don't block the mutex
         self.child.kill()?;
 
         Ok(())

@@ -43,7 +43,7 @@ pub async fn get_status(State(app): State<AppState>) -> Json<Value> {
         pane_states.push((i, app.state.get_pane(i).await));
     }
 
-    let pty = app.pty.lock().unwrap();
+    let pty = app.pty_lock();
     let mut panes = Vec::new();
     for (i, pd) in &pane_states {
         panes.push(json!({
@@ -99,7 +99,7 @@ pub async fn get_pane(
     let markers = state_snap.config.completion_markers.clone();
 
     let pty_info = {
-        let pty = app.pty.lock().unwrap();
+        let pty = app.pty_lock();
         if pty.has_agent(pane_num) {
             let screen = pty.screen_text(pane_num).unwrap_or_default();
             let output = pty.last_output(pane_num, 100).unwrap_or_default();
@@ -169,7 +169,7 @@ pub async fn get_pane_output(
     };
 
     let lines = params.lines.unwrap_or(50);
-    let pty = app.pty.lock().unwrap();
+    let pty = app.pty_lock();
     let output = pty.last_output(pane_num, lines).unwrap_or_default();
     let screen = pty.screen_text(pane_num).unwrap_or_default();
     let running = pty.is_running(pane_num);
@@ -196,7 +196,7 @@ pub async fn get_health(State(app): State<AppState>) -> Json<Value> {
         pane_states.push((i, app.state.get_pane(i).await));
     }
 
-    let pty = app.pty.lock().unwrap();
+    let pty = app.pty_lock();
     let mut results = Vec::new();
     for (i, pd) in &pane_states {
         let has_pty = pty.has_agent(*i);
@@ -309,7 +309,7 @@ pub async fn get_agents(State(app): State<AppState>) -> Json<Value> {
         pane_states.push((i, app.state.get_pane(i).await));
     }
 
-    let pty = app.pty.lock().unwrap();
+    let pty = app.pty_lock();
     let mut agents = Vec::new();
     for (i, pd) in &pane_states {
         if pd.status == "active" || pty.has_agent(*i) {

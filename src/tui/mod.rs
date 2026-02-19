@@ -80,13 +80,13 @@ fn run_loop(
 
                     // Kill selected pane's agent
                     KeyCode::Char('k') => {
-                        let mut pty = app.pty.lock().unwrap();
+                        let mut pty = app.pty_lock();
                         let _ = pty.kill(selected);
                     }
 
                     // Restart selected pane (kill + re-read state for respawn)
                     KeyCode::Char('r') => {
-                        let mut pty = app.pty.lock().unwrap();
+                        let mut pty = app.pty_lock();
                         let _ = pty.kill(selected);
                         // Note: actual respawn requires MCP os_restart call.
                         // TUI kill is for emergency stop.
@@ -94,7 +94,7 @@ fn run_loop(
 
                     // Send Ctrl-C to selected pane
                     KeyCode::Char('x') => {
-                        let mut pty = app.pty.lock().unwrap();
+                        let mut pty = app.pty_lock();
                         if let Some(agent) = pty.agents.get_mut(&selected) {
                             let _ = agent.send_ctrl_c();
                         }

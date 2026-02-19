@@ -43,12 +43,13 @@ pub fn load_capacity() -> CapacityData {
 pub fn log_work_entry(entry: serde_json::Value) -> anyhow::Result<()> {
     let path = config::capacity_root().join("work_log.json");
     let mut log = read_json(&path);
-    let entries = log.as_object_mut()
-        .unwrap()
+    let root = log.as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("work_log.json is not an object"))?;
+    let entries = root
         .entry("entries")
         .or_insert_with(|| serde_json::json!([]))
         .as_array_mut()
-        .unwrap();
+        .ok_or_else(|| anyhow::anyhow!("work_log entries is not an array"))?;
     entries.push(entry);
     write_json(&path, &log)?;
     Ok(())

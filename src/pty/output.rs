@@ -13,11 +13,11 @@ pub fn check_shell_prompt(output: &str) -> bool {
     let lines: Vec<&str> = output.trim().lines().collect();
     if let Some(last) = lines.last() {
         let trimmed = last.trim();
-        return trimmed.ends_with("$ ")
-            || trimmed == "$"
+        return trimmed.ends_with('$')
+            || trimmed.ends_with("$ ")
             || trimmed.contains("Claude exited")
-            || trimmed.ends_with("% ")
-            || trimmed == "%";
+            || trimmed.ends_with('%')
+            || trimmed.ends_with("% ");
     }
     false
 }

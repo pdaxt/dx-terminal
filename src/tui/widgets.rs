@@ -109,9 +109,10 @@ pub fn pane_line<'a>(
 }
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
+    if s.chars().count() <= max {
         s.to_string()
     } else {
-        format!("{}…", &s[..max - 1])
+        let end: String = s.chars().take(max.saturating_sub(1)).collect();
+        format!("{}…", end)
     }
 }

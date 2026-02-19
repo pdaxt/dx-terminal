@@ -20,12 +20,8 @@ pub fn load_state(path: &Path) -> AgentOSState {
 }
 
 pub fn save_state(path: &Path, state: &AgentOSState) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
     let json = serde_json::to_string_pretty(state)?;
-    std::fs::write(path, json)?;
-    Ok(())
+    atomic_write(path, json.as_bytes())
 }
 
 pub fn read_json(path: &Path) -> serde_json::Value {
@@ -40,10 +36,17 @@ pub fn read_json(path: &Path) -> serde_json::Value {
 }
 
 pub fn write_json(path: &Path, value: &serde_json::Value) -> Result<()> {
+    let json = serde_json::to_string_pretty(value)?;
+    atomic_write(path, json.as_bytes())
+}
+
+/// Atomic write: write to temp file, then rename — prevents corruption on crash
+fn atomic_write(path: &Path, data: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let json = serde_json::to_string_pretty(value)?;
-    std::fs::write(path, json)?;
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, data)?;
+    std::fs::rename(&tmp, path)?;
     Ok(())
 }

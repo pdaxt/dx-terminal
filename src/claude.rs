@@ -18,22 +18,24 @@ pub fn set_project_mcps(project_path: &str, mcp_names: &[String]) -> Result<()> 
         }
     }
 
-    let projects = config
-        .as_object_mut()
-        .unwrap()
+    let root = match config.as_object_mut() {
+        Some(obj) => obj,
+        None => anyhow::bail!("claude.json is not a JSON object"),
+    };
+
+    let projects = root
         .entry("projects")
         .or_insert_with(|| serde_json::json!({}));
 
-    let project_entry = projects
-        .as_object_mut()
-        .unwrap()
-        .entry(project_path)
-        .or_insert_with(|| serde_json::json!({}));
+    let project_entry = match projects.as_object_mut() {
+        Some(obj) => obj.entry(project_path).or_insert_with(|| serde_json::json!({})),
+        None => anyhow::bail!("claude.json 'projects' is not an object"),
+    };
 
-    project_entry
-        .as_object_mut()
-        .unwrap()
-        .insert("mcpServers".to_string(), serde_json::Value::Object(proj_servers));
+    match project_entry.as_object_mut() {
+        Some(obj) => { obj.insert("mcpServers".to_string(), serde_json::Value::Object(proj_servers)); }
+        None => anyhow::bail!("claude.json project entry is not an object"),
+    };
 
     write_json(&claude_json, &config)?;
     Ok(())
