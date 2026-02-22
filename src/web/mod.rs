@@ -35,6 +35,8 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/queue", get(api::get_queue))
         .route("/api/queue/add", post(api::post_queue_add))
         .route("/api/queue/done", post(api::post_queue_done))
+        .route("/api/queue/delete", post(api::post_queue_delete))
+        .route("/api/queue/retry", post(api::post_queue_retry))
         // SSE events
         .route("/api/events", get(sse::event_stream))
         .layer(CorsLayer::permissive())

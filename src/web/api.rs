@@ -544,6 +544,64 @@ pub async fn post_queue_done(State(app): State<AppState>, Json(body): Json<Value
     }
 }
 
+/// POST /api/queue/delete — Remove a task from queue
+pub async fn post_queue_delete(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
+    let task_id = body.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
+    if task_id.is_empty() {
+        return Json(json!({"error": "task_id required"}));
+    }
+    let mut q = queue::load_queue();
+    let before = q.tasks.len();
+    q.tasks.retain(|t| t.id != task_id);
+    if q.tasks.len() == before {
+        return Json(json!({"error": "task not found"}));
+    }
+    match queue::save_queue(&q) {
+        Ok(()) => {
+            app.state.event_bus.send(crate::state::events::StateEvent::QueueChanged {
+                action: "deleted".into(),
+                task_id: task_id.to_string(),
+                task: String::new(),
+            });
+            Json(json!({"status": "deleted", "task_id": task_id}))
+        }
+        Err(e) => Json(json!({"error": format!("{}", e)})),
+    }
+}
+
+/// POST /api/queue/retry — Re-queue a failed task
+pub async fn post_queue_retry(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
+    let task_id = body.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
+    if task_id.is_empty() {
+        return Json(json!({"error": "task_id required"}));
+    }
+    let mut q = queue::load_queue();
+    if let Some(task) = q.tasks.iter_mut().find(|t| t.id == task_id) {
+        if task.status == queue::QueueStatus::Failed || task.status == queue::QueueStatus::Done {
+            task.status = queue::QueueStatus::Pending;
+            task.pane = None;
+            task.started_at = None;
+            task.completed_at = None;
+            task.result = None;
+        } else {
+            return Json(json!({"error": "can only retry failed/done tasks"}));
+        }
+    } else {
+        return Json(json!({"error": "task not found"}));
+    }
+    match queue::save_queue(&q) {
+        Ok(()) => {
+            app.state.event_bus.send(crate::state::events::StateEvent::QueueChanged {
+                action: "retried".into(),
+                task_id: task_id.to_string(),
+                task: String::new(),
+            });
+            Json(json!({"status": "retried", "task_id": task_id}))
+        }
+        Err(e) => Json(json!({"error": format!("{}", e)})),
+    }
+}
+
 /// GET /api/queue — Task queue with status counts
 pub async fn get_queue() -> Json<Value> {
     let q = queue::load_queue();

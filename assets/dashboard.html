@@ -366,6 +366,15 @@ async function submitTask(){
   await renderQueue();
 }
 
+async function deleteTask(id){
+  await fetch('/api/queue/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task_id:id})});
+  await renderQueue();
+}
+async function retryTask(id){
+  await fetch('/api/queue/retry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task_id:id})});
+  await renderQueue();
+}
+
 // === Queue ===
 async function renderQueue(){
   const d=await fetchJSON('/api/queue');
@@ -378,18 +387,21 @@ async function renderQueue(){
   const active=d.tasks.filter(t=>t.status!=='done');
   const done=d.tasks.filter(t=>t.status==='done').slice(-5).reverse();
   const show=[...active,...done];
-  if(!show.length){el.innerHTML='<div class="q-empty">Queue empty — add tasks with os_queue_add</div>';return;}
-  let html='<table class="q-table"><thead><tr><th>ID</th><th>P</th><th>Status</th><th>Project</th><th>Task</th><th>Role</th><th>Pane</th><th>Depends</th></tr></thead><tbody>';
+  if(!show.length){el.innerHTML='<div class="q-empty">Queue empty — add tasks with os_queue_add or the + Add button above</div>';return;}
+  let html='<table class="q-table"><thead><tr><th>ID</th><th>P</th><th>Status</th><th>Project</th><th>Task</th><th>Role</th><th>Pane</th><th>Deps</th><th></th></tr></thead><tbody>';
   for(const t of show){
     const sc=t.status==='pending'?'q-pending':t.status==='running'?'q-running':t.status==='done'?'q-done':t.status==='failed'?'q-failed':'q-blocked';
     const pc='q-p'+(t.priority||3);
     const deps=t.depends_on&&t.depends_on.length?t.depends_on.join(', '):'—';
     const pane=t.pane?'P'+t.pane:'—';
     const proj=(t.project||'').split('/').pop();
+    let actions='';
+    if(t.status==='failed'||t.status==='done')actions+=`<button onclick="retryTask('${t.id}')" style="background:var(--yellow);color:#000;border:none;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:700;cursor:pointer;margin-right:3px">RETRY</button>`;
+    if(t.status!=='running')actions+=`<button onclick="deleteTask('${t.id}')" style="background:var(--red);color:#fff;border:none;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:700;cursor:pointer">DEL</button>`;
     html+=`<tr><td class="q-id">${t.id}</td><td><span class="q-priority ${pc}">${t.priority}</span></td>
       <td><span class="q-status ${sc}">${t.status}</span></td>
       <td>${proj}</td><td>${(t.task||'').slice(0,40)}</td><td><span class="badge badge-role">${t.role||'dev'}</span></td>
-      <td>${pane}</td><td class="q-id">${deps}</td></tr>`;
+      <td>${pane}</td><td class="q-id">${deps}</td><td>${actions}</td></tr>`;
   }
   html+='</tbody></table>';
   el.innerHTML=html;
