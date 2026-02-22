@@ -172,3 +172,47 @@ pub struct GitPrRequest {
     #[schemars(description = "PR body/description")]
     pub body: Option<String>,
 }
+
+// === QUEUE / AUTO-CYCLE ===
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct QueueAddRequest {
+    #[schemars(description = "Project name or path")]
+    pub project: String,
+    #[schemars(description = "Task description")]
+    pub task: String,
+    #[schemars(description = "Full prompt to send to the agent")]
+    pub prompt: Option<String>,
+    #[schemars(description = "Agent role (default: developer)")]
+    pub role: Option<String>,
+    #[schemars(description = "Priority 1-5 (1=highest, default=3)")]
+    pub priority: Option<u8>,
+    #[schemars(description = "Task IDs this depends on (must complete first)")]
+    pub depends_on: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct QueueListRequest {
+    #[schemars(description = "Filter by status: pending, running, done, failed")]
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct QueueDoneRequest {
+    #[schemars(description = "Task ID to mark done")]
+    pub task_id: String,
+    #[schemars(description = "Result summary")]
+    pub result: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AutoConfigRequest {
+    #[schemars(description = "Max parallel panes (1-9)")]
+    pub max_parallel: Option<u8>,
+    #[schemars(description = "Reserved panes (never auto-assigned)")]
+    pub reserved_panes: Option<Vec<u8>>,
+    #[schemars(description = "Auto-complete when agent finishes")]
+    pub auto_complete: Option<bool>,
+    #[schemars(description = "Auto-assign next task when pane frees")]
+    pub auto_assign: Option<bool>,
+}

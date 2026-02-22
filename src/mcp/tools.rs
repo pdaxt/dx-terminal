@@ -9,6 +9,7 @@ use crate::capacity;
 use crate::state;
 use crate::state::types::PaneState;
 use crate::workspace;
+use crate::queue;
 use super::types::*;
 
 /// Execute os_spawn logic — allocates PTY and spawns Claude agent
@@ -1115,6 +1116,221 @@ pub async fn git_pr(app: &App, req: GitPrRequest) -> String {
         "push": push_result.unwrap_or_else(|e| e.to_string()),
         "pr": pr_result.unwrap_or_else(|e| e.to_string()),
     }).to_string()
+}
+
+// === QUEUE / AUTO-CYCLE ===
+
+/// Add a task to the queue
+pub async fn queue_add(_app: &App, req: QueueAddRequest) -> String {
+    let role = req.role.unwrap_or_else(|| "developer".into());
+    let prompt = req.prompt.unwrap_or_else(|| req.task.clone());
+    let priority = req.priority.unwrap_or(3);
+    let depends_on = req.depends_on.unwrap_or_default();
+
+    match queue::add_task(&req.project, &role, &req.task, &prompt, priority, depends_on) {
+        Ok(task) => serde_json::json!({
+            "status": "queued",
+            "task_id": task.id,
+            "project": task.project,
+            "task": task.task,
+            "priority": task.priority,
+            "depends_on": task.depends_on,
+        }).to_string(),
+        Err(e) => json_err(&format!("Failed to add task: {}", e)),
+    }
+}
+
+/// List queue tasks
+pub async fn queue_list(_app: &App, req: QueueListRequest) -> String {
+    let q = queue::load_queue();
+
+    let filtered: Vec<&queue::QueueTask> = q.tasks.iter().filter(|t| {
+        if let Some(status) = &req.status {
+            let s = format!("{:?}", t.status).to_lowercase();
+            s == status.to_lowercase()
+        } else {
+            true
+        }
+    }).collect();
+
+    let items: Vec<serde_json::Value> = filtered.iter().map(|t| {
+        serde_json::json!({
+            "id": t.id,
+            "project": t.project,
+            "task": truncate(&t.task, 50),
+            "role": t.role,
+            "priority": t.priority,
+            "status": format!("{:?}", t.status).to_lowercase(),
+            "pane": t.pane,
+            "depends_on": t.depends_on,
+        })
+    }).collect();
+
+    let pending = q.tasks.iter().filter(|t| t.status == queue::QueueStatus::Pending).count();
+    let running = q.tasks.iter().filter(|t| t.status == queue::QueueStatus::Running).count();
+    let done = q.tasks.iter().filter(|t| t.status == queue::QueueStatus::Done).count();
+
+    serde_json::json!({
+        "tasks": items,
+        "summary": { "pending": pending, "running": running, "done": done, "total": q.tasks.len() },
+    }).to_string()
+}
+
+/// Mark a queue task as done
+pub async fn queue_done(_app: &App, req: QueueDoneRequest) -> String {
+    let result = req.result.unwrap_or_else(|| "completed".into());
+    match queue::mark_done(&req.task_id, &result) {
+        Ok(()) => {
+            let next = queue::next_task();
+            serde_json::json!({
+                "status": "done",
+                "task_id": req.task_id,
+                "next_pending": next.map(|t| serde_json::json!({"id": t.id, "task": t.task, "project": t.project})),
+            }).to_string()
+        }
+        Err(e) => json_err(&format!("Failed to mark done: {}", e)),
+    }
+}
+
+/// Auto-cycle: scan all panes, complete finished agents, spawn next tasks
+pub async fn auto_cycle(app: &App) -> String {
+    let cfg = queue::load_auto_config();
+    let mut actions = Vec::new();
+    let mut occupied_panes = Vec::new();
+
+    // Phase 1: Collect status of all running panes
+    let state_snap = app.state.get_state_snapshot().await;
+    let markers = state_snap.config.completion_markers.clone();
+
+    for i in 1..=9u8 {
+        let pd = app.state.get_pane(i).await;
+        if pd.status != "active" { continue; }
+        occupied_panes.push(i);
+
+        // Check if this agent has finished
+        let health = {
+            let pty = app.pty_lock();
+            if pty.has_agent(i) {
+                Some(pty.check_health(i, &markers))
+            } else {
+                None
+            }
+        };
+
+        if let Some(h) = health {
+            if h.done && cfg.auto_complete {
+                // Auto-complete this pane
+                let _result = complete(app, super::types::CompleteRequest {
+                    pane: i.to_string(),
+                    summary: Some(format!("Auto-completed by cycle")),
+                }).await;
+
+                // Mark queue task as done
+                if let Some(qt) = queue::task_for_pane(i) {
+                    let _ = queue::mark_done(&qt.id, "auto-completed");
+                }
+
+                occupied_panes.retain(|&p| p != i);
+                actions.push(serde_json::json!({
+                    "action": "auto_complete",
+                    "pane": i,
+                    "project": pd.project,
+                }));
+            } else if h.error.is_some() {
+                // Mark as failed, free pane
+                if let Some(qt) = queue::task_for_pane(i) {
+                    let _ = queue::mark_failed(&qt.id, h.error.as_deref().unwrap_or("unknown error"));
+                }
+                let _ = kill(app, super::types::KillRequest {
+                    pane: i.to_string(),
+                    reason: Some(format!("error: {}", h.error.unwrap_or_default())),
+                }).await;
+                occupied_panes.retain(|&p| p != i);
+                actions.push(serde_json::json!({
+                    "action": "error_kill",
+                    "pane": i,
+                    "project": pd.project,
+                }));
+            }
+        }
+    }
+
+    // Phase 2: Spawn next tasks on free panes
+    if cfg.auto_assign {
+        loop {
+            let free_pane = queue::find_free_pane(&cfg, &occupied_panes);
+            let next_task = queue::next_task();
+
+            match (free_pane, next_task) {
+                (Some(pane), Some(task)) => {
+                    // Mark running
+                    let _ = queue::mark_running(&task.id, pane);
+                    occupied_panes.push(pane);
+
+                    // Spawn
+                    let _result = spawn(app, super::types::SpawnRequest {
+                        pane: pane.to_string(),
+                        project: task.project.clone(),
+                        role: Some(task.role.clone()),
+                        task: Some(task.task.clone()),
+                        prompt: Some(task.prompt.clone()),
+                    }).await;
+
+                    actions.push(serde_json::json!({
+                        "action": "auto_spawn",
+                        "pane": pane,
+                        "task_id": task.id,
+                        "project": task.project,
+                        "task": truncate(&task.task, 40),
+                    }));
+                }
+                _ => break,
+            }
+        }
+    }
+
+    // Summary
+    let q = queue::load_queue();
+    let pending = q.tasks.iter().filter(|t| t.status == queue::QueueStatus::Pending).count();
+    let running = q.tasks.iter().filter(|t| t.status == queue::QueueStatus::Running).count();
+
+    serde_json::json!({
+        "actions": actions,
+        "queue": { "pending": pending, "running": running },
+        "occupied_panes": occupied_panes,
+        "config": {
+            "max_parallel": cfg.max_parallel,
+            "auto_complete": cfg.auto_complete,
+            "auto_assign": cfg.auto_assign,
+        },
+        "instruction": if pending > 0 || running > 0 {
+            "Call os_auto again in 30-60 seconds to continue the cycle."
+        } else {
+            "Queue empty. Add tasks with os_queue_add or wait."
+        },
+    }).to_string()
+}
+
+/// Update auto-cycle config
+pub async fn auto_config(_app: &App, req: AutoConfigRequest) -> String {
+    let mut cfg = queue::load_auto_config();
+    if let Some(mp) = req.max_parallel { cfg.max_parallel = mp.clamp(1, 9); }
+    if let Some(rp) = req.reserved_panes { cfg.reserved_panes = rp; }
+    if let Some(ac) = req.auto_complete { cfg.auto_complete = ac; }
+    if let Some(aa) = req.auto_assign { cfg.auto_assign = aa; }
+
+    match queue::save_auto_config(&cfg) {
+        Ok(()) => serde_json::json!({
+            "status": "updated",
+            "config": {
+                "max_parallel": cfg.max_parallel,
+                "reserved_panes": cfg.reserved_panes,
+                "auto_complete": cfg.auto_complete,
+                "auto_assign": cfg.auto_assign,
+            }
+        }).to_string(),
+        Err(e) => json_err(&format!("Failed to save config: {}", e)),
+    }
 }
 
 // --- Helpers ---

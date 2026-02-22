@@ -230,6 +230,52 @@ impl AgentOSService {
         let result = tools::git_pr(&self.app, req).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
+
+    // === QUEUE / AUTO-CYCLE ===
+
+    #[tool(description = "Add a task to the queue. Tasks are auto-assigned to free panes when os_auto is called.")]
+    async fn os_queue_add(
+        &self,
+        Parameters(req): Parameters<QueueAddRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::queue_add(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "List all queued tasks with status. Filter by: pending, running, done, failed.")]
+    async fn os_queue_list(
+        &self,
+        Parameters(req): Parameters<QueueListRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::queue_list(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Mark a queued task as done. Unblocks dependent tasks.")]
+    async fn os_queue_done(
+        &self,
+        Parameters(req): Parameters<QueueDoneRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::queue_done(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Run one auto-cycle: complete finished agents, spawn next queued tasks on free panes. Call repeatedly (every 30-60s) for continuous operation.")]
+    async fn os_auto(
+        &self,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::auto_cycle(&self.app).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Configure auto-cycle behavior: max parallel panes, reserved panes, auto-complete, auto-assign.")]
+    async fn os_auto_config(
+        &self,
+        Parameters(req): Parameters<AutoConfigRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::auto_config(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
 }
 
 #[tool_handler]

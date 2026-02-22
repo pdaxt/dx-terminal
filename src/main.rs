@@ -12,6 +12,7 @@ mod pty;
 mod tui;
 mod web;
 mod workspace;
+mod queue;
 
 use std::sync::Arc;
 use clap::{Parser, Subcommand};
