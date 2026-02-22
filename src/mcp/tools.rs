@@ -1318,6 +1318,7 @@ pub async fn auto_config(_app: &App, req: AutoConfigRequest) -> String {
     if let Some(rp) = req.reserved_panes { cfg.reserved_panes = rp; }
     if let Some(ac) = req.auto_complete { cfg.auto_complete = ac; }
     if let Some(aa) = req.auto_assign { cfg.auto_assign = aa; }
+    if let Some(ci) = req.cycle_interval_secs { cfg.cycle_interval_secs = ci; }
 
     match queue::save_auto_config(&cfg) {
         Ok(()) => serde_json::json!({
@@ -1327,6 +1328,7 @@ pub async fn auto_config(_app: &App, req: AutoConfigRequest) -> String {
                 "reserved_panes": cfg.reserved_panes,
                 "auto_complete": cfg.auto_complete,
                 "auto_assign": cfg.auto_assign,
+                "cycle_interval_secs": cfg.cycle_interval_secs,
             }
         }).to_string(),
         Err(e) => json_err(&format!("Failed to save config: {}", e)),

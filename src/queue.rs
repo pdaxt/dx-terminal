@@ -62,7 +62,12 @@ pub struct AutoConfig {
     pub auto_assign: bool,
     /// Default role if not specified in task
     pub default_role: String,
+    /// Auto-cycle interval in seconds (0 = disabled)
+    #[serde(default = "default_cycle_secs")]
+    pub cycle_interval_secs: u64,
 }
+
+fn default_cycle_secs() -> u64 { 30 }
 
 impl Default for AutoConfig {
     fn default() -> Self {
@@ -72,6 +77,7 @@ impl Default for AutoConfig {
             auto_complete: true,
             auto_assign: true,
             default_role: "developer".into(),
+            cycle_interval_secs: 30,
         }
     }
 }

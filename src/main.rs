@@ -93,6 +93,31 @@ async fn run_mcp_mode(app: Arc<app::App>, web_port: u16, no_web: bool) -> anyhow
         tracing::info!("Web dashboard at http://localhost:{}", web_port);
     }
 
+    // Background auto-cycle timer — reads interval from config, runs auto_cycle periodically
+    let cycle_app = Arc::clone(&app);
+    tokio::spawn(async move {
+        // Initial delay to let MCP server start
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+        loop {
+            let cfg = queue::load_auto_config();
+            if cfg.cycle_interval_secs == 0 {
+                // Disabled — check again in 30s in case config changes
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                continue;
+            }
+
+            let interval = std::time::Duration::from_secs(cfg.cycle_interval_secs);
+            tokio::time::sleep(interval).await;
+
+            let result = mcp::tools::auto_cycle(&cycle_app).await;
+            // Only log if something happened (not just empty cycle)
+            if result.contains("auto_complete") || result.contains("auto_spawn") || result.contains("error_kill") {
+                tracing::info!("Auto-cycle: {}", result);
+            }
+        }
+    });
+
     mcp::run_mcp_server(app).await
 }
 

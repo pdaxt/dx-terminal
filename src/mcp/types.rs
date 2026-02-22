@@ -215,4 +215,6 @@ pub struct AutoConfigRequest {
     pub auto_complete: Option<bool>,
     #[schemars(description = "Auto-assign next task when pane frees")]
     pub auto_assign: Option<bool>,
+    #[schemars(description = "Background auto-cycle interval in seconds (0 = disabled, default 30)")]
+    pub cycle_interval_secs: Option<u64>,
 }
