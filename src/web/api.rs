@@ -494,6 +494,42 @@ pub async fn get_roles() -> Json<Value> {
     Json(cfg.get("roles").cloned().unwrap_or_else(|| json!({})))
 }
 
+/// POST /api/queue/add — Add a task from web UI
+pub async fn post_queue_add(Json(body): Json<Value>) -> Json<Value> {
+    let project = body.get("project").and_then(|v| v.as_str()).unwrap_or("");
+    let task = body.get("task").and_then(|v| v.as_str()).unwrap_or("");
+    let role = body.get("role").and_then(|v| v.as_str()).unwrap_or("developer");
+    let priority = body.get("priority").and_then(|v| v.as_u64()).unwrap_or(3) as u8;
+    let prompt = body.get("prompt").and_then(|v| v.as_str()).unwrap_or(task);
+
+    if project.is_empty() || task.is_empty() {
+        return Json(json!({"error": "project and task are required"}));
+    }
+
+    let deps: Vec<String> = body.get("depends_on")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+
+    match queue::add_task(project, role, task, prompt, priority, deps) {
+        Ok(t) => Json(json!({"status": "added", "task_id": t.id})),
+        Err(e) => Json(json!({"error": format!("{}", e)})),
+    }
+}
+
+/// POST /api/queue/done — Mark a task done from web UI
+pub async fn post_queue_done(Json(body): Json<Value>) -> Json<Value> {
+    let task_id = body.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
+    let result = body.get("result").and_then(|v| v.as_str()).unwrap_or("done");
+    if task_id.is_empty() {
+        return Json(json!({"error": "task_id required"}));
+    }
+    match queue::mark_done(task_id, result) {
+        Ok(()) => Json(json!({"status": "done", "task_id": task_id})),
+        Err(e) => Json(json!({"error": format!("{}", e)})),
+    }
+}
+
 /// GET /api/queue — Task queue with status counts
 pub async fn get_queue() -> Json<Value> {
     let q = queue::load_queue();

@@ -175,7 +175,19 @@ canvas{width:100%;display:block}
 </div>
 
 <div class="section" id="queue-section">
-  <div class="section-title">Task Queue <span id="queue-summary" style="font-weight:400;color:var(--muted);font-size:11px"></span></div>
+  <div class="section-title" style="display:flex;align-items:center;gap:12px">
+    Task Queue <span id="queue-summary" style="font-weight:400;color:var(--muted);font-size:11px"></span>
+    <button onclick="toggleAddForm()" style="background:var(--green);color:#000;border:none;padding:2px 10px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer">+ Add</button>
+  </div>
+  <div id="queue-add-form" style="display:none;margin-bottom:12px">
+    <div class="card" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+      <div><label style="font-size:10px;color:var(--muted);display:block">Project</label><input id="qa-project" style="background:#21262d;color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:12px;width:140px" placeholder="project-name"></div>
+      <div><label style="font-size:10px;color:var(--muted);display:block">Task</label><input id="qa-task" style="background:#21262d;color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:12px;width:200px" placeholder="Task description"></div>
+      <div><label style="font-size:10px;color:var(--muted);display:block">Role</label><select id="qa-role" style="background:#21262d;color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:12px"><option>developer</option><option>frontend</option><option>backend</option><option>qa</option><option>devops</option><option>pm</option></select></div>
+      <div><label style="font-size:10px;color:var(--muted);display:block">Priority</label><select id="qa-priority" style="background:#21262d;color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:12px"><option value="1">1 Critical</option><option value="2">2 High</option><option value="3" selected>3 Normal</option><option value="4">4 Low</option><option value="5">5 Nice-to-have</option></select></div>
+      <button onclick="submitTask()" style="background:var(--blue);color:#fff;border:none;padding:5px 16px;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer">Queue</button>
+    </div>
+  </div>
   <div id="queue-table"></div>
 </div>
 
@@ -337,6 +349,21 @@ async function renderLogs(){
   }
   if(!html)html='<div class="no-data">No activity yet</div>';
   el.innerHTML=html;
+}
+
+// === Queue Form ===
+function toggleAddForm(){document.getElementById('queue-add-form').style.display=document.getElementById('queue-add-form').style.display==='none'?'block':'none';}
+async function submitTask(){
+  const project=document.getElementById('qa-project').value.trim();
+  const task=document.getElementById('qa-task').value.trim();
+  const role=document.getElementById('qa-role').value;
+  const priority=parseInt(document.getElementById('qa-priority').value);
+  if(!project||!task)return alert('Project and task are required');
+  const r=await fetch('/api/queue/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project,task,role,priority})});
+  const d=await r.json();
+  if(d.error){alert(d.error);return;}
+  document.getElementById('qa-task').value='';
+  await renderQueue();
 }
 
 // === Queue ===
