@@ -53,6 +53,14 @@ pub async fn event_stream(
                                 "summary": summary,
                             }).to_string()
                         }
+                        StateEvent::QueueChanged { action, task_id, task } => {
+                            serde_json::json!({
+                                "type": "queue_changed",
+                                "action": action,
+                                "task_id": task_id,
+                                "task": task,
+                            }).to_string()
+                        }
                         StateEvent::StateRefreshed => {
                             r#"{"type":"refresh"}"#.to_string()
                         }

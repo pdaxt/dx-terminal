@@ -495,7 +495,7 @@ pub async fn get_roles() -> Json<Value> {
 }
 
 /// POST /api/queue/add — Add a task from web UI
-pub async fn post_queue_add(Json(body): Json<Value>) -> Json<Value> {
+pub async fn post_queue_add(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
     let project = body.get("project").and_then(|v| v.as_str()).unwrap_or("");
     let task = body.get("task").and_then(|v| v.as_str()).unwrap_or("");
     let role = body.get("role").and_then(|v| v.as_str()).unwrap_or("developer");
@@ -512,20 +512,34 @@ pub async fn post_queue_add(Json(body): Json<Value>) -> Json<Value> {
         .unwrap_or_default();
 
     match queue::add_task(project, role, task, prompt, priority, deps) {
-        Ok(t) => Json(json!({"status": "added", "task_id": t.id})),
+        Ok(t) => {
+            app.state.event_bus.send(crate::state::events::StateEvent::QueueChanged {
+                action: "added".into(),
+                task_id: t.id.clone(),
+                task: t.task.clone(),
+            });
+            Json(json!({"status": "added", "task_id": t.id}))
+        }
         Err(e) => Json(json!({"error": format!("{}", e)})),
     }
 }
 
 /// POST /api/queue/done — Mark a task done from web UI
-pub async fn post_queue_done(Json(body): Json<Value>) -> Json<Value> {
+pub async fn post_queue_done(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
     let task_id = body.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
     let result = body.get("result").and_then(|v| v.as_str()).unwrap_or("done");
     if task_id.is_empty() {
         return Json(json!({"error": "task_id required"}));
     }
     match queue::mark_done(task_id, result) {
-        Ok(()) => Json(json!({"status": "done", "task_id": task_id})),
+        Ok(()) => {
+            app.state.event_bus.send(crate::state::events::StateEvent::QueueChanged {
+                action: "done".into(),
+                task_id: task_id.to_string(),
+                task: String::new(),
+            });
+            Json(json!({"status": "done", "task_id": task_id}))
+        }
         Err(e) => Json(json!({"error": format!("{}", e)})),
     }
 }

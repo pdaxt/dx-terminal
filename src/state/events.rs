@@ -6,6 +6,7 @@ pub enum StateEvent {
     PaneKilled { pane: u8, reason: String },
     PaneStatusChanged { pane: u8, status: String },
     LogAppended { pane: u8, event: String, summary: String },
+    QueueChanged { action: String, task_id: String, task: String },
     StateRefreshed,
 }
 

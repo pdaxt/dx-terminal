@@ -475,7 +475,10 @@ function drawBurndown(bd){
 // === SSE ===
 function connectSSE(){
   const es=new EventSource('/api/events');
-  es.onmessage=()=>refresh();
+  es.onmessage=(e)=>{
+    try{const d=JSON.parse(e.data);if(d.type==='queue_changed')renderQueue();else refresh();}
+    catch(_){refresh();}
+  };
   es.onerror=()=>{setTimeout(connectSSE,5000);es.close();};
 }
 
