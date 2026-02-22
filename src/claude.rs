@@ -103,8 +103,3 @@ pub fn preamble_exists(pane: u8) -> bool {
     path.exists()
 }
 
-/// Read a preamble
-pub fn read_preamble(pane: u8) -> Option<String> {
-    let path = config::preamble_dir().join(format!("pane_{}.md", pane));
-    std::fs::read_to_string(path).ok()
-}

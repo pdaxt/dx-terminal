@@ -67,8 +67,6 @@ pub struct AssignAdhocRequest {
 pub struct CollectRequest {
     #[schemars(description = "Pane reference")]
     pub pane: String,
-    #[schemars(description = "Number of lines to capture (default 20)")]
-    pub lines: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]

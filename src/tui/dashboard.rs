@@ -49,10 +49,11 @@ pub fn collect_data(app: &App, selected: u8) -> DashboardData {
     // Blocking reads — TUI runs on its own thread, not async
     let state = app.state.blocking_read();
 
-    let mut panes = Vec::with_capacity(9);
+    let max_panes = config::pane_count();
+    let mut panes = Vec::with_capacity(max_panes as usize);
     let mut active_count = 0;
 
-    for i in 1..=9u8 {
+    for i in 1..=max_panes {
         let pd = state.panes.get(&i.to_string()).cloned().unwrap_or_default();
         if pd.status == "active" {
             active_count += 1;
@@ -139,14 +140,15 @@ pub fn collect_data(app: &App, selected: u8) -> DashboardData {
 
 /// Render the full dashboard
 pub fn render(f: &mut Frame, data: &DashboardData) {
+    let pane_table_height = data.panes.len() as u16 + 3; // rows + header + 2 border
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Header bar
-            Constraint::Length(11), // Pane table (9 rows + 2 border)
-            Constraint::Min(8),    // PTY output
-            Constraint::Length(8),  // Queue + Activity (split horizontal)
-            Constraint::Length(1),  // Help bar
+            Constraint::Length(3),                // Header bar
+            Constraint::Length(pane_table_height), // Pane table (dynamic)
+            Constraint::Min(8),                   // PTY output
+            Constraint::Length(8),                 // Queue + Activity (split horizontal)
+            Constraint::Length(1),                 // Help bar
         ])
         .split(f.area());
 
@@ -200,7 +202,7 @@ fn render_header(f: &mut Frame, area: Rect, data: &DashboardData) {
         Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
         Span::styled("Agents ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            format!("{}/9", data.active_count),
+            format!("{}/{}", data.active_count, data.panes.len()),
             Style::default().fg(if data.active_count > 0 { Color::Green } else { Color::DarkGray }),
         ),
         Span::styled(

@@ -13,11 +13,21 @@ pub fn check_shell_prompt(output: &str) -> bool {
     let lines: Vec<&str> = output.trim().lines().collect();
     if let Some(last) = lines.last() {
         let trimmed = last.trim();
-        return trimmed.ends_with('$')
+        // Standard shell prompts
+        if trimmed.ends_with('$')
             || trimmed.ends_with("$ ")
-            || trimmed.contains("Claude exited")
             || trimmed.ends_with('%')
-            || trimmed.ends_with("% ");
+            || trimmed.ends_with("% ")
+        {
+            return true;
+        }
+        // Claude-specific exit indicators
+        if trimmed.contains("Claude exited")
+            || trimmed.contains("Session ended")
+            || trimmed.contains("exited with code")
+        {
+            return true;
+        }
     }
     false
 }
@@ -27,6 +37,8 @@ pub fn check_errors(output: &str) -> Option<String> {
     let patterns = [
         "Error:", "FATAL:", "panic:", "Traceback",
         "rate limit", "hit your limit", "SIGTERM",
+        "Max tool use reached", "conversation too long",
+        "APIError:", "AuthenticationError",
     ];
     for pat in &patterns {
         if output.contains(pat) {

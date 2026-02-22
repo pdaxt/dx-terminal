@@ -32,7 +32,7 @@ impl PtyManager {
             self.kill(pane_num)?;
         }
 
-        let handle = AgentHandle::spawn(pane_num, command, args, cwd, env_vars, 50, 120)?;
+        let handle = AgentHandle::spawn(command, args, cwd, env_vars, 50, 120)?;
         self.agents.insert(pane_num, handle);
         Ok(())
     }
@@ -49,16 +49,6 @@ impl PtyManager {
     pub fn send_line(&mut self, pane_num: u8, text: &str) -> anyhow::Result<()> {
         if let Some(handle) = self.agents.get_mut(&pane_num) {
             handle.send_line(text)?;
-        } else {
-            anyhow::bail!("No agent on pane {}", pane_num);
-        }
-        Ok(())
-    }
-
-    /// Send raw text (no enter) to an agent's PTY
-    pub fn send_input(&mut self, pane_num: u8, text: &str) -> anyhow::Result<()> {
-        if let Some(handle) = self.agents.get_mut(&pane_num) {
-            handle.send_input(text)?;
         } else {
             anyhow::bail!("No agent on pane {}", pane_num);
         }

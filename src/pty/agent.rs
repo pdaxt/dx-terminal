@@ -5,9 +5,9 @@ use portable_pty::{CommandBuilder, MasterPty, PtySize, Child};
 
 /// Represents a running agent in a PTY
 pub struct AgentHandle {
-    pub pane_num: u8,
     pub child: Box<dyn Child + Send + Sync>,
-    pub master: Box<dyn MasterPty + Send>,
+    #[allow(dead_code)] // Needed to keep PTY alive
+    master: Box<dyn MasterPty + Send>,
     pub writer: Box<dyn Write + Send>,
     pub parser: Arc<Mutex<vt100::Parser>>,
     pub output_lines: Arc<Mutex<VecDeque<String>>>,
@@ -17,7 +17,6 @@ pub struct AgentHandle {
 impl AgentHandle {
     /// Spawn a new agent in a PTY
     pub fn spawn(
-        pane_num: u8,
         command: &str,
         args: &[&str],
         cwd: &str,
@@ -41,6 +40,8 @@ impl AgentHandle {
         for (k, v) in &env_vars {
             cmd.env(k, v);
         }
+        // Prevent Claude Code from detecting nested session
+        cmd.env_remove("CLAUDECODE");
 
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave); // Not needed after spawn
@@ -59,7 +60,6 @@ impl AgentHandle {
         });
 
         Ok(Self {
-            pane_num,
             child,
             master: pair.master,
             writer,
@@ -103,13 +103,6 @@ impl AgentHandle {
                 Err(_) => break,
             }
         }
-    }
-
-    /// Send text input to the PTY
-    pub fn send_input(&mut self, text: &str) -> anyhow::Result<()> {
-        write!(self.writer, "{}", text)?;
-        self.writer.flush()?;
-        Ok(())
     }
 
     /// Send text followed by Enter key
@@ -166,17 +159,6 @@ impl AgentHandle {
         // Force kill immediately — don't block the mutex
         self.child.kill()?;
 
-        Ok(())
-    }
-
-    /// Resize the PTY
-    pub fn resize(&self, rows: u16, cols: u16) -> anyhow::Result<()> {
-        self.master.resize(PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        })?;
         Ok(())
     }
 

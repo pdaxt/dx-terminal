@@ -134,7 +134,7 @@ impl AgentOSService {
 
     // === MONITORING ===
 
-    #[tool(description = "Full status of all 9 panes: project, role, task, ACU, status.")]
+    #[tool(description = "Full status of all panes: project, role, task, ACU, status.")]
     async fn os_status(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let result = tools::status(&self.app).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
@@ -284,8 +284,8 @@ impl ServerHandler for AgentOSService {
         ServerInfo {
             instructions: Some(
                 "AgentOS: Terminal orchestrator for AI agent teams. \
-                 Spawns, assigns, monitors Claude agents across 9 panes \
-                 from a single control plane.".into()
+                 Spawns, assigns, monitors Claude agents across configurable panes \
+                 from a single control plane. Fully autonomous with auto-cycle.".into()
             ),
             capabilities: ServerCapabilities::builder()
                 .enable_tools()

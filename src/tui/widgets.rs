@@ -1,19 +1,7 @@
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge},
 };
-
-/// Colored gauge with label
-pub fn capacity_gauge<'a>(title: &'a str, used: f64, total: f64, color: Color) -> Gauge<'a> {
-    let pct = if total > 0.0 { (used / total * 100.0).min(100.0) } else { 0.0 };
-    let label = format!("{:.1}/{:.0} ({:.0}%)", used, total, pct);
-    Gauge::default()
-        .block(Block::default().title(title).borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)))
-        .gauge_style(Style::default().fg(color))
-        .ratio(pct / 100.0)
-        .label(label)
-}
 
 /// Status badge color
 pub fn status_color(status: &str) -> Color {
@@ -23,18 +11,6 @@ pub fn status_color(status: &str) -> Color {
         "error" => Color::Red,
         "idle" | "" => Color::DarkGray,
         _ => Color::Yellow,
-    }
-}
-
-/// Health badge color
-pub fn health_color(health: &str) -> Color {
-    match health {
-        "ok" => Color::Green,
-        "done" => Color::Blue,
-        "error" => Color::Red,
-        "stuck" => Color::Yellow,
-        "idle" => Color::DarkGray,
-        _ => Color::DarkGray,
     }
 }
 

@@ -142,11 +142,12 @@ pub fn save_auto_config(cfg: &AutoConfig) -> Result<()> {
     Ok(())
 }
 
-/// Generate a short ID
+/// Generate a unique task ID (timestamp + random suffix to avoid collisions)
 fn gen_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
-    format!("t{}", ts % 1_000_000)
+    let rand_suffix: u32 = (ts as u32).wrapping_mul(2654435761); // Knuth hash for pseudo-random
+    format!("t{}_{:04x}", ts % 10_000_000, rand_suffix % 0xFFFF)
 }
 
 /// Add a task to the queue
@@ -236,33 +237,6 @@ pub fn mark_failed(task_id: &str, reason: &str) -> Result<()> {
         task.pane = None;
     }
     save_queue(&queue)
-}
-
-/// Remove completed/failed tasks older than N entries, keep last N
-pub fn prune_queue(keep: usize) -> Result<usize> {
-    let mut queue = load_queue();
-    let total = queue.tasks.len();
-    let mut finished: Vec<usize> = queue.tasks.iter().enumerate()
-        .filter(|(_, t)| t.status == QueueStatus::Done || t.status == QueueStatus::Failed)
-        .map(|(i, _)| i)
-        .collect();
-
-    if finished.len() <= keep {
-        return Ok(0);
-    }
-
-    // Remove oldest finished, keeping `keep` most recent
-    finished.sort();
-    let to_remove = finished.len() - keep;
-    let remove_indices: Vec<usize> = finished[..to_remove].to_vec();
-
-    // Remove in reverse to preserve indices
-    for &idx in remove_indices.iter().rev() {
-        queue.tasks.remove(idx);
-    }
-
-    save_queue(&queue)?;
-    Ok(total - queue.tasks.len())
 }
 
 /// Get running task for a pane

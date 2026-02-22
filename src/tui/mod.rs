@@ -1,5 +1,4 @@
 pub mod dashboard;
-pub mod pane_view;
 pub mod widgets;
 
 use std::io;
@@ -65,17 +64,22 @@ fn run_loop(
                         return Ok(())
                     }
 
-                    // Pane focus (1-9)
+                    // Pane focus (1-9+ based on config)
                     KeyCode::Char(c @ '1'..='9') => {
-                        selected = c.to_digit(10).unwrap() as u8;
+                        let n = c.to_digit(10).unwrap() as u8;
+                        if n <= crate::config::pane_count() {
+                            selected = n;
+                        }
                     }
 
                     // Tab cycles through panes
                     KeyCode::Tab => {
-                        selected = if selected >= 9 { 1 } else { selected + 1 };
+                        let max = crate::config::pane_count();
+                        selected = if selected >= max { 1 } else { selected + 1 };
                     }
                     KeyCode::BackTab => {
-                        selected = if selected <= 1 { 9 } else { selected - 1 };
+                        let max = crate::config::pane_count();
+                        selected = if selected <= 1 { max } else { selected - 1 };
                     }
 
                     // Kill selected pane's agent

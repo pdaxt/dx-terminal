@@ -1,6 +1,7 @@
 use tokio::sync::broadcast;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // All variants are part of the SSE event API
 pub enum StateEvent {
     PaneSpawned { pane: u8, project: String, role: String },
     PaneKilled { pane: u8, reason: String },

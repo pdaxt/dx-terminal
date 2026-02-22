@@ -29,10 +29,6 @@ impl StateManager {
         }
     }
 
-    pub async fn read(&self) -> tokio::sync::RwLockReadGuard<'_, AgentOSState> {
-        self.state.read().await
-    }
-
     pub async fn get_pane(&self, pane: u8) -> PaneState {
         let state = self.state.read().await;
         state.panes.get(&pane.to_string()).cloned().unwrap_or_default()
@@ -101,10 +97,6 @@ impl StateManager {
         state.space_project_map.get(space).cloned()
     }
 
-    pub async fn flush(&self) {
-        let state = self.state.read().await;
-        let _ = save_state(&self.state_file, &state);
-    }
 }
 
 pub fn now() -> String {

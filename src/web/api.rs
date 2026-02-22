@@ -40,7 +40,7 @@ pub struct PaneQuery {
 /// GET /api/status — All 9 panes with PTY state
 pub async fn get_status(State(app): State<AppState>) -> Json<Value> {
     let mut pane_states = Vec::new();
-    for i in 1..=9u8 {
+    for i in 1..=config::pane_count() {
         pane_states.push((i, app.state.get_pane(i).await));
     }
 
@@ -81,7 +81,7 @@ pub async fn get_status(State(app): State<AppState>) -> Json<Value> {
         "summary": {
             "active": active,
             "idle": idle,
-            "total": 9,
+            "total": config::pane_count(),
             "pty_running": pty_count,
         }
     }))
@@ -199,7 +199,7 @@ pub async fn get_health(State(app): State<AppState>) -> Json<Value> {
     let stuck_mins = state_snap.config.stuck_threshold_minutes;
 
     let mut pane_states = Vec::new();
-    for i in 1..=9u8 {
+    for i in 1..=config::pane_count() {
         pane_states.push((i, app.state.get_pane(i).await));
     }
 
@@ -277,7 +277,7 @@ pub async fn get_health(State(app): State<AppState>) -> Json<Value> {
             "active": active,
             "stuck": stuck,
             "errors": errors,
-            "idle": 9 - active,
+            "idle": config::pane_count() as usize - active,
         }
     }))
 }
@@ -312,7 +312,7 @@ pub async fn get_spaces() -> Json<Value> {
 /// GET /api/agents — Agent list (from in-memory state, not agents.json)
 pub async fn get_agents(State(app): State<AppState>) -> Json<Value> {
     let mut pane_states = Vec::new();
-    for i in 1..=9u8 {
+    for i in 1..=config::pane_count() {
         pane_states.push((i, app.state.get_pane(i).await));
     }
 
@@ -323,7 +323,7 @@ pub async fn get_agents(State(app): State<AppState>) -> Json<Value> {
             let window = (*i as u32 - 1) / 3 + 1;
             let pane = (*i as u32 - 1) % 3 + 1;
             agents.push(json!({
-                "pane": format!("{}:{}.{}", config::SESSION_NAME, window, pane),
+                "pane": format!("{}:{}.{}", config::session_name(), window, pane),
                 "pane_num": i,
                 "theme": config::theme_name(*i),
                 "theme_color": config::theme_fg(*i),

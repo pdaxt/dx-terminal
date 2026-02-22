@@ -17,31 +17,10 @@ pub struct AgentOSState {
 
 impl Default for AgentOSState {
     fn default() -> Self {
-        let mut project_mcps = HashMap::new();
-        project_mcps.insert("dataxlr8".into(), vec![
-            "dataxlr8-employees".into(), "dataxlr8-deals".into(),
-            "dataxlr8-builds".into(), "google-cloud".into(),
-        ]);
-        project_mcps.insert("mailforge".into(), vec![
-            "mailforge-dns".into(), "mailforge-postal".into(),
-            "mailforge-monitor".into(), "mailforge-server".into(),
-        ]);
-        project_mcps.insert("mcp-servers".into(), vec![
-            "collab".into(), "tracker".into(), "capacity".into(),
-            "hub".into(), "agentos".into(),
-        ]);
-        project_mcps.insert("triage-ai".into(), vec![]);
-        project_mcps.insert("bskiller-platform".into(), vec!["bskiller".into()]);
-
-        let home = std::env::var("HOME").unwrap_or_default();
-        let mut space_project_map = HashMap::new();
-        space_project_map.insert("mailforge".into(), format!("{}/Projects/mailforge", home));
-        space_project_map.insert("dataxlr8".into(), format!("{}/Projects/dataxlr8", home));
-
         Self {
             panes: HashMap::new(),
-            project_mcps,
-            space_project_map,
+            project_mcps: HashMap::new(),
+            space_project_map: HashMap::new(),
             activity_log: VecDeque::new(),
             config: AgentOSConfig::default(),
         }

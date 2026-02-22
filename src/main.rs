@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 mod app;
 mod config;
 mod claude;
@@ -29,8 +27,8 @@ enum Commands {
     /// Run as MCP server (stdio transport) — default
     Mcp {
         /// Also start web dashboard in background
-        #[arg(long, default_value = "3100")]
-        web_port: u16,
+        #[arg(long)]
+        web_port: Option<u16>,
         /// Disable background web server
         #[arg(long)]
         no_web: bool,
@@ -39,13 +37,16 @@ enum Commands {
     Tui,
     /// Run web dashboard server only
     Web {
-        #[arg(long, default_value = "3100")]
-        port: u16,
+        #[arg(long)]
+        port: Option<u16>,
     },
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Initialize config singleton (reads ~/.config/agentos/config.json)
+    let cfg = config::init();
+
     let cli = Cli::parse();
     let application = Arc::new(app::App::new());
 
@@ -62,15 +63,17 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Some(Commands::Mcp { web_port, no_web }) => {
-            run_mcp_mode(application, web_port, no_web).await?;
+            let port = web_port.unwrap_or(cfg.web_port);
+            run_mcp_mode(application, port, no_web).await?;
         }
         None => {
-            run_mcp_mode(application, 3100, false).await?;
+            run_mcp_mode(application, cfg.web_port, false).await?;
         }
         Some(Commands::Tui) => {
             tui::run_tui(application)?;
         }
         Some(Commands::Web { port }) => {
+            let port = port.unwrap_or(cfg.web_port);
             init_tracing();
             tracing::info!("Web dashboard at http://localhost:{}", port);
             web::run_web_server(application, port).await?;

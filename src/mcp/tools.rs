@@ -635,7 +635,7 @@ pub async fn config_show(app: &App, req: ConfigShowRequest) -> String {
 
     // Fetch all pane state first (async)
     let mut pane_states = Vec::new();
-    for i in 1..=9u8 {
+    for i in 1..=config::pane_count() {
         pane_states.push((i, app.state.get_pane(i).await));
     }
 
@@ -660,7 +660,7 @@ pub async fn config_show(app: &App, req: ConfigShowRequest) -> String {
 pub async fn status(app: &App) -> String {
     // Fetch state first (async), then PTY (sync)
     let mut pane_states = Vec::new();
-    for i in 1..=9u8 {
+    for i in 1..=config::pane_count() {
         pane_states.push((i, app.state.get_pane(i).await));
     }
 
@@ -690,7 +690,7 @@ pub async fn status(app: &App) -> String {
 
     serde_json::json!({
         "panes": panes,
-        "summary": {"active": active, "idle": idle, "total": 9}
+        "summary": {"active": active, "idle": idle, "total": config::pane_count()}
     }).to_string()
 }
 
@@ -701,7 +701,7 @@ pub async fn dashboard(app: &App, req: DashboardRequest) -> String {
 
     // Fetch all state first (async)
     let mut pane_states = Vec::new();
-    for i in 1..=9u8 {
+    for i in 1..=config::pane_count() {
         pane_states.push((i, app.state.get_pane(i).await));
     }
     let state_snap = app.state.get_state_snapshot().await;
@@ -810,7 +810,7 @@ pub async fn health(app: &App) -> String {
 
     // Fetch all pane state first (async)
     let mut pane_states = Vec::new();
-    for i in 1..=9u8 {
+    for i in 1..=config::pane_count() {
         pane_states.push((i, app.state.get_pane(i).await));
     }
 
@@ -891,7 +891,7 @@ pub async fn health(app: &App) -> String {
             "active": active,
             "stuck": stuck,
             "errors": errors,
-            "idle": 9 - active,
+            "idle": config::pane_count() as usize - active,
             "pty_running": pty_count,
         }
     }).to_string()
@@ -1202,7 +1202,7 @@ pub async fn auto_cycle(app: &App) -> String {
     let state_snap = app.state.get_state_snapshot().await;
     let markers = state_snap.config.completion_markers.clone();
 
-    for i in 1..=9u8 {
+    for i in 1..=config::pane_count() {
         let pd = app.state.get_pane(i).await;
         if pd.status != "active" { continue; }
         occupied_panes.push(i);
@@ -1355,7 +1355,7 @@ fn update_agents_json(pane_num: u8, project: &str, task: &str) {
     let mut agents = crate::state::persistence::read_json(&agents_file);
     let window = (pane_num as u32 - 1) / 3 + 1;
     let pane = (pane_num as u32 - 1) % 3 + 1;
-    let pane_id = format!("{}:{}.{}", config::SESSION_NAME, window, pane);
+    let pane_id = format!("{}:{}.{}", config::session_name(), window, pane);
     if let Some(obj) = agents.as_object_mut() {
         obj.insert(pane_id, serde_json::json!({
             "project": project,
@@ -1373,7 +1373,7 @@ fn remove_from_agents_json(pane_num: u8) {
     let mut agents = crate::state::persistence::read_json(&agents_file);
     let window = (pane_num as u32 - 1) / 3 + 1;
     let pane = (pane_num as u32 - 1) % 3 + 1;
-    let pane_id = format!("{}:{}.{}", config::SESSION_NAME, window, pane);
+    let pane_id = format!("{}:{}.{}", config::session_name(), window, pane);
     if let Some(obj) = agents.as_object_mut() {
         obj.remove(&pane_id);
     }

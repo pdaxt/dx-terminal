@@ -4,7 +4,6 @@ use super::output;
 /// Health check result for a single pane
 #[derive(Debug, Clone)]
 pub struct PaneHealth {
-    pub pane: u8,
     pub running: bool,
     pub has_output: bool,
     pub done: bool,
@@ -18,7 +17,6 @@ pub fn check_pane(pty_mgr: &PtyManager, pane: u8, markers: &[String]) -> PaneHea
 
     match agent {
         None => PaneHealth {
-            pane,
             running: false,
             has_output: false,
             done: false,
@@ -34,7 +32,6 @@ pub fn check_pane(pty_mgr: &PtyManager, pane: u8, markers: &[String]) -> PaneHea
             let error = output::check_errors(&last_out);
 
             PaneHealth {
-                pane,
                 running,
                 has_output,
                 done: done_marker.is_some() || shell || !running,
