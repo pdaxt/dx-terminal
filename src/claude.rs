@@ -88,12 +88,18 @@ pub fn generate_preamble(
 }
 
 /// Get the account config dir for a pane (alternates between accounts)
+/// Falls back to default ~/.claude if account dirs don't exist
 pub fn account_config_dir(pane: u8) -> String {
     let home = config::home_dir();
-    if pane % 2 == 1 {
-        home.join(".claude-acc1").to_string_lossy().to_string()
+    let acc_dir = if pane % 2 == 1 {
+        home.join(".claude-acc1")
     } else {
-        home.join(".claude-acc2").to_string_lossy().to_string()
+        home.join(".claude-acc2")
+    };
+    if acc_dir.exists() {
+        acc_dir.to_string_lossy().to_string()
+    } else {
+        home.join(".claude").to_string_lossy().to_string()
     }
 }
 

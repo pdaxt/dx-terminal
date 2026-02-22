@@ -62,9 +62,12 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         (project_path.clone(), None, None)
     };
 
-    // Generate and write preamble
+    // Generate preamble and write as CLAUDE.md in workspace for auto-load
     let preamble = claude::generate_preamble(pane_num, theme, &project_name, &role, &task, &prompt);
     let _ = claude::write_preamble(pane_num, &preamble);
+    // Also write to workspace CLAUDE.md so claude reads it on start
+    let claude_md_path = format!("{}/CLAUDE.md", spawn_cwd);
+    let _ = std::fs::write(&claude_md_path, &preamble);
 
     // Build env vars
     let config_dir = claude::account_config_dir(pane_num);
@@ -73,10 +76,18 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         ("CLAUDE_CONFIG_DIR".to_string(), config_dir),
     ];
 
+    // Build claude args: skip permissions (trust dialog) + provide task as prompt
+    let task_prompt = format!("{}\n\n{}", task, if prompt.is_empty() { "" } else { &prompt });
+    let claude_args = vec![
+        "--dangerously-skip-permissions",
+        "-p",
+        &task_prompt,
+    ];
+
     // Spawn PTY in worktree (isolated) or project dir (fallback)
     let pty_result = {
         let mut pty = app.pty_lock();
-        pty.spawn(pane_num, "claude", &["-c"], &spawn_cwd, env_vars)
+        pty.spawn(pane_num, "claude", &claude_args, &spawn_cwd, env_vars)
     };
 
     let pty_status = match pty_result {
