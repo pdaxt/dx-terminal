@@ -120,23 +120,6 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     // Update multi_agent agents.json
     update_agents_json(pane_num, &project_name, &task);
 
-    // Schedule initial prompt delivery after delay
-    if !prompt.is_empty() || !task.is_empty() {
-        let initial_msg = if !prompt.is_empty() {
-            prompt.clone()
-        } else {
-            task.clone()
-        };
-        // Send the initial prompt to the PTY after a short delay
-        // (Claude CLI needs time to initialize)
-        let pty_arc = std::sync::Arc::clone(&app.pty);
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(10));
-            let mut pty = pty_arc.lock().unwrap_or_else(|e| e.into_inner());
-            let _ = pty.send_line(pane_num, &initial_msg);
-        });
-    }
-
     serde_json::json!({
         "status": "spawned",
         "pane": pane_num,
