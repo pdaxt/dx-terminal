@@ -1346,6 +1346,585 @@ pub async fn auto_config(_app: &App, req: AutoConfigRequest) -> String {
     }
 }
 
+// === MONITORING TOOLS ===
+
+/// os_monitor — Single-call "what's happening right now" overview
+pub async fn monitor(app: &App, req: MonitorRequest) -> String {
+    let include_output = req.include_output.unwrap_or(false);
+    let state_snap = app.state.get_state_snapshot().await;
+    let markers = state_snap.config.completion_markers.clone();
+
+    // Collect all pane states
+    let mut pane_states = Vec::new();
+    for i in 1..=config::pane_count() {
+        pane_states.push((i, app.state.get_pane(i).await));
+    }
+
+    // PTY health check
+    let pty = app.pty_lock();
+    let mut panes = Vec::new();
+    let mut alerts = Vec::new();
+    let mut active_count = 0u32;
+    let mut idle_count = 0u32;
+    let mut done_count = 0u32;
+    let mut error_count = 0u32;
+    let mut stuck_count = 0u32;
+
+    for (i, pd) in &pane_states {
+        let has_pty = pty.has_agent(*i);
+        let running = pty.is_running(*i);
+        let line_count = pty.line_count(*i);
+
+        let mut health_status = match pd.status.as_str() {
+            "active" => { active_count += 1; "active" },
+            "done" => { done_count += 1; "done" },
+            "error" => { error_count += 1; "error" },
+            _ => { idle_count += 1; "idle" },
+        };
+
+        let mut error_msg: Option<String> = None;
+        let mut done_marker: Option<String> = None;
+        let mut output_snippet = String::new();
+
+        if has_pty {
+            let h = pty.check_health(*i, &markers);
+            if h.error.is_some() {
+                health_status = "error";
+                error_msg = h.error.clone();
+                if pd.status == "active" { error_count += 1; active_count = active_count.saturating_sub(1); }
+                alerts.push(serde_json::json!({
+                    "level": "error",
+                    "pane": i,
+                    "theme": config::theme_name(*i),
+                    "message": format!("Error detected: {}", h.error.as_deref().unwrap_or("unknown")),
+                }));
+            } else if h.done {
+                health_status = "done";
+                done_marker = h.done_marker.clone();
+                if pd.status == "active" {
+                    alerts.push(serde_json::json!({
+                        "level": "info",
+                        "pane": i,
+                        "theme": config::theme_name(*i),
+                        "message": "Agent finished — ready for completion",
+                    }));
+                }
+            }
+
+            // Stuck detection
+            if pd.status == "active" && running && !h.done && h.error.is_none() {
+                if let Some(started) = &pd.started_at {
+                    if let Ok(start_dt) = NaiveDateTime::parse_from_str(started, "%Y-%m-%dT%H:%M:%S") {
+                        let now = Local::now().naive_local();
+                        let mins = (now - start_dt).num_minutes();
+                        if mins > (state_snap.config.stuck_threshold_minutes * 10) as i64 {
+                            health_status = "stuck";
+                            stuck_count += 1;
+                            active_count = active_count.saturating_sub(1);
+                            alerts.push(serde_json::json!({
+                                "level": "warning",
+                                "pane": i,
+                                "theme": config::theme_name(*i),
+                                "message": format!("Agent stuck for {} minutes", mins),
+                            }));
+                        }
+                    }
+                }
+            }
+
+            if include_output && has_pty {
+                let screen = pty.screen_text(*i).unwrap_or_default();
+                output_snippet = truncate(&screen, 500);
+            }
+        }
+
+        let mut pane_info = serde_json::json!({
+            "pane": i,
+            "theme": config::theme_name(*i),
+            "project": pd.project,
+            "role": config::role_short(&pd.role),
+            "task": truncate(&pd.task, 50),
+            "health": health_status,
+            "pty": running,
+            "lines": line_count,
+            "branch": pd.branch_name,
+        });
+
+        if let Some(e) = &error_msg {
+            pane_info["error"] = serde_json::json!(e);
+        }
+        if let Some(d) = &done_marker {
+            pane_info["done_marker"] = serde_json::json!(d);
+        }
+        if !output_snippet.is_empty() {
+            pane_info["output"] = serde_json::json!(output_snippet);
+        }
+        if let Some(started) = &pd.started_at {
+            if let Ok(start_dt) = NaiveDateTime::parse_from_str(started, "%Y-%m-%dT%H:%M:%S") {
+                let now = Local::now().naive_local();
+                let mins = (now - start_dt).num_minutes();
+                pane_info["runtime_mins"] = serde_json::json!(mins);
+            }
+        }
+
+        panes.push(pane_info);
+    }
+    drop(pty);
+
+    // Queue summary
+    let q = queue::load_queue();
+    let q_pending = q.tasks.iter().filter(|t| t.status == queue::QueueStatus::Pending).count();
+    let q_running = q.tasks.iter().filter(|t| t.status == queue::QueueStatus::Running).count();
+    let q_done = q.tasks.iter().filter(|t| t.status == queue::QueueStatus::Done).count();
+    let q_failed = q.tasks.iter().filter(|t| t.status == queue::QueueStatus::Failed).count();
+
+    // Capacity
+    let cap = capacity::load_capacity();
+    let acu_pct = if cap.acu_total > 0.0 { (cap.acu_used / cap.acu_total * 100.0) as i32 } else { 0 };
+
+    // Recent activity (last 5)
+    let recent: Vec<_> = state_snap.activity_log.iter().take(5).map(|e| {
+        serde_json::json!({
+            "time": e.ts.get(11..16).unwrap_or(&e.ts),
+            "pane": e.pane,
+            "event": e.event,
+            "summary": truncate(&e.summary, 60),
+        })
+    }).collect();
+
+    // Build status text header
+    let urgency = if error_count > 0 || stuck_count > 0 {
+        "ATTENTION NEEDED"
+    } else if alerts.is_empty() {
+        "ALL CLEAR"
+    } else {
+        "OK"
+    };
+
+    serde_json::json!({
+        "status": urgency,
+        "panes": panes,
+        "summary": {
+            "active": active_count,
+            "idle": idle_count,
+            "done": done_count,
+            "errors": error_count,
+            "stuck": stuck_count,
+            "total": config::pane_count(),
+        },
+        "alerts": alerts,
+        "queue": {
+            "pending": q_pending,
+            "running": q_running,
+            "done": q_done,
+            "failed": q_failed,
+        },
+        "capacity": {
+            "acu_used": cap.acu_used,
+            "acu_total": cap.acu_total,
+            "acu_pct": acu_pct,
+        },
+        "recent": recent,
+    }).to_string()
+}
+
+/// os_project_status — Everything about one project across all panes, issues, git, capacity
+pub async fn project_status(app: &App, req: ProjectStatusRequest) -> String {
+    let include_issues = req.include_issues.unwrap_or(true);
+    let include_git = req.include_git.unwrap_or(true);
+    let project_lower = req.project.to_lowercase();
+
+    // Find all panes working on this project
+    let mut project_panes = Vec::new();
+    for i in 1..=config::pane_count() {
+        let pd = app.state.get_pane(i).await;
+        if pd.project.to_lowercase().contains(&project_lower) || pd.project_path.to_lowercase().contains(&project_lower) {
+            let pty = app.pty_lock();
+            let running = pty.is_running(i);
+            let lines = pty.line_count(i);
+            drop(pty);
+
+            project_panes.push(serde_json::json!({
+                "pane": i,
+                "theme": config::theme_name(i),
+                "role": pd.role,
+                "task": truncate(&pd.task, 60),
+                "status": pd.status,
+                "branch": pd.branch_name,
+                "pty_running": running,
+                "lines": lines,
+                "acu": pd.acu_spent,
+            }));
+        }
+    }
+
+    // Find matching tracker spaces and issues
+    let mut issues_data = serde_json::json!(null);
+    let mut board_data = serde_json::json!(null);
+    if include_issues {
+        let spaces_dir = config::collab_root().join("spaces");
+        let mut matched_space = String::new();
+        if let Ok(entries) = std::fs::read_dir(&spaces_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_lowercase();
+                if name.contains(&project_lower) {
+                    matched_space = entry.file_name().to_string_lossy().to_string();
+                    break;
+                }
+            }
+        }
+        if !matched_space.is_empty() {
+            let board = tracker::board_view(&matched_space);
+            board_data = serde_json::from_str(&board.to_string()).unwrap_or(serde_json::json!(null));
+
+            // Count by status
+            let issues_dir = config::collab_root().join("spaces").join(&matched_space).join("issues");
+            let mut counts = std::collections::HashMap::new();
+            if let Ok(entries) = std::fs::read_dir(&issues_dir) {
+                for entry in entries.flatten() {
+                    if entry.path().extension().map_or(false, |e| e == "json") {
+                        if let Ok(content) = std::fs::read_to_string(entry.path()) {
+                            if let Ok(issue) = serde_json::from_str::<serde_json::Value>(&content) {
+                                let status = issue.get("status").and_then(|v| v.as_str()).unwrap_or("backlog").to_string();
+                                *counts.entry(status).or_insert(0u32) += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            issues_data = serde_json::json!({
+                "space": matched_space,
+                "counts": counts,
+            });
+        }
+    }
+
+    // Git activity — recent commits on project branches
+    let mut git_data = serde_json::json!(null);
+    if include_git {
+        let project_path = config::resolve_project_path(&req.project);
+        if std::path::Path::new(&project_path).join(".git").exists() {
+            let log_output = std::process::Command::new("git")
+                .args(["log", "--oneline", "--all", "-20", "--format=%h %s (%ar)"])
+                .current_dir(&project_path)
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+                .unwrap_or_default();
+            let branch_output = std::process::Command::new("git")
+                .args(["branch", "-a", "--format=%(refname:short) %(upstream:track)"])
+                .current_dir(&project_path)
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+                .unwrap_or_default();
+            let status_output = std::process::Command::new("git")
+                .args(["status", "--porcelain"])
+                .current_dir(&project_path)
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+                .unwrap_or_default();
+
+            git_data = serde_json::json!({
+                "recent_commits": log_output.lines().take(10).collect::<Vec<_>>(),
+                "branches": branch_output.lines().take(20).collect::<Vec<_>>(),
+                "dirty_files": status_output.lines().count(),
+            });
+        }
+    }
+
+    // Capacity: work log entries for this project
+    let log_path = config::capacity_root().join("work_log.json");
+    let log = crate::state::persistence::read_json(&log_path);
+    let entries = log.get("entries").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let project_acu: f64 = entries.iter()
+        .filter(|e| {
+            e.get("space").and_then(|v| v.as_str())
+                .map_or(false, |s| s.to_lowercase().contains(&project_lower))
+        })
+        .filter_map(|e| e.get("acu_spent").and_then(|v| v.as_f64()))
+        .sum();
+
+    // Project MCPs
+    let mcps = app.state.get_project_mcps(&req.project).await;
+
+    serde_json::json!({
+        "project": req.project,
+        "panes": project_panes,
+        "pane_count": project_panes.len(),
+        "issues": issues_data,
+        "board": board_data,
+        "git": git_data,
+        "total_acu": (project_acu * 100.0).round() / 100.0,
+        "mcps": mcps,
+    }).to_string()
+}
+
+/// os_digest — Daily/weekly summary of team output
+pub async fn digest(app: &App, req: DigestRequest) -> String {
+    let period = req.period.as_deref().unwrap_or("today");
+    let project_filter = req.project.as_deref().unwrap_or("");
+
+    // Determine time window
+    let now = Local::now();
+    let start = match period {
+        "yesterday" => (now - chrono::Duration::days(1)).format("%Y-%m-%dT00:00:00").to_string(),
+        "week" => (now - chrono::Duration::days(7)).format("%Y-%m-%dT00:00:00").to_string(),
+        "month" => (now - chrono::Duration::days(30)).format("%Y-%m-%dT00:00:00").to_string(),
+        _ => now.format("%Y-%m-%dT00:00:00").to_string(), // today
+    };
+    let end = now.format("%Y-%m-%dT%H:%M:%S").to_string();
+
+    // Activity log analysis
+    let state_snap = app.state.get_state_snapshot().await;
+    let mut spawns = 0u32;
+    let mut completions = 0u32;
+    let mut kills = 0u32;
+    let mut errors = 0u32;
+    let mut projects_seen = std::collections::HashSet::new();
+    let mut log_entries = Vec::new();
+
+    for entry in &state_snap.activity_log {
+        if entry.ts < start { continue; }
+        if !project_filter.is_empty() && !entry.summary.to_lowercase().contains(&project_filter.to_lowercase()) {
+            continue;
+        }
+        match entry.event.as_str() {
+            "spawn" => spawns += 1,
+            "complete" => completions += 1,
+            "kill" => kills += 1,
+            _ => {}
+        }
+        if entry.summary.to_lowercase().contains("error") { errors += 1; }
+        // Extract project name from spawn entries
+        if entry.event == "spawn" {
+            if let Some(proj) = entry.summary.split(" on ").nth(1) {
+                if let Some(name) = proj.split(':').next() {
+                    projects_seen.insert(name.trim().to_string());
+                }
+            }
+        }
+        log_entries.push(entry.clone());
+    }
+
+    // Work log analysis
+    let log_path = config::capacity_root().join("work_log.json");
+    let work_log = crate::state::persistence::read_json(&log_path);
+    let work_entries = work_log.get("entries").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
+    let mut total_acu = 0.0f64;
+    let mut acu_by_role = std::collections::HashMap::<String, f64>::new();
+    let mut acu_by_project = std::collections::HashMap::<String, f64>::new();
+    let mut reviews_needed = 0u32;
+    let mut issues_worked = std::collections::HashSet::new();
+
+    for entry in &work_entries {
+        let logged_at = entry.get("logged_at").and_then(|v| v.as_str()).unwrap_or("");
+        if logged_at < start.as_str() { continue; }
+
+        let space = entry.get("space").and_then(|v| v.as_str()).unwrap_or("");
+        if !project_filter.is_empty() && !space.to_lowercase().contains(&project_filter.to_lowercase()) {
+            continue;
+        }
+
+        let acu = entry.get("acu_spent").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        total_acu += acu;
+
+        let role = entry.get("role").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
+        *acu_by_role.entry(role).or_default() += acu;
+
+        if !space.is_empty() {
+            *acu_by_project.entry(space.to_string()).or_default() += acu;
+        }
+
+        if entry.get("review_needed").and_then(|v| v.as_bool()).unwrap_or(false) {
+            reviews_needed += 1;
+        }
+
+        let issue_id = entry.get("issue_id").and_then(|v| v.as_str()).unwrap_or("");
+        if !issue_id.is_empty() && issue_id != "adhoc" {
+            issues_worked.insert(issue_id.to_string());
+        }
+    }
+
+    // Queue stats
+    let q = queue::load_queue();
+    let q_done = q.tasks.iter().filter(|t| {
+        t.status == queue::QueueStatus::Done && t.completed_at.as_deref().unwrap_or("") >= start.as_str()
+    }).count();
+    let q_failed = q.tasks.iter().filter(|t| {
+        t.status == queue::QueueStatus::Failed && t.completed_at.as_deref().unwrap_or("") >= start.as_str()
+    }).count();
+    let q_pending = q.tasks.iter().filter(|t| t.status == queue::QueueStatus::Pending).count();
+
+    // Round ACU values
+    let round_map = |m: &std::collections::HashMap<String, f64>| -> serde_json::Value {
+        let mut result = serde_json::Map::new();
+        for (k, v) in m {
+            result.insert(k.clone(), serde_json::json!((*v * 100.0).round() / 100.0));
+        }
+        serde_json::Value::Object(result)
+    };
+
+    // Build recommendations
+    let mut recommendations = Vec::new();
+    if q_pending > 5 {
+        recommendations.push(format!("{} tasks queued — consider increasing max_parallel panes", q_pending));
+    }
+    if q_failed > 0 {
+        recommendations.push(format!("{} tasks failed — review and retry or fix", q_failed));
+    }
+    if errors > 2 {
+        recommendations.push(format!("{} errors in period — investigate recurring failures", errors));
+    }
+    if reviews_needed > 3 {
+        recommendations.push(format!("{} items need review — review bottleneck risk", reviews_needed));
+    }
+    if completions == 0 && spawns > 0 {
+        recommendations.push("Agents spawned but nothing completed — check if tasks are stuck".into());
+    }
+
+    serde_json::json!({
+        "period": period,
+        "window": { "start": start, "end": end },
+        "activity": {
+            "agents_spawned": spawns,
+            "tasks_completed": completions,
+            "agents_killed": kills,
+            "errors_detected": errors,
+        },
+        "work": {
+            "total_acu": (total_acu * 100.0).round() / 100.0,
+            "by_role": round_map(&acu_by_role),
+            "by_project": round_map(&acu_by_project),
+            "issues_worked": issues_worked.len(),
+            "reviews_pending": reviews_needed,
+        },
+        "queue": {
+            "completed": q_done,
+            "failed": q_failed,
+            "still_pending": q_pending,
+        },
+        "projects_active": projects_seen.into_iter().collect::<Vec<_>>(),
+        "recommendations": recommendations,
+    }).to_string()
+}
+
+/// os_watch — Tail a pane's PTY output with error analysis
+pub async fn watch(app: &App, req: WatchRequest) -> String {
+    let pane_num = match config::resolve_pane(&req.pane) {
+        Some(n) => n,
+        None => return json_err(&format!("Invalid pane: {}", req.pane)),
+    };
+    let tail_lines = req.tail.unwrap_or(30);
+    let analyze = req.analyze_errors.unwrap_or(true);
+
+    let pd = app.state.get_pane(pane_num).await;
+    let state_snap = app.state.get_state_snapshot().await;
+    let markers = state_snap.config.completion_markers.clone();
+
+    let pty = app.pty_lock();
+    if !pty.has_agent(pane_num) {
+        drop(pty);
+        return serde_json::json!({
+            "pane": pane_num,
+            "theme": config::theme_name(pane_num),
+            "status": pd.status,
+            "project": pd.project,
+            "task": pd.task,
+            "pty_active": false,
+            "output": format!("[No PTY] Pane {} is {}", pane_num, pd.status),
+        }).to_string();
+    }
+
+    let screen = pty.screen_text(pane_num).unwrap_or_default();
+    let output = pty.last_output(pane_num, tail_lines).unwrap_or_default();
+    let running = pty.is_running(pane_num);
+    let health = pty.check_health(pane_num, &markers);
+    let line_count = pty.line_count(pane_num);
+    drop(pty);
+
+    // Use screen if available, fall back to output buffer
+    let display = if !screen.trim().is_empty() { &screen } else { &output };
+
+    // Error analysis
+    let mut errors_found = Vec::new();
+    let mut warnings_found = Vec::new();
+    if analyze {
+        let error_patterns = ["error", "Error", "ERROR", "panic", "PANIC", "failed", "FAILED", "fatal", "FATAL"];
+        let warning_patterns = ["warning", "Warning", "WARN", "deprecated", "timeout"];
+
+        for (line_num, line) in display.lines().enumerate() {
+            for pat in &error_patterns {
+                if line.contains(pat) && !line.contains("error_count") && !line.contains("no_error") {
+                    errors_found.push(serde_json::json!({
+                        "line": line_num + 1,
+                        "text": truncate(line.trim(), 120),
+                    }));
+                    break;
+                }
+            }
+            for pat in &warning_patterns {
+                if line.contains(pat) {
+                    warnings_found.push(serde_json::json!({
+                        "line": line_num + 1,
+                        "text": truncate(line.trim(), 120),
+                    }));
+                    break;
+                }
+            }
+        }
+    }
+
+    // Runtime calculation
+    let runtime_mins = if let Some(started) = &pd.started_at {
+        if let Ok(start_dt) = NaiveDateTime::parse_from_str(started, "%Y-%m-%dT%H:%M:%S") {
+            let now = Local::now().naive_local();
+            Some((now - start_dt).num_minutes())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Determine agent phase from output
+    let phase = if health.done {
+        "completed"
+    } else if display.contains("Thinking") || display.contains("thinking") {
+        "thinking"
+    } else if display.contains("Writing") || display.contains("Editing") || display.contains("Creating") {
+        "writing"
+    } else if display.contains("Reading") || display.contains("Searching") {
+        "reading"
+    } else if display.contains("Running") || display.contains("testing") || display.contains("cargo") || display.contains("npm") {
+        "running_commands"
+    } else if running {
+        "working"
+    } else {
+        "idle"
+    };
+
+    serde_json::json!({
+        "pane": pane_num,
+        "theme": config::theme_name(pane_num),
+        "project": pd.project,
+        "role": pd.role,
+        "task": truncate(&pd.task, 80),
+        "status": pd.status,
+        "branch": pd.branch_name,
+        "pty_running": running,
+        "phase": phase,
+        "runtime_mins": runtime_mins,
+        "line_count": line_count,
+        "done": health.done,
+        "done_marker": health.done_marker,
+        "output": truncate(display, 4000),
+        "errors": errors_found,
+        "warnings": warnings_found,
+        "error_count": errors_found.len(),
+        "warning_count": warnings_found.len(),
+    }).to_string()
+}
+
 // --- Helpers ---
 
 fn json_err(msg: &str) -> String {

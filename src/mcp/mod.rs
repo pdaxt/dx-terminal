@@ -164,6 +164,44 @@ impl AgentOSService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
+    // === MONITORING (ENHANCED) ===
+
+    #[tool(description = "Single-call overview of everything happening right now: all pane health, queue status, alerts, capacity, recent activity. Use this first when checking in.")]
+    async fn os_monitor(
+        &self,
+        Parameters(req): Parameters<MonitorRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::monitor(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Everything about one project: which panes work on it, open issues, git activity, capacity spent, assigned MCPs.")]
+    async fn os_project_status(
+        &self,
+        Parameters(req): Parameters<ProjectStatusRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::project_status(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Daily/weekly digest: tasks completed, ACU spent, errors, queue throughput, recommendations. Period: today, yesterday, week, month.")]
+    async fn os_digest(
+        &self,
+        Parameters(req): Parameters<DigestRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::digest(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Watch a pane's live output with error highlighting. Shows last N lines, detects errors/warnings, identifies agent phase (thinking/writing/running).")]
+    async fn os_watch(
+        &self,
+        Parameters(req): Parameters<WatchRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::watch(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
     // === MCP ROUTING ===
 
     #[tool(description = "List all available MCPs with descriptions, capabilities, and categories. Filter by category or project.")]
@@ -1008,6 +1046,282 @@ impl AgentOSService {
     #[tool(description = "Initialize the collab workspace. Creates directories and sets up git.")]
     async fn collab_init(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let result = crate::collab::collab_init();
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    // === KNOWLEDGE GRAPH TOOLS (8 tools) ===
+
+    #[tool(description = "Add an entity to the knowledge graph. Upserts by ID. Types: project, file, tool, pattern, error, person, concept, mcp, library, platform, config, service, database.")]
+    async fn kgraph_add_entity(
+        &self,
+        Parameters(req): Parameters<KgraphAddEntityRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::kgraph_add_entity(
+            &req.name, &req.entity_type,
+            &req.properties.unwrap_or_else(|| "{}".into()),
+            &req.id.unwrap_or_default(),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Add a typed edge between two entities. Relations: uses, depends_on, causes, fixes, part_of, related_to, etc.")]
+    async fn kgraph_add_edge(
+        &self,
+        Parameters(req): Parameters<KgraphAddEdgeRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::kgraph_add_edge(
+            &req.source, &req.target, &req.relation,
+            req.weight.unwrap_or(1.0),
+            &req.properties.unwrap_or_else(|| "{}".into()),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Record an observation on an edge. Auto-creates entities and edges. Adjusts weight by impact.")]
+    async fn kgraph_observe(
+        &self,
+        Parameters(req): Parameters<KgraphObserveRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::kgraph_observe(
+            &req.source, &req.target, &req.relation, &req.observation,
+            req.impact.unwrap_or(0.1),
+            &req.session_id.unwrap_or_default(),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Query neighbors of an entity via BFS traversal. Returns subgraph with nodes and edges.")]
+    async fn kgraph_query_neighbors(
+        &self,
+        Parameters(req): Parameters<KgraphQueryNeighborsRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::kgraph_query_neighbors(
+            &req.entity, &req.relation.unwrap_or_default(),
+            &req.direction.unwrap_or_else(|| "both".into()),
+            req.depth.unwrap_or(1), req.limit.unwrap_or(50),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Find shortest path between two entities in the knowledge graph.")]
+    async fn kgraph_query_path(
+        &self,
+        Parameters(req): Parameters<KgraphQueryPathRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::kgraph_query_path(
+            &req.source, &req.target, req.max_depth.unwrap_or(4),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Search entities by name or properties. Filter by type.")]
+    async fn kgraph_search(
+        &self,
+        Parameters(req): Parameters<KgraphSearchRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::kgraph_search(
+            &req.query, &req.entity_type.unwrap_or_default(),
+            req.limit.unwrap_or(20),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Delete an entity (cascades edges) or a specific edge.")]
+    async fn kgraph_delete(
+        &self,
+        Parameters(req): Parameters<KgraphDeleteRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::kgraph_delete(
+            &req.entity_id.unwrap_or_default(),
+            &req.edge_source.unwrap_or_default(),
+            &req.edge_target.unwrap_or_default(),
+            &req.edge_relation.unwrap_or_default(),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Knowledge graph statistics: entity count, edge count, observations, breakdowns by type and relation.")]
+    async fn kgraph_stats(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::kgraph_stats();
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    // === SESSION REPLAY TOOLS (7 tools) ===
+
+    #[tool(description = "Index Claude Code session JSONL files into searchable database. Incremental by default.")]
+    async fn replay_index(
+        &self,
+        Parameters(req): Parameters<ReplayIndexRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::replay_index(
+            req.force.unwrap_or(false),
+            &req.project.unwrap_or_default(),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Search across all indexed sessions for content matches. Filter by project, tool, time range.")]
+    async fn replay_search(
+        &self,
+        Parameters(req): Parameters<ReplaySearchRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::replay_search(
+            &req.query, &req.project.unwrap_or_default(),
+            &req.tool.unwrap_or_default(),
+            req.limit.unwrap_or(20), req.days.unwrap_or(0),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Retrieve full session turns. Filter tool results and errors.")]
+    async fn replay_session(
+        &self,
+        Parameters(req): Parameters<ReplaySessionRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::replay_session(
+            &req.session_id,
+            req.include_tools.unwrap_or(true),
+            req.include_errors.unwrap_or(true),
+            req.max_messages.unwrap_or(100),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "List indexed sessions. Filter by project and time range.")]
+    async fn replay_list_sessions(
+        &self,
+        Parameters(req): Parameters<ReplayListSessionsRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::replay_list_sessions(
+            &req.project.unwrap_or_default(),
+            req.days.unwrap_or(30), req.limit.unwrap_or(50),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Show usage history for a specific tool across sessions.")]
+    async fn replay_tool_history(
+        &self,
+        Parameters(req): Parameters<ReplayToolHistoryRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::replay_tool_history(
+            &req.tool_name, req.limit.unwrap_or(20), req.days.unwrap_or(0),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "List recent errors across sessions. Filter by project and time range.")]
+    async fn replay_errors(
+        &self,
+        Parameters(req): Parameters<ReplayErrorsRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::replay_errors(
+            &req.project.unwrap_or_default(),
+            req.days.unwrap_or(7), req.limit.unwrap_or(50),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Session replay index status: session count, messages, errors, unindexed files.")]
+    async fn replay_status(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::replay_status();
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    // === TRUTHGUARD TOOLS (8 tools) ===
+
+    #[tool(description = "Add an immutable fact to the registry. Categories: identity, project, business, technical, preference.")]
+    async fn fact_add(
+        &self,
+        Parameters(req): Parameters<FactAddRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::fact_add(
+            &req.category, &req.key, &req.value,
+            req.confidence.unwrap_or(1.0),
+            &req.source.unwrap_or_default(),
+            &req.aliases.unwrap_or_default(),
+            &req.tags.unwrap_or_default(),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Get a fact by ID, key, or category+key.")]
+    async fn fact_get(
+        &self,
+        Parameters(req): Parameters<FactGetRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::fact_get(
+            &req.fact_id.unwrap_or_default(),
+            &req.key.unwrap_or_default(),
+            &req.category.unwrap_or_default(),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Search facts by text match on key, value, or aliases. Filter by category and confidence.")]
+    async fn fact_search(
+        &self,
+        Parameters(req): Parameters<FactSearchRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::fact_search(
+            &req.query.unwrap_or_default(),
+            &req.category.unwrap_or_default(),
+            req.min_confidence.unwrap_or(0.0),
+            req.limit.unwrap_or(20),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Check a claim against known facts. Returns matches, contradictions, and verdicts.")]
+    async fn fact_check(
+        &self,
+        Parameters(req): Parameters<FactCheckRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::fact_check(&req.claim);
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Check an entire response for factual contradictions. Splits into sentences and checks each.")]
+    async fn fact_check_response(
+        &self,
+        Parameters(req): Parameters<FactCheckResponseRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::fact_check_response(&req.response_text);
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Update a fact's value, confidence, aliases, source, or tags. Logged in audit trail.")]
+    async fn fact_update(
+        &self,
+        Parameters(req): Parameters<FactUpdateRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::fact_update(
+            &req.fact_id.unwrap_or_default(),
+            &req.category.unwrap_or_default(),
+            &req.key.unwrap_or_default(),
+            &req.value.unwrap_or_default(),
+            req.confidence.unwrap_or(-1.0),
+            &req.aliases.unwrap_or_default(),
+            &req.source.unwrap_or_default(),
+            &req.tags.unwrap_or_default(),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Delete a fact with audit logging. Irreversible.")]
+    async fn fact_delete(
+        &self,
+        Parameters(req): Parameters<FactDeleteRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::fact_delete(
+            &req.fact_id, &req.reason.unwrap_or_default(),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "TruthGuard status: fact count by category, total checks, contradictions found.")]
+    async fn truthguard_status(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::knowledge::truthguard_status();
         Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
     }
 }

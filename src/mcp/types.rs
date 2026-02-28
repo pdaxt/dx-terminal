@@ -926,3 +926,277 @@ pub struct DocDeleteRequest {
     #[schemars(description = "Must be true to delete")]
     pub confirm: Option<bool>,
 }
+
+// === MONITORING TOOLS ===
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MonitorRequest {
+    #[schemars(description = "Include PTY output snippets for active panes (default false, saves tokens)")]
+    pub include_output: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProjectStatusRequest {
+    #[schemars(description = "Project name (fuzzy matched)")]
+    pub project: String,
+    #[schemars(description = "Include open issues list (default true)")]
+    pub include_issues: Option<bool>,
+    #[schemars(description = "Include recent git activity (default true)")]
+    pub include_git: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DigestRequest {
+    #[schemars(description = "Period: 'today', 'yesterday', 'week', 'month' (default 'today')")]
+    pub period: Option<String>,
+    #[schemars(description = "Filter by project (empty = all projects)")]
+    pub project: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct WatchRequest {
+    #[schemars(description = "Pane reference (1-9, theme name, or shortcut)")]
+    pub pane: String,
+    #[schemars(description = "Number of lines to tail (default 30)")]
+    pub tail: Option<usize>,
+    #[schemars(description = "Include error analysis (default true)")]
+    pub analyze_errors: Option<bool>,
+}
+
+// === KNOWLEDGE: KGRAPH TOOLS ===
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct KgraphAddEntityRequest {
+    #[schemars(description = "Entity name")]
+    pub name: String,
+    #[schemars(description = "Entity type: project, file, tool, pattern, error, person, concept, mcp, library, platform, config, service, database")]
+    pub entity_type: String,
+    #[schemars(description = "JSON properties object")]
+    pub properties: Option<String>,
+    #[schemars(description = "Custom ID (auto-generated if empty)")]
+    pub id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct KgraphAddEdgeRequest {
+    #[schemars(description = "Source entity (name or ID)")]
+    pub source: String,
+    #[schemars(description = "Target entity (name or ID)")]
+    pub target: String,
+    #[schemars(description = "Relation: uses, depends_on, causes, fixes, part_of, related_to, conflicts_with, replaced_by, about, solved_by, creates, configures, tests, deploys, documents")]
+    pub relation: String,
+    #[schemars(description = "Edge weight 0.0-10.0 (default 1.0)")]
+    pub weight: Option<f64>,
+    #[schemars(description = "JSON properties for the edge")]
+    pub properties: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct KgraphObserveRequest {
+    #[schemars(description = "Source entity (auto-created if new)")]
+    pub source: String,
+    #[schemars(description = "Target entity (auto-created if new)")]
+    pub target: String,
+    #[schemars(description = "Relation type")]
+    pub relation: String,
+    #[schemars(description = "What was observed")]
+    pub observation: String,
+    #[schemars(description = "Impact -1.0 to 1.0 (adjusts edge weight)")]
+    pub impact: Option<f64>,
+    #[schemars(description = "Session ID for provenance")]
+    pub session_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct KgraphQueryNeighborsRequest {
+    #[schemars(description = "Entity name or ID")]
+    pub entity: String,
+    #[schemars(description = "Filter by relation type (empty = all)")]
+    pub relation: Option<String>,
+    #[schemars(description = "Direction: outgoing, incoming, both (default both)")]
+    pub direction: Option<String>,
+    #[schemars(description = "Max traversal depth 1-4 (default 1)")]
+    pub depth: Option<u32>,
+    #[schemars(description = "Max nodes to return (default 50)")]
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct KgraphQueryPathRequest {
+    #[schemars(description = "Source entity")]
+    pub source: String,
+    #[schemars(description = "Target entity")]
+    pub target: String,
+    #[schemars(description = "Max hops 1-6 (default 4)")]
+    pub max_depth: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct KgraphSearchRequest {
+    #[schemars(description = "Search query (matches name and properties)")]
+    pub query: String,
+    #[schemars(description = "Filter by entity type")]
+    pub entity_type: Option<String>,
+    #[schemars(description = "Max results (default 20)")]
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct KgraphDeleteRequest {
+    #[schemars(description = "Entity ID to delete (cascades edges)")]
+    pub entity_id: Option<String>,
+    #[schemars(description = "Edge source (for edge deletion)")]
+    pub edge_source: Option<String>,
+    #[schemars(description = "Edge target (for edge deletion)")]
+    pub edge_target: Option<String>,
+    #[schemars(description = "Edge relation (optional, deletes all if empty)")]
+    pub edge_relation: Option<String>,
+}
+
+// === KNOWLEDGE: SESSION REPLAY TOOLS ===
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReplayIndexRequest {
+    #[schemars(description = "Force re-index all sessions (default: incremental)")]
+    pub force: Option<bool>,
+    #[schemars(description = "Filter by project path substring")]
+    pub project: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReplaySearchRequest {
+    #[schemars(description = "Search text in message content")]
+    pub query: String,
+    #[schemars(description = "Filter by project")]
+    pub project: Option<String>,
+    #[schemars(description = "Filter by tool name")]
+    pub tool: Option<String>,
+    #[schemars(description = "Max results (default 20)")]
+    pub limit: Option<u32>,
+    #[schemars(description = "Only search last N days (0 = all)")]
+    pub days: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReplaySessionRequest {
+    #[schemars(description = "Session ID or file path")]
+    pub session_id: String,
+    #[schemars(description = "Include tool results (default true)")]
+    pub include_tools: Option<bool>,
+    #[schemars(description = "Include error messages (default true)")]
+    pub include_errors: Option<bool>,
+    #[schemars(description = "Max messages to return (default 100)")]
+    pub max_messages: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReplayListSessionsRequest {
+    #[schemars(description = "Filter by project")]
+    pub project: Option<String>,
+    #[schemars(description = "Only last N days (default 30)")]
+    pub days: Option<u32>,
+    #[schemars(description = "Max results (default 50)")]
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReplayToolHistoryRequest {
+    #[schemars(description = "Tool name to search for")]
+    pub tool_name: String,
+    #[schemars(description = "Max results (default 20)")]
+    pub limit: Option<u32>,
+    #[schemars(description = "Only last N days (0 = all)")]
+    pub days: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReplayErrorsRequest {
+    #[schemars(description = "Filter by project")]
+    pub project: Option<String>,
+    #[schemars(description = "Only last N days (default 7)")]
+    pub days: Option<u32>,
+    #[schemars(description = "Max results (default 50)")]
+    pub limit: Option<u32>,
+}
+
+// === KNOWLEDGE: TRUTHGUARD TOOLS ===
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct FactAddRequest {
+    #[schemars(description = "Category: identity, project, business, technical, preference")]
+    pub category: String,
+    #[schemars(description = "Fact key (unique within category)")]
+    pub key: String,
+    #[schemars(description = "Fact value")]
+    pub value: String,
+    #[schemars(description = "Confidence 0.0-1.0 (default 1.0)")]
+    pub confidence: Option<f64>,
+    #[schemars(description = "Source of fact")]
+    pub source: Option<String>,
+    #[schemars(description = "Alternative names/spellings")]
+    pub aliases: Option<Vec<String>>,
+    #[schemars(description = "Tags for grouping")]
+    pub tags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct FactGetRequest {
+    #[schemars(description = "Fact ID (direct lookup)")]
+    pub fact_id: Option<String>,
+    #[schemars(description = "Fact key")]
+    pub key: Option<String>,
+    #[schemars(description = "Category (helps narrow key lookup)")]
+    pub category: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct FactSearchRequest {
+    #[schemars(description = "Search text (matches key, value, aliases)")]
+    pub query: Option<String>,
+    #[schemars(description = "Filter by category")]
+    pub category: Option<String>,
+    #[schemars(description = "Minimum confidence threshold (default 0.0)")]
+    pub min_confidence: Option<f64>,
+    #[schemars(description = "Max results (default 20)")]
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct FactCheckRequest {
+    #[schemars(description = "Claim text to verify against known facts")]
+    pub claim: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct FactCheckResponseRequest {
+    #[schemars(description = "Full response text to check for contradictions")]
+    pub response_text: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct FactUpdateRequest {
+    #[schemars(description = "Fact ID")]
+    pub fact_id: Option<String>,
+    #[schemars(description = "Category (for key-based lookup)")]
+    pub category: Option<String>,
+    #[schemars(description = "Key (for key-based lookup)")]
+    pub key: Option<String>,
+    #[schemars(description = "New value")]
+    pub value: Option<String>,
+    #[schemars(description = "New confidence")]
+    pub confidence: Option<f64>,
+    #[schemars(description = "New aliases")]
+    pub aliases: Option<Vec<String>>,
+    #[schemars(description = "Source of update")]
+    pub source: Option<String>,
+    #[schemars(description = "New tags")]
+    pub tags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct FactDeleteRequest {
+    #[schemars(description = "Fact ID to delete")]
+    pub fact_id: String,
+    #[schemars(description = "Reason for deletion (for audit log)")]
+    pub reason: Option<String>,
+}

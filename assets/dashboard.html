@@ -19,6 +19,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 .live-label{font-size:11px;color:var(--green);font-weight:600;letter-spacing:.5px}
 select{background:#21262d;color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:6px;font-size:12px;cursor:pointer}
+.status-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;letter-spacing:.5px}
+.status-ok{background:#3fb95022;color:var(--green)}
+.status-warn{background:#d2992222;color:var(--yellow)}
+.status-alert{background:#f8514933;color:var(--red);animation:pulse 1.5s infinite}
+
+/* Alert Bar */
+.alert-bar{padding:6px 24px;display:flex;gap:8px;overflow-x:auto;align-items:center}
+.alert-bar:empty{display:none}
+.alert-item{font-size:11px;padding:4px 10px;border-radius:4px;white-space:nowrap;display:flex;align-items:center;gap:5px}
+.alert-error{background:#f8514922;color:var(--red);border:1px solid #f8514944}
+.alert-warning{background:#d2992222;color:var(--yellow);border:1px solid #d2992244}
+.alert-info{background:#58a6ff22;color:var(--blue);border:1px solid #58a6ff44}
 
 /* Layout */
 .grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:16px 24px}
@@ -43,6 +55,9 @@ select{background:#21262d;color:var(--text);border:1px solid var(--border);paddi
 .pane-card:hover{border-color:var(--blue);transform:translateY(-1px)}
 .pane-card.active{border-left:3px solid}
 .pane-card.idle{opacity:.5}
+.pane-card.has-error{border-color:var(--red);box-shadow:0 0 8px #f8514933}
+.pane-card.is-done{border-color:var(--green);box-shadow:0 0 8px #3fb95033}
+.pane-card.is-stuck{border-color:var(--yellow);box-shadow:0 0 8px #d2992233}
 .pane-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
 .pane-num{font-size:11px;font-weight:700;padding:1px 5px;border-radius:3px;color:#000}
 .pane-status{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
@@ -50,13 +65,18 @@ select{background:#21262d;color:var(--text);border:1px solid var(--border);paddi
 .pane-status.s-idle{color:var(--dim)}
 .pane-status.s-done{color:var(--blue)}
 .pane-status.s-error{color:var(--red)}
+.pane-status.s-stuck{color:var(--yellow)}
 .pane-project{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pane-task{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
-.pane-meta{display:flex;gap:6px;margin-top:6px;align-items:center}
+.pane-meta{display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap}
 .badge{font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;text-transform:uppercase;letter-spacing:.3px}
 .badge-role{background:#1f6feb22;color:var(--blue)}
 .badge-pty{background:#3fb95022;color:var(--green)}
 .badge-lines{background:#21262d;color:var(--muted)}
+.badge-runtime{background:#a371f722;color:var(--purple)}
+.badge-phase{background:#00cec922;color:var(--teal)}
+.badge-errors{background:#f8514922;color:var(--red)}
+.badge-done{background:#3fb95022;color:var(--green)}
 
 /* Sidebar */
 .sidebar{display:flex;flex-direction:column;gap:12px}
@@ -102,9 +122,13 @@ select{background:#21262d;color:var(--text);border:1px solid var(--border);paddi
 .modal-close:hover{background:#21262d;color:var(--text)}
 .modal-body{flex:1;overflow-y:auto;padding:14px 18px}
 .terminal{background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:12px;font-family:'SF Mono',Monaco,'Cascadia Code',monospace;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-all;color:#e6edf3;max-height:400px;overflow-y:auto}
-.modal-meta{display:flex;gap:16px;margin-bottom:12px;font-size:12px}
+.modal-meta{display:flex;gap:16px;margin-bottom:12px;font-size:12px;flex-wrap:wrap}
 .modal-meta dt{color:var(--muted);font-size:10px;text-transform:uppercase}
 .modal-meta dd{font-weight:600}
+.modal-errors{margin-bottom:12px}
+.modal-errors h4{font-size:11px;color:var(--red);margin-bottom:4px}
+.error-line{font-size:11px;font-family:monospace;padding:3px 6px;margin-bottom:2px;background:#f8514911;border-radius:3px;color:var(--red)}
+.warning-line{font-size:11px;font-family:monospace;padding:3px 6px;margin-bottom:2px;background:#d2992211;border-radius:3px;color:var(--yellow)}
 
 /* Sprint */
 .sprint-info{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
@@ -149,11 +173,14 @@ canvas{width:100%;display:block}
 <div class="header">
   <h1>AgentOS <span>Runtime</span></h1>
   <div class="controls">
+    <span id="status-indicator" class="status-badge status-ok">ALL CLEAR</span>
     <span class="live-dot"></span>
     <span class="live-label">LIVE</span>
     <select id="space-select" onchange="refresh()"></select>
   </div>
 </div>
+
+<div class="alert-bar" id="alerts"></div>
 
 <div class="grid-4" id="gauges"></div>
 
@@ -214,6 +241,7 @@ canvas{width:100%;display:block}
     </div>
     <div class="modal-body">
       <div class="modal-meta" id="modal-meta"></div>
+      <div class="modal-errors" id="modal-errors"></div>
       <div class="terminal" id="modal-output"></div>
     </div>
   </div>
@@ -223,12 +251,38 @@ canvas{width:100%;display:block}
 const API='';
 let currentSpace='';
 let pollTimer=null;
+let monitorData=null;
 
 async function fetchJSON(url){
   try{const r=await fetch(API+url);if(!r.ok)return null;return await r.json();}catch(e){return null;}
 }
 
 function gc(pct){return pct>80?'c-red':pct>50?'c-yellow':'c-green'}
+function fmtMins(m){if(!m&&m!==0)return'';if(m<60)return m+'m';return Math.floor(m/60)+'h'+m%60+'m';}
+
+// === Monitor (single-call data source) ===
+async function loadMonitor(){
+  monitorData=await fetchJSON('/api/monitor');
+  if(!monitorData)return;
+
+  // Update status indicator
+  const ind=document.getElementById('status-indicator');
+  const s=monitorData.status;
+  ind.textContent=s;
+  ind.className='status-badge '+(s==='ATTENTION NEEDED'?'status-alert':s==='OK'?'status-warn':'status-ok');
+
+  // Render alerts
+  const alertEl=document.getElementById('alerts');
+  if(monitorData.alerts&&monitorData.alerts.length){
+    alertEl.innerHTML=monitorData.alerts.map(a=>{
+      const cls=a.level==='error'?'alert-error':a.level==='warning'?'alert-warning':'alert-info';
+      const icon=a.level==='error'?'&#x26D4;':a.level==='warning'?'&#x26A0;':'&#x2139;';
+      return `<div class="alert-item ${cls}">${icon} P${a.pane} ${a.theme}: ${a.message}</div>`;
+    }).join('');
+  }else{
+    alertEl.innerHTML='';
+  }
+}
 
 // === Spaces ===
 async function loadSpaces(){
@@ -242,13 +296,13 @@ async function loadSpaces(){
 // === Gauges ===
 async function renderGauges(){
   const d=await fetchJSON(`/api/capacity/dashboard?space=${currentSpace}`);
-  const st=await fetchJSON('/api/status');
   if(!d)return;
+  const sm=monitorData?monitorData.summary:{active:0};
+  const q=monitorData?monitorData.queue:{pending:0,running:0};
   const bn=d.bottleneck==='review'?'REVIEW':d.bottleneck==='compute'?'COMPUTE':'BALANCED';
   const bnC=d.bottleneck==='review'?'c-red':d.bottleneck==='compute'?'c-yellow':'c-green';
   const acuC=gc(d.acu_pct);const revC=gc(d.reviews_pct);
-  const active=st?st.summary.active:0;
-  const ptyR=st?st.summary.pty_running:0;
+  const total=sm.total||9;
   document.getElementById('gauges').innerHTML=`
     <div class="card ${acuC}"><h3>ACU Today</h3><div class="gauge-val">${d.acu_used}</div>
       <div class="gauge-sub">of ${d.acu_total} capacity</div>
@@ -256,64 +310,98 @@ async function renderGauges(){
     <div class="card ${revC}"><h3>Reviews</h3><div class="gauge-val">${d.reviews_used}</div>
       <div class="gauge-sub">of ${d.reviews_total} bandwidth</div>
       <div class="gauge-bar"><div class="gauge-fill" style="width:${Math.min(d.reviews_pct,100)}%"></div></div></div>
-    <div class="card ${bnC}"><h3>Bottleneck</h3><div class="gauge-val" style="font-size:22px">${bn}</div>
-      <div class="gauge-sub">limiting factor</div></div>
-    <div class="card c-blue"><h3>Agents</h3><div class="gauge-val">${active}<span style="font-size:14px;color:var(--muted)"> / 9</span></div>
-      <div class="gauge-sub">${ptyR} PTY running</div>
-      <div class="gauge-bar"><div class="gauge-fill" style="width:${active/9*100}%;background:var(--blue)"></div></div></div>`;
+    <div class="card c-blue"><h3>Agents</h3><div class="gauge-val">${sm.active||0}<span style="font-size:14px;color:var(--muted)"> / ${total}</span></div>
+      <div class="gauge-sub">${sm.errors?'<span style="color:var(--red)">'+sm.errors+' errors</span> &middot; ':''} ${sm.stuck?'<span style="color:var(--yellow)">'+sm.stuck+' stuck</span> &middot; ':''} ${sm.done||0} done</div>
+      <div class="gauge-bar"><div class="gauge-fill" style="width:${(sm.active||0)/total*100}%;background:var(--blue)"></div></div></div>
+    <div class="card ${q.pending>5?'c-yellow':'c-green'}"><h3>Queue</h3><div class="gauge-val">${q.pending||0}<span style="font-size:14px;color:var(--muted)"> pending</span></div>
+      <div class="gauge-sub">${q.running||0} running &middot; ${q.done||0} done${q.failed?' &middot; <span style=color:var(--red)>'+q.failed+' failed</span>':''}</div>
+      <div class="gauge-bar"><div class="gauge-fill" style="width:${Math.min((q.running||0)/Math.max(total,1)*100,100)}%;background:var(--green)"></div></div></div>`;
 }
 
-// === Pane Grid ===
-async function renderPanes(){
-  const st=await fetchJSON('/api/status');
-  if(!st||!st.panes)return;
+// === Pane Grid (uses monitor data) ===
+function renderPanesFromMonitor(){
+  if(!monitorData||!monitorData.panes)return;
   const el=document.getElementById('panes');
   let html='';
-  for(const p of st.panes){
-    const isActive=p.status==='active';
-    const cls=isActive?'active':'idle';
-    const sc=isActive?'s-active':p.status==='done'?'s-done':p.status==='error'?'s-error':'s-idle';
-    html+=`<div class="pane-card ${cls}" style="border-left-color:${p.theme_color}" onclick="openPane(${p.pane})">
+  for(const p of monitorData.panes){
+    const h=p.health;
+    const isActive=h==='active'||h==='done'||h==='error'||h==='stuck';
+    let cls=isActive?'active':'idle';
+    if(h==='error')cls+=' has-error';
+    else if(h==='done')cls+=' is-done';
+    else if(h==='stuck')cls+=' is-stuck';
+    const sc=h==='active'?'s-active':h==='done'?'s-done':h==='error'?'s-error':h==='stuck'?'s-stuck':'s-idle';
+    const color=p.theme_color||getThemeColor(p.pane);
+    html+=`<div class="pane-card ${cls}" style="border-left-color:${color}" onclick="openPaneWatch(${p.pane})">
       <div class="pane-top">
-        <span class="pane-num" style="background:${p.theme_color}">${p.pane}</span>
-        <span class="pane-status ${sc}">${p.status||'idle'}</span>
+        <span class="pane-num" style="background:${color}">${p.pane}</span>
+        <span class="pane-status ${sc}">${h}</span>
       </div>
       <div class="pane-project">${p.project||'--'}</div>
       <div class="pane-task">${p.task||'No task assigned'}</div>
       <div class="pane-meta">
         ${p.role&&p.role!=='--'?`<span class="badge badge-role">${p.role}</span>`:''}
-        ${p.pty_running?'<span class="badge badge-pty">PTY</span>':''}
-        ${p.line_count>0?`<span class="badge badge-lines">${p.line_count} lines</span>`:''}
+        ${p.pty?'<span class="badge badge-pty">PTY</span>':''}
+        ${p.lines>0?`<span class="badge badge-lines">${p.lines}L</span>`:''}
+        ${p.runtime_mins?`<span class="badge badge-runtime">${fmtMins(p.runtime_mins)}</span>`:''}
+        ${p.error?'<span class="badge badge-errors">ERR</span>':''}
+        ${h==='done'?'<span class="badge badge-done">DONE</span>':''}
       </div>
     </div>`;
   }
   el.innerHTML=html;
 }
 
-// === Pane Modal ===
-async function openPane(paneNum){
-  const d=await fetchJSON(`/api/pane/${paneNum}`);
+const THEME_COLORS=['#00d4ff','#00ff41','#bf00ff','#ff9500','#ff3366','#ffcc00','#c0c0c0','#00cec9','#fd79a8'];
+function getThemeColor(n){return THEME_COLORS[(n-1)%THEME_COLORS.length]}
+
+// === Pane Watch Modal ===
+async function openPaneWatch(paneNum){
+  const d=await fetchJSON(`/api/pane/${paneNum}/watch?lines=80`);
   if(!d)return;
+  const color=d.theme_color||getThemeColor(paneNum);
   document.getElementById('modal-title').innerHTML=
-    `<span class="pane-num" style="background:${d.theme_color}">${d.pane}</span> ${d.theme} &mdash; ${d.project||'idle'}`;
+    `<span class="pane-num" style="background:${color}">${d.pane}</span> ${d.theme} &mdash; ${d.project||'idle'}`;
   document.getElementById('modal-meta').innerHTML=`
     <div><dt>Role</dt><dd>${d.role||'--'}</dd></div>
     <div><dt>Status</dt><dd>${d.status||'idle'}</dd></div>
-    <div><dt>Task</dt><dd>${d.task||'--'}</dd></div>
+    <div><dt>Phase</dt><dd>${d.phase||'--'}</dd></div>
     <div><dt>PTY</dt><dd>${d.pty_running?'Running':'Off'}</dd></div>
-    <div><dt>Lines</dt><dd>${d.line_count}</dd></div>`;
-  const out=d.screen||d.output||'[No output yet]';
-  document.getElementById('modal-output').textContent=out;
+    <div><dt>Lines</dt><dd>${d.line_count}</dd></div>
+    <div><dt>Runtime</dt><dd>${fmtMins(d.runtime_mins)||'--'}</dd></div>
+    <div><dt>Branch</dt><dd>${d.branch||'--'}</dd></div>
+    ${d.done?'<div><dt>Done</dt><dd style="color:var(--green)">YES</dd></div>':''}`;
+
+  // Errors section
+  const errEl=document.getElementById('modal-errors');
+  let errHtml='';
+  if(d.errors&&d.errors.length){
+    errHtml+=`<h4>Errors (${d.error_count})</h4>`;
+    for(const e of d.errors.slice(0,10)){
+      errHtml+=`<div class="error-line">L${e.line}: ${e.text}</div>`;
+    }
+  }
+  if(d.warnings&&d.warnings.length){
+    errHtml+=`<h4 style="color:var(--yellow);margin-top:6px">Warnings (${d.warning_count})</h4>`;
+    for(const w of d.warnings.slice(0,5)){
+      errHtml+=`<div class="warning-line">L${w.line}: ${w.text}</div>`;
+    }
+  }
+  errEl.innerHTML=errHtml;
+
+  const out=d.output||'[No output yet]';
+  const termEl=document.getElementById('modal-output');
+  termEl.textContent=out;
   document.getElementById('modal').classList.add('open');
-  // Auto-refresh modal
+  termEl.scrollTop=termEl.scrollHeight;
+
+  // Auto-refresh modal with watch endpoint
   if(pollTimer)clearInterval(pollTimer);
   pollTimer=setInterval(async()=>{
-    const u=await fetchJSON(`/api/pane/${paneNum}/output?lines=100`);
-    if(u){
-      const t=u.screen||u.output||'[No output]';
-      const el=document.getElementById('modal-output');
-      el.textContent=t;
-      el.scrollTop=el.scrollHeight;
+    const u=await fetchJSON(`/api/pane/${paneNum}/watch?lines=80`);
+    if(u&&u.output){
+      termEl.textContent=u.output;
+      termEl.scrollTop=termEl.scrollHeight;
     }
   },3000);
 }
@@ -337,16 +425,25 @@ async function renderRoles(){
   el.innerHTML=html;
 }
 
-// === Logs ===
-async function renderLogs(){
-  const logs=await fetchJSON('/api/logs');
-  if(!logs)return;
+// === Logs (uses monitor data) ===
+function renderLogsFromMonitor(){
+  if(!monitorData||!monitorData.recent)return;
   const el=document.getElementById('logs');
   let html='';
-  for(const l of logs.slice(0,15)){
-    const ts=l.ts&&l.ts.length>=16?l.ts.slice(11,16):l.ts||'';
-    html+=`<div class="log-entry"><span class="log-ts">${ts}</span><span class="log-pane">P${l.pane}</span><span class="log-msg">${l.summary||l.event}</span></div>`;
+  for(const l of monitorData.recent){
+    html+=`<div class="log-entry"><span class="log-ts">${l.time||''}</span><span class="log-pane">P${l.pane}</span><span class="log-msg">${l.summary||l.event}</span></div>`;
   }
+  // Also fetch full log for sidebar
+  fetchJSON('/api/logs').then(logs=>{
+    if(!logs)return;
+    let fullHtml='';
+    for(const l of logs.slice(0,20)){
+      const ts=l.ts&&l.ts.length>=16?l.ts.slice(11,16):l.ts||'';
+      fullHtml+=`<div class="log-entry"><span class="log-ts">${ts}</span><span class="log-pane">P${l.pane}</span><span class="log-msg">${l.summary||l.event}</span></div>`;
+    }
+    if(!fullHtml)fullHtml='<div class="no-data">No activity yet</div>';
+    el.innerHTML=fullHtml;
+  });
   if(!html)html='<div class="no-data">No activity yet</div>';
   el.innerHTML=html;
 }
@@ -381,19 +478,17 @@ async function renderQueue(){
   if(!d)return;
   const sumEl=document.getElementById('queue-summary');
   const s=d.summary;
-  sumEl.textContent=`${s.pending} pending · ${s.running} running · ${s.done} done${s.failed?' · '+s.failed+' failed':''}`;
+  sumEl.textContent=`${s.pending} pending \u00b7 ${s.running} running \u00b7 ${s.done} done${s.failed?' \u00b7 '+s.failed+' failed':''}`;
   const el=document.getElementById('queue-table');
-  // Only show non-done tasks, plus last 5 done
   const active=d.tasks.filter(t=>t.status!=='done');
   const done=d.tasks.filter(t=>t.status==='done').slice(-5).reverse();
   const show=[...active,...done];
-  if(!show.length){el.innerHTML='<div class="q-empty">Queue empty — add tasks with os_queue_add or the + Add button above</div>';return;}
-  let html='<table class="q-table"><thead><tr><th>ID</th><th>P</th><th>Status</th><th>Project</th><th>Task</th><th>Role</th><th>Pane</th><th>Deps</th><th></th></tr></thead><tbody>';
+  if(!show.length){el.innerHTML='<div class="q-empty">Queue empty</div>';return;}
+  let html='<table class="q-table"><thead><tr><th>ID</th><th>P</th><th>Status</th><th>Project</th><th>Task</th><th>Role</th><th>Pane</th><th></th></tr></thead><tbody>';
   for(const t of show){
     const sc=t.status==='pending'?'q-pending':t.status==='running'?'q-running':t.status==='done'?'q-done':t.status==='failed'?'q-failed':'q-blocked';
     const pc='q-p'+(t.priority||3);
-    const deps=t.depends_on&&t.depends_on.length?t.depends_on.join(', '):'—';
-    const pane=t.pane?'P'+t.pane:'—';
+    const pane=t.pane?'P'+t.pane:'\u2014';
     const proj=(t.project||'').split('/').pop();
     let actions='';
     if(t.status==='failed'||t.status==='done')actions+=`<button onclick="retryTask('${t.id}')" style="background:var(--yellow);color:#000;border:none;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:700;cursor:pointer;margin-right:3px">RETRY</button>`;
@@ -401,7 +496,7 @@ async function renderQueue(){
     html+=`<tr><td class="q-id">${t.id}</td><td><span class="q-priority ${pc}">${t.priority}</span></td>
       <td><span class="q-status ${sc}">${t.status}</span></td>
       <td>${proj}</td><td>${(t.task||'').slice(0,40)}</td><td><span class="badge badge-role">${t.role||'dev'}</span></td>
-      <td>${pane}</td><td class="q-id">${deps}</td><td>${actions}</td></tr>`;
+      <td>${pane}</td><td>${actions}</td></tr>`;
   }
   html+='</tbody></table>';
   el.innerHTML=html;
@@ -497,7 +592,10 @@ function connectSSE(){
 // === Refresh ===
 async function refresh(){
   currentSpace=document.getElementById('space-select').value;
-  await Promise.all([renderGauges(),renderPanes(),renderRoles(),renderLogs(),renderQueue(),renderBoard(),renderSprint()]);
+  await loadMonitor();
+  renderPanesFromMonitor();
+  renderLogsFromMonitor();
+  await Promise.all([renderGauges(),renderRoles(),renderQueue(),renderBoard(),renderSprint()]);
 }
 
 async function init(){

@@ -248,7 +248,7 @@ pub fn doc_edit(space: &str, name: &str, content: &str, agent_id: &str) -> Value
     json!({"edited": format!("{}/{}", space, name), "previous_hash": old_hash, "status": meta["status"]})
 }
 
-fn crc32(s: &str) -> u32 {
+pub fn crc32(s: &str) -> u32 {
     let mut hash: u32 = 0xFFFF_FFFF;
     for byte in s.bytes() {
         hash ^= byte as u32;

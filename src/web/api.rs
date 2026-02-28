@@ -656,6 +656,30 @@ pub async fn get_queue() -> Json<Value> {
     }))
 }
 
+// === Enhanced monitoring endpoints ===
+
+/// GET /api/monitor — Full monitoring overview
+pub async fn get_monitor(State(app): State<AppState>) -> Json<Value> {
+    let req = crate::mcp::types::MonitorRequest { include_output: Some(false) };
+    let result = crate::mcp::tools::monitor(&app, req).await;
+    Json(serde_json::from_str(&result).unwrap_or(json!({"error": "parse failed"})))
+}
+
+/// GET /api/pane/:id/watch — Watch pane output with analysis
+pub async fn get_watch(
+    State(app): State<AppState>,
+    Path(pane_ref): Path<String>,
+    Query(params): Query<PaneQuery>,
+) -> Json<Value> {
+    let req = crate::mcp::types::WatchRequest {
+        pane: pane_ref,
+        tail: params.lines.or(Some(50)),
+        analyze_errors: Some(true),
+    };
+    let result = crate::mcp::tools::watch(&app, req).await;
+    Json(serde_json::from_str(&result).unwrap_or(json!({"error": "parse failed"})))
+}
+
 // === Helpers ===
 
 fn load_all_issues(space: &str) -> Vec<Value> {

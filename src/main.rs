@@ -13,6 +13,7 @@ mod workspace;
 mod queue;
 mod multi_agent;
 mod collab;
+mod knowledge;
 
 use std::sync::Arc;
 use clap::{Parser, Subcommand};
