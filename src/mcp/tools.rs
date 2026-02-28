@@ -464,6 +464,7 @@ pub async fn collect(app: &App, req: CollectRequest) -> String {
             "done": health.done,
             "error": health.error,
             "done_marker": health.done_marker,
+            "exit_code": health.exit_code,
             "output": display_output,
             "line_count": line_count,
             "git": git_info,
@@ -703,6 +704,7 @@ pub async fn status(app: &App) -> String {
             "issue_id": pd.issue_id,
             "branch": pd.branch_name,
             "pty_running": pty.is_running(*i),
+            "exit_code": pty.exit_code(*i),
         }));
     }
     drop(pty);
@@ -878,6 +880,7 @@ pub async fn health(app: &App) -> String {
                 "pty_running": health.running,
                 "has_output": health.has_output,
                 "error": health.error,
+                "exit_code": health.exit_code,
                 "done_marker": health.done_marker,
                 "line_count": pty.line_count(*i),
             }));
@@ -1287,6 +1290,7 @@ pub async fn auto_cycle(app: &App) -> String {
                     "action": "auto_complete",
                     "pane": i,
                     "project": pd.project,
+                    "exit_code": h.exit_code,
                     "result": result,
                 }));
             } else if h.error.is_some() {
@@ -1304,6 +1308,7 @@ pub async fn auto_cycle(app: &App) -> String {
                     "action": "error_kill",
                     "pane": i,
                     "project": pd.project,
+                    "exit_code": h.exit_code,
                 }));
             }
         }
@@ -1476,10 +1481,12 @@ pub async fn monitor(app: &App, req: MonitorRequest) -> String {
 
         let mut error_msg: Option<String> = None;
         let mut done_marker: Option<String> = None;
+        let mut exit_code: Option<i32> = None;
         let mut output_snippet = String::new();
 
         if has_pty {
             let h = pty.check_health(*i, &markers);
+            exit_code = h.exit_code;
             if h.error.is_some() {
                 health_status = "error";
                 error_msg = h.error.clone();
@@ -1544,6 +1551,9 @@ pub async fn monitor(app: &App, req: MonitorRequest) -> String {
 
         if let Some(e) = &error_msg {
             pane_info["error"] = serde_json::json!(e);
+        }
+        if let Some(c) = exit_code {
+            pane_info["exit_code"] = serde_json::json!(c);
         }
         if let Some(d) = &done_marker {
             pane_info["done_marker"] = serde_json::json!(d);
@@ -2009,6 +2019,7 @@ pub async fn watch(app: &App, req: WatchRequest) -> String {
         "line_count": line_count,
         "done": health.done,
         "done_marker": health.done_marker,
+        "exit_code": health.exit_code,
         "output": truncate(display, 4000),
         "errors": errors_found,
         "warnings": warnings_found,
