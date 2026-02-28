@@ -80,6 +80,11 @@ impl PtyManager {
         health::check_pane(self, pane_num, markers)
     }
 
+    /// Get exit code for a pane's agent
+    pub fn exit_code(&self, pane_num: u8) -> Option<i32> {
+        self.agents.get(&pane_num).and_then(|h| h.exit_code())
+    }
+
     /// Get line count for a pane
     pub fn line_count(&self, pane_num: u8) -> usize {
         self.agents.get(&pane_num).map_or(0, |h| h.line_count())

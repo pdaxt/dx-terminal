@@ -27,6 +27,12 @@ pub struct QueueTask {
     pub result: Option<String>,
     #[serde(default)]
     pub depends_on: Vec<String>, // task IDs that must complete first
+    #[serde(default)]
+    pub retry_count: u32,
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
+    #[serde(default)]
+    pub last_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -67,6 +73,7 @@ pub struct AutoConfig {
     pub cycle_interval_secs: u64,
 }
 
+fn default_max_retries() -> u32 { 2 }
 fn default_cycle_secs() -> u64 { 30 }
 
 impl Default for AutoConfig {
@@ -168,6 +175,9 @@ pub fn add_task(project: &str, role: &str, task: &str, prompt: &str, priority: u
         completed_at: None,
         result: None,
         depends_on,
+        retry_count: 0,
+        max_retries: 2,
+        last_error: None,
     };
 
     queue.tasks.push(new_task.clone());
@@ -227,16 +237,78 @@ pub fn mark_done(task_id: &str, result: &str) -> Result<()> {
     save_queue(&queue)
 }
 
-/// Mark a task as failed
+/// Mark a task as failed and cascade failure to dependents
 pub fn mark_failed(task_id: &str, reason: &str) -> Result<()> {
     let mut queue = load_queue();
     if let Some(task) = queue.tasks.iter_mut().find(|t| t.id == task_id) {
         task.status = QueueStatus::Failed;
         task.completed_at = Some(crate::state::now());
         task.result = Some(reason.into());
+        task.last_error = Some(reason.into());
         task.pane = None;
     }
+
+    // Cascade: fail tasks that depend on this failed task (multi-pass for transitive deps)
+    loop {
+        let failed_ids: Vec<String> = queue.tasks.iter()
+            .filter(|t| t.status == QueueStatus::Failed)
+            .map(|t| t.id.clone())
+            .collect();
+        let mut changed = false;
+        for task in &mut queue.tasks {
+            if task.status == QueueStatus::Pending || task.status == QueueStatus::Blocked {
+                if task.depends_on.iter().any(|dep| failed_ids.contains(dep)) {
+                    task.status = QueueStatus::Failed;
+                    task.completed_at = Some(crate::state::now());
+                    task.result = Some(format!("cascade: dependency {} failed", task_id));
+                    task.last_error = Some(format!("cascade: dependency {} failed", task_id));
+                    changed = true;
+                }
+            }
+        }
+        if !changed { break; }
+    }
+
     save_queue(&queue)
+}
+
+/// Requeue a failed task for retry (increments retry_count, resets to Pending)
+pub fn requeue_failed(task_id: &str) -> Result<bool> {
+    let mut queue = load_queue();
+    let mut requeued = false;
+
+    if let Some(task) = queue.tasks.iter_mut().find(|t| t.id == task_id) {
+        if task.status != QueueStatus::Failed || task.retry_count >= task.max_retries {
+            return Ok(false);
+        }
+        task.retry_count += 1;
+        task.status = QueueStatus::Pending;
+        task.pane = None;
+        task.started_at = None;
+        task.completed_at = None;
+        task.last_error = task.result.take();
+        requeued = true;
+    }
+
+    if requeued {
+        // Also unblock cascade-failed dependents
+        let tid = task_id.to_string();
+        for task in &mut queue.tasks {
+            if task.status == QueueStatus::Failed {
+                if let Some(err) = &task.last_error {
+                    if err.contains(&format!("cascade: dependency {} failed", tid)) {
+                        task.status = QueueStatus::Blocked;
+                        task.completed_at = None;
+                        task.result = None;
+                        task.last_error = None;
+                    }
+                }
+            }
+        }
+        save_queue(&queue)?;
+    }
+
+    Ok(requeued)
 }
 
 /// Get running task for a pane

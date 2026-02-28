@@ -7,6 +7,7 @@ use crate::config;
 pub struct WorkspaceInfo {
     pub worktree_path: String,
     pub branch_name: String,
+    pub base_branch: String,
 }
 
 /// Check if a directory is inside a git repository
@@ -123,6 +124,7 @@ pub fn create_worktree(project_path: &str, pane_num: u8, task: &str) -> Result<W
     Ok(WorkspaceInfo {
         worktree_path: worktree_dir.to_string_lossy().to_string(),
         branch_name,
+        base_branch,
     })
 }
 

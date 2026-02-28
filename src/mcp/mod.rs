@@ -1324,6 +1324,23 @@ impl AgentOSService {
         let result = crate::knowledge::truthguard_status();
         Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
     }
+
+    // === MACHINE IDENTITY ===
+
+    #[tool(description = "Get machine identity (IP, hostname, MAC) for a pane. Omit pane to list all registered machines.")]
+    async fn os_machine_info(
+        &self,
+        Parameters(req): Parameters<MachineInfoRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::machine_info_tool(&req);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "List all registered machines with network identities, subnet info, and IP range.")]
+    async fn os_machine_list(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::machine_list_tool();
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
 }
 
 #[tool_handler]

@@ -9,6 +9,7 @@ pub struct PaneHealth {
     pub done: bool,
     pub error: Option<String>,
     pub done_marker: Option<String>,
+    pub exit_code: Option<i32>,
 }
 
 /// Run health check on a specific pane
@@ -22,14 +23,24 @@ pub fn check_pane(pty_mgr: &PtyManager, pane: u8, markers: &[String]) -> PaneHea
             done: false,
             error: None,
             done_marker: None,
+            exit_code: None,
         },
         Some(handle) => {
             let running = handle.is_running();
+            let exit_code = handle.exit_code();
             let last_out = handle.last_output(30);
             let has_output = !last_out.trim().is_empty();
             let done_marker = output::check_completion(&last_out, markers);
             let shell = output::check_shell_prompt(&last_out);
-            let error = output::check_errors(&last_out);
+
+            // Check output errors first, then non-zero exit code
+            let error = if let Some(e) = output::check_errors(&last_out) {
+                Some(e)
+            } else if !running && exit_code.map_or(false, |c| c != 0 && c != -1) {
+                Some(format!("process exited with code {}", exit_code.unwrap()))
+            } else {
+                None
+            };
 
             PaneHealth {
                 running,
@@ -37,6 +48,7 @@ pub fn check_pane(pty_mgr: &PtyManager, pane: u8, markers: &[String]) -> PaneHea
                 done: done_marker.is_some() || shell || !running,
                 error,
                 done_marker,
+                exit_code,
             }
         }
     }

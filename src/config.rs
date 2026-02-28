@@ -220,6 +220,10 @@ pub fn preamble_dir() -> PathBuf {
     agentos_root().join("preambles")
 }
 
+pub fn output_logs_dir() -> PathBuf {
+    agentos_root().join("output_logs")
+}
+
 pub fn state_file() -> PathBuf {
     agentos_root().join("state.json")
 }

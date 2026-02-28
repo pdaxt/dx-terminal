@@ -10,6 +10,7 @@ use crate::state;
 use crate::state::types::PaneState;
 use crate::workspace;
 use crate::queue;
+use crate::machine;
 use super::types::*;
 
 /// Execute os_spawn logic — allocates PTY and spawns Claude agent
@@ -47,19 +48,19 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     }
 
     // Git-first: create worktree for isolation if project is a git repo
-    let (spawn_cwd, ws_path, ws_branch) = if workspace::is_git_repo(&project_path) {
+    let (spawn_cwd, ws_path, ws_branch, ws_base) = if workspace::is_git_repo(&project_path) {
         match workspace::create_worktree(&project_path, pane_num, &task) {
             Ok(info) => {
                 tracing::info!("Created worktree for pane {}: {} (branch {})", pane_num, info.worktree_path, info.branch_name);
-                (info.worktree_path.clone(), Some(info.worktree_path), Some(info.branch_name))
+                (info.worktree_path.clone(), Some(info.worktree_path), Some(info.branch_name), Some(info.base_branch))
             }
             Err(e) => {
                 tracing::warn!("Worktree creation failed for pane {}, using direct path: {}", pane_num, e);
-                (project_path.clone(), None, None)
+                (project_path.clone(), None, None, None)
             }
         }
     } else {
-        (project_path.clone(), None, None)
+        (project_path.clone(), None, None, None)
     };
 
     // Generate preamble and write as CLAUDE.md in workspace for auto-load
@@ -69,11 +70,18 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     let claude_md_path = format!("{}/CLAUDE.md", spawn_cwd);
     let _ = std::fs::write(&claude_md_path, &preamble);
 
-    // Build env vars
+    // Register machine identity
+    let machine_id = machine::register(pane_num);
+
+    // Build env vars (includes machine identity)
     let config_dir = claude::account_config_dir(pane_num);
     let env_vars = vec![
         ("P".to_string(), pane_num.to_string()),
         ("CLAUDE_CONFIG_DIR".to_string(), config_dir),
+        ("MACHINE_IP".to_string(), machine_id.ip.clone()),
+        ("MACHINE_HOSTNAME".to_string(), machine_id.hostname.clone()),
+        ("MACHINE_MAC".to_string(), machine_id.mac.clone()),
+        ("MACHINE_PANE".to_string(), pane_num.to_string()),
     ];
 
     // Build claude args: skip permissions (trust dialog) + provide task as prompt
@@ -109,6 +117,10 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         acu_spent: 0.0,
         workspace_path: ws_path.clone(),
         branch_name: ws_branch.clone(),
+        base_branch: ws_base.clone(),
+        machine_ip: Some(machine_id.ip.clone()),
+        machine_hostname: Some(machine_id.hostname.clone()),
+        machine_mac: Some(machine_id.mac.clone()),
     };
     app.state.set_pane(pane_num, pane_state).await;
     app.state.log_activity(
@@ -131,6 +143,9 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         "workspace": ws_path,
         "branch": ws_branch,
         "pty": pty_status,
+        "machine_ip": machine_id.ip,
+        "machine_hostname": machine_id.hostname,
+        "machine_mac": machine_id.mac,
     }).to_string()
 }
 
@@ -146,6 +161,9 @@ pub async fn kill(app: &App, req: KillRequest) -> String {
     let pane_data = app.state.get_pane(pane_num).await;
     let ws_path = pane_data.workspace_path.clone();
     let project_path = pane_data.project_path.clone();
+
+    // Save output before killing
+    let output_log = save_agent_output(app, pane_num, &reason);
 
     // Kill PTY
     let pty_result = {
@@ -168,12 +186,19 @@ pub async fn kill(app: &App, req: KillRequest) -> String {
         });
     }
 
+    // Deregister machine identity
+    machine::deregister(pane_num);
+
     // Update state
     let mut pane_state = pane_data;
     pane_state.status = "idle".into();
     pane_state.task = String::new();
     pane_state.workspace_path = None;
     pane_state.branch_name = None;
+    pane_state.base_branch = None;
+    pane_state.machine_ip = None;
+    pane_state.machine_hostname = None;
+    pane_state.machine_mac = None;
     app.state.set_pane(pane_num, pane_state).await;
     app.state.log_activity(pane_num, "kill", &format!("Killed: {}", reason)).await;
 
@@ -186,6 +211,7 @@ pub async fn kill(app: &App, req: KillRequest) -> String {
         "reason": reason,
         "pty": pty_status,
         "git": git_info,
+        "output_log": output_log,
     }).to_string()
 }
 
@@ -469,7 +495,8 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
     };
 
     let mut pane_data = app.state.get_pane(pane_num).await;
-    let summary = req.summary.clone().unwrap_or_default();
+    // Auto-extract result from agent output if no summary provided
+    let summary = req.summary.clone().unwrap_or_else(|| extract_result(app, pane_num));
 
     // Calculate ACU spent
     let acu = if let Some(started) = &pane_data.started_at {
@@ -533,6 +560,9 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
         });
     }
 
+    // Save output before killing PTY
+    let _output_log = save_agent_output(app, pane_num, "completed");
+
     // Kill the PTY process
     {
         let mut pty = app.pty_lock();
@@ -544,6 +574,7 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
     pane_data.acu_spent = acu;
     pane_data.workspace_path = None;
     pane_data.branch_name = None;
+    pane_data.base_branch = None;
     let task_display = truncate(&pane_data.task, 30);
     app.state.set_pane(pane_num, pane_data.clone()).await;
     app.state.log_activity(pane_num, "complete", &format!("Done: {} ({} ACU)", task_display, acu)).await;
@@ -999,10 +1030,25 @@ pub async fn git_sync(app: &App, req: GitSyncRequest) -> String {
         _ => return json_err(&format!("Pane {} has no git workspace", pane_num)),
     };
 
-    // Determine base branch from branch name (pane-N/slug was branched from base)
-    let base = workspace::git_status(&ws)
-        .map(|_| "main".to_string()) // simplified — we stored base_branch at create time but not in state
-        .unwrap_or_else(|_| "main".into());
+    // Use stored base_branch from worktree creation, fall back to detecting from remote
+    let base = pane_data.base_branch.clone().unwrap_or_else(|| {
+        // Detect default branch from remote
+        std::process::Command::new("git")
+            .args(["symbolic-ref", "refs/remotes/origin/HEAD", "--short"])
+            .current_dir(&ws)
+            .output()
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                    // strip "origin/" prefix
+                    Some(s.strip_prefix("origin/").unwrap_or(&s).to_string())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| "main".into())
+    });
 
     let result = workspace::sync_from_main(&ws, &base);
 
@@ -1122,14 +1168,25 @@ pub async fn queue_add(_app: &App, req: QueueAddRequest) -> String {
     let depends_on = req.depends_on.unwrap_or_default();
 
     match queue::add_task(&req.project, &role, &req.task, &prompt, priority, depends_on) {
-        Ok(task) => serde_json::json!({
-            "status": "queued",
-            "task_id": task.id,
-            "project": task.project,
-            "task": task.task,
-            "priority": task.priority,
-            "depends_on": task.depends_on,
-        }).to_string(),
+        Ok(task) => {
+            // Apply max_retries if specified
+            if let Some(mr) = req.max_retries {
+                let mut q = queue::load_queue();
+                if let Some(t) = q.tasks.iter_mut().find(|t| t.id == task.id) {
+                    t.max_retries = mr;
+                }
+                let _ = queue::save_queue(&q);
+            }
+            serde_json::json!({
+                "status": "queued",
+                "task_id": task.id,
+                "project": task.project,
+                "task": task.task,
+                "priority": task.priority,
+                "depends_on": task.depends_on,
+                "max_retries": req.max_retries.unwrap_or(2),
+            }).to_string()
+        }
         Err(e) => json_err(&format!("Failed to add task: {}", e)),
     }
 }
@@ -1213,15 +1270,16 @@ pub async fn auto_cycle(app: &App) -> String {
 
         if let Some(h) = health {
             if h.done && cfg.auto_complete {
-                // Auto-complete this pane
+                // Extract result before completing
+                let result = extract_result(app, i);
+
                 let _result = complete(app, super::types::CompleteRequest {
                     pane: i.to_string(),
-                    summary: Some(format!("Auto-completed by cycle")),
+                    summary: Some("Auto-completed by cycle".into()),
                 }).await;
 
-                // Mark queue task as done
                 if let Some(qt) = queue::task_for_pane(i) {
-                    let _ = queue::mark_done(&qt.id, "auto-completed");
+                    let _ = queue::mark_done(&qt.id, &result);
                 }
 
                 occupied_panes.retain(|&p| p != i);
@@ -1229,9 +1287,11 @@ pub async fn auto_cycle(app: &App) -> String {
                     "action": "auto_complete",
                     "pane": i,
                     "project": pd.project,
+                    "result": result,
                 }));
             } else if h.error.is_some() {
-                // Mark as failed, free pane
+                let _output_log = save_agent_output(app, i, &format!("error: {}", h.error.as_deref().unwrap_or("unknown")));
+
                 if let Some(qt) = queue::task_for_pane(i) {
                     let _ = queue::mark_failed(&qt.id, h.error.as_deref().unwrap_or("unknown error"));
                 }
@@ -1245,6 +1305,55 @@ pub async fn auto_cycle(app: &App) -> String {
                     "pane": i,
                     "project": pd.project,
                 }));
+            }
+        }
+    }
+
+    // Phase 1.5: Kill stuck agents (running too long without completion)
+    let stuck_threshold = state_snap.config.stuck_threshold_minutes;
+    for i in 1..=config::pane_count() {
+        if !occupied_panes.contains(&i) { continue; }
+        let pd = app.state.get_pane(i).await;
+        if pd.status != "active" { continue; }
+        if let Some(started) = &pd.started_at {
+            if let Ok(start_dt) = NaiveDateTime::parse_from_str(started, "%Y-%m-%dT%H:%M:%S") {
+                let now = Local::now().naive_local();
+                let mins = (now - start_dt).num_minutes();
+                if mins > (stuck_threshold * 10) as i64 {
+                    let is_done = {
+                        let pty = app.pty_lock();
+                        if pty.has_agent(i) { pty.check_health(i, &markers).done } else { true }
+                    };
+                    if !is_done {
+                        let _output_log = save_agent_output(app, i, &format!("stuck: {} minutes", mins));
+                        if let Some(qt) = queue::task_for_pane(i) {
+                            let _ = queue::mark_failed(&qt.id, &format!("stuck for {} minutes", mins));
+                        }
+                        let _ = kill(app, super::types::KillRequest {
+                            pane: i.to_string(),
+                            reason: Some(format!("stuck: {} minutes", mins)),
+                        }).await;
+                        occupied_panes.retain(|&p| p != i);
+                        actions.push(serde_json::json!({
+                            "action": "stuck_kill", "pane": i,
+                            "project": pd.project, "minutes": mins,
+                        }));
+                    }
+                }
+            }
+        }
+    }
+
+    // Phase 1.7: Auto-retry failed tasks with retries remaining
+    {
+        let q = queue::load_queue();
+        let retryable: Vec<String> = q.tasks.iter()
+            .filter(|t| t.status == queue::QueueStatus::Failed && t.retry_count < t.max_retries)
+            .map(|t| t.id.clone())
+            .collect();
+        for task_id in retryable {
+            if let Ok(true) = queue::requeue_failed(&task_id) {
+                actions.push(serde_json::json!({ "action": "auto_retry", "task_id": task_id }));
             }
         }
     }
@@ -1909,6 +2018,87 @@ pub async fn watch(app: &App, req: WatchRequest) -> String {
 }
 
 // --- Helpers ---
+
+/// Save agent output to file before killing PTY (prevents irreversible output loss)
+fn save_agent_output(app: &App, pane_num: u8, reason: &str) -> Option<String> {
+    let pty = app.pty_lock();
+    if !pty.has_agent(pane_num) {
+        return None;
+    }
+    let output = pty.last_output(pane_num, 200).unwrap_or_default();
+    let screen = pty.screen_text(pane_num).unwrap_or_default();
+    drop(pty);
+
+    if output.is_empty() && screen.is_empty() {
+        return None;
+    }
+
+    let dir = config::output_logs_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let filename = format!("pane{}_{}.log", pane_num, Local::now().format("%Y%m%d_%H%M%S"));
+    let path = dir.join(&filename);
+
+    let content = format!(
+        "=== AgentOS Output Log ===\nPane: {}\nReason: {}\nTimestamp: {}\n\n=== Screen ===\n{}\n\n=== Last 200 Lines ===\n{}\n",
+        pane_num, reason, state::now(), screen, output
+    );
+    let _ = std::fs::write(&path, &content);
+    Some(path.to_string_lossy().to_string())
+}
+
+/// Extract meaningful result from agent output (PR URL, commit hash, etc.)
+fn extract_result(app: &App, pane_num: u8) -> String {
+    let pty = app.pty_lock();
+    let output = pty.last_output(pane_num, 50).unwrap_or_default();
+    let screen = pty.screen_text(pane_num).unwrap_or_default();
+    drop(pty);
+
+    let text = if !screen.trim().is_empty() { &screen } else { &output };
+    let mut results = Vec::new();
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        // PR URL
+        if trimmed.contains("github.com") && trimmed.contains("/pull/") {
+            for word in trimmed.split_whitespace() {
+                if word.contains("github.com") && word.contains("/pull/") {
+                    results.push(format!("PR: {}", word.trim_matches(|c: char| !c.is_alphanumeric() && c != '/' && c != ':' && c != '.' && c != '-' && c != '_')));
+                    break;
+                }
+            }
+        }
+        // Git commit hash
+        if trimmed.starts_with('[') && trimmed.contains(']') {
+            for word in trimmed.split_whitespace() {
+                let clean = word.trim_matches(|c: char| !c.is_ascii_hexdigit());
+                if clean.len() >= 7 && clean.len() <= 40 && clean.chars().all(|c| c.is_ascii_hexdigit()) {
+                    results.push(format!("commit: {}", &clean[..7.min(clean.len())]));
+                    break;
+                }
+            }
+        }
+    }
+
+    if results.is_empty() {
+        text.lines().rev()
+            .find(|l| !l.trim().is_empty() && !l.contains('$') && !l.contains('%'))
+            .map(|l| truncate(l.trim(), 200))
+            .unwrap_or_else(|| "auto-completed".into())
+    } else {
+        results.join("; ")
+    }
+}
+
+/// MCP tool: machine identity for one or all panes
+pub fn machine_info_tool(req: &MachineInfoRequest) -> String {
+    let pane = req.pane.as_ref().and_then(|p| config::resolve_pane(p));
+    machine::machine_info(pane).to_string()
+}
+
+/// MCP tool: list all registered machines with network info
+pub fn machine_list_tool() -> String {
+    machine::machine_list().to_string()
+}
 
 fn json_err(msg: &str) -> String {
     serde_json::json!({"error": msg}).to_string()

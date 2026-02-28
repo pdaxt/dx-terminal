@@ -38,6 +38,7 @@ fn load_config() -> Value {
         "roles": {
             "pm":        {"name": "Product Manager",  "typical_acu": 0.5, "review_pct": 90, "parallelizable": false},
             "architect": {"name": "System Architect",  "typical_acu": 1.0, "review_pct": 80, "parallelizable": false},
+            "ba":        {"name": "Business Analyst",   "typical_acu": 0.5, "review_pct": 70, "parallelizable": false},
             "developer": {"name": "Developer",         "typical_acu": 2.0, "review_pct": 50, "parallelizable": true},
             "qa":        {"name": "QA Engineer",        "typical_acu": 1.0, "review_pct": 30, "parallelizable": true},
             "devops":    {"name": "DevOps Engineer",    "typical_acu": 0.5, "review_pct": 60, "parallelizable": false},
@@ -194,11 +195,85 @@ pub fn cap_configure(
     })
 }
 
+/// Complexity signal keywords found in task descriptions.
+/// Each keyword contributes a weight; the sum adjusts the base estimate.
+const SCOPE_SIGNALS: &[(&str, f64)] = &[
+    // Scope amplifiers
+    ("refactor", 0.3), ("rewrite", 0.5), ("migrate", 0.5), ("redesign", 0.4),
+    ("multi-file", 0.3), ("cross-cutting", 0.4), ("architecture", 0.4),
+    ("database", 0.3), ("schema", 0.3), ("api", 0.2), ("auth", 0.3),
+    ("security", 0.3), ("performance", 0.3), ("optimize", 0.2),
+    ("integrate", 0.3), ("deployment", 0.3), ("ci/cd", 0.3),
+    ("test", 0.2), ("e2e", 0.3), ("comprehensive", 0.2),
+    // Scope reducers
+    ("typo", -0.3), ("rename", -0.2), ("comment", -0.3), ("log", -0.2),
+    ("config", -0.1), ("env", -0.1), ("single file", -0.2),
+];
+
+/// Analyze description text to extract a scope adjustment factor.
+/// Returns a multiplier delta (can be positive or negative).
+fn description_scope_factor(description: &str) -> f64 {
+    if description.is_empty() { return 0.0; }
+    let lower = description.to_lowercase();
+    let word_count = lower.split_whitespace().count();
+
+    // Keyword signal accumulation
+    let keyword_adj: f64 = SCOPE_SIGNALS.iter()
+        .filter(|(kw, _)| lower.contains(kw))
+        .map(|(_, w)| w)
+        .sum();
+
+    // Length heuristic: longer descriptions tend to mean more complex tasks
+    let length_adj = if word_count > 50 { 0.3 }
+        else if word_count > 25 { 0.15 }
+        else if word_count < 5 { -0.1 }
+        else { 0.0 };
+
+    // Count distinct technical terms as a proxy for scope breadth
+    let tech_terms = ["api", "database", "frontend", "backend", "auth", "deploy",
+        "test", "cache", "queue", "webhook", "cron", "socket", "stream"];
+    let breadth = tech_terms.iter().filter(|t| lower.contains(**t)).count();
+    let breadth_adj = (breadth as f64 * 0.1).min(0.5);
+
+    keyword_adj + length_adj + breadth_adj
+}
+
 pub fn cap_estimate(description: &str, complexity: &str, task_type: &str, role: &str) -> Value {
     let cfg = load_config();
     let base = TYPE_BASE_ACU.iter().find(|(t, _)| *t == task_type).map(|(_, v)| *v).unwrap_or(1.0);
     let mult = COMPLEXITY_MULT.iter().find(|(c, _)| *c == complexity).map(|(_, v)| *v).unwrap_or(1.0);
-    let estimated = (base * mult * 100.0).round() / 100.0;
+
+    // Apply description analysis to adjust estimate
+    let scope_adj = description_scope_factor(description);
+    let adjusted = (base * mult * (1.0 + scope_adj)).max(0.1); // floor at 0.1 ACU
+    let estimated = (adjusted * 100.0).round() / 100.0;
+
+    // Cross-reference historical velocity: find similar past work
+    let log = load_work_log();
+    let entries = log["entries"].as_array().cloned().unwrap_or_default();
+    let lower_desc = description.to_lowercase();
+    let similar_entries: Vec<&Value> = entries.iter()
+        .filter(|e| {
+            // Match by role or by overlapping keywords in notes
+            let same_role = e["role"].as_str() == Some(role);
+            let notes = e["notes"].as_str().unwrap_or("").to_lowercase();
+            let keyword_overlap = lower_desc.split_whitespace()
+                .filter(|w| w.len() > 3)
+                .any(|w| notes.contains(w));
+            same_role && keyword_overlap
+        })
+        .collect();
+
+    let historical_avg = if !similar_entries.is_empty() {
+        let sum: f64 = similar_entries.iter().filter_map(|e| e["acu_spent"].as_f64()).sum();
+        Some((sum / similar_entries.len() as f64 * 100.0).round() / 100.0)
+    } else {
+        None
+    };
+
+    let confidence = if historical_avg.is_some() { "high" }
+        else if !description.is_empty() { "medium" }
+        else { "low" };
 
     let role_info = &cfg["roles"][role];
     let review_pct = role_info["review_pct"].as_u64().unwrap_or(50);
@@ -209,13 +284,23 @@ pub fn cap_estimate(description: &str, complexity: &str, task_type: &str, role: 
     let panes = cfg["pane_count"].as_f64().unwrap_or(9.0);
     let wall_mins = (estimated * 60.0 / if parallelizable { panes } else { 1.0 }) as u32;
 
-    json!({
+    let mut result = json!({
         "estimated_acu": estimated, "review_gates": review_gates,
         "parallelizable": parallelizable, "role": role,
         "wall_clock_estimate": format!("{}min", wall_mins),
+        "confidence": confidence,
         "description": description,
-        "breakdown": {"type_base": base, "complexity_multiplier": mult},
-    })
+        "breakdown": {
+            "type_base": base,
+            "complexity_multiplier": mult,
+            "scope_adjustment": (scope_adj * 100.0).round() / 100.0,
+            "similar_tasks_found": similar_entries.len(),
+        },
+    });
+    if let Some(hist) = historical_avg {
+        result["historical_avg_acu"] = json!(hist);
+    }
+    result
 }
 
 pub fn cap_log_work_full(
@@ -373,28 +458,57 @@ pub fn cap_burndown(sprint_id: &str) -> Value {
     let start_date = sprint["start_date"].as_str().unwrap_or("");
     let space = sprint["space"].as_str().unwrap_or("");
 
-    let mut actual = vec![];
+    // Parse start date to compute per-day dates
+    let start_naive = chrono::NaiveDate::parse_from_str(start_date, "%Y-%m-%d").ok();
+    let today = Local::now().date_naive();
+
+    let mut actual = vec![json!({"day": 0, "date": start_date, "remaining": planned_acu})];
     let mut cumulative = 0.0;
-    let _today = Local::now().format("%Y-%m-%d").to_string();
-    for d in 0..=days {
-        // Calculate date for day d (approximate — just offset start_date string)
-        let day_entries: Vec<&Value> = entries.iter().filter(|e| {
-            let logged = e["logged_at"].as_str().unwrap_or("");
-            logged >= start_date && (space.is_empty() || e["space"].as_str() == Some(space))
-        }).collect();
-        // Simplified: just use cumulative from all entries up to now
-        if d == 0 { continue; }
-        let day_acu: f64 = day_entries.iter().filter_map(|e| e["acu_spent"].as_f64()).sum();
-        cumulative = day_acu; // Use total for now
-        actual.push(json!({"day": d, "remaining": ((planned_acu - cumulative).max(0.0) * 100.0).round() / 100.0}));
-        break; // Only one data point for current day
+
+    for d in 1..=days {
+        let day_date = match start_naive {
+            Some(sd) => sd + chrono::Duration::days(d as i64),
+            None => break,
+        };
+        // Only emit data points up to today
+        if day_date > today { break; }
+        let day_str = day_date.format("%Y-%m-%d").to_string();
+
+        // Sum ACU for entries logged on this specific day
+        let day_acu: f64 = entries.iter()
+            .filter(|e| {
+                let logged = e["logged_at"].as_str().unwrap_or("");
+                logged.starts_with(&day_str)
+                    && (space.is_empty() || e["space"].as_str() == Some(space))
+            })
+            .filter_map(|e| e["acu_spent"].as_f64())
+            .sum();
+
+        cumulative += day_acu;
+        let remaining = (planned_acu - cumulative).max(0.0);
+        actual.push(json!({
+            "day": d, "date": day_str,
+            "acu_burned": (day_acu * 100.0).round() / 100.0,
+            "remaining": (remaining * 100.0).round() / 100.0,
+        }));
     }
 
-    let burn_rate = if !actual.is_empty() { cumulative } else { 0.0 };
+    // Compute burn rate from actual days elapsed
+    let days_elapsed = actual.len().saturating_sub(1).max(1) as f64;
+    let burn_rate = cumulative / days_elapsed;
+    let remaining = (planned_acu - cumulative).max(0.0);
+    let days_left = if burn_rate > 0.0 { (remaining / burn_rate).ceil() as u32 } else { 0 };
+
     json!({
         "sprint": sprint["id"], "planned_acu": planned_acu,
         "ideal": ideal, "actual": actual,
-        "projection": {"burn_rate_per_day": (burn_rate * 100.0).round() / 100.0},
+        "projection": {
+            "burn_rate_per_day": (burn_rate * 100.0).round() / 100.0,
+            "cumulative_burned": (cumulative * 100.0).round() / 100.0,
+            "remaining_acu": (remaining * 100.0).round() / 100.0,
+            "estimated_days_to_complete": days_left,
+            "on_track": burn_rate >= daily_burn * 0.8,
+        },
     })
 }
 
@@ -415,24 +529,47 @@ pub fn cap_velocity(space: &str, count: usize) -> Value {
 
     for sp in recent {
         let start = sp["start_date"].as_str().unwrap_or("");
+        let days = sp["days"].as_u64().unwrap_or(5) as i64;
+        // Compute end date to bound entries within this sprint
+        let end_date = chrono::NaiveDate::parse_from_str(start, "%Y-%m-%d")
+            .ok()
+            .map(|sd| (sd + chrono::Duration::days(days)).format("%Y-%m-%d").to_string())
+            .unwrap_or_default();
         let planned_acu = sp["planned"]["total_acu"].as_f64().unwrap_or(0.0);
         let sprint_acu: f64 = entries.iter()
-            .filter(|e| e["logged_at"].as_str().map_or(false, |s| s >= start)
-                && (space.is_empty() || e["space"].as_str() == Some(space)))
+            .filter(|e| {
+                let logged = e["logged_at"].as_str().unwrap_or("");
+                logged >= start
+                    && (end_date.is_empty() || logged < end_date.as_str())
+                    && (space.is_empty() || e["space"].as_str() == Some(space))
+            })
             .filter_map(|e| e["acu_spent"].as_f64())
             .sum();
-        let accuracy = if planned_acu > 0.0 { (sprint_acu / planned_acu * 100.0).round() / 100.0 } else { 0.0 };
+        // Accuracy as 0.0-1.0 capped: how close actual was to planned
+        let accuracy = if planned_acu > 0.0 {
+            let ratio = sprint_acu / planned_acu;
+            // Symmetric accuracy: penalize both under and over equally
+            (1.0 - (ratio - 1.0).abs()).max(0.0)
+        } else { 0.0 };
         velocity_data.push(json!({
             "sprint": sp["id"], "planned_acu": (planned_acu * 100.0).round() / 100.0,
-            "actual_acu": (sprint_acu * 100.0).round() / 100.0, "accuracy": accuracy,
+            "actual_acu": (sprint_acu * 100.0).round() / 100.0,
+            "accuracy": (accuracy * 100.0).round() / 100.0,
+            "delivery_ratio": if planned_acu > 0.0 { (sprint_acu / planned_acu * 100.0).round() / 100.0 } else { 0.0 },
         }));
     }
 
     let avg_acu = velocity_data.iter().filter_map(|v| v["actual_acu"].as_f64()).sum::<f64>()
         / velocity_data.len().max(1) as f64;
+    let avg_accuracy = velocity_data.iter().filter_map(|v| v["accuracy"].as_f64()).sum::<f64>()
+        / velocity_data.len().max(1) as f64;
     json!({
         "sprints_analyzed": velocity_data.len(), "velocity": velocity_data,
-        "summary": {"avg_acu_per_sprint": (avg_acu * 100.0).round() / 100.0},
+        "summary": {
+            "avg_acu_per_sprint": (avg_acu * 100.0).round() / 100.0,
+            "avg_estimation_accuracy": (avg_accuracy * 100.0).round() / 100.0,
+            "recommended_capacity_factor": (avg_accuracy * 100.0).round() / 100.0,
+        },
     })
 }
 

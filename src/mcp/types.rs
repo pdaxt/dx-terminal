@@ -187,6 +187,8 @@ pub struct QueueAddRequest {
     pub priority: Option<u8>,
     #[schemars(description = "Task IDs this depends on (must complete first)")]
     pub depends_on: Option<Vec<String>>,
+    #[schemars(description = "Max retries on failure (default 2, 0=no retry)")]
+    pub max_retries: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1199,4 +1201,10 @@ pub struct FactDeleteRequest {
     pub fact_id: String,
     #[schemars(description = "Reason for deletion (for audit log)")]
     pub reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MachineInfoRequest {
+    #[schemars(description = "Pane reference (number or theme name). Omit to list all machines.")]
+    pub pane: Option<String>,
 }

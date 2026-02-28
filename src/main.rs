@@ -14,6 +14,7 @@ mod queue;
 mod multi_agent;
 mod collab;
 mod knowledge;
+mod machine;
 
 use std::sync::Arc;
 use clap::{Parser, Subcommand};
@@ -146,5 +147,6 @@ impl Drop for ShutdownGuard {
         if let Ok(mut pty) = self.0.pty.lock() {
             pty.kill_all();
         }
+        machine::deregister_all();
     }
 }

@@ -12,6 +12,7 @@ pub struct AgentHandle {
     pub parser: Arc<Mutex<vt100::Parser>>,
     pub output_lines: Arc<Mutex<VecDeque<String>>>,
     pub reader_handle: Option<std::thread::JoinHandle<()>>,
+    pub exit_status: Arc<Mutex<Option<i32>>>,
 }
 
 impl AgentHandle {
@@ -66,6 +67,7 @@ impl AgentHandle {
             parser,
             output_lines,
             reader_handle: Some(reader_handle),
+            exit_status: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -144,10 +146,22 @@ impl AgentHandle {
 
     /// Check if the child process is still running
     pub fn is_running(&self) -> bool {
-        // try_wait returns Ok(Some(status)) if exited, Ok(None) if still running
-        // portable-pty Child doesn't have try_wait, so we check via the reader
-        // If the reader thread is still alive, the process is likely running
-        self.reader_handle.as_ref().map_or(false, |h| !h.is_finished())
+        let reader_done = self.reader_handle.as_ref().map_or(true, |h| h.is_finished());
+        if reader_done {
+            // Reader finished = process exited, capture sentinel exit status
+            if let Ok(mut status) = self.exit_status.lock() {
+                if status.is_none() {
+                    *status = Some(-1); // Unknown exit code (reader EOF)
+                }
+            }
+            return false;
+        }
+        true
+    }
+
+    /// Get the exit code if the process has exited
+    pub fn exit_code(&self) -> Option<i32> {
+        self.exit_status.lock().ok().and_then(|s| *s)
     }
 
     /// Kill the child process (non-blocking — signals then force-kills immediately)

@@ -53,6 +53,14 @@ pub struct PaneState {
     pub workspace_path: Option<String>,
     #[serde(default)]
     pub branch_name: Option<String>,
+    #[serde(default)]
+    pub base_branch: Option<String>,
+    #[serde(default)]
+    pub machine_ip: Option<String>,
+    #[serde(default)]
+    pub machine_hostname: Option<String>,
+    #[serde(default)]
+    pub machine_mac: Option<String>,
 }
 
 fn default_idle() -> String {
@@ -74,6 +82,10 @@ impl Default for PaneState {
             acu_spent: 0.0,
             workspace_path: None,
             branch_name: None,
+            base_branch: None,
+            machine_ip: None,
+            machine_hostname: None,
+            machine_mac: None,
         }
     }
 }

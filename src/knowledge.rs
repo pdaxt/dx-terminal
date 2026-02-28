@@ -58,7 +58,7 @@ fn kgraph_db() -> Result<Connection, String> {
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join("kgraph.db");
     let conn = Connection::open(&path).map_err(|e| e.to_string())?;
-    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;").map_err(|e| e.to_string())?;
+    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;").map_err(|e| e.to_string())?;
     conn.execute_batch(KGRAPH_SCHEMA).map_err(|e| e.to_string())?;
     Ok(conn)
 }
@@ -343,7 +343,7 @@ fn replay_db() -> Result<Connection, String> {
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join("replay_index.db");
     let conn = Connection::open(&path).map_err(|e| e.to_string())?;
-    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;").map_err(|e| e.to_string())?;
+    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;").map_err(|e| e.to_string())?;
     conn.execute_batch(REPLAY_SCHEMA).map_err(|e| e.to_string())?;
     Ok(conn)
 }
@@ -670,7 +670,7 @@ fn tg_db() -> Result<Connection, String> {
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join("truthguard.db");
     let conn = Connection::open(&path).map_err(|e| e.to_string())?;
-    conn.execute_batch("PRAGMA journal_mode=WAL;").map_err(|e| e.to_string())?;
+    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;").map_err(|e| e.to_string())?;
     conn.execute_batch(TG_SCHEMA).map_err(|e| e.to_string())?;
     Ok(conn)
 }

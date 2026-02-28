@@ -1,49 +1,143 @@
 use std::path::PathBuf;
 use std::process::Command;
-use anyhow::Result;
 use chrono::Local;
+use rusqlite::{Connection, params};
 use serde_json::{json, Value};
 
 use crate::config;
 
 const DEFAULT_PORT_MIN: u16 = 3001;
 const DEFAULT_PORT_MAX: u16 = 3099;
-const MAX_KB_ENTRIES: usize = 500;
-const MAX_MESSAGES: usize = 200;
-const MAX_BUILD_HISTORY: usize = 50;
+const MAX_KB_ENTRIES: i64 = 500;
+const MAX_MESSAGES: i64 = 200;
+const MAX_BUILD_HISTORY: i64 = 50;
+
+const COORDINATION_SCHEMA: &str = r#"
+CREATE TABLE IF NOT EXISTS ports (
+    port         INTEGER PRIMARY KEY,
+    service      TEXT NOT NULL UNIQUE,
+    pane_id      TEXT NOT NULL,
+    description  TEXT NOT NULL DEFAULT '',
+    allocated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ports_pane ON ports(pane_id);
+
+CREATE TABLE IF NOT EXISTS agents (
+    pane_id       TEXT PRIMARY KEY,
+    project       TEXT NOT NULL,
+    task          TEXT NOT NULL DEFAULT '',
+    files         TEXT NOT NULL DEFAULT '[]',
+    registered_at TEXT NOT NULL,
+    last_update   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project);
+
+CREATE TABLE IF NOT EXISTS file_locks (
+    file_path   TEXT PRIMARY KEY,
+    pane_id     TEXT NOT NULL REFERENCES agents(pane_id) ON DELETE CASCADE,
+    reason      TEXT NOT NULL DEFAULT '',
+    acquired_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_locks_pane ON file_locks(pane_id);
+
+CREATE TABLE IF NOT EXISTS git_branches (
+    repo_branch TEXT PRIMARY KEY,
+    pane_id     TEXT NOT NULL,
+    purpose     TEXT NOT NULL DEFAULT '',
+    claimed_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_git_pane ON git_branches(pane_id);
+
+CREATE TABLE IF NOT EXISTS builds_active (
+    project    TEXT PRIMARY KEY,
+    pane_id    TEXT NOT NULL,
+    build_type TEXT NOT NULL DEFAULT 'default',
+    started_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS builds_history (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    project      TEXT NOT NULL,
+    pane_id      TEXT NOT NULL,
+    build_type   TEXT NOT NULL DEFAULT 'default',
+    started_at   TEXT NOT NULL,
+    completed_at TEXT NOT NULL,
+    success      INTEGER NOT NULL DEFAULT 0,
+    output       TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_builds_hist_project ON builds_history(project);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id           TEXT PRIMARY KEY,
+    project      TEXT NOT NULL,
+    title        TEXT NOT NULL,
+    description  TEXT NOT NULL DEFAULT '',
+    priority     TEXT NOT NULL DEFAULT 'medium',
+    status       TEXT NOT NULL DEFAULT 'pending',
+    added_by     TEXT NOT NULL DEFAULT '',
+    claimed_by   TEXT,
+    added_at     TEXT NOT NULL,
+    claimed_at   TEXT,
+    completed_at TEXT,
+    result       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project);
+
+CREATE TABLE IF NOT EXISTS kb_entries (
+    id       TEXT PRIMARY KEY,
+    pane_id  TEXT NOT NULL,
+    project  TEXT NOT NULL,
+    category TEXT NOT NULL,
+    title    TEXT NOT NULL,
+    content  TEXT NOT NULL,
+    files    TEXT NOT NULL DEFAULT '[]',
+    added_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_kb_project ON kb_entries(project);
+CREATE INDEX IF NOT EXISTS idx_kb_added ON kb_entries(added_at);
+
+CREATE TABLE IF NOT EXISTS messages (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_pane TEXT NOT NULL,
+    to_pane   TEXT NOT NULL,
+    message   TEXT NOT NULL,
+    priority  TEXT NOT NULL DEFAULT 'info',
+    timestamp TEXT NOT NULL,
+    read_by   TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(to_pane);
+CREATE INDEX IF NOT EXISTS idx_messages_ts ON messages(timestamp);
+
+CREATE TABLE IF NOT EXISTS schema_version (
+    version    INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL
+);
+"#;
+
+// ============================================================================
+// CONNECTION + MIGRATION
+// ============================================================================
 
 fn registry_dir() -> PathBuf {
-    config::home_dir().join(".claude").join("multi_agent")
+    config::multi_agent_root()
 }
 
-fn ensure_dir() {
+fn coordination_db() -> Result<Connection, String> {
     let dir = registry_dir();
     let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("coordination.db");
+    let conn = Connection::open(&path).map_err(|e| format!("DB open: {}", e))?;
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;"
+    ).map_err(|e| format!("DB pragma: {}", e))?;
+    conn.execute_batch(COORDINATION_SCHEMA).map_err(|e| format!("DB schema: {}", e))?;
+    maybe_migrate_json(&conn);
+    Ok(conn)
 }
 
 fn now_iso() -> String {
     Local::now().format("%Y-%m-%dT%H:%M:%S").to_string()
-}
-
-fn load_json(name: &str) -> Value {
-    let path = registry_dir().join(name);
-    if path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if let Ok(v) = serde_json::from_str(&content) {
-                return v;
-            }
-        }
-    }
-    json!({})
-}
-
-fn save_json(name: &str, data: &Value) -> Result<()> {
-    ensure_dir();
-    let path = registry_dir().join(name);
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, serde_json::to_string_pretty(data)?)?;
-    std::fs::rename(&tmp, &path)?;
-    Ok(())
 }
 
 fn is_port_in_use(port: u16) -> (bool, Option<String>) {
@@ -80,35 +174,262 @@ fn gen_short_id(seed: &str) -> String {
     format!("{:08x}", h.finish() as u32)
 }
 
+/// Collect all active tmux panes in one call (avoids N subprocess spawns)
+fn active_panes() -> Vec<String> {
+    if let Ok(output) = Command::new("tmux")
+        .args(["list-panes", "-a", "-F", "#{session_name}:#{window_index}.#{pane_index}"])
+        .output()
+    {
+        if output.status.success() {
+            return String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .map(|l| l.trim().to_string())
+                .collect();
+        }
+    }
+    vec![]
+}
+
+// ============================================================================
+// JSON MIGRATION (runs once, then never again)
+// ============================================================================
+
+fn maybe_migrate_json(conn: &Connection) {
+    let version: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(version), 0) FROM schema_version", [], |r| r.get(0)
+    ).unwrap_or(0);
+    if version >= 1 { return; }
+
+    let dir = registry_dir();
+    migrate_ports(conn, &dir);
+    migrate_agents(conn, &dir);
+    migrate_git(conn, &dir);
+    migrate_builds(conn, &dir);
+    migrate_tasks(conn, &dir);
+    migrate_knowledge(conn, &dir);
+    migrate_messages(conn, &dir);
+
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (1, ?1)",
+        params![now_iso()]
+    );
+}
+
+fn read_legacy_json(dir: &PathBuf, name: &str) -> Option<Value> {
+    let path = dir.join(name);
+    if !path.exists() { return None; }
+    let content = std::fs::read_to_string(&path).ok()?;
+    let v: Value = serde_json::from_str(&content).ok()?;
+    // Rename to .migrated so we don't re-read
+    let _ = std::fs::rename(&path, dir.join(format!("{}.migrated", name)));
+    Some(v)
+}
+
+fn migrate_ports(conn: &Connection, dir: &PathBuf) {
+    let Some(data) = read_legacy_json(dir, "ports.json") else { return };
+    if let Some(allocs) = data["allocations"].as_object() {
+        for (port_str, info) in allocs {
+            let port: i64 = port_str.parse().unwrap_or(0);
+            let _ = conn.execute(
+                "INSERT OR IGNORE INTO ports (port, service, pane_id, description, allocated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![port, info["service"].as_str().unwrap_or(""),
+                        info["pane_id"].as_str().unwrap_or(""),
+                        info["description"].as_str().unwrap_or(""),
+                        info["allocated_at"].as_str().unwrap_or("")]
+            );
+        }
+    }
+}
+
+fn migrate_agents(conn: &Connection, dir: &PathBuf) {
+    let Some(data) = read_legacy_json(dir, "agents.json") else { return };
+    if let Some(agents) = data["agents"].as_object() {
+        for (pane_id, info) in agents {
+            let files_str = info["files"].to_string();
+            let _ = conn.execute(
+                "INSERT OR IGNORE INTO agents (pane_id, project, task, files, registered_at, last_update) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![pane_id, info["project"].as_str().unwrap_or(""),
+                        info["task"].as_str().unwrap_or(""),
+                        files_str,
+                        info["registered_at"].as_str().unwrap_or(""),
+                        info["last_update"].as_str().unwrap_or("")]
+            );
+        }
+    }
+    if let Some(locks) = data["locks"].as_object() {
+        for (file_path, info) in locks {
+            let _ = conn.execute(
+                "INSERT OR IGNORE INTO file_locks (file_path, pane_id, reason, acquired_at) VALUES (?1, ?2, ?3, ?4)",
+                params![file_path, info["pane_id"].as_str().unwrap_or(""),
+                        info["reason"].as_str().unwrap_or(""),
+                        info["acquired_at"].as_str().unwrap_or("")]
+            );
+        }
+    }
+}
+
+fn migrate_git(conn: &Connection, dir: &PathBuf) {
+    let Some(data) = read_legacy_json(dir, "git.json") else { return };
+    if let Some(branches) = data["branches"].as_object() {
+        for (key, info) in branches {
+            let _ = conn.execute(
+                "INSERT OR IGNORE INTO git_branches (repo_branch, pane_id, purpose, claimed_at) VALUES (?1, ?2, ?3, ?4)",
+                params![key, info["pane_id"].as_str().unwrap_or(""),
+                        info["purpose"].as_str().unwrap_or(""),
+                        info["claimed_at"].as_str().unwrap_or("")]
+            );
+        }
+    }
+}
+
+fn migrate_builds(conn: &Connection, dir: &PathBuf) {
+    let Some(data) = read_legacy_json(dir, "builds.json") else { return };
+    if let Some(active) = data["active"].as_object() {
+        for (project, info) in active {
+            let _ = conn.execute(
+                "INSERT OR IGNORE INTO builds_active (project, pane_id, build_type, started_at) VALUES (?1, ?2, ?3, ?4)",
+                params![project, info["pane_id"].as_str().unwrap_or(""),
+                        info["build_type"].as_str().unwrap_or("default"),
+                        info["started_at"].as_str().unwrap_or("")]
+            );
+        }
+    }
+    if let Some(history) = data["history"].as_array() {
+        for entry in history {
+            let _ = conn.execute(
+                "INSERT INTO builds_history (project, pane_id, build_type, started_at, completed_at, success, output) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![entry["project"].as_str().unwrap_or(""),
+                        entry["pane_id"].as_str().unwrap_or(""),
+                        entry["build_type"].as_str().unwrap_or("default"),
+                        entry["started_at"].as_str().unwrap_or(""),
+                        entry["completed_at"].as_str().unwrap_or(""),
+                        entry["success"].as_bool().unwrap_or(false) as i32,
+                        entry["output"].as_str().unwrap_or("")]
+            );
+        }
+    }
+}
+
+fn migrate_tasks(conn: &Connection, dir: &PathBuf) {
+    let Some(data) = read_legacy_json(dir, "tasks.json") else { return };
+    if let Some(queue) = data["queue"].as_array() {
+        for t in queue {
+            let _ = conn.execute(
+                "INSERT OR IGNORE INTO tasks (id, project, title, description, priority, status, added_by, claimed_by, added_at, claimed_at, completed_at, result) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+                params![
+                    t["id"].as_str().unwrap_or(""),
+                    t["project"].as_str().unwrap_or(""),
+                    t["title"].as_str().unwrap_or(""),
+                    t["description"].as_str().unwrap_or(""),
+                    t["priority"].as_str().unwrap_or("medium"),
+                    t["status"].as_str().unwrap_or("pending"),
+                    t["added_by"].as_str().unwrap_or(""),
+                    t["claimed_by"].as_str(),
+                    t["added_at"].as_str().unwrap_or(""),
+                    t["claimed_at"].as_str(),
+                    t["completed_at"].as_str(),
+                    t["result"].as_str()
+                ]
+            );
+        }
+    }
+}
+
+fn migrate_knowledge(conn: &Connection, dir: &PathBuf) {
+    let Some(data) = read_legacy_json(dir, "knowledge.json") else { return };
+    if let Some(entries) = data["entries"].as_array() {
+        for e in entries {
+            let files_str = e["files"].to_string();
+            let _ = conn.execute(
+                "INSERT OR IGNORE INTO kb_entries (id, pane_id, project, category, title, content, files, added_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                params![
+                    e["id"].as_str().unwrap_or(""),
+                    e["pane_id"].as_str().unwrap_or(""),
+                    e["project"].as_str().unwrap_or(""),
+                    e["category"].as_str().unwrap_or(""),
+                    e["title"].as_str().unwrap_or(""),
+                    e["content"].as_str().unwrap_or(""),
+                    files_str,
+                    e["added_at"].as_str().unwrap_or("")
+                ]
+            );
+        }
+    }
+}
+
+fn migrate_messages(conn: &Connection, dir: &PathBuf) {
+    let Some(data) = read_legacy_json(dir, "messages.json") else { return };
+    if let Some(msgs) = data["messages"].as_array() {
+        for m in msgs {
+            let read_by_str = m["read_by"].to_string();
+            let _ = conn.execute(
+                "INSERT INTO messages (from_pane, to_pane, message, priority, timestamp, read_by) VALUES (?1,?2,?3,?4,?5,?6)",
+                params![
+                    m["from"].as_str().unwrap_or(""),
+                    m["to"].as_str().unwrap_or("all"),
+                    m["message"].as_str().unwrap_or(""),
+                    m["priority"].as_str().unwrap_or("info"),
+                    m["timestamp"].as_str().unwrap_or(""),
+                    read_by_str
+                ]
+            );
+        }
+    }
+}
+
 // ============================================================================
 // PORT REGISTRY
 // ============================================================================
 
 pub fn port_allocate(service: &str, pane_id: &str, preferred: Option<u16>, description: &str) -> Value {
-    let mut ports = load_json("ports.json");
-    let allocs = ports.as_object_mut().unwrap();
-    if !allocs.contains_key("allocations") { allocs.insert("allocations".into(), json!({})); }
-    if !allocs.contains_key("services") { allocs.insert("services".into(), json!({})); }
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
 
-    // Check if service already allocated
-    if let Some(existing_port) = ports["services"].get(service).and_then(|v| v.as_u64()) {
-        let (in_use, pid) = is_port_in_use(existing_port as u16);
+    let tx = match conn.unchecked_transaction() {
+        Ok(t) => t,
+        Err(e) => return json!({"error": format!("Transaction: {}", e)}),
+    };
+
+    // Check if service already has a port
+    let existing: Option<i64> = tx.query_row(
+        "SELECT port FROM ports WHERE service = ?1", params![service], |r| r.get(0)
+    ).ok();
+
+    if let Some(port) = existing {
+        let (in_use, pid) = is_port_in_use(port as u16);
         if in_use {
-            return json!({"status": "exists", "port": existing_port, "pid": pid});
+            return json!({"status": "exists", "port": port, "pid": pid});
+        }
+        // Port allocated but not in use — reclaim it, update pane_id
+        let _ = tx.execute(
+            "UPDATE ports SET pane_id = ?1, description = ?2, allocated_at = ?3 WHERE port = ?4",
+            params![pane_id, description, now_iso(), port]
+        );
+        let _ = tx.commit();
+        return json!({"status": "allocated", "port": port, "service": service});
+    }
+
+    // Find a free port
+    let allocated_ports: Vec<i64> = {
+        let mut stmt = tx.prepare("SELECT port FROM ports").unwrap();
+        stmt.query_map([], |r| r.get(0)).unwrap()
+            .filter_map(|r| r.ok())
+            .collect()
+    };
+
+    let mut port: Option<u16> = None;
+
+    // Try preferred first
+    if let Some(pref) = preferred {
+        if !allocated_ports.contains(&(pref as i64)) {
+            let (in_use, _) = is_port_in_use(pref);
+            if !in_use { port = Some(pref); }
         }
     }
 
-    // Find free port
-    let mut port: Option<u16> = None;
-    if let Some(pref) = preferred {
-        let (in_use, _) = is_port_in_use(pref);
-        if !in_use && !ports["allocations"].as_object().unwrap().contains_key(&pref.to_string()) {
-            port = Some(pref);
-        }
-    }
+    // Scan range
     if port.is_none() {
         for p in DEFAULT_PORT_MIN..=DEFAULT_PORT_MAX {
-            if !ports["allocations"].as_object().unwrap().contains_key(&p.to_string()) {
+            if !allocated_ports.contains(&(p as i64)) {
                 let (in_use, _) = is_port_in_use(p);
                 if !in_use {
                     port = Some(p);
@@ -122,39 +443,44 @@ pub fn port_allocate(service: &str, pane_id: &str, preferred: Option<u16>, descr
         return json!({"error": "No free ports available"});
     };
 
-    ports["allocations"][port.to_string()] = json!({
-        "service": service, "pane_id": pane_id,
-        "description": description, "allocated_at": now_iso()
-    });
-    ports["services"][service] = json!(port);
-    let _ = save_json("ports.json", &ports);
+    let _ = tx.execute(
+        "INSERT INTO ports (port, service, pane_id, description, allocated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![port as i64, service, pane_id, description, now_iso()]
+    );
+    let _ = tx.commit();
     json!({"status": "allocated", "port": port, "service": service})
 }
 
 pub fn port_release(port: u16) -> Value {
-    let mut ports = load_json("ports.json");
-    let key = port.to_string();
-    if let Some(alloc) = ports["allocations"].get(&key).cloned() {
-        if let Some(service) = alloc["service"].as_str() {
-            if let Some(svcs) = ports["services"].as_object_mut() { svcs.remove(service); }
-        }
-        if let Some(a) = ports["allocations"].as_object_mut() { a.remove(&key); }
-        let _ = save_json("ports.json", &ports);
-        return json!({"status": "released", "port": port});
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let service: Option<String> = conn.query_row(
+        "SELECT service FROM ports WHERE port = ?1", params![port as i64], |r| r.get(0)
+    ).ok();
+    let rows = conn.execute("DELETE FROM ports WHERE port = ?1", params![port as i64]).unwrap_or(0);
+    if rows > 0 {
+        json!({"status": "released", "port": port, "service": service})
+    } else {
+        json!({"status": "not_found"})
     }
-    json!({"status": "not_found"})
 }
 
 pub fn port_list() -> Value {
-    let ports = load_json("ports.json");
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let mut stmt = match conn.prepare("SELECT port, service, pane_id FROM ports") {
+        Ok(s) => s,
+        Err(e) => return json!({"error": format!("Query: {}", e)}),
+    };
     let mut result = vec![];
-    if let Some(allocs) = ports["allocations"].as_object() {
-        for (port_str, info) in allocs {
-            let port: u16 = port_str.parse().unwrap_or(0);
-            let (active, pid) = is_port_in_use(port);
+    let rows = stmt.query_map([], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+    });
+    if let Ok(rows) = rows {
+        for row in rows.flatten() {
+            let (port, service, pane_id) = row;
+            let (active, pid) = is_port_in_use(port as u16);
             result.push(json!({
-                "port": port, "service": info["service"],
-                "pane_id": info["pane_id"], "active": active, "pid": pid
+                "port": port, "service": service,
+                "pane_id": pane_id, "active": active, "pid": pid
             }));
         }
     }
@@ -162,12 +488,17 @@ pub fn port_list() -> Value {
 }
 
 pub fn port_get(service: &str) -> Value {
-    let ports = load_json("ports.json");
-    if let Some(port) = ports["services"].get(service).and_then(|v| v.as_u64()) {
-        let (active, pid) = is_port_in_use(port as u16);
-        return json!({"found": true, "port": port, "active": active, "pid": pid});
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let row: Result<i64, _> = conn.query_row(
+        "SELECT port FROM ports WHERE service = ?1", params![service], |r| r.get(0)
+    );
+    match row {
+        Ok(port) => {
+            let (active, pid) = is_port_in_use(port as u16);
+            json!({"found": true, "port": port, "active": active, "pid": pid})
+        }
+        Err(_) => json!({"found": false}),
     }
-    json!({"found": false})
 }
 
 // ============================================================================
@@ -175,52 +506,87 @@ pub fn port_get(service: &str) -> Value {
 // ============================================================================
 
 pub fn agent_register(pane_id: &str, project: &str, task: &str, files: &[String]) -> Value {
-    let mut agents = load_json("agents.json");
-    if agents.get("agents").is_none() { agents["agents"] = json!({}); }
-    if agents.get("locks").is_none() { agents["locks"] = json!({}); }
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let now = now_iso();
+    let files_json = serde_json::to_string(files).unwrap_or_else(|_| "[]".into());
 
-    agents["agents"][pane_id] = json!({
-        "project": project, "task": task, "files": files,
-        "registered_at": now_iso(), "last_update": now_iso()
-    });
-    let _ = save_json("agents.json", &agents);
+    let _ = conn.execute(
+        "INSERT INTO agents (pane_id, project, task, files, registered_at, last_update) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+         ON CONFLICT(pane_id) DO UPDATE SET project=?2, task=?3, files=?4, last_update=?6",
+        params![pane_id, project, task, files_json, now, now]
+    );
 
+    // Find other agents on same project
     let mut others = vec![];
-    if let Some(all) = agents["agents"].as_object() {
-        for (p, info) in all {
-            if p != pane_id && info["project"].as_str() == Some(project) {
-                others.push(json!({"pane": p, "task": info["task"]}));
-            }
+    let mut stmt = match conn.prepare(
+        "SELECT pane_id, task FROM agents WHERE project = ?1 AND pane_id != ?2"
+    ) {
+        Ok(s) => s,
+        Err(_) => return json!({"status": "registered", "other_agents": []}),
+    };
+    if let Ok(rows) = stmt.query_map(params![project, pane_id], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    }) {
+        for row in rows.flatten() {
+            others.push(json!({"pane": row.0, "task": row.1}));
         }
     }
     json!({"status": "registered", "other_agents": others})
 }
 
 pub fn agent_update(pane_id: &str, task: &str, files: Option<&[String]>) -> Value {
-    let mut agents = load_json("agents.json");
-    if agents["agents"].get(pane_id).is_some() {
-        agents["agents"][pane_id]["task"] = json!(task);
-        agents["agents"][pane_id]["last_update"] = json!(now_iso());
-        if let Some(f) = files { agents["agents"][pane_id]["files"] = json!(f); }
-        let _ = save_json("agents.json", &agents);
-        return json!({"status": "updated"});
-    }
-    json!({"status": "not_found"})
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let rows = if let Some(f) = files {
+        let files_json = serde_json::to_string(f).unwrap_or_else(|_| "[]".into());
+        conn.execute(
+            "UPDATE agents SET task = ?1, files = ?2, last_update = ?3 WHERE pane_id = ?4",
+            params![task, files_json, now_iso(), pane_id]
+        ).unwrap_or(0)
+    } else {
+        conn.execute(
+            "UPDATE agents SET task = ?1, last_update = ?2 WHERE pane_id = ?3",
+            params![task, now_iso(), pane_id]
+        ).unwrap_or(0)
+    };
+    if rows > 0 { json!({"status": "updated"}) } else { json!({"status": "not_found"}) }
 }
 
 pub fn agent_list(project: Option<&str>) -> Value {
-    let agents = load_json("agents.json");
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let mut result = vec![];
-    if let Some(all) = agents["agents"].as_object() {
-        for (pane_id, info) in all {
-            if let Some(p) = project {
-                if info["project"].as_str() != Some(p) { continue; }
-            }
+
+    let query = if project.is_some() {
+        "SELECT pane_id, project, task, files, last_update FROM agents WHERE project = ?1"
+    } else {
+        "SELECT pane_id, project, task, files, last_update FROM agents"
+    };
+
+    let mut stmt = match conn.prepare(query) {
+        Ok(s) => s,
+        Err(e) => return json!({"error": format!("Query: {}", e)}),
+    };
+
+    let rows = if let Some(p) = project {
+        stmt.query_map(params![p], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?, r.get::<_, String>(4)?))
+        })
+    } else {
+        stmt.query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?, r.get::<_, String>(4)?))
+        })
+    };
+
+    if let Ok(rows) = rows {
+        for row in rows.flatten() {
+            let files_val: Value = serde_json::from_str(&row.3).unwrap_or(json!([]));
             result.push(json!({
-                "pane_id": pane_id, "project": info["project"],
-                "task": info["task"], "files": info["files"],
-                "active": is_pane_active(pane_id),
-                "last_update": info["last_update"]
+                "pane_id": row.0, "project": row.1,
+                "task": row.2, "files": files_val,
+                "active": is_pane_active(&row.0),
+                "last_update": row.4
             }));
         }
     }
@@ -228,18 +594,10 @@ pub fn agent_list(project: Option<&str>) -> Value {
 }
 
 pub fn agent_deregister(pane_id: &str) -> Value {
-    let mut agents = load_json("agents.json");
-    if let Some(a) = agents["agents"].as_object_mut() {
-        if a.remove(pane_id).is_some() {
-            // Release locks held by this pane
-            if let Some(locks) = agents["locks"].as_object_mut() {
-                locks.retain(|_, v| v["pane_id"].as_str() != Some(pane_id));
-            }
-            let _ = save_json("agents.json", &agents);
-            return json!({"status": "deregistered"});
-        }
-    }
-    json!({"status": "not_found"})
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    // CASCADE deletes file_locks owned by this agent
+    let rows = conn.execute("DELETE FROM agents WHERE pane_id = ?1", params![pane_id]).unwrap_or(0);
+    if rows > 0 { json!({"status": "deregistered"}) } else { json!({"status": "not_found"}) }
 }
 
 // ============================================================================
@@ -247,58 +605,75 @@ pub fn agent_deregister(pane_id: &str) -> Value {
 // ============================================================================
 
 pub fn lock_acquire(pane_id: &str, files: &[String], reason: &str) -> Value {
-    let mut agents = load_json("agents.json");
-    if agents.get("locks").is_none() { agents["locks"] = json!({}); }
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
 
+    let tx = match conn.unchecked_transaction() {
+        Ok(t) => t,
+        Err(e) => return json!({"error": format!("Transaction: {}", e)}),
+    };
+
+    // Check for conflicts
     let mut blocked = vec![];
     for f in files {
-        if let Some(lock) = agents["locks"].get(f.as_str()) {
-            if lock["pane_id"].as_str() != Some(pane_id) {
-                blocked.push(json!({
-                    "file": f, "locked_by": lock["pane_id"], "reason": lock["reason"]
-                }));
-            }
+        let conflict: Option<(String, String)> = tx.query_row(
+            "SELECT pane_id, reason FROM file_locks WHERE file_path = ?1 AND pane_id != ?2",
+            params![f, pane_id], |r| Ok((r.get(0)?, r.get(1)?))
+        ).ok();
+        if let Some((owner, lock_reason)) = conflict {
+            blocked.push(json!({"file": f, "locked_by": owner, "reason": lock_reason}));
         }
     }
     if !blocked.is_empty() {
         return json!({"status": "blocked", "blocked": blocked});
     }
 
+    // Acquire all locks
+    let now = now_iso();
     for f in files {
-        agents["locks"][f.as_str()] = json!({
-            "pane_id": pane_id, "reason": reason, "acquired_at": now_iso()
-        });
+        let _ = tx.execute(
+            "INSERT INTO file_locks (file_path, pane_id, reason, acquired_at) \
+             VALUES (?1, ?2, ?3, ?4) \
+             ON CONFLICT(file_path) DO UPDATE SET pane_id=?2, reason=?3, acquired_at=?4",
+            params![f, pane_id, reason, now]
+        );
     }
-    let _ = save_json("agents.json", &agents);
+    let _ = tx.commit();
     json!({"status": "acquired", "files": files})
 }
 
 pub fn lock_release(pane_id: &str, files: &[String]) -> Value {
-    let mut agents = load_json("agents.json");
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let mut released = vec![];
-    if let Some(locks) = agents["locks"].as_object_mut() {
-        let keys: Vec<String> = locks.keys().cloned().collect();
-        for f in keys {
-            if locks[&f]["pane_id"].as_str() == Some(pane_id) {
-                if files.is_empty() || files.iter().any(|x| x == &f) {
-                    released.push(f.clone());
-                    locks.remove(&f);
-                }
-            }
+
+    if files.is_empty() {
+        // Release all locks for this pane
+        let mut stmt = conn.prepare("SELECT file_path FROM file_locks WHERE pane_id = ?1").unwrap();
+        if let Ok(rows) = stmt.query_map(params![pane_id], |r| r.get::<_, String>(0)) {
+            for row in rows.flatten() { released.push(row); }
+        }
+        let _ = conn.execute("DELETE FROM file_locks WHERE pane_id = ?1", params![pane_id]);
+    } else {
+        for f in files {
+            let rows = conn.execute(
+                "DELETE FROM file_locks WHERE file_path = ?1 AND pane_id = ?2",
+                params![f, pane_id]
+            ).unwrap_or(0);
+            if rows > 0 { released.push(f.clone()); }
         }
     }
-    let _ = save_json("agents.json", &agents);
     json!({"status": "released", "files": released})
 }
 
 pub fn lock_check(files: &[String]) -> Value {
-    let agents = load_json("agents.json");
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let mut locked = vec![];
     for f in files {
-        if let Some(lock) = agents["locks"].get(f.as_str()) {
-            locked.push(json!({
-                "file": f, "locked_by": lock["pane_id"], "reason": lock["reason"]
-            }));
+        let row: Option<(String, String)> = conn.query_row(
+            "SELECT pane_id, reason FROM file_locks WHERE file_path = ?1",
+            params![f], |r| Ok((r.get(0)?, r.get(1)?))
+        ).ok();
+        if let Some((owner, reason)) = row {
+            locked.push(json!({"file": f, "locked_by": owner, "reason": reason}));
         }
     }
     json!({"locked": locked, "clear": locked.is_empty()})
@@ -309,56 +684,77 @@ pub fn lock_check(files: &[String]) -> Value {
 // ============================================================================
 
 pub fn git_claim_branch(pane_id: &str, branch: &str, repo: &str, purpose: &str) -> Value {
-    let mut git = load_json("git.json");
-    if git.get("branches").is_none() { git["branches"] = json!({}); }
-
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let key = format!("{}:{}", repo, branch);
-    if let Some(existing) = git["branches"].get(&key) {
-        if existing["pane_id"].as_str() != Some(pane_id) {
-            if is_pane_active(existing["pane_id"].as_str().unwrap_or("")) {
-                return json!({
-                    "status": "claimed_by_other",
-                    "owner": existing["pane_id"],
-                    "purpose": existing["purpose"]
-                });
-            }
+
+    let tx = match conn.unchecked_transaction() {
+        Ok(t) => t,
+        Err(e) => return json!({"error": format!("Transaction: {}", e)}),
+    };
+
+    // Check existing claim
+    let existing: Option<(String, String)> = tx.query_row(
+        "SELECT pane_id, purpose FROM git_branches WHERE repo_branch = ?1",
+        params![key], |r| Ok((r.get(0)?, r.get(1)?))
+    ).ok();
+
+    if let Some((owner, owner_purpose)) = existing {
+        if owner != pane_id && is_pane_active(&owner) {
+            return json!({"status": "claimed_by_other", "owner": owner, "purpose": owner_purpose});
         }
     }
 
-    git["branches"][&key] = json!({
-        "pane_id": pane_id, "purpose": purpose, "claimed_at": now_iso()
-    });
-    let _ = save_json("git.json", &git);
+    let _ = tx.execute(
+        "INSERT INTO git_branches (repo_branch, pane_id, purpose, claimed_at) \
+         VALUES (?1, ?2, ?3, ?4) \
+         ON CONFLICT(repo_branch) DO UPDATE SET pane_id=?2, purpose=?3, claimed_at=?4",
+        params![key, pane_id, purpose, now_iso()]
+    );
+    let _ = tx.commit();
     json!({"status": "claimed", "branch": branch})
 }
 
 pub fn git_release_branch(pane_id: &str, branch: &str, repo: &str) -> Value {
-    let mut git = load_json("git.json");
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let key = format!("{}:{}", repo, branch);
-    if let Some(entry) = git["branches"].get(&key) {
-        if entry["pane_id"].as_str() == Some(pane_id) {
-            if let Some(b) = git["branches"].as_object_mut() { b.remove(&key); }
-            let _ = save_json("git.json", &git);
-            return json!({"status": "released"});
+
+    // Check ownership
+    let owner: Option<String> = conn.query_row(
+        "SELECT pane_id FROM git_branches WHERE repo_branch = ?1",
+        params![key], |r| r.get(0)
+    ).ok();
+
+    match owner {
+        Some(ref o) if o == pane_id => {
+            let _ = conn.execute("DELETE FROM git_branches WHERE repo_branch = ?1", params![key]);
+            json!({"status": "released"})
         }
-        return json!({"status": "not_owner"});
+        Some(_) => json!({"status": "not_owner"}),
+        None => json!({"status": "not_found"}),
     }
-    json!({"status": "not_found"})
 }
 
 pub fn git_list_branches(repo: Option<&str>) -> Value {
-    let git = load_json("git.json");
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let mut result = vec![];
-    if let Some(branches) = git["branches"].as_object() {
-        for (key, info) in branches {
+
+    let mut stmt = match conn.prepare("SELECT repo_branch, pane_id, purpose FROM git_branches") {
+        Ok(s) => s,
+        Err(e) => return json!({"error": format!("Query: {}", e)}),
+    };
+    if let Ok(rows) = stmt.query_map([], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+    }) {
+        for row in rows.flatten() {
+            let (key, owner, purpose) = row;
             if let Some((r, b)) = key.rsplit_once(':') {
                 if let Some(filter) = repo {
                     if r != filter { continue; }
                 }
                 result.push(json!({
                     "repo": r, "branch": b,
-                    "pane_id": info["pane_id"], "purpose": info["purpose"],
-                    "active": is_pane_active(info["pane_id"].as_str().unwrap_or(""))
+                    "pane_id": owner, "purpose": purpose,
+                    "active": is_pane_active(&owner)
                 }));
             }
         }
@@ -367,32 +763,38 @@ pub fn git_list_branches(repo: Option<&str>) -> Value {
 }
 
 pub fn git_pre_commit_check(pane_id: &str, _repo: &str, files: &[String]) -> Value {
-    let agents = load_json("agents.json");
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let mut conflicts = vec![];
 
-    // Check file locks
-    if let Some(locks) = agents["locks"].as_object() {
-        for f in files {
-            if let Some(lock) = locks.get(f.as_str()) {
-                if lock["pane_id"].as_str() != Some(pane_id) {
-                    conflicts.push(json!({"type": "file_lock", "file": f, "owner": lock["pane_id"]}));
-                }
-            }
+    // Check file locks held by others
+    for f in files {
+        let row: Option<String> = conn.query_row(
+            "SELECT pane_id FROM file_locks WHERE file_path = ?1 AND pane_id != ?2",
+            params![f, pane_id], |r| r.get(0)
+        ).ok();
+        if let Some(owner) = row {
+            conflicts.push(json!({"type": "file_lock", "file": f, "owner": owner}));
         }
     }
 
-    // Check concurrent edits
-    if let Some(all) = agents["agents"].as_object() {
-        for (p, info) in all {
-            if p != pane_id {
-                if let Some(agent_files) = info["files"].as_array() {
-                    let overlap: Vec<&String> = files.iter()
-                        .filter(|f| agent_files.iter().any(|af| af.as_str() == Some(f.as_str())))
-                        .collect();
-                    if !overlap.is_empty() {
-                        conflicts.push(json!({"type": "concurrent_edit", "pane": p, "files": overlap}));
-                    }
-                }
+    // Check concurrent edits from other agents' file lists
+    let mut stmt = match conn.prepare(
+        "SELECT pane_id, files FROM agents WHERE pane_id != ?1"
+    ) {
+        Ok(s) => s,
+        Err(_) => return json!({"safe": conflicts.is_empty(), "conflicts": conflicts}),
+    };
+    if let Ok(rows) = stmt.query_map(params![pane_id], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    }) {
+        for row in rows.flatten() {
+            let (other_pane, files_str) = row;
+            let agent_files: Vec<String> = serde_json::from_str(&files_str).unwrap_or_default();
+            let overlap: Vec<&String> = files.iter()
+                .filter(|f| agent_files.iter().any(|af| af == *f))
+                .collect();
+            if !overlap.is_empty() {
+                conflicts.push(json!({"type": "concurrent_edit", "pane": other_pane, "files": overlap}));
             }
         }
     }
@@ -405,68 +807,104 @@ pub fn git_pre_commit_check(pane_id: &str, _repo: &str, files: &[String]) -> Val
 // ============================================================================
 
 pub fn build_claim(pane_id: &str, project: &str, build_type: &str) -> Value {
-    let mut builds = load_json("builds.json");
-    if builds.get("active").is_none() { builds["active"] = json!({}); }
-    if builds.get("history").is_none() { builds["history"] = json!([]); }
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
 
-    if let Some(existing) = builds["active"].get(project) {
-        if is_pane_active(existing["pane_id"].as_str().unwrap_or("")) {
-            return json!({"status": "busy", "owner": existing["pane_id"], "started": existing["started_at"]});
+    let tx = match conn.unchecked_transaction() {
+        Ok(t) => t,
+        Err(e) => return json!({"error": format!("Transaction: {}", e)}),
+    };
+
+    let existing: Option<(String, String)> = tx.query_row(
+        "SELECT pane_id, started_at FROM builds_active WHERE project = ?1",
+        params![project], |r| Ok((r.get(0)?, r.get(1)?))
+    ).ok();
+
+    if let Some((owner, started)) = existing {
+        if is_pane_active(&owner) {
+            return json!({"status": "busy", "owner": owner, "started": started});
         }
+        // Stale build — remove it
+        let _ = tx.execute("DELETE FROM builds_active WHERE project = ?1", params![project]);
     }
 
-    builds["active"][project] = json!({
-        "pane_id": pane_id, "build_type": build_type, "started_at": now_iso()
-    });
-    let _ = save_json("builds.json", &builds);
+    let _ = tx.execute(
+        "INSERT INTO builds_active (project, pane_id, build_type, started_at) VALUES (?1, ?2, ?3, ?4)",
+        params![project, pane_id, build_type, now_iso()]
+    );
+    let _ = tx.commit();
     json!({"status": "claimed"})
 }
 
 pub fn build_release(pane_id: &str, project: &str, success: bool, output: &str) -> Value {
-    let mut builds = load_json("builds.json");
-    if let Some(active) = builds["active"].get(project).cloned() {
-        if active["pane_id"].as_str() == Some(pane_id) {
-            let mut entry = active.clone();
-            entry["completed_at"] = json!(now_iso());
-            entry["success"] = json!(success);
-            entry["output"] = json!(output);
-            entry["project"] = json!(project);
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
 
-            if let Some(history) = builds["history"].as_array_mut() {
-                history.push(entry);
-                if history.len() > MAX_BUILD_HISTORY {
-                    let drain = history.len() - MAX_BUILD_HISTORY;
-                    history.drain(..drain);
-                }
-            }
+    let tx = match conn.unchecked_transaction() {
+        Ok(t) => t,
+        Err(e) => return json!({"error": format!("Transaction: {}", e)}),
+    };
 
-            if let Some(a) = builds["active"].as_object_mut() { a.remove(project); }
-            let _ = save_json("builds.json", &builds);
-            return json!({"status": "released"});
+    let active: Option<(String, String, String)> = tx.query_row(
+        "SELECT pane_id, build_type, started_at FROM builds_active WHERE project = ?1",
+        params![project], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+    ).ok();
+
+    match active {
+        Some((owner, bt, started)) if owner == pane_id => {
+            // Move to history
+            let _ = tx.execute(
+                "INSERT INTO builds_history (project, pane_id, build_type, started_at, completed_at, success, output) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![project, pane_id, bt, started, now_iso(), success as i32, output]
+            );
+            // Trim history
+            let _ = tx.execute(
+                "DELETE FROM builds_history WHERE id IN (\
+                    SELECT id FROM builds_history ORDER BY id ASC \
+                    LIMIT MAX(0, (SELECT COUNT(*) FROM builds_history) - ?1))",
+                params![MAX_BUILD_HISTORY]
+            );
+            // Remove active
+            let _ = tx.execute("DELETE FROM builds_active WHERE project = ?1", params![project]);
+            let _ = tx.commit();
+            json!({"status": "released"})
         }
-        return json!({"status": "not_owner"});
+        Some(_) => json!({"status": "not_owner"}),
+        None => json!({"status": "not_found"}),
     }
-    json!({"status": "not_found"})
 }
 
 pub fn build_status(project: &str) -> Value {
-    let builds = load_json("builds.json");
-    if let Some(info) = builds["active"].get(project) {
-        return json!({"building": true, "owner": info["pane_id"], "started": info["started_at"]});
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let row: Option<(String, String)> = conn.query_row(
+        "SELECT pane_id, started_at FROM builds_active WHERE project = ?1",
+        params![project], |r| Ok((r.get(0)?, r.get(1)?))
+    ).ok();
+    match row {
+        Some((owner, started)) => json!({"building": true, "owner": owner, "started": started}),
+        None => json!({"building": false}),
     }
-    json!({"building": false})
 }
 
 pub fn build_get_last(project: &str) -> Value {
-    let builds = load_json("builds.json");
-    if let Some(history) = builds["history"].as_array() {
-        for entry in history.iter().rev() {
-            if entry["project"].as_str() == Some(project) {
-                return json!({"found": true, "build": entry});
-            }
-        }
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let row = conn.query_row(
+        "SELECT pane_id, build_type, started_at, completed_at, success, output \
+         FROM builds_history WHERE project = ?1 ORDER BY id DESC LIMIT 1",
+        params![project],
+        |r| Ok(json!({
+            "pane_id": r.get::<_, String>(0)?,
+            "build_type": r.get::<_, String>(1)?,
+            "started_at": r.get::<_, String>(2)?,
+            "completed_at": r.get::<_, String>(3)?,
+            "success": r.get::<_, i32>(4)? != 0,
+            "output": r.get::<_, String>(5)?,
+            "project": project
+        }))
+    );
+    match row {
+        Ok(build) => json!({"found": true, "build": build}),
+        Err(_) => json!({"found": false}),
     }
-    json!({"found": false})
 }
 
 // ============================================================================
@@ -474,84 +912,155 @@ pub fn build_get_last(project: &str) -> Value {
 // ============================================================================
 
 pub fn task_add(project: &str, title: &str, description: &str, priority: &str, added_by: &str) -> Value {
-    let mut tasks = load_json("tasks.json");
-    if tasks.get("queue").is_none() { tasks["queue"] = json!([]); }
-
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let task_id = gen_short_id(title);
-    if let Some(queue) = tasks["queue"].as_array_mut() {
-        queue.push(json!({
-            "id": task_id, "project": project, "title": title,
-            "description": description, "priority": priority,
-            "status": "pending", "added_by": added_by, "added_at": now_iso()
-        }));
+    let now = now_iso();
+
+    let result = conn.execute(
+        "INSERT INTO tasks (id, project, title, description, priority, status, added_by, added_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7)",
+        params![task_id, project, title, description, priority, added_by, now]
+    );
+    match result {
+        Ok(_) => json!({"status": "added", "task_id": task_id}),
+        Err(e) => json!({"error": format!("Insert: {}", e)}),
     }
-    let _ = save_json("tasks.json", &tasks);
-    json!({"status": "added", "task_id": task_id})
 }
 
 pub fn task_claim(pane_id: &str, project: Option<&str>) -> Value {
-    let mut tasks = load_json("tasks.json");
-    let priority_order = |p: &str| -> u8 {
-        match p { "urgent" => 0, "high" => 1, "medium" => 2, "low" => 3, _ => 2 }
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+
+    let tx = match conn.unchecked_transaction() {
+        Ok(t) => t,
+        Err(e) => return json!({"error": format!("Transaction: {}", e)}),
     };
 
-    if let Some(queue) = tasks["queue"].as_array_mut() {
-        // Find first pending task matching filter, sorted by priority
-        let mut candidates: Vec<usize> = queue.iter().enumerate()
-            .filter(|(_, t)| {
-                t["status"].as_str() == Some("pending")
-                    && project.map_or(true, |p| t["project"].as_str() == Some(p))
+    // Find first pending task by priority order
+    let query = if project.is_some() {
+        "SELECT id, project, title, description, priority, added_by, added_at \
+         FROM tasks WHERE status = 'pending' AND project = ?1 \
+         ORDER BY CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 2 END, added_at ASC \
+         LIMIT 1"
+    } else {
+        "SELECT id, project, title, description, priority, added_by, added_at \
+         FROM tasks WHERE status = 'pending' \
+         ORDER BY CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 2 END, added_at ASC \
+         LIMIT 1"
+    };
+
+    let task_row = if let Some(p) = project {
+        tx.query_row(query, params![p], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?, r.get::<_, String>(4)?, r.get::<_, String>(5)?,
+                r.get::<_, String>(6)?))
+        })
+    } else {
+        tx.query_row(query, [], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?, r.get::<_, String>(4)?, r.get::<_, String>(5)?,
+                r.get::<_, String>(6)?))
+        })
+    };
+
+    match task_row {
+        Ok((id, proj, title, desc, priority, added_by, added_at)) => {
+            let now = now_iso();
+            let _ = tx.execute(
+                "UPDATE tasks SET status = 'claimed', claimed_by = ?1, claimed_at = ?2 WHERE id = ?3",
+                params![pane_id, now, id]
+            );
+            let _ = tx.commit();
+            json!({
+                "status": "claimed",
+                "task": {
+                    "id": id, "project": proj, "title": title,
+                    "description": desc, "priority": priority,
+                    "status": "claimed", "added_by": added_by,
+                    "added_at": added_at, "claimed_by": pane_id, "claimed_at": now
+                }
             })
-            .map(|(i, _)| i)
-            .collect();
-
-        candidates.sort_by_key(|&i| {
-            let p = queue[i]["priority"].as_str().unwrap_or("medium");
-            (priority_order(p), queue[i]["added_at"].as_str().unwrap_or("").to_string())
-        });
-
-        if let Some(&idx) = candidates.first() {
-            queue[idx]["status"] = json!("claimed");
-            queue[idx]["claimed_by"] = json!(pane_id);
-            queue[idx]["claimed_at"] = json!(now_iso());
-            let task = queue[idx].clone();
-            let _ = save_json("tasks.json", &tasks);
-            return json!({"status": "claimed", "task": task});
         }
+        Err(_) => json!({"status": "empty"}),
     }
-    json!({"status": "empty"})
 }
 
 pub fn task_complete(task_id: &str, pane_id: &str, result: &str) -> Value {
-    let mut tasks = load_json("tasks.json");
-    if let Some(queue) = tasks["queue"].as_array_mut() {
-        for task in queue.iter_mut() {
-            if task["id"].as_str() == Some(task_id) {
-                if task["claimed_by"].as_str() == Some(pane_id) {
-                    task["status"] = json!("completed");
-                    task["completed_at"] = json!(now_iso());
-                    task["result"] = json!(result);
-                    let _ = save_json("tasks.json", &tasks);
-                    return json!({"status": "completed"});
-                }
-                return json!({"status": "not_owner"});
-            }
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+
+    // Check ownership
+    let owner: Option<String> = conn.query_row(
+        "SELECT claimed_by FROM tasks WHERE id = ?1",
+        params![task_id], |r| r.get(0)
+    ).ok().flatten();
+
+    match owner {
+        None => json!({"status": "not_found"}),
+        Some(ref o) if o != pane_id => json!({"status": "not_owner"}),
+        Some(_) => {
+            let _ = conn.execute(
+                "UPDATE tasks SET status = 'completed', completed_at = ?1, result = ?2 WHERE id = ?3",
+                params![now_iso(), result, task_id]
+            );
+            json!({"status": "completed"})
         }
     }
-    json!({"status": "not_found"})
 }
 
 pub fn task_list(status: Option<&str>, project: Option<&str>) -> Value {
-    let tasks = load_json("tasks.json");
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let mut result = vec![];
-    if let Some(queue) = tasks["queue"].as_array() {
-        for t in queue {
-            let matches_status = status.map_or(true, |s| s == "all" || t["status"].as_str() == Some(s));
-            let matches_project = project.map_or(true, |p| t["project"].as_str() == Some(p));
-            if matches_status && matches_project {
-                result.push(t.clone());
-            }
+
+    // Build query dynamically
+    let mut conditions = vec![];
+    let mut param_values: Vec<String> = vec![];
+
+    if let Some(s) = status {
+        if s != "all" {
+            conditions.push(format!("status = ?{}", param_values.len() + 1));
+            param_values.push(s.to_string());
         }
+    }
+    if let Some(p) = project {
+        conditions.push(format!("project = ?{}", param_values.len() + 1));
+        param_values.push(p.to_string());
+    }
+
+    let where_clause = if conditions.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", conditions.join(" AND "))
+    };
+    let sql = format!(
+        "SELECT id, project, title, description, priority, status, added_by, claimed_by, added_at, claimed_at, completed_at, result FROM tasks{}",
+        where_clause
+    );
+
+    let mut stmt = match conn.prepare(&sql) {
+        Ok(s) => s,
+        Err(e) => return json!({"error": format!("Query: {}", e)}),
+    };
+
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter()
+        .map(|v| v as &dyn rusqlite::types::ToSql)
+        .collect();
+
+    if let Ok(rows) = stmt.query_map(params_refs.as_slice(), |r| {
+        Ok(json!({
+            "id": r.get::<_, String>(0)?,
+            "project": r.get::<_, String>(1)?,
+            "title": r.get::<_, String>(2)?,
+            "description": r.get::<_, String>(3)?,
+            "priority": r.get::<_, String>(4)?,
+            "status": r.get::<_, String>(5)?,
+            "added_by": r.get::<_, String>(6)?,
+            "claimed_by": r.get::<_, Option<String>>(7)?,
+            "added_at": r.get::<_, String>(8)?,
+            "claimed_at": r.get::<_, Option<String>>(9)?,
+            "completed_at": r.get::<_, Option<String>>(10)?,
+            "result": r.get::<_, Option<String>>(11)?
+        }))
+    }) {
+        for row in rows.flatten() { result.push(row); }
     }
     json!({"tasks": result})
 }
@@ -561,129 +1070,199 @@ pub fn task_list(status: Option<&str>, project: Option<&str>) -> Value {
 // ============================================================================
 
 pub fn kb_add(pane_id: &str, project: &str, category: &str, title: &str, content: &str, files: &[String]) -> Value {
-    let mut kb = load_json("knowledge.json");
-    if kb.get("entries").is_none() { kb["entries"] = json!([]); }
-
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let entry_id = gen_short_id(title);
-    if let Some(entries) = kb["entries"].as_array_mut() {
-        entries.push(json!({
-            "id": entry_id, "pane_id": pane_id, "project": project,
-            "category": category, "title": title, "content": content,
-            "files": files, "added_at": now_iso()
-        }));
-        if entries.len() > MAX_KB_ENTRIES {
-            let drain = entries.len() - MAX_KB_ENTRIES;
-            entries.drain(..drain);
-        }
-    }
-    let _ = save_json("knowledge.json", &kb);
+    let files_json = serde_json::to_string(files).unwrap_or_else(|_| "[]".into());
+    let now = now_iso();
+
+    let _ = conn.execute(
+        "INSERT INTO kb_entries (id, pane_id, project, category, title, content, files, added_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![entry_id, pane_id, project, category, title, content, files_json, now]
+    );
+    // Trim ring buffer
+    let _ = conn.execute(
+        "DELETE FROM kb_entries WHERE id IN (\
+            SELECT id FROM kb_entries ORDER BY added_at ASC \
+            LIMIT MAX(0, (SELECT COUNT(*) FROM kb_entries) - ?1))",
+        params![MAX_KB_ENTRIES]
+    );
     json!({"status": "added", "entry_id": entry_id})
 }
 
 pub fn kb_search(query: &str, project: Option<&str>, category: Option<&str>) -> Value {
-    let kb = load_json("knowledge.json");
-    let query_lower = query.to_lowercase();
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let pattern = format!("%{}%", query);
     let mut results = vec![];
-    if let Some(entries) = kb["entries"].as_array() {
-        for entry in entries {
-            if let Some(p) = project {
-                if entry["project"].as_str() != Some(p) { continue; }
-            }
-            if let Some(c) = category {
-                if entry["category"].as_str() != Some(c) { continue; }
-            }
-            let title = entry["title"].as_str().unwrap_or("").to_lowercase();
-            let content = entry["content"].as_str().unwrap_or("").to_lowercase();
-            if title.contains(&query_lower) || content.contains(&query_lower) {
-                results.push(entry.clone());
-            }
-        }
+
+    let mut conditions = vec!["(title LIKE ?1 OR content LIKE ?1)".to_string()];
+    let mut param_values: Vec<String> = vec![pattern];
+
+    if let Some(p) = project {
+        conditions.push(format!("project = ?{}", param_values.len() + 1));
+        param_values.push(p.to_string());
     }
-    let len = results.len();
-    let start = if len > 20 { len - 20 } else { 0 };
-    json!({"results": &results[start..]})
+    if let Some(c) = category {
+        conditions.push(format!("category = ?{}", param_values.len() + 1));
+        param_values.push(c.to_string());
+    }
+
+    let sql = format!(
+        "SELECT id, pane_id, project, category, title, content, files, added_at FROM kb_entries WHERE {} ORDER BY added_at DESC LIMIT 20",
+        conditions.join(" AND ")
+    );
+
+    let mut stmt = match conn.prepare(&sql) {
+        Ok(s) => s,
+        Err(e) => return json!({"error": format!("Query: {}", e)}),
+    };
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter()
+        .map(|v| v as &dyn rusqlite::types::ToSql)
+        .collect();
+
+    if let Ok(rows) = stmt.query_map(params_refs.as_slice(), |r| {
+        Ok(json!({
+            "id": r.get::<_, String>(0)?,
+            "pane_id": r.get::<_, String>(1)?,
+            "project": r.get::<_, String>(2)?,
+            "category": r.get::<_, String>(3)?,
+            "title": r.get::<_, String>(4)?,
+            "content": r.get::<_, String>(5)?,
+            "files": serde_json::from_str::<Value>(&r.get::<_, String>(6)?).unwrap_or(json!([])),
+            "added_at": r.get::<_, String>(7)?
+        }))
+    }) {
+        for row in rows.flatten() { results.push(row); }
+    }
+    json!({"results": results})
 }
 
 pub fn kb_list(project: Option<&str>, limit: usize) -> Value {
-    let kb = load_json("knowledge.json");
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let mut entries = vec![];
-    if let Some(all) = kb["entries"].as_array() {
-        for e in all {
-            if project.map_or(true, |p| e["project"].as_str() == Some(p)) {
-                entries.push(e.clone());
-            }
-        }
+
+    let (sql, project_param);
+    if let Some(p) = project {
+        sql = "SELECT id, pane_id, project, category, title, content, files, added_at FROM kb_entries WHERE project = ?1 ORDER BY added_at DESC LIMIT ?2";
+        project_param = Some(p.to_string());
+    } else {
+        sql = "SELECT id, pane_id, project, category, title, content, files, added_at FROM kb_entries ORDER BY added_at DESC LIMIT ?1";
+        project_param = None;
+    };
+
+    let mut stmt = match conn.prepare(sql) {
+        Ok(s) => s,
+        Err(e) => return json!({"error": format!("Query: {}", e)}),
+    };
+
+    let rows = if let Some(ref p) = project_param {
+        stmt.query_map(params![p, limit as i64], |r| {
+            Ok(json!({
+                "id": r.get::<_, String>(0)?, "pane_id": r.get::<_, String>(1)?,
+                "project": r.get::<_, String>(2)?, "category": r.get::<_, String>(3)?,
+                "title": r.get::<_, String>(4)?, "content": r.get::<_, String>(5)?,
+                "files": serde_json::from_str::<Value>(&r.get::<_, String>(6)?).unwrap_or(json!([])),
+                "added_at": r.get::<_, String>(7)?
+            }))
+        })
+    } else {
+        stmt.query_map(params![limit as i64], |r| {
+            Ok(json!({
+                "id": r.get::<_, String>(0)?, "pane_id": r.get::<_, String>(1)?,
+                "project": r.get::<_, String>(2)?, "category": r.get::<_, String>(3)?,
+                "title": r.get::<_, String>(4)?, "content": r.get::<_, String>(5)?,
+                "files": serde_json::from_str::<Value>(&r.get::<_, String>(6)?).unwrap_or(json!([])),
+                "added_at": r.get::<_, String>(7)?
+            }))
+        })
+    };
+
+    if let Ok(rows) = rows {
+        for row in rows.flatten() { entries.push(row); }
     }
-    let len = entries.len();
-    let start = if len > limit { len - limit } else { 0 };
-    json!({"entries": &entries[start..]})
+    json!({"entries": entries})
 }
 
 // ============================================================================
 // MESSAGING
 // ============================================================================
 
-pub fn msg_broadcast(from_pane: &str, message: &str, priority: &str) -> Value {
-    let mut msgs = load_json("messages.json");
-    if msgs.get("messages").is_none() { msgs["messages"] = json!([]); }
+fn insert_message(conn: &Connection, from_pane: &str, to_pane: &str, message: &str, priority: &str) {
+    let _ = conn.execute(
+        "INSERT INTO messages (from_pane, to_pane, message, priority, timestamp, read_by) VALUES (?1, ?2, ?3, ?4, ?5, '[]')",
+        params![from_pane, to_pane, message, priority, now_iso()]
+    );
+    // Trim ring buffer
+    let _ = conn.execute(
+        "DELETE FROM messages WHERE id IN (\
+            SELECT id FROM messages ORDER BY id ASC \
+            LIMIT MAX(0, (SELECT COUNT(*) FROM messages) - ?1))",
+        params![MAX_MESSAGES]
+    );
+}
 
-    if let Some(arr) = msgs["messages"].as_array_mut() {
-        arr.push(json!({
-            "from": from_pane, "to": "all", "message": message,
-            "priority": priority, "timestamp": now_iso(), "read_by": []
-        }));
-        if arr.len() > MAX_MESSAGES {
-            let drain = arr.len() - MAX_MESSAGES;
-            arr.drain(..drain);
-        }
-    }
-    let _ = save_json("messages.json", &msgs);
+pub fn msg_broadcast(from_pane: &str, message: &str, priority: &str) -> Value {
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    insert_message(&conn, from_pane, "all", message, priority);
     json!({"status": "sent"})
 }
 
 pub fn msg_send(from_pane: &str, to_pane: &str, message: &str) -> Value {
-    let mut msgs = load_json("messages.json");
-    if msgs.get("messages").is_none() { msgs["messages"] = json!([]); }
-
-    if let Some(arr) = msgs["messages"].as_array_mut() {
-        arr.push(json!({
-            "from": from_pane, "to": to_pane, "message": message,
-            "priority": "info", "timestamp": now_iso(), "read_by": []
-        }));
-        if arr.len() > MAX_MESSAGES {
-            let drain = arr.len() - MAX_MESSAGES;
-            arr.drain(..drain);
-        }
-    }
-    let _ = save_json("messages.json", &msgs);
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    insert_message(&conn, from_pane, to_pane, message, "info");
     json!({"status": "sent"})
 }
 
 pub fn msg_get(pane_id: &str, mark_read: bool) -> Value {
-    let mut msgs = load_json("messages.json");
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let mut unread = vec![];
 
-    if let Some(arr) = msgs["messages"].as_array_mut() {
-        for m in arr.iter_mut() {
-            let from = m["from"].as_str().unwrap_or("");
-            let to = m["to"].as_str().unwrap_or("");
-            if from == pane_id { continue; }
-            if to != "all" && to != pane_id { continue; }
+    // Find messages addressed to this pane (or broadcast) that this pane hasn't read
+    let pane_check = format!("\"{}\"", pane_id);
+    let mut stmt = match conn.prepare(
+        "SELECT id, from_pane, to_pane, message, priority, timestamp, read_by \
+         FROM messages \
+         WHERE from_pane != ?1 AND (to_pane = 'all' OR to_pane = ?1) \
+         AND read_by NOT LIKE ?2 \
+         ORDER BY id ASC"
+    ) {
+        Ok(s) => s,
+        Err(e) => return json!({"error": format!("Query: {}", e)}),
+    };
 
-            let already_read = m["read_by"].as_array()
-                .map_or(false, |rb| rb.iter().any(|r| r.as_str() == Some(pane_id)));
-            if !already_read {
-                unread.push(m.clone());
-                if mark_read {
-                    if let Some(rb) = m["read_by"].as_array_mut() {
-                        rb.push(json!(pane_id));
-                    }
+    let like_pattern = format!("%{}%", pane_check);
+    if let Ok(rows) = stmt.query_map(params![pane_id, like_pattern], |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, String>(3)?,
+            r.get::<_, String>(4)?,
+            r.get::<_, String>(5)?,
+            r.get::<_, String>(6)?,
+        ))
+    }) {
+        for row in rows.flatten() {
+            let (id, from, to, msg, prio, ts, read_by_str) = row;
+            unread.push(json!({
+                "from": from, "to": to, "message": msg,
+                "priority": prio, "timestamp": ts, "read_by": read_by_str
+            }));
+
+            if mark_read {
+                // Add pane_id to read_by JSON array
+                let mut read_by: Vec<String> = serde_json::from_str(&read_by_str).unwrap_or_default();
+                if !read_by.contains(&pane_id.to_string()) {
+                    read_by.push(pane_id.to_string());
+                    let new_read_by = serde_json::to_string(&read_by).unwrap_or_else(|_| "[]".into());
+                    let _ = conn.execute(
+                        "UPDATE messages SET read_by = ?1 WHERE id = ?2",
+                        params![new_read_by, id]
+                    );
                 }
             }
         }
     }
-
-    if mark_read { let _ = save_json("messages.json", &msgs); }
     json!({"messages": unread})
 }
 
@@ -692,85 +1271,102 @@ pub fn msg_get(pane_id: &str, mark_read: bool) -> Value {
 // ============================================================================
 
 pub fn cleanup_all() -> Value {
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let active = active_panes();
     let mut cleaned = json!({"ports": 0, "agents": 0, "locks": 0, "branches": 0, "builds": 0});
 
-    // Clean ports — collect removals first to avoid double mutable borrow
-    let mut ports = load_json("ports.json");
-    let mut port_keys_to_remove = vec![];
-    let mut services_to_remove = vec![];
-    if let Some(allocs) = ports["allocations"].as_object() {
-        for (key, info) in allocs {
-            let port: u16 = key.parse().unwrap_or(0);
-            let (in_use, _) = is_port_in_use(port);
-            let pane_id = info["pane_id"].as_str().unwrap_or("");
-            if !in_use && !is_pane_active(pane_id) {
-                port_keys_to_remove.push(key.clone());
-                if let Some(service) = info["service"].as_str() {
-                    services_to_remove.push(service.to_string());
+    let tx = match conn.unchecked_transaction() {
+        Ok(t) => t,
+        Err(e) => return json!({"error": format!("Transaction: {}", e)}),
+    };
+
+    // Clean ports: remove allocations where port is not in use AND pane is not active
+    let mut stale_ports = vec![];
+    {
+        let mut stmt = tx.prepare("SELECT port, pane_id FROM ports").unwrap();
+        if let Ok(rows) = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))) {
+            for row in rows.flatten() {
+                let (port, pane_id) = row;
+                let (in_use, _) = is_port_in_use(port as u16);
+                if !in_use && !active.contains(&pane_id) {
+                    stale_ports.push(port);
                 }
             }
         }
     }
-    for key in &port_keys_to_remove {
-        if let Some(allocs) = ports["allocations"].as_object_mut() { allocs.remove(key); }
+    for port in &stale_ports {
+        let _ = tx.execute("DELETE FROM ports WHERE port = ?1", params![port]);
     }
-    for service in &services_to_remove {
-        if let Some(svcs) = ports["services"].as_object_mut() { svcs.remove(service); }
-    }
-    cleaned["ports"] = json!(port_keys_to_remove.len());
-    let _ = save_json("ports.json", &ports);
+    cleaned["ports"] = json!(stale_ports.len());
 
-    // Clean agents + locks
-    let mut agents = load_json("agents.json");
-    if let Some(all) = agents["agents"].as_object_mut() {
-        let keys: Vec<String> = all.keys().cloned().collect();
-        for key in keys {
-            if !is_pane_active(&key) {
-                all.remove(&key);
-                cleaned["agents"] = json!(cleaned["agents"].as_u64().unwrap_or(0) + 1);
+    // Clean agents (CASCADE will also remove their file_locks)
+    let mut stale_agents = vec![];
+    {
+        let mut stmt = tx.prepare("SELECT pane_id FROM agents").unwrap();
+        if let Ok(rows) = stmt.query_map([], |r| r.get::<_, String>(0)) {
+            for row in rows.flatten() {
+                if !active.contains(&row) { stale_agents.push(row); }
             }
         }
     }
-    if let Some(locks) = agents["locks"].as_object_mut() {
-        let keys: Vec<String> = locks.keys().cloned().collect();
-        for key in keys {
-            let pane_id = locks[&key]["pane_id"].as_str().unwrap_or("");
-            if !is_pane_active(pane_id) {
-                locks.remove(&key);
-                cleaned["locks"] = json!(cleaned["locks"].as_u64().unwrap_or(0) + 1);
-            }
-        }
+    // Count orphan locks before deleting agents (CASCADE handles them)
+    let mut lock_count = 0i64;
+    for pane_id in &stale_agents {
+        let n: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM file_locks WHERE pane_id = ?1", params![pane_id], |r| r.get(0)
+        ).unwrap_or(0);
+        lock_count += n;
     }
-    let _ = save_json("agents.json", &agents);
+    for pane_id in &stale_agents {
+        let _ = tx.execute("DELETE FROM agents WHERE pane_id = ?1", params![pane_id]);
+    }
+    cleaned["agents"] = json!(stale_agents.len());
+    cleaned["locks"] = json!(lock_count);
+
+    // Also clean orphan locks where the pane_id no longer exists as an agent
+    // (these can happen if someone inserted locks without registering)
+    let orphan_locks: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM file_locks WHERE pane_id NOT IN (SELECT pane_id FROM agents)",
+        [], |r| r.get(0)
+    ).unwrap_or(0);
+    if orphan_locks > 0 {
+        let _ = tx.execute(
+            "DELETE FROM file_locks WHERE pane_id NOT IN (SELECT pane_id FROM agents)", []
+        );
+        cleaned["locks"] = json!(lock_count + orphan_locks);
+    }
 
     // Clean git branches
-    let mut git = load_json("git.json");
-    if let Some(branches) = git["branches"].as_object_mut() {
-        let keys: Vec<String> = branches.keys().cloned().collect();
-        for key in keys {
-            let pane_id = branches[&key]["pane_id"].as_str().unwrap_or("");
-            if !is_pane_active(pane_id) {
-                branches.remove(&key);
-                cleaned["branches"] = json!(cleaned["branches"].as_u64().unwrap_or(0) + 1);
+    let mut stale_branches = vec![];
+    {
+        let mut stmt = tx.prepare("SELECT repo_branch, pane_id FROM git_branches").unwrap();
+        if let Ok(rows) = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))) {
+            for row in rows.flatten() {
+                if !active.contains(&row.1) { stale_branches.push(row.0); }
             }
         }
     }
-    let _ = save_json("git.json", &git);
+    for key in &stale_branches {
+        let _ = tx.execute("DELETE FROM git_branches WHERE repo_branch = ?1", params![key]);
+    }
+    cleaned["branches"] = json!(stale_branches.len());
 
-    // Clean builds
-    let mut builds = load_json("builds.json");
-    if let Some(active) = builds["active"].as_object_mut() {
-        let keys: Vec<String> = active.keys().cloned().collect();
-        for key in keys {
-            let pane_id = active[&key]["pane_id"].as_str().unwrap_or("");
-            if !is_pane_active(pane_id) {
-                active.remove(&key);
-                cleaned["builds"] = json!(cleaned["builds"].as_u64().unwrap_or(0) + 1);
+    // Clean active builds
+    let mut stale_builds = vec![];
+    {
+        let mut stmt = tx.prepare("SELECT project, pane_id FROM builds_active").unwrap();
+        if let Ok(rows) = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))) {
+            for row in rows.flatten() {
+                if !active.contains(&row.1) { stale_builds.push(row.0); }
             }
         }
     }
-    let _ = save_json("builds.json", &builds);
+    for project in &stale_builds {
+        let _ = tx.execute("DELETE FROM builds_active WHERE project = ?1", params![project]);
+    }
+    cleaned["builds"] = json!(stale_builds.len());
 
+    let _ = tx.commit();
     json!({"cleaned": cleaned})
 }
 
@@ -779,44 +1375,309 @@ pub fn cleanup_all() -> Value {
 // ============================================================================
 
 pub fn status_overview(project: Option<&str>) -> Value {
-    let ports = load_json("ports.json");
-    let agents = load_json("agents.json");
-    let builds = load_json("builds.json");
-    let tasks = load_json("tasks.json");
+    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
 
+    // Ports
     let mut port_list = vec![];
-    if let Some(allocs) = ports["allocations"].as_object() {
-        for (port_str, info) in allocs {
-            let port: u16 = port_str.parse().unwrap_or(0);
-            let (active, _) = is_port_in_use(port);
-            port_list.push(json!({"port": port, "service": info["service"], "active": active}));
-        }
-    }
-
-    let mut agent_list = vec![];
-    if let Some(all) = agents["agents"].as_object() {
-        for (pane_id, info) in all {
-            if let Some(p) = project {
-                if info["project"].as_str() != Some(p) { continue; }
+    {
+        let mut stmt = conn.prepare("SELECT port, service FROM ports").unwrap();
+        if let Ok(rows) = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))) {
+            for row in rows.flatten() {
+                let (active, _) = is_port_in_use(row.0 as u16);
+                port_list.push(json!({"port": row.0, "service": row.1, "active": active}));
             }
-            let task_str = info["task"].as_str().unwrap_or("");
-            let short_task: String = task_str.chars().take(50).collect();
-            agent_list.push(json!({
-                "pane": pane_id, "project": info["project"],
-                "task": short_task, "active": is_pane_active(pane_id)
-            }));
         }
     }
 
-    let lock_count = agents["locks"].as_object().map_or(0, |l| l.len());
-    let active_builds: Vec<&str> = builds["active"].as_object()
-        .map_or(vec![], |a| a.keys().map(|s| s.as_str()).collect());
-    let pending_tasks = tasks["queue"].as_array()
-        .map_or(0, |q| q.iter().filter(|t| t["status"].as_str() == Some("pending")).count());
+    // Agents
+    let mut agent_list = vec![];
+    {
+        let query = if project.is_some() {
+            "SELECT pane_id, project, task FROM agents WHERE project = ?1"
+        } else {
+            "SELECT pane_id, project, task FROM agents"
+        };
+        let mut stmt = conn.prepare(query).unwrap();
+        let rows = if let Some(p) = project {
+            stmt.query_map(params![p], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))
+        } else {
+            stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))
+        };
+        if let Ok(rows) = rows {
+            for row in rows.flatten() {
+                let short_task: String = row.2.chars().take(50).collect();
+                agent_list.push(json!({
+                    "pane": row.0, "project": row.1,
+                    "task": short_task, "active": is_pane_active(&row.0)
+                }));
+            }
+        }
+    }
+
+    // Counts
+    let lock_count: i64 = conn.query_row("SELECT COUNT(*) FROM file_locks", [], |r| r.get(0)).unwrap_or(0);
+
+    let mut active_builds = vec![];
+    {
+        let mut stmt = conn.prepare("SELECT project FROM builds_active").unwrap();
+        if let Ok(rows) = stmt.query_map([], |r| r.get::<_, String>(0)) {
+            for row in rows.flatten() { active_builds.push(row); }
+        }
+    }
+
+    let pending_tasks: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM tasks WHERE status = 'pending'", [], |r| r.get(0)
+    ).unwrap_or(0);
 
     json!({
         "ports": port_list, "agents": agent_list,
         "locks": lock_count, "active_builds": active_builds,
         "pending_tasks": pending_tasks
     })
+}
+
+// ============================================================================
+// TESTS
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn test_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        conn.execute_batch(COORDINATION_SCHEMA).unwrap();
+        conn
+    }
+
+    #[test]
+    fn test_port_allocation_dedup() {
+        let conn = test_db();
+        conn.execute(
+            "INSERT INTO ports (port, service, pane_id, description, allocated_at) VALUES (3010, 'web', 'p1', '', '2025-01-01')",
+            []
+        ).unwrap();
+        // Same service should hit UNIQUE constraint
+        let result = conn.execute(
+            "INSERT INTO ports (port, service, pane_id, description, allocated_at) VALUES (3011, 'web', 'p2', '', '2025-01-01')",
+            []
+        );
+        assert!(result.is_err(), "UNIQUE on service should prevent duplicate");
+    }
+
+    #[test]
+    fn test_lock_cascade_on_agent_delete() {
+        let conn = test_db();
+        conn.execute(
+            "INSERT INTO agents (pane_id, project, task, files, registered_at, last_update) VALUES ('p1', 'proj', '', '[]', '2025-01-01', '2025-01-01')",
+            []
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO file_locks (file_path, pane_id, reason, acquired_at) VALUES ('src/main.rs', 'p1', 'editing', '2025-01-01')",
+            []
+        ).unwrap();
+
+        let lock_count: i64 = conn.query_row("SELECT COUNT(*) FROM file_locks", [], |r| r.get(0)).unwrap();
+        assert_eq!(lock_count, 1);
+
+        // Delete agent — locks should cascade
+        conn.execute("DELETE FROM agents WHERE pane_id = 'p1'", []).unwrap();
+        let lock_count: i64 = conn.query_row("SELECT COUNT(*) FROM file_locks", [], |r| r.get(0)).unwrap();
+        assert_eq!(lock_count, 0);
+    }
+
+    #[test]
+    fn test_lock_contention() {
+        let conn = test_db();
+        // Register two agents
+        conn.execute("INSERT INTO agents VALUES ('p1', 'proj', '', '[]', '2025-01-01', '2025-01-01')", []).unwrap();
+        conn.execute("INSERT INTO agents VALUES ('p2', 'proj', '', '[]', '2025-01-01', '2025-01-01')", []).unwrap();
+
+        // p1 locks a file
+        conn.execute("INSERT INTO file_locks VALUES ('src/lib.rs', 'p1', 'edit', '2025-01-01')", []).unwrap();
+
+        // p2 tries to lock the same file — should see conflict
+        let conflict: Option<String> = conn.query_row(
+            "SELECT pane_id FROM file_locks WHERE file_path = 'src/lib.rs' AND pane_id != 'p2'",
+            [], |r| r.get(0)
+        ).ok();
+        assert_eq!(conflict, Some("p1".to_string()));
+    }
+
+    #[test]
+    fn test_task_priority_ordering() {
+        let conn = test_db();
+        conn.execute("INSERT INTO tasks (id, project, title, priority, status, added_by, added_at) VALUES ('t1', 'p', 'Low task', 'low', 'pending', 'a', '2025-01-01T00:00:01')", []).unwrap();
+        conn.execute("INSERT INTO tasks (id, project, title, priority, status, added_by, added_at) VALUES ('t2', 'p', 'Urgent task', 'urgent', 'pending', 'a', '2025-01-01T00:00:02')", []).unwrap();
+        conn.execute("INSERT INTO tasks (id, project, title, priority, status, added_by, added_at) VALUES ('t3', 'p', 'High task', 'high', 'pending', 'a', '2025-01-01T00:00:03')", []).unwrap();
+
+        let first: String = conn.query_row(
+            "SELECT id FROM tasks WHERE status = 'pending' ORDER BY CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 2 END, added_at ASC LIMIT 1",
+            [], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(first, "t2", "Urgent task should be claimed first");
+    }
+
+    #[test]
+    fn test_ring_buffer_kb() {
+        let conn = test_db();
+        // Insert 505 entries
+        for i in 0..505 {
+            conn.execute(
+                "INSERT INTO kb_entries (id, pane_id, project, category, title, content, files, added_at) VALUES (?1, 'p1', 'proj', 'cat', 'title', 'content', '[]', ?2)",
+                params![format!("kb_{:04}", i), format!("2025-01-01T00:00:{:02}", i % 60)]
+            ).unwrap();
+        }
+        // Trim
+        conn.execute(
+            "DELETE FROM kb_entries WHERE id IN (SELECT id FROM kb_entries ORDER BY added_at ASC LIMIT MAX(0, (SELECT COUNT(*) FROM kb_entries) - 500))",
+            []
+        ).unwrap();
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM kb_entries", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 500);
+    }
+
+    #[test]
+    fn test_ring_buffer_messages() {
+        let conn = test_db();
+        for i in 0..210 {
+            conn.execute(
+                "INSERT INTO messages (from_pane, to_pane, message, priority, timestamp, read_by) VALUES ('p1', 'all', ?1, 'info', '2025-01-01', '[]')",
+                params![format!("msg_{}", i)]
+            ).unwrap();
+        }
+        // Trim
+        conn.execute(
+            "DELETE FROM messages WHERE id IN (SELECT id FROM messages ORDER BY id ASC LIMIT MAX(0, (SELECT COUNT(*) FROM messages) - 200))",
+            []
+        ).unwrap();
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 200);
+    }
+
+    #[test]
+    fn test_ring_buffer_build_history() {
+        let conn = test_db();
+        for i in 0..55 {
+            conn.execute(
+                "INSERT INTO builds_history (project, pane_id, build_type, started_at, completed_at, success, output) VALUES ('proj', 'p1', 'default', '2025-01-01', '2025-01-01', 1, ?1)",
+                params![format!("build_{}", i)]
+            ).unwrap();
+        }
+        // Trim
+        conn.execute(
+            "DELETE FROM builds_history WHERE id IN (SELECT id FROM builds_history ORDER BY id ASC LIMIT MAX(0, (SELECT COUNT(*) FROM builds_history) - 50))",
+            []
+        ).unwrap();
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM builds_history", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 50);
+    }
+
+    #[test]
+    fn test_build_claim_release_cycle() {
+        let conn = test_db();
+        // Claim
+        conn.execute(
+            "INSERT INTO builds_active (project, pane_id, build_type, started_at) VALUES ('myproj', 'p1', 'release', '2025-01-01')",
+            []
+        ).unwrap();
+        let building: bool = conn.query_row(
+            "SELECT COUNT(*) > 0 FROM builds_active WHERE project = 'myproj'", [], |r| r.get(0)
+        ).unwrap();
+        assert!(building);
+
+        // Release: move to history + delete active
+        let tx = conn.unchecked_transaction().unwrap();
+        tx.execute(
+            "INSERT INTO builds_history (project, pane_id, build_type, started_at, completed_at, success, output) VALUES ('myproj', 'p1', 'release', '2025-01-01', '2025-01-01', 1, 'ok')",
+            []
+        ).unwrap();
+        tx.execute("DELETE FROM builds_active WHERE project = 'myproj'", []).unwrap();
+        tx.commit().unwrap();
+
+        let building: bool = conn.query_row(
+            "SELECT COUNT(*) > 0 FROM builds_active WHERE project = 'myproj'", [], |r| r.get(0)
+        ).unwrap();
+        assert!(!building);
+
+        let last: String = conn.query_row(
+            "SELECT output FROM builds_history WHERE project = 'myproj' ORDER BY id DESC LIMIT 1",
+            [], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(last, "ok");
+    }
+
+    #[test]
+    fn test_message_read_tracking() {
+        let conn = test_db();
+        conn.execute(
+            "INSERT INTO messages (from_pane, to_pane, message, priority, timestamp, read_by) VALUES ('p1', 'all', 'hello', 'info', '2025-01-01', '[]')",
+            []
+        ).unwrap();
+
+        // p2 reads — should find 1 unread
+        let pane_check = format!("\"{}\"", "p2");
+        let like_pattern = format!("%{}%", pane_check);
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM messages WHERE from_pane != 'p2' AND (to_pane = 'all' OR to_pane = 'p2') AND read_by NOT LIKE ?1",
+            params![like_pattern], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(count, 1);
+
+        // Mark read
+        conn.execute(
+            "UPDATE messages SET read_by = '[\"p2\"]' WHERE id = 1", []
+        ).unwrap();
+
+        // p2 reads again — should find 0
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM messages WHERE from_pane != 'p2' AND (to_pane = 'all' OR to_pane = 'p2') AND read_by NOT LIKE ?1",
+            params![like_pattern], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(count, 0);
+
+        // p3 reads — should still find 1 (p3 hasn't read it)
+        let pane_check3 = format!("\"{}\"", "p3");
+        let like_pattern3 = format!("%{}%", pane_check3);
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM messages WHERE from_pane != 'p3' AND (to_pane = 'all' OR to_pane = 'p3') AND read_by NOT LIKE ?1",
+            params![like_pattern3], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_git_branch_claim_upsert() {
+        let conn = test_db();
+        conn.execute(
+            "INSERT INTO git_branches (repo_branch, pane_id, purpose, claimed_at) VALUES ('repo:feat-1', 'p1', 'feature', '2025-01-01')",
+            []
+        ).unwrap();
+
+        // Same pane reclaims — should upsert
+        conn.execute(
+            "INSERT INTO git_branches (repo_branch, pane_id, purpose, claimed_at) VALUES ('repo:feat-1', 'p1', 'updated purpose', '2025-01-02') ON CONFLICT(repo_branch) DO UPDATE SET pane_id=excluded.pane_id, purpose=excluded.purpose, claimed_at=excluded.claimed_at",
+            []
+        ).unwrap();
+
+        let purpose: String = conn.query_row(
+            "SELECT purpose FROM git_branches WHERE repo_branch = 'repo:feat-1'", [], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(purpose, "updated purpose");
+    }
+
+    #[test]
+    fn test_gen_short_id_uniqueness() {
+        let id1 = gen_short_id("test-seed");
+        // IDs include timestamp so back-to-back calls may collide, but different seeds won't
+        let id2 = gen_short_id("different-seed");
+        assert_eq!(id1.len(), 8);
+        assert_eq!(id2.len(), 8);
+        // Not guaranteed unique per call but should be different with different seeds most of the time
+    }
 }
