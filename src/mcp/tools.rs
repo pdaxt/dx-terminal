@@ -568,12 +568,15 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
             pane_data.task, if summary.is_empty() { "completed" } else { &summary }, acu, pane_num
         );
         let pr_result = workspace::create_pr(ws, &pr_title, &pr_body);
+        let pr_url = pr_result.as_ref().map(|s| s.as_str()).unwrap_or("");
+        let auto_merge = workspace::auto_merge_pr(ws, pr_url).unwrap_or_else(|e| e.to_string());
         let remove_result = workspace::remove_worktree(&pane_data.project_path, ws);
 
         git_info = serde_json::json!({
             "commit": commit_result.unwrap_or_else(|e| e.to_string()),
             "push": push_result.unwrap_or_else(|e| e.to_string()),
             "pr": pr_result.unwrap_or_else(|e| e.to_string()),
+            "auto_merge": auto_merge,
             "worktree_removed": remove_result.is_ok(),
             "branch": branch,
         });
@@ -1260,6 +1263,104 @@ pub async fn queue_add(_app: &App, req: QueueAddRequest) -> String {
         }
         Err(e) => json_err(&format!("Failed to add task: {}", e)),
     }
+}
+
+/// Decompose a high-level goal into sub-tasks with auto-wired dependencies
+pub async fn queue_decompose(_app: &App, req: DecomposeRequest) -> String {
+    let max = req.max_subtasks.unwrap_or(5) as usize;
+    let role = req.role.unwrap_or_else(|| "developer".into());
+    let priority = req.priority.unwrap_or(3);
+
+    // Parse goal into sub-tasks: split on numbered items, bullets, or double newlines
+    let mut subtasks: Vec<(String, bool)> = Vec::new(); // (task_text, is_parallel)
+    let lines: Vec<&str> = req.goal.lines().collect();
+
+    let mut current = String::new();
+    let mut is_parallel = false;
+
+    for line in &lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            if !current.trim().is_empty() {
+                subtasks.push((current.trim().to_string(), is_parallel));
+                current.clear();
+                is_parallel = false;
+            }
+            continue;
+        }
+
+        // Check for list markers: "1.", "2.", "- ", "* "
+        let is_new_item = trimmed.starts_with("- ")
+            || trimmed.starts_with("* ")
+            || (trimmed.len() > 2 && trimmed.chars().next().map_or(false, |c| c.is_ascii_digit())
+                && trimmed.contains('.'));
+
+        if is_new_item {
+            if !current.trim().is_empty() {
+                subtasks.push((current.trim().to_string(), is_parallel));
+            }
+            // Strip the marker
+            let text = trimmed
+                .trim_start_matches(|c: char| c.is_ascii_digit() || c == '.' || c == '-' || c == '*')
+                .trim();
+            // Check for parallel prefix "||"
+            is_parallel = text.starts_with("||");
+            let clean = text.trim_start_matches("||").trim();
+            current = clean.to_string();
+        } else {
+            if current.is_empty() {
+                current = trimmed.to_string();
+            } else {
+                current.push(' ');
+                current.push_str(trimmed);
+            }
+        }
+    }
+    if !current.trim().is_empty() {
+        subtasks.push((current.trim().to_string(), is_parallel));
+    }
+
+    // Cap at max
+    subtasks.truncate(max);
+
+    if subtasks.is_empty() {
+        return json_err("No sub-tasks found. Use numbered steps (1. 2. 3.) or bullets (- *).");
+    }
+
+    // Create queue tasks with sequential dependencies (unless parallel)
+    let mut created_ids: Vec<String> = Vec::new();
+    let mut task_infos: Vec<serde_json::Value> = Vec::new();
+
+    for (i, (task_text, parallel)) in subtasks.iter().enumerate() {
+        let deps = if *parallel || i == 0 {
+            vec![] // First task or parallel tasks have no deps
+        } else {
+            vec![created_ids[i - 1].clone()] // Depends on previous
+        };
+
+        match queue::add_task(&req.project, &role, task_text, task_text, priority, deps.clone()) {
+            Ok(task) => {
+                created_ids.push(task.id.clone());
+                task_infos.push(serde_json::json!({
+                    "id": task.id,
+                    "task": truncate(task_text, 60),
+                    "depends_on": deps,
+                    "parallel": parallel,
+                }));
+            }
+            Err(e) => {
+                return json_err(&format!("Failed creating sub-task {}: {}", i + 1, e));
+            }
+        }
+    }
+
+    serde_json::json!({
+        "status": "decomposed",
+        "project": req.project,
+        "subtasks": task_infos,
+        "count": created_ids.len(),
+        "task_ids": created_ids,
+    }).to_string()
 }
 
 /// List queue tasks

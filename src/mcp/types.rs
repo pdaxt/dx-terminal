@@ -200,6 +200,20 @@ pub struct QueueAddRequest {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct DecomposeRequest {
+    #[schemars(description = "Project name or path")]
+    pub project: String,
+    #[schemars(description = "High-level goal — use numbered steps (1. 2. 3.) or bullet points (- *) to define sub-tasks. Sequential by default; prefix with || for parallel tasks.")]
+    pub goal: String,
+    #[schemars(description = "Max sub-tasks to create (default 5)")]
+    pub max_subtasks: Option<u8>,
+    #[schemars(description = "Default role for sub-tasks (default: developer)")]
+    pub role: Option<String>,
+    #[schemars(description = "Priority 1-5 for all sub-tasks (default 3)")]
+    pub priority: Option<u8>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct QueueListRequest {
     #[schemars(description = "Filter by status: pending, running, done, failed")]
     pub status: Option<String>,

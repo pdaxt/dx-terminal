@@ -289,6 +289,15 @@ impl AgentOSService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
+    #[tool(description = "Decompose a high-level goal into sub-tasks with auto-wired dependencies. Use numbered steps (1. 2. 3.) for sequential tasks, prefix with || for parallel.")]
+    async fn os_queue_decompose(
+        &self,
+        Parameters(req): Parameters<DecomposeRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::queue_decompose(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
     #[tool(description = "List all queued tasks with status. Filter by: pending, running, done, failed.")]
     async fn os_queue_list(
         &self,

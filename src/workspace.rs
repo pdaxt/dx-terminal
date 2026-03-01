@@ -225,6 +225,25 @@ pub fn create_pr(worktree_path: &str, title: &str, body: &str) -> Result<String>
     }
 }
 
+/// Enable auto-merge on a PR (squash). pr_url is the URL from create_pr().
+pub fn auto_merge_pr(worktree_path: &str, pr_url: &str) -> Result<String> {
+    if pr_url.is_empty() || !pr_url.contains("github.com") {
+        return Ok("no PR to auto-merge".into());
+    }
+    let output = Command::new("gh")
+        .args(["pr", "merge", "--auto", "--squash", pr_url])
+        .current_dir(worktree_path)
+        .output();
+    match output {
+        Ok(o) if o.status.success() => Ok("auto-merge enabled".into()),
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            Ok(format!("auto-merge failed (non-fatal): {}", stderr.trim()))
+        }
+        Err(_) => Ok("gh CLI not available — auto-merge skipped".into()),
+    }
+}
+
 /// Get git status for a worktree
 pub fn git_status(worktree_path: &str) -> Result<String> {
     let output = Command::new("git")
