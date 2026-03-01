@@ -39,6 +39,7 @@ pub fn pane_line<'a>(
     pty_running: bool,
     selected: bool,
     health: &str,
+    runtime: &str,
 ) -> Line<'a> {
     let tc = theme_color(theme_fg);
     let sc = status_color(status);
@@ -77,7 +78,14 @@ pub fn pane_line<'a>(
             Style::default().fg(if pty_running { Color::Green } else { Color::DarkGray }),
         ),
         health_badge(health),
-        Span::raw(" "),
+        if !runtime.is_empty() {
+            Span::styled(
+                format!(" {:<6}", runtime),
+                Style::default().fg(Color::Yellow),
+            )
+        } else {
+            Span::styled("       ", Style::default())
+        },
         Span::styled(
             task_display,
             Style::default().fg(Color::DarkGray),

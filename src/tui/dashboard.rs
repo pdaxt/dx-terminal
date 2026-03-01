@@ -27,7 +27,8 @@ pub struct PaneSnapshot {
     pub branch: Option<String>,
     pub pty_running: bool,
     pub line_count: usize,
-    pub health: String, // "error", "done", "stuck", "ok", ""
+    pub health: String,   // "error", "done", "stuck", "ok", ""
+    pub runtime: String,  // "3m", "1h22m", "" for non-active
 }
 
 /// Snapshot of a feature and its micro-features
@@ -111,6 +112,14 @@ pub fn collect_data(app: &App, selected: u8, view_mode: ViewMode) -> DashboardDa
         if pd.status == "active" {
             active_count += 1;
         }
+        // Compute runtime from started_at
+        let runtime = if pd.status == "active" {
+            pd.started_at.as_deref()
+                .map(|s| format_runtime(s))
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
         panes.push(PaneSnapshot {
             pane: i,
             theme: config::theme_name(i).to_string(),
@@ -123,6 +132,7 @@ pub fn collect_data(app: &App, selected: u8, view_mode: ViewMode) -> DashboardDa
             pty_running: false,
             line_count: 0,
             health: String::new(),
+            runtime,
         });
     }
 
@@ -176,13 +186,23 @@ pub fn collect_data(app: &App, selected: u8, view_mode: ViewMode) -> DashboardDa
     }
     roles.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    // Queue data — include ALL tasks now
+    // Queue data — include ALL tasks, sorted: running > pending > blocked > failed > done
     let q = queue::load_queue();
     let mut queue_pending = 0usize;
     let mut queue_running = 0usize;
     let mut queue_done = 0usize;
     let mut queue_failed = 0usize;
-    let queue_lines: Vec<(String, String, String, String, String, Option<String>)> = q.tasks.iter()
+
+    let mut sorted_tasks: Vec<&queue::QueueTask> = q.tasks.iter().collect();
+    sorted_tasks.sort_by_key(|t| match t.status {
+        queue::QueueStatus::Running => 0,
+        queue::QueueStatus::Pending => 1,
+        queue::QueueStatus::Blocked => 2,
+        queue::QueueStatus::Failed => 3,
+        queue::QueueStatus::Done => 4,
+    });
+
+    let queue_lines: Vec<(String, String, String, String, String, Option<String>)> = sorted_tasks.iter()
         .map(|t| {
             match t.status {
                 queue::QueueStatus::Pending => queue_pending += 1,
@@ -573,9 +593,17 @@ fn render_header(f: &mut Frame, area: Rect, data: &DashboardData) {
         Span::styled(" IDLE ", Style::default().fg(Color::Black).bg(Color::DarkGray).add_modifier(Modifier::BOLD))
     };
 
+    let view_label = match data.view_mode {
+        ViewMode::Normal => Span::raw(""),
+        ViewMode::Features => Span::styled(" FEAT ", Style::default().fg(Color::Black).bg(Color::Magenta).add_modifier(Modifier::BOLD)),
+        ViewMode::Board => Span::styled(" BOARD ", Style::default().fg(Color::Black).bg(Color::Magenta).add_modifier(Modifier::BOLD)),
+        ViewMode::Coord => Span::styled(" COORD ", Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)),
+    };
+
     let header = Line::from(vec![
         Span::styled(" AgentOS ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         status_label,
+        view_label,
         Span::styled(" │ ACU ", Style::default().fg(Color::DarkGray)),
         Span::styled(acu_bar, Style::default().fg(acu_color)),
         Span::styled(
@@ -640,6 +668,7 @@ fn render_pane_table(f: &mut Frame, area: Rect, data: &DashboardData) {
             Span::styled("Status  ", Style::default().fg(Color::DarkGray)),
             Span::styled("▶ ", Style::default().fg(Color::DarkGray)),
             Span::styled("H   ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Time   ", Style::default().fg(Color::DarkGray)),
             Span::styled("Branch/Task", Style::default().fg(Color::DarkGray)),
         ]),
     ];
@@ -648,7 +677,7 @@ fn render_pane_table(f: &mut Frame, area: Rect, data: &DashboardData) {
         lines.push(widgets::pane_line(
             ps.pane, &ps.theme_fg, &ps.theme, &ps.project, &ps.role,
             &ps.task, &ps.status, ps.branch.as_deref(), ps.pty_running,
-            ps.pane == data.selected, &ps.health,
+            ps.pane == data.selected, &ps.health, &ps.runtime,
         ));
     }
 
@@ -774,7 +803,12 @@ fn render_queue(f: &mut Frame, area: Rect, data: &DashboardData) {
 fn render_activity_log(f: &mut Frame, area: Rect, data: &DashboardData) {
     let available = area.height.saturating_sub(2) as usize;
     let lines: Vec<Line> = data.log_lines.iter().take(available).map(|l| {
-        Line::from(Span::styled(l.as_str().to_string(), Style::default().fg(Color::DarkGray)))
+        let color = if l.contains("Spawned") { Color::Green }
+            else if l.contains("Killed") || l.contains("Error") { Color::Red }
+            else if l.contains("Done") || l.contains("Complete") { Color::Blue }
+            else if l.contains("Assigned") || l.contains("Started") { Color::Cyan }
+            else { Color::DarkGray };
+        Line::from(Span::styled(l.as_str().to_string(), Style::default().fg(color)))
     }).collect();
 
     let block = Block::default()
@@ -825,10 +859,14 @@ fn render_board(f: &mut Frame, area: Rect, data: &DashboardData) {
         let mut lines: Vec<Line> = Vec::new();
         for card in col.cards.iter().take(available) {
             let pc = widgets::priority_color(&card.priority);
-            lines.push(Line::from(vec![
+            let mut spans = vec![
                 Span::styled(format!(" {}", widgets::truncate_pub(&card.id, 8)), Style::default().fg(pc).add_modifier(Modifier::BOLD)),
                 Span::styled(format!(" {}", widgets::truncate_pub(&card.title, 14)), Style::default().fg(Color::White)),
-            ]));
+            ];
+            if !card.role.is_empty() {
+                spans.push(Span::styled(format!(" {}", widgets::truncate_pub(&card.role, 4)), Style::default().fg(Color::DarkGray)));
+            }
+            lines.push(Line::from(spans));
         }
         if lines.is_empty() {
             lines.push(Line::from(Span::styled("  (empty)", Style::default().fg(Color::DarkGray))));
@@ -935,9 +973,14 @@ fn render_coord_agents(f: &mut Frame, area: Rect, data: &DashboardData) {
         vec![Line::from(Span::styled("  No registered agents", Style::default().fg(Color::DarkGray)))]
     } else {
         data.coord.agents.iter().take(available).map(|(pane, proj, task)| {
-            // Check if this agent has a runtime
+            // Match pane_id format "screen:window.pane" to pane number
             let runtime = data.started_at.iter()
-                .find(|(p, _)| pane.contains(&p.to_string()))
+                .find(|(p, _)| {
+                    // Extract pane number from pane_id like "claude6:0.0" -> compare with p
+                    pane.ends_with(&format!(".{}", p.saturating_sub(1)))
+                        || pane.ends_with(&format!(":{}", p))
+                        || pane == &p.to_string()
+                })
                 .map(|(_, ts)| format_runtime(ts))
                 .unwrap_or_default();
             Line::from(vec![
@@ -969,7 +1012,7 @@ fn render_coord_locks(f: &mut Frame, area: Rect, data: &DashboardData) {
         data.coord.locks.iter().take(available).map(|(pane, file)| {
             let short_file = file.split('/').last().unwrap_or(file);
             Line::from(vec![
-                Span::styled(" 🔒 ", Style::default().fg(Color::Red)),
+                Span::styled(" LK ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
                 Span::styled(format!("{:<10}", widgets::truncate_pub(pane, 10)), Style::default().fg(Color::Cyan)),
                 Span::styled(widgets::truncate_pub(short_file, 20), Style::default().fg(Color::Yellow)),
             ])
