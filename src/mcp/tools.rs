@@ -1253,15 +1253,24 @@ pub async fn git_merge(app: &App, req: GitMergeRequest) -> String {
     }
 
     let base = pane_data.base_branch.clone().unwrap_or_else(|| "main".into());
+    let project_name = &pane_data.project;
 
     match workspace::merge_branch(project_path, &branch, &base) {
-        Ok(result) => serde_json::json!({
-            "status": "merged",
-            "pane": pane_num,
-            "branch": branch,
-            "base": base,
-            "result": result,
-        }).to_string(),
+        Ok(result) => {
+            // Release branch claim in coordination DB after successful merge
+            let window = (pane_num as u32 - 1) / 3 + 1;
+            let pane = (pane_num as u32 - 1) % 3 + 1;
+            let pane_id = format!("{}:{}.{}", config::session_name(), window, pane);
+            let _ = crate::multi_agent::git_release_branch(&pane_id, &branch, project_name);
+
+            serde_json::json!({
+                "status": "merged",
+                "pane": pane_num,
+                "branch": branch,
+                "base": base,
+                "result": result,
+            }).to_string()
+        }
         Err(e) => serde_json::json!({
             "status": "failed",
             "pane": pane_num,

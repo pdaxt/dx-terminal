@@ -381,6 +381,8 @@ fn migrate_messages(conn: &Connection, dir: &PathBuf) {
 // PORT REGISTRY
 // ============================================================================
 
+/// Allocate a port for a service. Returns existing allocation if service already has one.
+/// Tries preferred port first, then scans 3001-3099 for a free one.
 pub fn port_allocate(service: &str, pane_id: &str, preferred: Option<u16>, description: &str) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
 
@@ -410,10 +412,15 @@ pub fn port_allocate(service: &str, pane_id: &str, preferred: Option<u16>, descr
 
     // Find a free port
     let allocated_ports: Vec<i64> = {
-        let mut stmt = tx.prepare("SELECT port FROM ports").unwrap();
-        stmt.query_map([], |r| r.get(0)).unwrap()
-            .filter_map(|r| r.ok())
-            .collect()
+        let mut stmt = match tx.prepare("SELECT port FROM ports") {
+            Ok(s) => s,
+            Err(e) => return json!({"error": format!("Query: {}", e)}),
+        };
+        let result: Vec<i64> = match stmt.query_map([], |r| r.get(0)) {
+            Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
+            Err(e) => return json!({"error": format!("Query: {}", e)}),
+        };
+        result
     };
 
     let mut port: Option<u16> = None;
@@ -451,6 +458,7 @@ pub fn port_allocate(service: &str, pane_id: &str, preferred: Option<u16>, descr
     json!({"status": "allocated", "port": port, "service": service})
 }
 
+/// Release a port allocation, freeing it for reuse.
 pub fn port_release(port: u16) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let service: Option<String> = conn.query_row(
@@ -464,6 +472,7 @@ pub fn port_release(port: u16) -> Value {
     }
 }
 
+/// List all allocated ports with their services and active/pid status.
 pub fn port_list() -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let mut stmt = match conn.prepare("SELECT port, service, pane_id FROM ports") {
@@ -487,6 +496,7 @@ pub fn port_list() -> Value {
     json!({"ports": result})
 }
 
+/// Look up the port allocated to a specific service.
 pub fn port_get(service: &str) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let row: Result<i64, _> = conn.query_row(
@@ -505,6 +515,8 @@ pub fn port_get(service: &str) -> Value {
 // AGENT COORDINATION
 // ============================================================================
 
+/// Register an agent in the coordination DB. Upserts on pane_id.
+/// Returns list of other agents working on the same project.
 pub fn agent_register(pane_id: &str, project: &str, task: &str, files: &[String]) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let now = now_iso();
@@ -535,6 +547,7 @@ pub fn agent_register(pane_id: &str, project: &str, task: &str, files: &[String]
     json!({"status": "registered", "other_agents": others})
 }
 
+/// Update an agent's task and optionally its file list.
 pub fn agent_update(pane_id: &str, task: &str, files: Option<&[String]>) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let rows = if let Some(f) = files {
@@ -552,6 +565,8 @@ pub fn agent_update(pane_id: &str, task: &str, files: Option<&[String]>) -> Valu
     if rows > 0 { json!({"status": "updated"}) } else { json!({"status": "not_found"}) }
 }
 
+/// List all registered agents, optionally filtered by project.
+/// Includes tmux pane active status for each agent.
 pub fn agent_list(project: Option<&str>) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let mut result = vec![];
@@ -590,6 +605,7 @@ pub fn agent_list(project: Option<&str>) -> Value {
     json!({"agents": result})
 }
 
+/// Remove an agent from the coordination DB. CASCADE deletes its file locks.
 pub fn agent_deregister(pane_id: &str) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     // CASCADE deletes file_locks owned by this agent
@@ -601,6 +617,8 @@ pub fn agent_deregister(pane_id: &str) -> Value {
 // FILE LOCKS
 // ============================================================================
 
+/// Acquire file locks atomically. Fails if any file is locked by another agent.
+/// Uses a transaction to prevent races between check and insert.
 pub fn lock_acquire(pane_id: &str, files: &[String], reason: &str) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
 
@@ -638,13 +656,17 @@ pub fn lock_acquire(pane_id: &str, files: &[String], reason: &str) -> Value {
     json!({"status": "acquired", "files": files})
 }
 
+/// Release file locks. If files is empty, releases all locks for this pane.
 pub fn lock_release(pane_id: &str, files: &[String]) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let mut released = vec![];
 
     if files.is_empty() {
         // Release all locks for this pane
-        let mut stmt = conn.prepare("SELECT file_path FROM file_locks WHERE pane_id = ?1").unwrap();
+        let mut stmt = match conn.prepare("SELECT file_path FROM file_locks WHERE pane_id = ?1") {
+            Ok(s) => s,
+            Err(e) => return json!({"error": format!("Query: {}", e)}),
+        };
         if let Ok(rows) = stmt.query_map(params![pane_id], |r| r.get::<_, String>(0)) {
             for row in rows.flatten() { released.push(row); }
         }
@@ -661,6 +683,7 @@ pub fn lock_release(pane_id: &str, files: &[String]) -> Value {
     json!({"status": "released", "files": released})
 }
 
+/// Check which files are currently locked and by whom.
 pub fn lock_check(files: &[String]) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let mut locked = vec![];
@@ -680,6 +703,7 @@ pub fn lock_check(files: &[String]) -> Value {
 // GIT COORDINATION
 // ============================================================================
 
+/// Claim a git branch for exclusive use. Allows reclaim if previous owner's pane is dead.
 pub fn git_claim_branch(pane_id: &str, branch: &str, repo: &str, purpose: &str) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let key = format!("{}:{}", repo, branch);
@@ -711,6 +735,7 @@ pub fn git_claim_branch(pane_id: &str, branch: &str, repo: &str, purpose: &str) 
     json!({"status": "claimed", "branch": branch})
 }
 
+/// Release a git branch claim. Only the owning agent can release.
 pub fn git_release_branch(pane_id: &str, branch: &str, repo: &str) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let key = format!("{}:{}", repo, branch);
@@ -731,6 +756,7 @@ pub fn git_release_branch(pane_id: &str, branch: &str, repo: &str) -> Value {
     }
 }
 
+/// List all claimed branches, optionally filtered by repo.
 pub fn git_list_branches(repo: Option<&str>) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let mut result = vec![];
@@ -759,6 +785,7 @@ pub fn git_list_branches(repo: Option<&str>) -> Value {
     json!({"branches": result})
 }
 
+/// Pre-commit safety check: reports file lock conflicts and concurrent edits.
 pub fn git_pre_commit_check(pane_id: &str, _repo: &str, files: &[String]) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let mut conflicts = vec![];
@@ -803,6 +830,7 @@ pub fn git_pre_commit_check(pane_id: &str, _repo: &str, files: &[String]) -> Val
 // BUILD COORDINATION
 // ============================================================================
 
+/// Claim exclusive build access for a project. Reclaims if previous owner is dead.
 pub fn build_claim(pane_id: &str, project: &str, build_type: &str) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
 
@@ -832,6 +860,7 @@ pub fn build_claim(pane_id: &str, project: &str, build_type: &str) -> Value {
     json!({"status": "claimed"})
 }
 
+/// Release build claim, recording result in history. Trims history to 50 entries.
 pub fn build_release(pane_id: &str, project: &str, success: bool, output: &str) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
 
@@ -870,6 +899,7 @@ pub fn build_release(pane_id: &str, project: &str, success: bool, output: &str) 
     }
 }
 
+/// Check if a project currently has an active build.
 pub fn build_status(project: &str) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let row: Option<(String, String)> = conn.query_row(
@@ -882,6 +912,7 @@ pub fn build_status(project: &str) -> Value {
     }
 }
 
+/// Get the most recent build history entry for a project.
 pub fn build_get_last(project: &str) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let row = conn.query_row(
@@ -908,6 +939,7 @@ pub fn build_get_last(project: &str) -> Value {
 // TASK QUEUE (inter-agent, not os_queue)
 // ============================================================================
 
+/// Add a task to the inter-agent task queue.
 pub fn task_add(project: &str, title: &str, description: &str, priority: &str, added_by: &str) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let task_id = gen_short_id(title);
@@ -924,6 +956,7 @@ pub fn task_add(project: &str, title: &str, description: &str, priority: &str, a
     }
 }
 
+/// Claim the highest-priority pending task. Uses transaction to prevent double-claim.
 pub fn task_claim(pane_id: &str, project: Option<&str>) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
 
@@ -981,6 +1014,7 @@ pub fn task_claim(pane_id: &str, project: Option<&str>) -> Value {
     }
 }
 
+/// Mark a claimed task as completed with a result summary.
 pub fn task_complete(task_id: &str, pane_id: &str, result: &str) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
 
@@ -1003,6 +1037,7 @@ pub fn task_complete(task_id: &str, pane_id: &str, result: &str) -> Value {
     }
 }
 
+/// List tasks, optionally filtered by status and/or project.
 pub fn task_list(status: Option<&str>, project: Option<&str>) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let mut result = vec![];
@@ -1066,6 +1101,7 @@ pub fn task_list(status: Option<&str>, project: Option<&str>) -> Value {
 // KNOWLEDGE BASE
 // ============================================================================
 
+/// Add a knowledge base entry. Trims to 500 entries max (ring buffer).
 pub fn kb_add(pane_id: &str, project: &str, category: &str, title: &str, content: &str, files: &[String]) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let entry_id = gen_short_id(title);
@@ -1087,6 +1123,7 @@ pub fn kb_add(pane_id: &str, project: &str, category: &str, title: &str, content
     json!({"status": "added", "entry_id": entry_id})
 }
 
+/// Search knowledge base by text match on title/content, optionally filtered.
 pub fn kb_search(query: &str, project: Option<&str>, category: Option<&str>) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let pattern = format!("%{}%", query);
@@ -1134,6 +1171,7 @@ pub fn kb_search(query: &str, project: Option<&str>, category: Option<&str>) -> 
     json!({"results": results})
 }
 
+/// List recent knowledge base entries, optionally filtered by project.
 pub fn kb_list(project: Option<&str>, limit: usize) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let mut entries = vec![];
@@ -1191,18 +1229,21 @@ fn insert_message(conn: &Connection, from_pane: &str, to_pane: &str, message: &s
     );
 }
 
+/// Broadcast a message to all agents.
 pub fn msg_broadcast(from_pane: &str, message: &str, priority: &str) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     insert_message(&conn, from_pane, "all", message, priority);
     json!({"status": "sent"})
 }
 
+/// Send a direct message to a specific agent.
 pub fn msg_send(from_pane: &str, to_pane: &str, message: &str) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     insert_message(&conn, from_pane, to_pane, message, "info");
     json!({"status": "sent"})
 }
 
+/// Get unread messages for an agent. Optionally marks them as read.
 pub fn msg_get(pane_id: &str, mark_read: bool) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let mut unread = vec![];
@@ -1260,6 +1301,7 @@ pub fn msg_get(pane_id: &str, mark_read: bool) -> Value {
 // CLEANUP
 // ============================================================================
 
+/// Remove stale entries across all tables where the owning tmux pane no longer exists.
 pub fn cleanup_all() -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
     let active = active_panes();
@@ -1273,13 +1315,14 @@ pub fn cleanup_all() -> Value {
     // Clean ports: remove allocations where port is not in use AND pane is not active
     let mut stale_ports = vec![];
     {
-        let mut stmt = tx.prepare("SELECT port, pane_id FROM ports").unwrap();
-        let collected: Vec<_> = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
-            .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
-        for (port, pane_id) in collected {
-            let (in_use, _) = is_port_in_use(port as u16);
-            if !in_use && !active.contains(&pane_id) {
-                stale_ports.push(port);
+        if let Ok(mut stmt) = tx.prepare("SELECT port, pane_id FROM ports") {
+            let collected: Vec<_> = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
+                .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
+            for (port, pane_id) in collected {
+                let (in_use, _) = is_port_in_use(port as u16);
+                if !in_use && !active.contains(&pane_id) {
+                    stale_ports.push(port);
+                }
             }
         }
     }
@@ -1291,11 +1334,12 @@ pub fn cleanup_all() -> Value {
     // Clean agents (CASCADE will also remove their file_locks)
     let mut stale_agents = vec![];
     {
-        let mut stmt = tx.prepare("SELECT pane_id FROM agents").unwrap();
-        let collected: Vec<_> = stmt.query_map([], |r| r.get::<_, String>(0))
-            .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
-        for row in collected {
-            if !active.contains(&row) { stale_agents.push(row); }
+        if let Ok(mut stmt) = tx.prepare("SELECT pane_id FROM agents") {
+            let collected: Vec<_> = stmt.query_map([], |r| r.get::<_, String>(0))
+                .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
+            for row in collected {
+                if !active.contains(&row) { stale_agents.push(row); }
+            }
         }
     }
     // Count orphan locks before deleting agents (CASCADE handles them)
@@ -1328,11 +1372,12 @@ pub fn cleanup_all() -> Value {
     // Clean git branches
     let mut stale_branches = vec![];
     {
-        let mut stmt = tx.prepare("SELECT repo_branch, pane_id FROM git_branches").unwrap();
-        let collected: Vec<_> = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
-            .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
-        for row in collected {
-            if !active.contains(&row.1) { stale_branches.push(row.0); }
+        if let Ok(mut stmt) = tx.prepare("SELECT repo_branch, pane_id FROM git_branches") {
+            let collected: Vec<_> = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
+            for row in collected {
+                if !active.contains(&row.1) { stale_branches.push(row.0); }
+            }
         }
     }
     for key in &stale_branches {
@@ -1343,11 +1388,12 @@ pub fn cleanup_all() -> Value {
     // Clean active builds
     let mut stale_builds = vec![];
     {
-        let mut stmt = tx.prepare("SELECT project, pane_id FROM builds_active").unwrap();
-        let collected: Vec<_> = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
-            .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
-        for row in collected {
-            if !active.contains(&row.1) { stale_builds.push(row.0); }
+        if let Ok(mut stmt) = tx.prepare("SELECT project, pane_id FROM builds_active") {
+            let collected: Vec<_> = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
+            for row in collected {
+                if !active.contains(&row.1) { stale_builds.push(row.0); }
+            }
         }
     }
     for project in &stale_builds {
@@ -1363,18 +1409,20 @@ pub fn cleanup_all() -> Value {
 // STATUS OVERVIEW
 // ============================================================================
 
+/// Dashboard view: ports, agents, locks, builds, and pending tasks.
 pub fn status_overview(project: Option<&str>) -> Value {
     let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
 
     // Ports
     let mut port_list = vec![];
     {
-        let mut stmt = conn.prepare("SELECT port, service FROM ports").unwrap();
-        let collected: Vec<_> = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
-            .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
-        for row in collected {
-            let (active, _) = is_port_in_use(row.0 as u16);
-            port_list.push(json!({"port": row.0, "service": row.1, "active": active}));
+        if let Ok(mut stmt) = conn.prepare("SELECT port, service FROM ports") {
+            let collected: Vec<_> = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
+                .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
+            for row in collected {
+                let (active, _) = is_port_in_use(row.0 as u16);
+                port_list.push(json!({"port": row.0, "service": row.1, "active": active}));
+            }
         }
     }
 
@@ -1386,7 +1434,10 @@ pub fn status_overview(project: Option<&str>) -> Value {
         } else {
             "SELECT pane_id, project, task FROM agents"
         };
-        let mut stmt = conn.prepare(query).unwrap();
+        let mut stmt = match conn.prepare(query) {
+            Ok(s) => s,
+            Err(e) => return json!({"error": format!("Query: {}", e)}),
+        };
         let extract_agent = |r: &rusqlite::Row| -> rusqlite::Result<(String, String, String)> {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))
         };
@@ -1411,10 +1462,11 @@ pub fn status_overview(project: Option<&str>) -> Value {
 
     let mut active_builds = vec![];
     {
-        let mut stmt = conn.prepare("SELECT project FROM builds_active").unwrap();
-        let collected: Vec<_> = stmt.query_map([], |r| r.get::<_, String>(0))
-            .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
-        for row in collected { active_builds.push(row); }
+        if let Ok(mut stmt) = conn.prepare("SELECT project FROM builds_active") {
+            let collected: Vec<_> = stmt.query_map([], |r| r.get::<_, String>(0))
+                .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
+            for row in collected { active_builds.push(row); }
+        }
     }
 
     let pending_tasks: i64 = conn.query_row(

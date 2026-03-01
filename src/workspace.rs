@@ -294,8 +294,23 @@ pub fn sync_from_main(worktree_path: &str, base_branch: &str) -> Result<String> 
     }
 }
 
-/// Merge a branch into base using rebase + fast-forward merge
+/// Merge a feature branch into base. Saves and restores original branch on failure.
+/// Checks for dirty working tree before checkout to avoid data loss.
 pub fn merge_branch(project_path: &str, branch: &str, base_branch: &str) -> Result<String> {
+    // Save current branch so we can restore on failure
+    let original_branch = current_branch(project_path);
+
+    // Check for dirty working tree — refuse to merge if uncommitted changes
+    let status = Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(project_path)
+        .output()
+        .context("Failed to check git status")?;
+    let status_text = String::from_utf8_lossy(&status.stdout).trim().to_string();
+    if !status_text.is_empty() {
+        anyhow::bail!("dirty working tree — commit or stash changes first");
+    }
+
     // Fetch latest
     let _ = Command::new("git")
         .args(["fetch", "origin"])
@@ -326,13 +341,17 @@ pub fn merge_branch(project_path: &str, branch: &str, base_branch: &str) -> Resu
         .context("Failed to merge branch")?;
 
     if !merge.status.success() {
-        // Abort failed merge
+        // Abort failed merge and restore original branch
         let _ = Command::new("git")
             .args(["merge", "--abort"])
             .current_dir(project_path)
             .output();
+        let _ = Command::new("git")
+            .args(["checkout", &original_branch])
+            .current_dir(project_path)
+            .output();
         let stderr = String::from_utf8_lossy(&merge.stderr);
-        anyhow::bail!("merge failed (aborted): {}", stderr.trim());
+        anyhow::bail!("merge failed (aborted, restored to {}): {}", original_branch, stderr.trim());
     }
 
     // Push merged base
