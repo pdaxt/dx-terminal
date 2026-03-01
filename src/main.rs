@@ -78,7 +78,13 @@ async fn main() -> anyhow::Result<()> {
             run_mcp_mode(application, cfg.web_port, false).await?;
         }
         Some(Commands::Tui) => {
-            tui::run_tui(application)?;
+            // TUI uses blocking_read() which panics inside tokio runtime.
+            // Spawn on a dedicated OS thread outside the runtime.
+            let tui_app = application;
+            let handle = std::thread::spawn(move || {
+                tui::run_tui(tui_app)
+            });
+            handle.join().map_err(|_| anyhow::anyhow!("TUI thread panicked"))??;
         }
         Some(Commands::Web { port }) => {
             let port = port.unwrap_or(cfg.web_port);
