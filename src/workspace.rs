@@ -275,6 +275,73 @@ pub fn sync_from_main(worktree_path: &str, base_branch: &str) -> Result<String> 
     }
 }
 
+/// Merge a branch into base using rebase + fast-forward merge
+pub fn merge_branch(project_path: &str, branch: &str, base_branch: &str) -> Result<String> {
+    // Fetch latest
+    let _ = Command::new("git")
+        .args(["fetch", "origin"])
+        .current_dir(project_path)
+        .output();
+
+    // Checkout base branch and pull latest
+    let checkout = Command::new("git")
+        .args(["checkout", base_branch])
+        .current_dir(project_path)
+        .output()
+        .context("Failed to checkout base branch")?;
+    if !checkout.status.success() {
+        let stderr = String::from_utf8_lossy(&checkout.stderr);
+        anyhow::bail!("checkout {} failed: {}", base_branch, stderr.trim());
+    }
+
+    let _ = Command::new("git")
+        .args(["pull", "--ff-only", "origin", base_branch])
+        .current_dir(project_path)
+        .output();
+
+    // Merge the feature branch (--no-ff to preserve history)
+    let merge = Command::new("git")
+        .args(["merge", "--no-ff", branch, "-m", &format!("Merge branch '{}'", branch)])
+        .current_dir(project_path)
+        .output()
+        .context("Failed to merge branch")?;
+
+    if !merge.status.success() {
+        // Abort failed merge
+        let _ = Command::new("git")
+            .args(["merge", "--abort"])
+            .current_dir(project_path)
+            .output();
+        let stderr = String::from_utf8_lossy(&merge.stderr);
+        anyhow::bail!("merge failed (aborted): {}", stderr.trim());
+    }
+
+    // Push merged base
+    let push = Command::new("git")
+        .args(["push", "origin", base_branch])
+        .current_dir(project_path)
+        .output()
+        .context("Failed to push merged base")?;
+
+    let push_status = if push.status.success() {
+        "pushed".to_string()
+    } else {
+        format!("push failed: {}", String::from_utf8_lossy(&push.stderr).trim())
+    };
+
+    // Delete the merged branch locally and remotely
+    let _ = Command::new("git")
+        .args(["branch", "-d", branch])
+        .current_dir(project_path)
+        .output();
+    let _ = Command::new("git")
+        .args(["push", "origin", "--delete", branch])
+        .current_dir(project_path)
+        .output();
+
+    Ok(format!("merged {} into {}, {}", branch, base_branch, push_status))
+}
+
 /// Clean up stale worktrees from crashed sessions
 pub fn cleanup_stale_worktrees() -> Result<Vec<String>> {
     let root = workspaces_root();

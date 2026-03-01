@@ -588,6 +588,17 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
         let _ = pty.kill(pane_num);
     }
 
+    // Release git branch claim in coordination DB
+    if let Some(ref branch) = pane_data.branch_name {
+        let window = (pane_num as u32 - 1) / 3 + 1;
+        let pane = (pane_num as u32 - 1) % 3 + 1;
+        let pane_id = format!("{}:{}.{}", config::session_name(), window, pane);
+        let _ = crate::multi_agent::git_release_branch(&pane_id, branch, &pane_data.project);
+    }
+
+    // Deregister from coordination DB (CASCADE deletes file locks)
+    remove_from_agents_json(pane_num);
+
     // Update pane state
     pane_data.status = "idle".into();
     pane_data.acu_spent = acu;
@@ -1177,6 +1188,45 @@ pub async fn git_pr(app: &App, req: GitPrRequest) -> String {
         "push": push_result.unwrap_or_else(|e| e.to_string()),
         "pr": pr_result.unwrap_or_else(|e| e.to_string()),
     }).to_string()
+}
+
+/// Merge an agent's branch back into the base branch
+pub async fn git_merge(app: &App, req: GitMergeRequest) -> String {
+    let pane_num = match config::resolve_pane(&req.pane) {
+        Some(n) => n,
+        None => return json_err(&format!("Invalid pane: {}", req.pane)),
+    };
+
+    let pane_data = app.state.get_pane(pane_num).await;
+    let project_path = &pane_data.project_path;
+    if project_path.is_empty() {
+        return json_err(&format!("Pane {} has no project", pane_num));
+    }
+
+    let branch = req.branch.or(pane_data.branch_name.clone())
+        .unwrap_or_default();
+    if branch.is_empty() {
+        return json_err(&format!("Pane {} has no branch to merge", pane_num));
+    }
+
+    let base = pane_data.base_branch.clone().unwrap_or_else(|| "main".into());
+
+    match workspace::merge_branch(project_path, &branch, &base) {
+        Ok(result) => serde_json::json!({
+            "status": "merged",
+            "pane": pane_num,
+            "branch": branch,
+            "base": base,
+            "result": result,
+        }).to_string(),
+        Err(e) => serde_json::json!({
+            "status": "failed",
+            "pane": pane_num,
+            "branch": branch,
+            "base": base,
+            "error": e.to_string(),
+        }).to_string(),
+    }
 }
 
 // === QUEUE / AUTO-CYCLE ===

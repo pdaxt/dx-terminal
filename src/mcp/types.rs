@@ -171,6 +171,14 @@ pub struct GitPrRequest {
     pub body: Option<String>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GitMergeRequest {
+    #[schemars(description = "Pane reference (1-9, theme name, or pane-N/branch)")]
+    pub pane: String,
+    #[schemars(description = "Branch to merge (default: pane's current branch)")]
+    pub branch: Option<String>,
+}
+
 // === QUEUE / AUTO-CYCLE ===
 
 #[derive(Debug, Deserialize, JsonSchema)]

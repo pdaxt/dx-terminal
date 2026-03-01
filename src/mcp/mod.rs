@@ -269,6 +269,15 @@ impl AgentOSService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
+    #[tool(description = "Merge an agent's branch back into the base branch (rebase + merge). Cleans up the branch after merge.")]
+    async fn os_git_merge(
+        &self,
+        Parameters(req): Parameters<GitMergeRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::git_merge(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
     // === QUEUE / AUTO-CYCLE ===
 
     #[tool(description = "Add a task to the queue. Tasks are auto-assigned to free panes when os_auto is called.")]
