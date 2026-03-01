@@ -43,12 +43,13 @@ fn run_loop(
     app: &App,
 ) -> anyhow::Result<()> {
     let mut selected: u8 = 1;
+    let mut show_features = false;
     let tick_rate = Duration::from_millis(TICK_MS);
     let mut last_tick = Instant::now();
 
     loop {
         // Collect all data (locks once, releases before render)
-        let data = dashboard::collect_data(app, selected);
+        let data = dashboard::collect_data(app, selected, show_features);
 
         // Render
         terminal.draw(|f| dashboard::render(f, &data))?;
@@ -62,6 +63,11 @@ fn run_loop(
                     KeyCode::Char('q') => return Ok(()),
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         return Ok(())
+                    }
+
+                    // Toggle feature view
+                    KeyCode::Char('f') => {
+                        show_features = !show_features;
                     }
 
                     // Pane focus (1-9+ based on config)
