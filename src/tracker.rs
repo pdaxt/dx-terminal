@@ -762,6 +762,71 @@ pub fn feature_status(space: &str, feature_id: &str) -> Value {
     })
 }
 
+// === CODE BRIDGE ===
+
+/// Attach code artifacts (commits, changed files) to a tracker issue
+pub fn issue_attach_code(space: &str, issue_id: &str, commits: &[(String, String)], files: &[String]) -> Value {
+    let issues_dir = crate::config::collab_root().join("spaces").join(space).join("issues");
+    let filename = format!("{}.json", issue_id);
+    let path = issues_dir.join(&filename);
+
+    if !path.exists() {
+        return json!({"error": format!("Issue {} not found in space {}", issue_id, space)});
+    }
+
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) => return json!({"error": format!("Read error: {}", e)}),
+    };
+
+    let mut issue: Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => return json!({"error": format!("Parse error: {}", e)}),
+    };
+
+    // Attach commits
+    let commit_arr: Vec<Value> = commits.iter().map(|(hash, msg)| {
+        json!({"hash": hash, "message": msg})
+    }).collect();
+
+    let existing_commits = issue.get("commits").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let mut all_commits = existing_commits;
+    for c in commit_arr {
+        if !all_commits.iter().any(|e| e.get("hash") == c.get("hash")) {
+            all_commits.push(c);
+        }
+    }
+    issue["commits"] = json!(all_commits);
+
+    // Attach changed files
+    let existing_files: Vec<String> = issue.get("files_changed")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+    let mut all_files: Vec<String> = existing_files;
+    for f in files {
+        if !all_files.contains(f) {
+            all_files.push(f.clone());
+        }
+    }
+    issue["files_changed"] = json!(all_files);
+
+    // Save
+    let tmp = path.with_extension("tmp");
+    if let Ok(json) = serde_json::to_string_pretty(&issue) {
+        if std::fs::write(&tmp, &json).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
+    }
+
+    json!({
+        "status": "attached",
+        "issue_id": issue_id,
+        "commits_count": issue["commits"].as_array().map_or(0, |a| a.len()),
+        "files_count": issue["files_changed"].as_array().map_or(0, |a| a.len()),
+    })
+}
+
 // === BOARD ===
 
 pub fn board_view(space: &str) -> Value {

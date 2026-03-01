@@ -1612,3 +1612,35 @@ pub struct ConflictScanRequest {
     #[schemars(description = "Filter by project")]
     pub project: Option<String>,
 }
+
+// --- Project Intelligence ---
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProjectScanRequest {
+    #[schemars(description = "Force a full rescan even if recently scanned")]
+    pub force: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProjectListRequest {
+    #[schemars(description = "Filter by tech stack (e.g. 'rust', 'node', 'python')")]
+    pub tech: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProjectDetailRequest {
+    #[schemars(description = "Project name (fuzzy matched)")]
+    pub project: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProjectTestRequest {
+    #[schemars(description = "Project name to run tests for")]
+    pub project: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ProjectDepsRequest {
+    #[schemars(description = "Project name (omit for full dep graph)")]
+    pub project: Option<String>,
+}

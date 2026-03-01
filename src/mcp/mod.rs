@@ -1613,6 +1613,144 @@ impl AgentOSService {
         let result = crate::engine::retention::prune_manual();
         Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
     }
+
+    // --- Project Intelligence ---
+
+    #[tool(description = "Scan ~/Projects for git repos. Auto-detects tech stacks, test/build commands, git status. Returns count of discovered projects.")]
+    async fn project_scan(
+        &self,
+        Parameters(_req): Parameters<types::ProjectScanRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let reg = crate::scanner::scan_all();
+        let summary: Vec<serde_json::Value> = reg.projects.iter().map(|p| {
+            serde_json::json!({
+                "name": p.name,
+                "tech": p.tech,
+                "test_cmd": p.test_cmd,
+                "git_dirty": p.git_dirty,
+            })
+        }).collect();
+        let result = serde_json::json!({
+            "count": reg.projects.len(),
+            "projects": summary,
+            "last_scan": reg.last_scan,
+        });
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "List all discovered projects with tech stack, health grade, git status. Filter by tech (e.g. 'rust', 'node').")]
+    async fn project_list(
+        &self,
+        Parameters(req): Parameters<types::ProjectListRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let reg = crate::scanner::load_registry();
+        let projects: Vec<serde_json::Value> = reg.projects.iter()
+            .filter(|p| {
+                if let Some(ref tech) = req.tech {
+                    p.tech.iter().any(|t| t.contains(tech))
+                } else {
+                    true
+                }
+            })
+            .map(|p| {
+                let health = crate::quality::project_health(&p.name);
+                serde_json::json!({
+                    "name": p.name,
+                    "path": p.path,
+                    "tech": p.tech,
+                    "test_cmd": p.test_cmd,
+                    "build_cmd": p.build_cmd,
+                    "has_ci": p.has_ci,
+                    "health_grade": health.get("grade").and_then(|v| v.as_str()).unwrap_or("?"),
+                    "health_score": health.get("health_score").and_then(|v| v.as_i64()).unwrap_or(0),
+                    "git_dirty": p.git_dirty,
+                    "git_ahead": p.git_ahead,
+                    "git_behind": p.git_behind,
+                    "last_commit": p.last_commit_msg,
+                    "loc": p.loc,
+                })
+            })
+            .collect();
+        let result = serde_json::json!({
+            "count": projects.len(),
+            "projects": projects,
+            "last_scan": reg.last_scan,
+        });
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Full detail for one project: tech, commands, git status, health, open issues, active agents. The single source of truth for a project.")]
+    async fn project_detail(
+        &self,
+        Parameters(req): Parameters<types::ProjectDetailRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::scanner::project_detail(&req.project);
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Run tests for a project NOW and return pass/fail with output. Logs result to quality system.")]
+    async fn project_test(
+        &self,
+        Parameters(req): Parameters<types::ProjectTestRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let info = match crate::scanner::project_by_name(&req.project) {
+            Some(i) => i,
+            None => return Ok(CallToolResult::success(vec![Content::text(
+                serde_json::json!({"error": format!("Project '{}' not found", req.project)}).to_string()
+            )])),
+        };
+        match crate::engine::health::run_tests(&info).await {
+            Some(result) => {
+                let json = serde_json::json!({
+                    "project": info.name,
+                    "success": result.success,
+                    "total": result.total,
+                    "passed": result.passed,
+                    "failed": result.failed,
+                    "duration_ms": result.duration_ms,
+                    "output": if result.output.len() > 2000 {
+                        format!("{}...(truncated)", &result.output[..2000])
+                    } else {
+                        result.output
+                    },
+                });
+                Ok(CallToolResult::success(vec![Content::text(json.to_string())]))
+            }
+            None => Ok(CallToolResult::success(vec![Content::text(
+                serde_json::json!({"error": "No test command available for this project"}).to_string()
+            )])),
+        }
+    }
+
+    #[tool(description = "Show dependency graph between local projects. Shows which projects depend on each other.")]
+    async fn project_deps(
+        &self,
+        Parameters(req): Parameters<types::ProjectDepsRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let reg = crate::scanner::load_registry();
+        let result = if let Some(name) = req.project {
+            if let Some(p) = reg.projects.iter().find(|p| p.name.to_lowercase() == name.to_lowercase()) {
+                let depended_on_by: Vec<&str> = reg.projects.iter()
+                    .filter(|other| other.deps.iter().any(|d| d == &p.name))
+                    .map(|other| other.name.as_str())
+                    .collect();
+                serde_json::json!({
+                    "project": p.name,
+                    "depends_on": p.deps,
+                    "depended_on_by": depended_on_by,
+                })
+            } else {
+                serde_json::json!({"error": format!("Project '{}' not found", name)})
+            }
+        } else {
+            let graph: Vec<serde_json::Value> = reg.projects.iter()
+                .filter(|p| !p.deps.is_empty())
+                .map(|p| serde_json::json!({"project": p.name, "depends_on": p.deps}))
+                .collect();
+            serde_json::json!({"dependencies": graph})
+        };
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
 }
 
 #[tool_handler]

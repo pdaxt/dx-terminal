@@ -1,6 +1,5 @@
 use crate::scanner::{self, ProjectInfo};
 use crate::quality;
-use serde_json::Value;
 
 /// Result of running tests for a project
 pub struct TestResult {

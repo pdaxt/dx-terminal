@@ -447,6 +447,50 @@ pub fn cleanup_stale_worktrees() -> Result<Vec<String>> {
     Ok(cleaned)
 }
 
+/// List files changed between base branch and HEAD
+pub fn files_changed(worktree_path: &str, base: &str) -> Vec<String> {
+    Command::new("git")
+        .args(["diff", "--name-only", &format!("{}..HEAD", base)])
+        .current_dir(worktree_path)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(|l| l.to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Get commits since a timestamp (returns vec of (hash, message))
+pub fn commits_since(worktree_path: &str, since: &str) -> Vec<(String, String)> {
+    let since_arg = if since.is_empty() { "1 hour ago".to_string() } else { since.to_string() };
+    Command::new("git")
+        .args(["log", &format!("--since={}", since_arg), "--format=%H|%s"])
+        .current_dir(worktree_path)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .filter(|l| !l.is_empty())
+                .filter_map(|l| {
+                    let parts: Vec<&str> = l.splitn(2, '|').collect();
+                    if parts.len() == 2 {
+                        Some((parts[0].to_string(), parts[1].to_string()))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

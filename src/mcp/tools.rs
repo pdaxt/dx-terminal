@@ -605,6 +605,19 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
         });
     }
 
+    // Feature→Code bridge: link commits and changed files to tracker issue
+    if let (Some(issue_id), Some(space)) = (&pane_data.issue_id, &pane_data.space) {
+        if let (Some(ws), Some(_branch)) = (&pane_data.workspace_path, &pane_data.branch_name) {
+            let base = pane_data.base_branch.as_deref().unwrap_or("main");
+            let files = workspace::files_changed(ws, base);
+            let started = pane_data.started_at.as_deref().unwrap_or("");
+            let commits = workspace::commits_since(ws, started);
+            if !commits.is_empty() || !files.is_empty() {
+                let _ = tracker::issue_attach_code(space, issue_id, &commits, &files);
+            }
+        }
+    }
+
     // Save output before killing PTY
     let _output_log = save_agent_output(app, pane_num, "completed");
 

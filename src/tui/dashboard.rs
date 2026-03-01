@@ -12,6 +12,8 @@ use crate::capacity;
 use crate::queue;
 use crate::tracker;
 use crate::multi_agent;
+use crate::scanner;
+use crate::quality;
 use super::widgets;
 use super::ViewMode;
 
@@ -48,6 +50,23 @@ pub struct MicroFeatureSnapshot {
     pub status: String,
     pub queue_status: Option<String>,
     pub pane: Option<u8>,
+}
+
+/// Project health snapshot for project view
+pub struct ProjectSnapshot {
+    pub name: String,
+    pub tech: String,
+    pub health_grade: String,
+    pub health_score: i64,
+    pub last_test: Option<(bool, String)>,  // (passed, relative_time)
+    pub last_build: Option<(bool, String)>,
+    pub open_issues: usize,
+    pub active_agents: usize,
+    pub git_dirty: bool,
+    pub git_ahead: i32,
+    pub git_behind: i32,
+    pub last_commit: Option<String>,
+    pub readme: Option<String>,
 }
 
 /// Board column for kanban view
@@ -97,6 +116,7 @@ pub struct DashboardData {
     pub board: Vec<BoardColumn>,
     pub coord: CoordSnapshot,
     pub started_at: Vec<(u8, String)>,  // (pane, started_at timestamp)
+    pub projects: Vec<ProjectSnapshot>,
 }
 
 /// Collect all data in one pass (lock once, release)
@@ -237,6 +257,13 @@ pub fn collect_data(app: &App, selected: u8, view_mode: ViewMode) -> DashboardDa
         Vec::new()
     };
 
+    // Project data
+    let projects = if view_mode == ViewMode::Projects {
+        collect_projects()
+    } else {
+        Vec::new()
+    };
+
     // Coordination data
     let coord = if view_mode == ViewMode::Coord {
         collect_coord(&q)
@@ -277,6 +304,7 @@ pub fn collect_data(app: &App, selected: u8, view_mode: ViewMode) -> DashboardDa
         board,
         coord,
         started_at,
+        projects,
     }
 }
 
@@ -443,6 +471,84 @@ fn collect_coord(q: &queue::TaskQueue) -> CoordSnapshot {
     CoordSnapshot { agents, locks, kb_recent, branches, deps_graph }
 }
 
+/// Collect project snapshots from scanner registry + quality data
+fn collect_projects() -> Vec<ProjectSnapshot> {
+    let reg = scanner::load_registry();
+    let mut snapshots = Vec::new();
+
+    for proj in &reg.projects {
+        let health = quality::project_health(&proj.name);
+        let gate = quality::quality_gate(&proj.name);
+
+        let grade = health.get("grade").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+        let score = health.get("health_score").and_then(|v| v.as_i64()).unwrap_or(0);
+
+        let last_test = gate.get("tests").and_then(|v| {
+            let pass = v.get("pass").and_then(|p| p.as_bool())?;
+            let ts = v.get("last_run").and_then(|t| t.as_str())?;
+            Some((pass, format_relative_time(ts)))
+        });
+
+        let last_build = gate.get("build").and_then(|v| {
+            let pass = v.get("pass").and_then(|p| p.as_bool())?;
+            let ts = v.get("last_run").and_then(|t| t.as_str())?;
+            Some((pass, format_relative_time(ts)))
+        });
+
+        // Count open issues
+        let issues = tracker::load_issues(&proj.name);
+        let open_issues = issues.iter().filter(|i| {
+            let s = i.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            s != "done" && s != "closed"
+        }).count();
+
+        // Count active agents
+        let agents = multi_agent::agent_list(Some(&proj.name));
+        let active_agents = agents.get("count").and_then(|v| v.as_i64()).unwrap_or(0) as usize;
+
+        let last_commit = proj.last_commit_ts.as_ref().map(|ts| format_relative_time(ts));
+
+        snapshots.push(ProjectSnapshot {
+            name: proj.name.clone(),
+            tech: proj.tech.join(", "),
+            health_grade: grade,
+            health_score: score,
+            last_test,
+            last_build,
+            open_issues,
+            active_agents,
+            git_dirty: proj.git_dirty,
+            git_ahead: proj.git_ahead,
+            git_behind: proj.git_behind,
+            last_commit,
+            readme: proj.readme_summary.clone(),
+        });
+    }
+
+    // Sort: highest health score first, then alphabetically
+    snapshots.sort_by(|a, b| b.health_score.cmp(&a.health_score).then(a.name.cmp(&b.name)));
+    snapshots
+}
+
+/// Format ISO timestamp to relative time ("3m ago", "2h ago", "1d ago")
+fn format_relative_time(ts: &str) -> String {
+    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(ts, "%Y-%m-%dT%H:%M:%S%.fZ")
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(ts, "%Y-%m-%dT%H:%M:%SZ"))
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(ts, "%Y-%m-%dT%H:%M:%S"))
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(ts, "%Y-%m-%dT%H:%M:%S%z"))
+    {
+        let now = chrono::Utc::now().naive_utc();
+        let elapsed = now.signed_duration_since(dt);
+        let mins = elapsed.num_minutes();
+        if mins < 1 { return "<1m".to_string(); }
+        if mins < 60 { return format!("{}m", mins); }
+        let hours = mins / 60;
+        if hours < 24 { return format!("{}h", hours); }
+        return format!("{}d", hours / 24);
+    }
+    ts.get(..16).unwrap_or(ts).to_string()
+}
+
 // ========== RENDERING ==========
 
 pub fn render(f: &mut Frame, data: &DashboardData) {
@@ -548,6 +654,26 @@ pub fn render(f: &mut Frame, data: &DashboardData) {
             render_queue(f, right_split[1], data);
             render_help_bar(f, chunks[4]);
         }
+        ViewMode::Projects => {
+            let project_height = (data.projects.len() as u16 + 3).max(5).min(25);
+
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),                  // Header
+                    Constraint::Length(alert_height),       // Alerts
+                    Constraint::Min(project_height),        // Projects table
+                    Constraint::Length(8),                  // Queue
+                    Constraint::Length(1),                  // Help
+                ])
+                .split(f.area());
+
+            render_header(f, chunks[0], data);
+            if alert_height > 0 { render_alert_bar(f, chunks[1], data); }
+            render_projects(f, chunks[2], data);
+            render_queue(f, chunks[3], data);
+            render_help_bar(f, chunks[4]);
+        }
         ViewMode::Normal => {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
@@ -598,6 +724,7 @@ fn render_header(f: &mut Frame, area: Rect, data: &DashboardData) {
         ViewMode::Features => Span::styled(" FEAT ", Style::default().fg(Color::Black).bg(Color::Magenta).add_modifier(Modifier::BOLD)),
         ViewMode::Board => Span::styled(" BOARD ", Style::default().fg(Color::Black).bg(Color::Magenta).add_modifier(Modifier::BOLD)),
         ViewMode::Coord => Span::styled(" COORD ", Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        ViewMode::Projects => Span::styled(" PROJ ", Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)),
     };
 
     let header = Line::from(vec![
@@ -1129,6 +1256,117 @@ fn format_runtime(started: &str) -> String {
     }
 }
 
+fn render_projects(f: &mut Frame, area: Rect, data: &DashboardData) {
+    let available = area.height.saturating_sub(2) as usize;
+
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled(" Project          ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Tech        ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Health  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Test          ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Build  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Issues ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Agents ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Git", Style::default().fg(Color::DarkGray)),
+        ]),
+    ];
+
+    if data.projects.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  No projects discovered. Run project_scan or wait for auto-scan.",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for proj in data.projects.iter().take(available.saturating_sub(1)) {
+            let grade_color = match proj.health_grade.as_str() {
+                "A" => Color::Green,
+                "B" => Color::Green,
+                "C" => Color::Yellow,
+                "D" => Color::Red,
+                "F" => Color::Red,
+                _ => Color::DarkGray,
+            };
+
+            let test_spans = match &proj.last_test {
+                Some((true, ts)) => vec![
+                    Span::styled("PASS ", Style::default().fg(Color::Green)),
+                    Span::styled(format!("{:<8}", widgets::truncate_pub(ts, 8)), Style::default().fg(Color::DarkGray)),
+                ],
+                Some((false, ts)) => vec![
+                    Span::styled("FAIL ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                    Span::styled(format!("{:<8}", widgets::truncate_pub(ts, 8)), Style::default().fg(Color::DarkGray)),
+                ],
+                None => vec![
+                    Span::styled("--            ", Style::default().fg(Color::DarkGray)),
+                ],
+            };
+
+            let build_spans = match &proj.last_build {
+                Some((true, _)) => vec![
+                    Span::styled("PASS   ", Style::default().fg(Color::Green)),
+                ],
+                Some((false, _)) => vec![
+                    Span::styled("FAIL   ", Style::default().fg(Color::Red)),
+                ],
+                None => vec![
+                    Span::styled("--     ", Style::default().fg(Color::DarkGray)),
+                ],
+            };
+
+            let dirty_indicator = if proj.git_dirty { "*" } else { "" };
+            let git_info = if proj.git_ahead > 0 || proj.git_behind > 0 {
+                format!("{}{} +{}-{}", dirty_indicator,
+                    if proj.git_dirty { "" } else { "" },
+                    proj.git_ahead, proj.git_behind)
+            } else if proj.git_dirty {
+                "dirty".to_string()
+            } else {
+                "clean".to_string()
+            };
+
+            let mut spans = vec![
+                Span::styled(
+                    format!(" {:<16}{}", widgets::truncate_pub(&proj.name, 16), dirty_indicator),
+                    Style::default().fg(if proj.active_agents > 0 { Color::White } else { Color::Gray }),
+                ),
+                Span::styled(
+                    format!("{:<12}", widgets::truncate_pub(&proj.tech, 12)),
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::styled(
+                    format!("{} ({:>2}) ", proj.health_grade, proj.health_score),
+                    Style::default().fg(grade_color),
+                ),
+            ];
+            spans.extend(test_spans);
+            spans.extend(build_spans);
+            spans.push(Span::styled(
+                format!("{:<7}", proj.open_issues),
+                Style::default().fg(if proj.open_issues > 0 { Color::Yellow } else { Color::DarkGray }),
+            ));
+            spans.push(Span::styled(
+                format!("{:<7}", proj.active_agents),
+                Style::default().fg(if proj.active_agents > 0 { Color::Cyan } else { Color::DarkGray }),
+            ));
+            spans.push(Span::styled(
+                git_info,
+                Style::default().fg(if proj.git_dirty { Color::Yellow } else { Color::DarkGray }),
+            ));
+
+            lines.push(Line::from(spans));
+        }
+    }
+
+    let title = format!(" Projects ({} repos) ", data.projects.len());
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+    let p = Paragraph::new(lines).block(block);
+    f.render_widget(p, area);
+}
+
 fn render_help_bar(f: &mut Frame, area: Rect) {
     let help = Line::from(vec![
         Span::styled(" [1-9]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
@@ -1139,6 +1377,8 @@ fn render_help_bar(f: &mut Frame, area: Rect) {
         Span::styled(" board  ", Style::default().fg(Color::DarkGray)),
         Span::styled("[c]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
         Span::styled(" coord  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("[p]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+        Span::styled(" projects  ", Style::default().fg(Color::DarkGray)),
         Span::styled("[q]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::styled(" quit  ", Style::default().fg(Color::DarkGray)),
         Span::styled("[k]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
