@@ -16,6 +16,14 @@ use crate::app::App;
 
 const TICK_MS: u64 = 250;
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum ViewMode {
+    Normal,
+    Features,
+    Board,
+    Coord,
+}
+
 pub fn run_tui(app: Arc<App>) -> anyhow::Result<()> {
     // Setup terminal
     enable_raw_mode()?;
@@ -43,13 +51,13 @@ fn run_loop(
     app: &App,
 ) -> anyhow::Result<()> {
     let mut selected: u8 = 1;
-    let mut show_features = false;
+    let mut view_mode = ViewMode::Normal;
     let tick_rate = Duration::from_millis(TICK_MS);
     let mut last_tick = Instant::now();
 
     loop {
         // Collect all data (locks once, releases before render)
-        let data = dashboard::collect_data(app, selected, show_features);
+        let data = dashboard::collect_data(app, selected, view_mode);
 
         // Render
         terminal.draw(|f| dashboard::render(f, &data))?;
@@ -67,7 +75,29 @@ fn run_loop(
 
                     // Toggle feature view
                     KeyCode::Char('f') => {
-                        show_features = !show_features;
+                        view_mode = if view_mode == ViewMode::Features {
+                            ViewMode::Normal
+                        } else {
+                            ViewMode::Features
+                        };
+                    }
+
+                    // Toggle board view
+                    KeyCode::Char('b') => {
+                        view_mode = if view_mode == ViewMode::Board {
+                            ViewMode::Normal
+                        } else {
+                            ViewMode::Board
+                        };
+                    }
+
+                    // Toggle coordination view
+                    KeyCode::Char('c') => {
+                        view_mode = if view_mode == ViewMode::Coord {
+                            ViewMode::Normal
+                        } else {
+                            ViewMode::Coord
+                        };
                     }
 
                     // Pane focus (1-9+ based on config)

@@ -38,6 +38,7 @@ pub fn pane_line<'a>(
     branch: Option<&str>,
     pty_running: bool,
     selected: bool,
+    health: &str,
 ) -> Line<'a> {
     let tc = theme_color(theme_fg);
     let sc = status_color(status);
@@ -75,6 +76,7 @@ pub fn pane_line<'a>(
             pty_indicator.to_string(),
             Style::default().fg(if pty_running { Color::Green } else { Color::DarkGray }),
         ),
+        health_badge(health),
         Span::raw(" "),
         Span::styled(
             task_display,
@@ -89,6 +91,36 @@ pub fn pane_line<'a>(
     }
 
     Line::from(spans)
+}
+
+/// Health badge for a pane
+pub fn health_badge(badge: &str) -> Span<'static> {
+    match badge {
+        "error" => Span::styled(" ERR", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        "done" => Span::styled("  OK", Style::default().fg(Color::Blue)),
+        "stuck" => Span::styled(" STK", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        _ => Span::styled("    ", Style::default()),
+    }
+}
+
+/// Gauge bar using Unicode block characters
+pub fn gauge_bar(value: f64, max: f64, width: usize) -> (String, Color) {
+    let pct = if max > 0.0 { (value / max * 100.0) as u32 } else { 0 };
+    let filled = if max > 0.0 { (value / max * width as f64) as usize } else { 0 }.min(width);
+    let empty = width.saturating_sub(filled);
+    let color = if pct > 80 { Color::Red } else if pct > 50 { Color::Yellow } else { Color::Green };
+    (format!("{}{}", "█".repeat(filled), "░".repeat(empty)), color)
+}
+
+/// Priority color
+pub fn priority_color(priority: &str) -> Color {
+    match priority {
+        "critical" => Color::Red,
+        "high" => Color::Yellow,
+        "medium" => Color::White,
+        "low" => Color::DarkGray,
+        _ => Color::DarkGray,
+    }
 }
 
 pub fn truncate_pub(s: &str, max: usize) -> String {
