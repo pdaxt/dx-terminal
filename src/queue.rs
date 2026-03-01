@@ -317,6 +317,12 @@ pub fn task_for_pane(pane: u8) -> Option<QueueTask> {
     queue.tasks.into_iter().find(|t| t.pane == Some(pane) && t.status == QueueStatus::Running)
 }
 
+/// Look up a task by ID
+pub fn task_by_id(task_id: &str) -> Option<QueueTask> {
+    let queue = load_queue();
+    queue.tasks.into_iter().find(|t| t.id == task_id)
+}
+
 /// Find available pane (not running, not reserved)
 pub fn find_free_pane(cfg: &AutoConfig, occupied: &[u8]) -> Option<u8> {
     let max = cfg.max_parallel.min(9);

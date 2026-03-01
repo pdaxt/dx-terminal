@@ -65,6 +65,29 @@ pub fn generate_preamble(
     prompt: &str,
 ) -> String {
     let role_short = config::role_short(role);
+
+    // Split prompt into handoff context and regular context
+    let (regular_prompt, handoff_section) = if prompt.contains("## Predecessor Results") {
+        let parts: Vec<&str> = prompt.splitn(2, "## Predecessor Results").collect();
+        (parts[0].trim().to_string(), Some(parts.get(1).unwrap_or(&"").trim().to_string()))
+    } else {
+        (prompt.to_string(), None)
+    };
+
+    let extra = if regular_prompt.is_empty() {
+        String::new()
+    } else {
+        format!("Additional context: {}\n\n", regular_prompt)
+    };
+
+    let handoff = match handoff_section {
+        Some(ref ctx) if !ctx.is_empty() => format!(
+            "## Predecessor Results\nThese tasks completed before yours. Use their output as context:\n{}\n\n",
+            ctx
+        ),
+        _ => String::new(),
+    };
+
     format!(
         "# TASK: {task}\n\
          **Role:** {role_short} | **Project:** {project} | **Pane:** {pane} ({theme})\n\
@@ -74,16 +97,12 @@ pub fn generate_preamble(
          \n\
          ## Task Details\n\
          {task}\n\
-         {extra}\n\
+         {extra}\
+         {handoff}\
          ## Coordination\n\
          - Use multi_agent MCP to register and coordinate with other agents\n\
          - Lock files before editing shared code\n\
          - When done: summarize what you accomplished\n",
-        extra = if prompt.is_empty() {
-            String::new()
-        } else {
-            format!("Additional context: {}\n\n", prompt)
-        }
     )
 }
 

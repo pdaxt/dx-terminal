@@ -207,10 +207,17 @@ pub async fn kill(app: &App, req: KillRequest) -> String {
     // Deregister machine identity
     machine::deregister(pane_num);
 
-    // Update state
+    // Update state — fully reset to idle
     let mut pane_state = pane_data;
     pane_state.status = "idle".into();
     pane_state.task = String::new();
+    pane_state.project = "--".into();
+    pane_state.project_path = String::new();
+    pane_state.role = "--".into();
+    pane_state.started_at = None;
+    pane_state.acu_spent = 0.0;
+    pane_state.issue_id = None;
+    pane_state.space = None;
     pane_state.workspace_path = None;
     pane_state.branch_name = None;
     pane_state.base_branch = None;
@@ -313,6 +320,9 @@ pub async fn reassign(app: &App, req: ReassignRequest) -> String {
         "reassign",
         &format!("Reassigned: {}", truncate(req.task.as_deref().unwrap_or("config change"), 40)),
     ).await;
+
+    // Update coordination DB so other agents see the new project/task
+    update_agents_json(pane_num, &pane_data.project, &pane_data.task);
 
     serde_json::json!({
         "status": "reassigned",
@@ -585,6 +595,26 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
     // Save output before killing PTY
     let _output_log = save_agent_output(app, pane_num, "completed");
 
+    // Save handoff context to KB for dependent tasks
+    let result_text = extract_result(app, pane_num);
+    if let Some(qt) = queue::task_for_pane(pane_num) {
+        let window = (pane_num as u32 - 1) / 3 + 1;
+        let pane_pos = (pane_num as u32 - 1) % 3 + 1;
+        let pane_id = format!("{}:{}.{}", config::session_name(), window, pane_pos);
+        let handoff_content = format!(
+            "Task: {}\nResult: {}\nSummary: {}\nBranch: {}\nPR: {}",
+            qt.task,
+            result_text,
+            summary,
+            pane_data.branch_name.as_deref().unwrap_or("none"),
+            git_info.get("pr").and_then(|v| v.as_str()).unwrap_or("none"),
+        );
+        let _ = crate::multi_agent::kb_add(
+            &pane_id, &pane_data.project, "agent_handoff",
+            &qt.id, &handoff_content, &[],
+        );
+    }
+
     // Kill the PTY process
     {
         let mut pty = app.pty_lock();
@@ -602,13 +632,23 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
     // Deregister from coordination DB (CASCADE deletes file locks)
     remove_from_agents_json(pane_num);
 
-    // Update pane state
+    // Update pane state — preserve acu_spent for reporting, reset everything else
+    let task_display = truncate(&pane_data.task, 30);
     pane_data.status = "idle".into();
     pane_data.acu_spent = acu;
+    pane_data.task = String::new();
+    pane_data.project = "--".into();
+    pane_data.project_path = String::new();
+    pane_data.role = "--".into();
+    pane_data.started_at = None;
+    pane_data.issue_id = None;
+    pane_data.space = None;
     pane_data.workspace_path = None;
     pane_data.branch_name = None;
     pane_data.base_branch = None;
-    let task_display = truncate(&pane_data.task, 30);
+    pane_data.machine_ip = None;
+    pane_data.machine_hostname = None;
+    pane_data.machine_mac = None;
     app.state.set_pane(pane_num, pane_data.clone()).await;
     app.state.log_activity(pane_num, "complete", &format!("Done: {} ({} ACU)", task_display, acu)).await;
 
@@ -1544,13 +1584,38 @@ pub async fn auto_cycle(app: &App) -> String {
                     let _ = queue::mark_running(&task.id, pane);
                     occupied_panes.push(pane);
 
+                    // Build handoff context from predecessor tasks
+                    let mut prompt = task.prompt.clone();
+                    if !task.depends_on.is_empty() {
+                        let mut handoff_parts = Vec::new();
+                        for dep_id in &task.depends_on {
+                            // Get predecessor result from queue
+                            if let Some(dep_task) = queue::task_by_id(dep_id) {
+                                let result = dep_task.result.as_deref().unwrap_or("completed");
+                                handoff_parts.push(format!("- {} ({}): {}", dep_task.task, dep_id, result));
+                            }
+                            // Get richer context from KB
+                            let kb = crate::multi_agent::kb_search(dep_id, Some(&task.project), Some("agent_handoff"));
+                            if let Some(entries) = kb.get("entries").and_then(|v| v.as_array()) {
+                                for entry in entries {
+                                    if let Some(content) = entry.get("content").and_then(|v| v.as_str()) {
+                                        handoff_parts.push(format!("  KB: {}", content));
+                                    }
+                                }
+                            }
+                        }
+                        if !handoff_parts.is_empty() {
+                            prompt = format!("{}\n\n## Predecessor Results\n{}", prompt, handoff_parts.join("\n"));
+                        }
+                    }
+
                     // Spawn
                     let _result = spawn(app, super::types::SpawnRequest {
                         pane: pane.to_string(),
                         project: task.project.clone(),
                         role: Some(task.role.clone()),
                         task: Some(task.task.clone()),
-                        prompt: Some(task.prompt.clone()),
+                        prompt: Some(prompt),
                     }).await;
 
                     actions.push(serde_json::json!({
@@ -1730,11 +1795,14 @@ pub async fn monitor(app: &App, req: MonitorRequest) -> String {
         if !output_snippet.is_empty() {
             pane_info["output"] = serde_json::json!(output_snippet);
         }
-        if let Some(started) = &pd.started_at {
-            if let Ok(start_dt) = NaiveDateTime::parse_from_str(started, "%Y-%m-%dT%H:%M:%S") {
-                let now = Local::now().naive_local();
-                let mins = (now - start_dt).num_minutes();
-                pane_info["runtime_mins"] = serde_json::json!(mins);
+        // Only show runtime for active (non-idle) panes
+        if pd.status != "idle" {
+            if let Some(started) = &pd.started_at {
+                if let Ok(start_dt) = NaiveDateTime::parse_from_str(started, "%Y-%m-%dT%H:%M:%S") {
+                    let now = Local::now().naive_local();
+                    let mins = (now - start_dt).num_minutes();
+                    pane_info["runtime_mins"] = serde_json::json!(mins);
+                }
             }
         }
 
@@ -2145,11 +2213,15 @@ pub async fn watch(app: &App, req: WatchRequest) -> String {
         }
     }
 
-    // Runtime calculation
-    let runtime_mins = if let Some(started) = &pd.started_at {
-        if let Ok(start_dt) = NaiveDateTime::parse_from_str(started, "%Y-%m-%dT%H:%M:%S") {
-            let now = Local::now().naive_local();
-            Some((now - start_dt).num_minutes())
+    // Runtime calculation — only for active panes
+    let runtime_mins = if pd.status != "idle" {
+        if let Some(started) = &pd.started_at {
+            if let Ok(start_dt) = NaiveDateTime::parse_from_str(started, "%Y-%m-%dT%H:%M:%S") {
+                let now = Local::now().naive_local();
+                Some((now - start_dt).num_minutes())
+            } else {
+                None
+            }
         } else {
             None
         }
