@@ -811,4 +811,154 @@ mod tests {
         assert!(id.starts_with("pipe_"));
         assert!(id.len() > 10);
     }
+
+    #[test]
+    fn test_pipeline_id_uniqueness() {
+        let ids: Vec<String> = (0..100).map(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            gen_pipeline_id()
+        }).collect();
+        let unique: HashSet<&str> = ids.iter().map(|s| s.as_str()).collect();
+        // At least 90% unique (timing jitter may cause rare collisions)
+        assert!(unique.len() > 90, "Only {} unique out of 100", unique.len());
+    }
+
+    #[test]
+    fn test_template_info_structure() {
+        let info = template_info();
+        assert_eq!(info.len(), 3);
+        for (name, stages) in &info {
+            assert!(!name.is_empty());
+            assert!(!stages.is_empty());
+            // Every template has "dev" as first stage
+            assert_eq!(stages[0], "dev");
+        }
+    }
+
+    #[test]
+    fn test_template_full_has_review() {
+        let info = template_info();
+        let full = info.iter().find(|(n, _)| *n == "full").unwrap();
+        assert!(full.1.contains(&"review"));
+        assert!(full.1.contains(&"qa"));
+        assert!(full.1.contains(&"security"));
+    }
+
+    #[test]
+    fn test_template_secure_has_pentest() {
+        let info = template_info();
+        let secure = info.iter().find(|(n, _)| *n == "secure").unwrap();
+        assert!(secure.1.contains(&"pentest"));
+        assert!(secure.1.contains(&"review"));
+    }
+
+    #[test]
+    fn test_gate_result_serialization() {
+        let gate = GateResult {
+            pipeline_id: "pipe_123_abcd".to_string(),
+            project: "test-project".to_string(),
+            build: Some(GateCheck {
+                command: "cargo build".to_string(),
+                success: true,
+                output: "Finished".to_string(),
+                duration_ms: 1500,
+            }),
+            test: Some(GateCheck {
+                command: "cargo test".to_string(),
+                success: false,
+                output: "1 test failed".to_string(),
+                duration_ms: 3000,
+            }),
+            lint: None,
+            passed: false,
+        };
+        let json = serde_json::to_string(&gate).unwrap();
+        let restored: GateResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.pipeline_id, "pipe_123_abcd");
+        assert!(!restored.passed);
+        assert!(restored.build.unwrap().success);
+        assert!(!restored.test.unwrap().success);
+        assert!(restored.lint.is_none());
+    }
+
+    #[test]
+    fn test_cancel_result_serialization() {
+        let result = CancelResult {
+            pipeline_id: "pipe_999_beef".to_string(),
+            cancelled_tasks: 3,
+            running_panes: vec![2, 5],
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("pipe_999_beef"));
+        assert!(json.contains("\"cancelled_tasks\":3"));
+    }
+
+    #[test]
+    fn test_stage_view_status_extraction() {
+        // Simulate what list_pipelines does to extract stage name from task label
+        let task_text = "[dev] Add OAuth login";
+        let name = task_text.strip_prefix('[')
+            .and_then(|s| s.split(']').next())
+            .unwrap_or("?");
+        assert_eq!(name, "dev");
+
+        let desc = task_text.split(']').last().unwrap_or(task_text).trim();
+        assert_eq!(desc, "Add OAuth login");
+    }
+
+    #[test]
+    fn test_stage_view_malformed_label() {
+        // Edge case: task label without brackets
+        let task_text = "plain task";
+        let name = task_text.strip_prefix('[')
+            .and_then(|s| s.split(']').next())
+            .unwrap_or("?");
+        assert_eq!(name, "?");
+    }
+
+    #[test]
+    fn test_coordination_context_empty_pipeline() {
+        // coordination_context with non-existent pipeline returns empty
+        let ctx = coordination_context("nonexistent_pipe", 1, "developer");
+        assert!(ctx.is_empty());
+    }
+
+    #[test]
+    fn test_prompt_template_placeholders() {
+        // Verify all prompt templates have the expected placeholders
+        let prompts = [PROMPT_DEV, PROMPT_QA, PROMPT_SECURITY, PROMPT_PENTEST, PROMPT_REVIEW];
+        for prompt in &prompts {
+            assert!(prompt.contains("{{task}}"), "Missing {{{{task}}}} in prompt");
+            assert!(prompt.contains("{{project}}"), "Missing {{{{project}}}} in prompt");
+            assert!(prompt.contains("{{project_path}}"), "Missing {{{{project_path}}}} in prompt");
+        }
+    }
+
+    #[test]
+    fn test_all_stages_have_prompts() {
+        for tmpl in ALL_TEMPLATES {
+            for stage in tmpl.stages {
+                assert!(!stage.prompt.is_empty(), "Stage '{}' in template '{}' has empty prompt", stage.name, tmpl.name);
+                assert!(!stage.role.is_empty(), "Stage '{}' in template '{}' has empty role", stage.name, tmpl.name);
+            }
+        }
+    }
+
+    #[test]
+    fn test_parallel_stages_are_bidirectional() {
+        // If A lists B in parallel_with, B should list A too
+        for tmpl in ALL_TEMPLATES {
+            for stage in tmpl.stages {
+                for parallel_name in stage.parallel_with {
+                    let partner = tmpl.stages.iter().find(|s| s.name == *parallel_name);
+                    assert!(partner.is_some(),
+                        "Stage '{}' references non-existent parallel partner '{}'", stage.name, parallel_name);
+                    let partner = partner.unwrap();
+                    assert!(partner.parallel_with.contains(&stage.name),
+                        "Stage '{}' lists '{}' as parallel, but '{}' doesn't list '{}' back",
+                        stage.name, parallel_name, parallel_name, stage.name);
+                }
+            }
+        }
+    }
 }
