@@ -140,6 +140,22 @@ async fn run_mcp_mode(app: Arc<app::App>, web_port: u16, no_web: bool) -> anyhow
         }
     });
 
+    // Gateway GC timer — shutdown idle micro MCPs every 5 minutes
+    let gc_app = Arc::clone(&app);
+    tokio::spawn(async move {
+        let gc_interval = std::time::Duration::from_secs(300);
+        let max_idle = std::time::Duration::from_secs(300);
+        loop {
+            tokio::time::sleep(gc_interval).await;
+            let mut gw = gc_app.gateway.lock().await;
+            gw.gc_idle(max_idle).await;
+            let count = gw.running_count();
+            if count > 0 {
+                tracing::info!("Gateway GC: {} micro MCPs still running", count);
+            }
+        }
+    });
+
     mcp::run_mcp_server(app).await
 }
 

@@ -647,6 +647,14 @@ pub async fn dispatch_mcp_tool(app: &App, tool: &str, args: Value) -> String {
         "audit_deps" => { let r = deser!(args, AuditDepsRequest); crate::audit::audit_deps(&r.project).to_string() }
         "audit_full" => { let r = deser!(args, AuditFullRequest); crate::audit::audit_full(&r.project).to_string() }
 
+        // === ORCHESTRATION ===
+        "orchestrate" => tools::orchestrate::orchestrate(app, deser!(args, OrchestrateRequest)).await,
+
+        // === GATEWAY (MICRO MCP) ===
+        "mcp_discover" | "gateway_discover" => tools::gateway_tools::gateway_discover(app, deser!(args, GatewayDiscoverRequest)).await,
+        "mcp_call" | "gateway_call" => tools::gateway_tools::gateway_call(app, deser!(args, GatewayCallRequest)).await,
+        "mcp_gateway_list" | "gateway_list" => tools::gateway_tools::gateway_list(app, deser!(args, GatewayListRequest)).await,
+
         _ => format!("{{\"error\":\"Unknown tool: {}\"}}", tool),
     }
 }
@@ -861,6 +869,12 @@ pub const MCP_TOOLS: &[(&str, &str)] = &[
     ("audit_intent", "Intent verification"),
     ("audit_deps", "Dependency audit"),
     ("audit_full", "Full audit"),
+    // Orchestration
+    ("orchestrate", "Auto-build: NL → agents"),
+    // Gateway (micro MCPs)
+    ("mcp_discover", "Find micro MCPs"),
+    ("mcp_call", "Call micro MCP tool"),
+    ("mcp_gateway_list", "List micro MCPs"),
 ];
 
 /// Get completions for a prefix

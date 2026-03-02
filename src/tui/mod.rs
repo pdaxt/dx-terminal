@@ -99,6 +99,10 @@ pub enum TuiCommand {
         tool: String,
         args: serde_json::Value,
     },
+    Orchestrate {
+        request: String,
+        project: Option<String>,
+    },
 }
 
 pub struct TuiResult {
@@ -227,6 +231,18 @@ async fn execute_command(app: &App, cmd: TuiCommand) -> TuiResult {
         TuiCommand::McpDispatch { tool, args } => {
             let desc = format!(":{}", tool);
             let result = dispatch::dispatch_mcp_tool(app, &tool, args).await;
+            let success = !result.contains("\"error\"");
+            TuiResult { description: desc, success, message: result }
+        }
+        TuiCommand::Orchestrate { request, project } => {
+            let desc = format!("Orchestrate: {}", &request.chars().take(30).collect::<String>());
+            let result = tools::orchestrate::orchestrate(app, types::OrchestrateRequest {
+                request,
+                project,
+                concurrent_qa: Some(true),
+                concurrent_security: Some(false),
+                max_panes: None,
+            }).await;
             let success = !result.contains("\"error\"");
             TuiResult { description: desc, success, message: result }
         }
@@ -393,6 +409,11 @@ fn handle_navigate(
         // Queue add form
         KeyCode::Char('t') => {
             *mode = TuiMode::Input { form: input::create_queue_form() };
+        }
+
+        // Orchestrate form — natural language → full pipeline
+        KeyCode::Char('o') => {
+            *mode = TuiMode::Input { form: input::create_orchestrate_form() };
         }
 
         // Auto-cycle

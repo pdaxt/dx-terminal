@@ -1645,6 +1645,48 @@ pub struct ProjectDepsRequest {
     pub project: Option<String>,
 }
 
+// === ORCHESTRATE TYPES ===
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct OrchestrateRequest {
+    #[schemars(description = "Natural language request: what you want built/done. AgentOS will identify the project, decompose into tasks, spawn developer + QA + security agents.")]
+    pub request: String,
+    #[schemars(description = "Explicit project name (auto-detected from request if empty)")]
+    pub project: Option<String>,
+    #[schemars(description = "Run QA agent concurrently with developer (default true). If false, QA runs after developer completes.")]
+    pub concurrent_qa: Option<bool>,
+    #[schemars(description = "Run security audit concurrently (default false). If true, security agent watches in real-time.")]
+    pub concurrent_security: Option<bool>,
+    #[schemars(description = "Max panes to use for this orchestration (default 3: dev + qa + security)")]
+    pub max_panes: Option<u8>,
+}
+
+// === GATEWAY TYPES ===
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GatewayDiscoverRequest {
+    #[schemars(description = "Capability keyword to search for (e.g. 'knowledge', 'testing', 'email')")]
+    pub capability: String,
+    #[schemars(description = "Auto-start matching MCPs (default false)")]
+    pub auto_start: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GatewayCallRequest {
+    #[schemars(description = "MCP name to call")]
+    pub mcp: String,
+    #[schemars(description = "Tool name on that MCP")]
+    pub tool: String,
+    #[schemars(description = "Arguments as JSON object")]
+    pub arguments: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GatewayListRequest {
+    #[schemars(description = "Show only running MCPs (default: show all)")]
+    pub running_only: Option<bool>,
+}
+
 // === AUDIT TYPES ===
 
 #[derive(Debug, Deserialize, JsonSchema)]

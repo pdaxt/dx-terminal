@@ -24,6 +24,7 @@ pub enum FormKind {
     Spawn,
     QueueAdd,
     FeatureCreate,
+    Orchestrate,
 }
 
 /// Create a spawn form pre-filled with selected pane
@@ -136,6 +137,31 @@ pub fn create_feature_form() -> FormState {
     }
 }
 
+/// Create an orchestrate form — one field for natural language, optional project
+pub fn create_orchestrate_form() -> FormState {
+    FormState {
+        title: "Orchestrate".into(),
+        fields: vec![
+            FormField {
+                label: "Request".into(),
+                value: String::new(),
+                cursor: 0,
+                required: true,
+                placeholder: "What do you want built? (natural language)".into(),
+            },
+            FormField {
+                label: "Project".into(),
+                value: String::new(),
+                cursor: 0,
+                required: false,
+                placeholder: "auto-detected if empty".into(),
+            },
+        ],
+        focused: 0,
+        kind: FormKind::Orchestrate,
+    }
+}
+
 /// Check if all required fields have values
 pub fn form_is_valid(form: &FormState) -> bool {
     form.fields.iter().all(|f| !f.required || !f.value.trim().is_empty())
@@ -163,6 +189,11 @@ pub fn form_to_command(form: &FormState) -> Option<TuiCommand> {
             let title = form.fields[1].value.trim().to_string();
             let priority = non_empty(&form.fields[2].value);
             Some(TuiCommand::FeatureCreate { space, title, issue_type: "feature".into(), priority })
+        }
+        FormKind::Orchestrate => {
+            let request = form.fields[0].value.trim().to_string();
+            let project = non_empty(&form.fields[1].value);
+            Some(TuiCommand::Orchestrate { request, project })
         }
     }
 }
@@ -204,6 +235,17 @@ pub fn parse_command(input: &str) -> Option<TuiCommand> {
                 title: parts[2].to_string(),
                 issue_type: "feature".into(),
                 priority: None,
+            });
+        }
+        Some("orchestrate" | "orch" | "build") if parts.len() >= 2 => {
+            let rest = if parts.len() == 3 {
+                format!("{} {}", parts[1], parts[2])
+            } else {
+                parts[1].to_string()
+            };
+            return Some(TuiCommand::Orchestrate {
+                request: rest,
+                project: None,
             });
         }
         Some("qf") if parts.len() >= 3 => {

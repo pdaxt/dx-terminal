@@ -1547,6 +1547,46 @@ impl AgentOSService {
         let result = tools::audit_tools::audit_full(&req.project);
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
+
+    // === ORCHESTRATION ===
+
+    #[tool(description = "Orchestrate: say what you want in natural language. AgentOS identifies the project, decomposes into dev + QA + security tasks, spawns agents on free panes, monitors to completion. The 'machine that builds machines' command.")]
+    async fn orchestrate(
+        &self,
+        Parameters(req): Parameters<types::OrchestrateRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::orchestrate::orchestrate(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    // === GATEWAY (MICRO MCP MANAGEMENT) ===
+
+    #[tool(description = "Discover micro MCPs matching a capability keyword. Optionally auto-start them. Use this to find composable building blocks.")]
+    async fn mcp_discover(
+        &self,
+        Parameters(req): Parameters<types::GatewayDiscoverRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::gateway_tools::gateway_discover(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Call a tool on a micro MCP. Auto-starts the MCP if not running. Routes through the gateway for lifecycle management.")]
+    async fn mcp_call(
+        &self,
+        Parameters(req): Parameters<types::GatewayCallRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::gateway_tools::gateway_call(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "List all registered and running micro MCPs. Shows tool counts, uptime, and last-used timestamps.")]
+    async fn mcp_gateway_list(
+        &self,
+        Parameters(req): Parameters<types::GatewayListRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::gateway_tools::gateway_list(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
 }
 
 #[tool_handler]
