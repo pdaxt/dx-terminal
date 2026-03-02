@@ -88,7 +88,28 @@ pub struct CoordSnapshot {
     pub locks: Vec<(String, String)>,               // (pane_id, file_path)
     pub kb_recent: Vec<(String, String, String)>,   // (category, title, pane_id)
     pub branches: Vec<(String, String, String)>,    // (pane_id, branch, project)
-    pub deps_graph: Vec<(String, String, String)>,  // (task_id, depends_on_id, status)
+    pub ports: Vec<(i64, String, String)>,          // (port, service, pane_id)
+}
+
+/// Infrastructure snapshot (ports, builds, messages, sessions)
+pub struct InfraSnapshot {
+    pub ports: Vec<(i64, String, String)>,               // (port, service, pane_id)
+    pub builds: Vec<(String, bool, String)>,             // (project, success, time_ago)
+    pub messages: Vec<(String, String, String, String)>, // (from, to, message, priority)
+    pub sessions: Vec<(String, String, String)>,         // (pane_id, project, status)
+}
+
+/// Intelligence snapshot (kgraph, facts, replay, analytics)
+pub struct IntelSnapshot {
+    pub kgraph_entities: i64,
+    pub kgraph_edges: i64,
+    pub kgraph_top: Vec<(String, i64)>,          // (entity_name, edge_count)
+    pub facts: Vec<(String, String, bool)>,      // (key, value, verified)
+    pub fact_count: i64,
+    pub replay_sessions: i64,
+    pub replay_tool_calls: i64,
+    pub replay_errors: i64,
+    pub top_tools: Vec<(String, f64)>,           // (tool_name, weight)
 }
 
 /// Full dashboard snapshot
@@ -118,6 +139,8 @@ pub struct DashboardData {
     pub started_at: Vec<(u8, String)>,  // (pane, started_at timestamp)
     pub projects: Vec<ProjectSnapshot>,
     pub feature_cursor: usize,
+    pub infra: InfraSnapshot,
+    pub intel: IntelSnapshot,
 }
 
 /// Collect all data in one pass (lock once, release)
@@ -265,7 +288,21 @@ pub fn collect_data(app: &App, selected: u8, view_mode: ViewMode, feature_cursor
     let coord = if view_mode == ViewMode::Coord {
         collect_coord(&q)
     } else {
-        CoordSnapshot { agents: Vec::new(), locks: Vec::new(), kb_recent: Vec::new(), branches: Vec::new(), deps_graph: Vec::new() }
+        CoordSnapshot { agents: Vec::new(), locks: Vec::new(), kb_recent: Vec::new(), branches: Vec::new(), ports: Vec::new() }
+    };
+
+    // Infrastructure data
+    let infra = if view_mode == ViewMode::Infra {
+        collect_infra()
+    } else {
+        InfraSnapshot { ports: Vec::new(), builds: Vec::new(), messages: Vec::new(), sessions: Vec::new() }
+    };
+
+    // Intelligence data
+    let intel = if view_mode == ViewMode::Intel {
+        collect_intel()
+    } else {
+        IntelSnapshot { kgraph_entities: 0, kgraph_edges: 0, kgraph_top: Vec::new(), facts: Vec::new(), fact_count: 0, replay_sessions: 0, replay_tool_calls: 0, replay_errors: 0, top_tools: Vec::new() }
     };
 
     // Started timestamps from state
@@ -303,6 +340,8 @@ pub fn collect_data(app: &App, selected: u8, view_mode: ViewMode, feature_cursor
         started_at,
         projects,
         feature_cursor,
+        infra,
+        intel,
     }
 }
 
@@ -402,7 +441,7 @@ fn collect_features(q: &queue::TaskQueue) -> Vec<FeatureSnapshot> {
 }
 
 /// Collect coordination snapshot (agents, locks, KB, branches, dep graph)
-fn collect_coord(q: &queue::TaskQueue) -> CoordSnapshot {
+fn collect_coord(_q: &queue::TaskQueue) -> CoordSnapshot {
     // Agents
     let agents_json = multi_agent::agent_list(None);
     let agents: Vec<(String, String, String)> = agents_json
@@ -456,17 +495,19 @@ fn collect_coord(q: &queue::TaskQueue) -> CoordSnapshot {
         }).collect())
         .unwrap_or_default();
 
-    // Dependency graph from queue
-    let deps_graph: Vec<(String, String, String)> = q.tasks.iter()
-        .flat_map(|t| {
-            let status = format!("{:?}", t.status);
-            t.depends_on.iter().map(move |dep| {
-                (t.id.clone(), dep.clone(), status.clone())
-            })
-        })
-        .collect();
+    // Port allocations
+    let ports_json = multi_agent::port_list();
+    let ports: Vec<(i64, String, String)> = ports_json
+        .get("ports").and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|p| {
+            let port = p.get("port").and_then(|v| v.as_i64())?;
+            let svc = p.get("service").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let pane = p.get("pane_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            Some((port, svc, pane))
+        }).collect())
+        .unwrap_or_default();
 
-    CoordSnapshot { agents, locks, kb_recent, branches, deps_graph }
+    CoordSnapshot { agents, locks, kb_recent, branches, ports }
 }
 
 /// Collect project snapshots from scanner registry + quality data
@@ -526,6 +567,109 @@ fn collect_projects() -> Vec<ProjectSnapshot> {
     // Sort: highest health score first, then alphabetically
     snapshots.sort_by(|a, b| b.health_score.cmp(&a.health_score).then(a.name.cmp(&b.name)));
     snapshots
+}
+
+/// Collect infrastructure snapshot: ports, builds, messages, sessions
+fn collect_infra() -> InfraSnapshot {
+    // Ports
+    let ports_json = multi_agent::port_list();
+    let ports: Vec<(i64, String, String)> = ports_json
+        .get("ports").and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|p| {
+            let port = p.get("port").and_then(|v| v.as_i64())?;
+            let svc = p.get("service").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let pane = p.get("pane_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            Some((port, svc, pane))
+        }).collect())
+        .unwrap_or_default();
+
+    // Builds — get overview which includes build counts
+    let overview = multi_agent::status_overview(None);
+    let builds: Vec<(String, bool, String)> = overview
+        .get("builds").and_then(|v| v.as_object())
+        .map(|obj| {
+            obj.iter().filter_map(|(proj, info)| {
+                let success = info.get("last_success").and_then(|v| v.as_bool()).unwrap_or(false);
+                let ts = info.get("last_at").and_then(|v| v.as_str()).unwrap_or("");
+                let ago = if ts.is_empty() { "never".to_string() } else { format_relative_time(ts) };
+                Some((proj.clone(), success, ago))
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    // Messages — get for all panes
+    let msg_json = multi_agent::msg_get("*", false);
+    let messages: Vec<(String, String, String, String)> = msg_json
+        .get("messages").and_then(|v| v.as_array())
+        .map(|arr| arr.iter().rev().take(10).filter_map(|m| {
+            let from = m.get("from_pane").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+            let to = m.get("to_pane").and_then(|v| v.as_str()).unwrap_or("*").to_string();
+            let msg = m.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let pri = m.get("priority").and_then(|v| v.as_str()).unwrap_or("info").to_string();
+            Some((from, to, msg, pri))
+        }).collect())
+        .unwrap_or_default();
+
+    // Sessions from who()
+    let who = multi_agent::who();
+    let sessions: Vec<(String, String, String)> = who
+        .get("agents").and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|a| {
+            let pane = a.get("pane_id").and_then(|v| v.as_str())?.to_string();
+            let proj = a.get("project").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let status = a.get("status").and_then(|v| v.as_str()).unwrap_or("active").to_string();
+            Some((pane, proj, status))
+        }).collect())
+        .unwrap_or_default();
+
+    InfraSnapshot { ports, builds, messages, sessions }
+}
+
+/// Collect intelligence snapshot: kgraph, facts, replay, analytics
+fn collect_intel() -> IntelSnapshot {
+    use crate::knowledge;
+
+    // Knowledge graph stats
+    let stats = knowledge::kgraph_stats();
+    let kgraph_entities = stats.get("entity_count").and_then(|v| v.as_i64()).unwrap_or(0);
+    let kgraph_edges = stats.get("edge_count").and_then(|v| v.as_i64()).unwrap_or(0);
+    let kgraph_top: Vec<(String, i64)> = stats
+        .get("top_entities").and_then(|v| v.as_array())
+        .map(|arr| arr.iter().take(8).filter_map(|e| {
+            let name = e.get("name").and_then(|v| v.as_str())?.to_string();
+            let count = e.get("edge_count").and_then(|v| v.as_i64()).unwrap_or(0);
+            Some((name, count))
+        }).collect())
+        .unwrap_or_default();
+
+    // Facts
+    let facts_json = knowledge::fact_search("", "", 0.0, 20);
+    let fact_count = facts_json.get("count").and_then(|v| v.as_i64()).unwrap_or(0);
+    let facts: Vec<(String, String, bool)> = facts_json
+        .get("facts").and_then(|v| v.as_array())
+        .map(|arr| arr.iter().take(10).filter_map(|f| {
+            let key = f.get("key").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let val = f.get("value").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let verified = f.get("verified").and_then(|v| v.as_bool()).unwrap_or(false);
+            Some((key, val, verified))
+        }).collect())
+        .unwrap_or_default();
+
+    // Replay status
+    let replay = knowledge::replay_status();
+    let replay_sessions = replay.get("total_sessions").and_then(|v| v.as_i64()).unwrap_or(0);
+    let replay_tool_calls = replay.get("total_tool_calls").and_then(|v| v.as_i64()).unwrap_or(0);
+    let replay_errors = replay.get("total_errors").and_then(|v| v.as_i64()).unwrap_or(0);
+
+    // Top tools from analytics (use tool ranking if available)
+    let top_tools: Vec<(String, f64)> = Vec::new(); // Populated from MEMORY.md or analytics
+
+    IntelSnapshot {
+        kgraph_entities, kgraph_edges, kgraph_top,
+        facts, fact_count,
+        replay_sessions, replay_tool_calls, replay_errors,
+        top_tools,
+    }
 }
 
 /// Format ISO timestamp to relative time ("3m ago", "2h ago", "1d ago")
@@ -648,7 +792,7 @@ pub fn render(f: &mut Frame, data: &DashboardData) {
             render_coord_locks(f, left_split[1], data);
             render_coord_kb(f, mid_split[0], data);
             render_coord_branches(f, mid_split[1], data);
-            render_coord_deps(f, right_split[0], data);
+            render_coord_ports(f, right_split[0], data);
             render_queue(f, right_split[1], data);
             render_help_bar(f, chunks[4], data);
         }
@@ -671,6 +815,76 @@ pub fn render(f: &mut Frame, data: &DashboardData) {
             render_projects(f, chunks[2], data);
             render_queue(f, chunks[3], data);
             render_help_bar(f, chunks[4], data);
+        }
+        ViewMode::Infra => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Length(alert_height),
+                    Constraint::Min(10),
+                    Constraint::Length(1),
+                ])
+                .split(f.area());
+
+            let panels = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(33), Constraint::Percentage(34), Constraint::Percentage(33)])
+                .split(chunks[2]);
+
+            let left = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+                .split(panels[0]);
+
+            let right = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+                .split(panels[2]);
+
+            render_header(f, chunks[0], data);
+            if alert_height > 0 { render_alert_bar(f, chunks[1], data); }
+            render_infra_ports(f, left[0], data);
+            render_infra_sessions(f, left[1], data);
+            render_infra_builds(f, panels[1], data);
+            render_infra_messages(f, right[0], data);
+            render_queue(f, right[1], data);
+            render_help_bar(f, chunks[3], data);
+        }
+        ViewMode::Intel => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Length(alert_height),
+                    Constraint::Min(10),
+                    Constraint::Length(1),
+                ])
+                .split(f.area());
+
+            let panels = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(33), Constraint::Percentage(34), Constraint::Percentage(33)])
+                .split(chunks[2]);
+
+            let left = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+                .split(panels[0]);
+
+            let right = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+                .split(panels[2]);
+
+            render_header(f, chunks[0], data);
+            if alert_height > 0 { render_alert_bar(f, chunks[1], data); }
+            render_intel_kgraph(f, left[0], data);
+            render_intel_replay(f, left[1], data);
+            render_intel_facts(f, panels[1], data);
+            render_intel_analytics(f, right[0], data);
+            render_queue(f, right[1], data);
+            render_help_bar(f, chunks[3], data);
         }
         ViewMode::Normal => {
             let chunks = Layout::default()
@@ -723,6 +937,8 @@ fn render_header(f: &mut Frame, area: Rect, data: &DashboardData) {
         ViewMode::Board => Span::styled(" BOARD ", Style::default().fg(Color::Black).bg(Color::Magenta).add_modifier(Modifier::BOLD)),
         ViewMode::Coord => Span::styled(" COORD ", Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)),
         ViewMode::Projects => Span::styled(" PROJ ", Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        ViewMode::Infra => Span::styled(" INFRA ", Style::default().fg(Color::Black).bg(Color::Green).add_modifier(Modifier::BOLD)),
+        ViewMode::Intel => Span::styled(" INTEL ", Style::default().fg(Color::Black).bg(Color::Blue).add_modifier(Modifier::BOLD)),
     };
 
     let header = Line::from(vec![
@@ -1235,37 +1451,27 @@ fn render_coord_branches(f: &mut Frame, area: Rect, data: &DashboardData) {
     f.render_widget(p, area);
 }
 
-fn render_coord_deps(f: &mut Frame, area: Rect, data: &DashboardData) {
+fn render_coord_ports(f: &mut Frame, area: Rect, data: &DashboardData) {
     let available = area.height.saturating_sub(2) as usize;
-    let lines: Vec<Line> = if data.coord.deps_graph.is_empty() {
-        vec![Line::from(Span::styled("  No task dependencies", Style::default().fg(Color::DarkGray)))]
+    let lines: Vec<Line> = if data.coord.ports.is_empty() {
+        vec![Line::from(Span::styled("  No ports allocated", Style::default().fg(Color::DarkGray)))]
     } else {
-        data.coord.deps_graph.iter().take(available).map(|(task_id, dep_id, status)| {
-            let sc = match status.as_str() {
-                "Running" => Color::Green,
-                "Done" => Color::Blue,
-                "Failed" => Color::Red,
-                "Blocked" => Color::Magenta,
-                _ => Color::Yellow,
-            };
+        data.coord.ports.iter().take(available).map(|(port, svc, pane)| {
             Line::from(vec![
-                Span::styled(format!(" {}", widgets::truncate_pub(task_id, 10)), Style::default().fg(sc)),
-                Span::styled(" ← ", Style::default().fg(Color::DarkGray)),
-                Span::styled(widgets::truncate_pub(dep_id, 10), Style::default().fg(Color::White)),
-                Span::styled(format!("  {}", status), Style::default().fg(sc)),
+                Span::styled(format!(" {:<6}", port), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("{:<16}", widgets::truncate_pub(svc, 16)), Style::default().fg(Color::Cyan)),
+                Span::styled(widgets::truncate_pub(pane, 10), Style::default().fg(Color::DarkGray)),
             ])
         }).collect()
     };
 
     let block = Block::default()
-        .title(format!(" Dependencies ({}) ", data.coord.deps_graph.len()))
+        .title(format!(" Ports ({}) ", data.coord.ports.len()))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow));
+        .border_style(Style::default().fg(Color::Green));
     let p = Paragraph::new(lines).block(block);
     f.render_widget(p, area);
 }
-
-/// Format runtime from ISO timestamp to human-readable duration
 fn format_runtime(started: &str) -> String {
     // Parse ISO timestamp and compute elapsed
     if let Ok(start) = chrono::NaiveDateTime::parse_from_str(started, "%Y-%m-%dT%H:%M:%S%.fZ")
@@ -1394,6 +1600,190 @@ fn render_projects(f: &mut Frame, area: Rect, data: &DashboardData) {
     f.render_widget(p, area);
 }
 
+// ========== INFRA VIEW PANELS ==========
+
+fn render_infra_ports(f: &mut Frame, area: Rect, data: &DashboardData) {
+    let available = area.height.saturating_sub(2) as usize;
+    let lines: Vec<Line> = if data.infra.ports.is_empty() {
+        vec![Line::from(Span::styled("  No ports allocated", Style::default().fg(Color::DarkGray)))]
+    } else {
+        data.infra.ports.iter().take(available).map(|(port, svc, pane)| {
+            Line::from(vec![
+                Span::styled(format!(" {:<6}", port), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("{:<18}", widgets::truncate_pub(svc, 18)), Style::default().fg(Color::Cyan)),
+                Span::styled(widgets::truncate_pub(pane, 10), Style::default().fg(Color::DarkGray)),
+            ])
+        }).collect()
+    };
+    let block = Block::default()
+        .title(format!(" Ports ({}) ", data.infra.ports.len()))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Green));
+    f.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+fn render_infra_builds(f: &mut Frame, area: Rect, data: &DashboardData) {
+    let available = area.height.saturating_sub(2) as usize;
+    let lines: Vec<Line> = if data.infra.builds.is_empty() {
+        vec![Line::from(Span::styled("  No build data", Style::default().fg(Color::DarkGray)))]
+    } else {
+        data.infra.builds.iter().take(available).map(|(proj, success, ago)| {
+            let icon = if *success { "✓" } else { "✗" };
+            let color = if *success { Color::Green } else { Color::Red };
+            Line::from(vec![
+                Span::styled(format!(" {} ", icon), Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("{:<16}", widgets::truncate_pub(proj, 16)), Style::default().fg(Color::White)),
+                Span::styled(ago.clone(), Style::default().fg(Color::DarkGray)),
+            ])
+        }).collect()
+    };
+    let block = Block::default()
+        .title(format!(" Builds ({}) ", data.infra.builds.len()))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+    f.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+fn render_infra_messages(f: &mut Frame, area: Rect, data: &DashboardData) {
+    let available = area.height.saturating_sub(2) as usize;
+    let lines: Vec<Line> = if data.infra.messages.is_empty() {
+        vec![Line::from(Span::styled("  No messages", Style::default().fg(Color::DarkGray)))]
+    } else {
+        data.infra.messages.iter().take(available).map(|(from, to, msg, pri)| {
+            let pri_color = match pri.as_str() {
+                "urgent" => Color::Red,
+                "warn" => Color::Yellow,
+                _ => Color::DarkGray,
+            };
+            Line::from(vec![
+                Span::styled(format!(" {}", widgets::truncate_pub(from, 6)), Style::default().fg(Color::Cyan)),
+                Span::styled("→", Style::default().fg(Color::DarkGray)),
+                Span::styled(format!("{:<6} ", widgets::truncate_pub(to, 6)), Style::default().fg(Color::Cyan)),
+                Span::styled(widgets::truncate_pub(msg, 22), Style::default().fg(Color::White)),
+                Span::styled(format!(" {}", pri), Style::default().fg(pri_color)),
+            ])
+        }).collect()
+    };
+    let block = Block::default()
+        .title(format!(" Messages ({}) ", data.infra.messages.len()))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Magenta));
+    f.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+fn render_infra_sessions(f: &mut Frame, area: Rect, data: &DashboardData) {
+    let available = area.height.saturating_sub(2) as usize;
+    let lines: Vec<Line> = if data.infra.sessions.is_empty() {
+        vec![Line::from(Span::styled("  No active sessions", Style::default().fg(Color::DarkGray)))]
+    } else {
+        data.infra.sessions.iter().take(available).map(|(pane, proj, status)| {
+            let sc = widgets::status_color(status);
+            Line::from(vec![
+                Span::styled(format!(" {:<10}", widgets::truncate_pub(pane, 10)), Style::default().fg(Color::Cyan)),
+                Span::styled(format!("{:<14}", widgets::truncate_pub(proj, 14)), Style::default().fg(Color::White)),
+                Span::styled(status.clone(), Style::default().fg(sc)),
+            ])
+        }).collect()
+    };
+    let block = Block::default()
+        .title(format!(" Sessions ({}) ", data.infra.sessions.len()))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+    f.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+// ========== INTEL VIEW PANELS ==========
+
+fn render_intel_kgraph(f: &mut Frame, area: Rect, data: &DashboardData) {
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled(format!(" {} entities", data.intel.kgraph_entities), Style::default().fg(Color::Cyan)),
+            Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("{} edges", data.intel.kgraph_edges), Style::default().fg(Color::Green)),
+        ]),
+    ];
+    if !data.intel.kgraph_top.is_empty() {
+        lines.push(Line::from(Span::styled(" ─── Top Entities ───", Style::default().fg(Color::DarkGray))));
+        let available = area.height.saturating_sub(4) as usize;
+        for (name, count) in data.intel.kgraph_top.iter().take(available) {
+            lines.push(Line::from(vec![
+                Span::styled(format!(" {:<18}", widgets::truncate_pub(name, 18)), Style::default().fg(Color::White)),
+                Span::styled(format!("({})", count), Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+    }
+    let block = Block::default()
+        .title(" Knowledge Graph ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Blue));
+    f.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+fn render_intel_facts(f: &mut Frame, area: Rect, data: &DashboardData) {
+    let available = area.height.saturating_sub(2) as usize;
+    let lines: Vec<Line> = if data.intel.facts.is_empty() {
+        vec![Line::from(Span::styled("  No facts registered", Style::default().fg(Color::DarkGray)))]
+    } else {
+        data.intel.facts.iter().take(available).map(|(key, _val, verified)| {
+            let icon = if *verified { "✓" } else { "?" };
+            let color = if *verified { Color::Green } else { Color::Yellow };
+            Line::from(vec![
+                Span::styled(format!(" {} ", icon), Style::default().fg(color)),
+                Span::styled(widgets::truncate_pub(key, 30), Style::default().fg(Color::White)),
+            ])
+        }).collect()
+    };
+    let block = Block::default()
+        .title(format!(" Facts ({}) ", data.intel.fact_count))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+    f.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+fn render_intel_analytics(f: &mut Frame, area: Rect, data: &DashboardData) {
+    let available = area.height.saturating_sub(2) as usize;
+    let lines: Vec<Line> = if data.intel.top_tools.is_empty() {
+        vec![Line::from(Span::styled("  No analytics data", Style::default().fg(Color::DarkGray)))]
+    } else {
+        data.intel.top_tools.iter().take(available).map(|(tool, weight)| {
+            Line::from(vec![
+                Span::styled(format!(" {:<16}", widgets::truncate_pub(tool, 16)), Style::default().fg(Color::White)),
+                Span::styled(format!("{:.1}", weight), Style::default().fg(Color::Cyan)),
+            ])
+        }).collect()
+    };
+    let block = Block::default()
+        .title(" Analytics ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Magenta));
+    f.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+fn render_intel_replay(f: &mut Frame, area: Rect, data: &DashboardData) {
+    let lines = vec![
+        Line::from(vec![
+            Span::styled(" Sessions: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("{}", data.intel.replay_sessions), Style::default().fg(Color::White)),
+        ]),
+        Line::from(vec![
+            Span::styled(" Tool calls: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("{}", data.intel.replay_tool_calls), Style::default().fg(Color::Cyan)),
+        ]),
+        Line::from(vec![
+            Span::styled(" Errors: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("{}", data.intel.replay_errors),
+                Style::default().fg(if data.intel.replay_errors > 0 { Color::Red } else { Color::Green }),
+            ),
+        ]),
+    ];
+    let block = Block::default()
+        .title(" Session Replay ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+    f.render_widget(Paragraph::new(lines).block(block), area);
+}
+
 fn render_help_bar(f: &mut Frame, area: Rect, data: &DashboardData) {
     let help = if data.view_mode == ViewMode::Features {
         Line::from(vec![
@@ -1443,6 +1833,10 @@ fn render_help_bar(f: &mut Frame, area: Rect, data: &DashboardData) {
             Span::styled("oord ", Style::default().fg(Color::DarkGray)),
             Span::styled("[p]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
             Span::styled("roj ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[i]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled("nfra ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[g]", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
+            Span::styled("intel ", Style::default().fg(Color::DarkGray)),
             Span::styled("│ ", Style::default().fg(Color::DarkGray)),
             Span::styled("[1-9]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Span::styled(" ", Style::default().fg(Color::DarkGray)),

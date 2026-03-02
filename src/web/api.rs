@@ -10,8 +10,14 @@ use crate::app::App;
 use crate::config;
 use crate::capacity;
 use crate::queue;
+use crate::mcp::{tools, types};
 
 type AppState = Arc<App>;
+
+/// Parse MCP tool JSON string result into Value
+fn parse_mcp(result: &str) -> Value {
+    serde_json::from_str(result).unwrap_or(json!({"error": "parse failed"}))
+}
 
 /// GET / — Serve dashboard HTML
 pub async fn index() -> Html<&'static str> {
@@ -35,264 +41,82 @@ pub struct PaneQuery {
     pub lines: Option<usize>,
 }
 
-// === AgentOS state endpoints (powered by in-memory state + PTY) ===
+// === AgentOS state endpoints — thin adapters over MCP tools ===
 
-/// GET /api/status — All 9 panes with PTY state
+/// GET /api/status — All panes with PTY state (via tools::status)
 pub async fn get_status(State(app): State<AppState>) -> Json<Value> {
-    let mut pane_states = Vec::new();
-    for i in 1..=config::pane_count() {
-        pane_states.push((i, app.state.get_pane(i).await));
-    }
-
-    let pty = app.pty_lock();
-    let mut panes = Vec::new();
-    for (i, pd) in &pane_states {
-        panes.push(json!({
-            "pane": i,
-            "theme": config::theme_name(*i),
-            "theme_color": config::theme_fg(*i),
-            "project": pd.project,
-            "role": config::role_short(&pd.role),
-            "role_full": pd.role,
-            "task": pd.task,
-            "acu": pd.acu_spent,
-            "status": pd.status,
-            "issue_id": pd.issue_id,
-            "space": pd.space,
-            "branch": pd.branch_name,
-            "workspace": pd.workspace_path,
-            "started_at": pd.started_at,
-            "pty_running": pty.is_running(*i),
-            "pty_active": pty.has_agent(*i),
-            "line_count": pty.line_count(*i),
-        }));
-    }
-    drop(pty);
-
-    let active = panes.iter().filter(|p| p["status"] == "active").count();
-    let idle = panes.iter().filter(|p| {
-        let s = p["status"].as_str().unwrap_or("");
-        s == "idle" || s.is_empty()
-    }).count();
-    let pty_count = panes.iter().filter(|p| p["pty_running"].as_bool().unwrap_or(false)).count();
-
-    Json(json!({
-        "panes": panes,
-        "summary": {
-            "active": active,
-            "idle": idle,
-            "total": config::pane_count(),
-            "pty_running": pty_count,
-        }
-    }))
+    let result = tools::status(&app).await;
+    Json(parse_mcp(&result))
 }
 
-/// GET /api/pane/:id — Single pane detail
+/// GET /api/pane/:id — Single pane detail (via tools::config_show + tools::watch)
 pub async fn get_pane(
     State(app): State<AppState>,
     Path(pane_ref): Path<String>,
 ) -> Json<Value> {
-    let pane_num = match config::resolve_pane(&pane_ref) {
-        Some(n) => n,
-        None => return Json(json!({"error": format!("Invalid pane: {}", pane_ref)})),
-    };
+    // Get config data
+    let config_result = tools::config_show(&app, types::ConfigShowRequest {
+        pane: Some(pane_ref.clone()),
+    }).await;
+    let mut data = parse_mcp(&config_result);
 
-    let pd = app.state.get_pane(pane_num).await;
-    let state_snap = app.state.get_state_snapshot().await;
-    let markers = state_snap.config.completion_markers.clone();
+    // Get PTY data via watch
+    let watch_result = tools::watch(&app, types::WatchRequest {
+        pane: pane_ref,
+        tail: Some(100),
+        analyze_errors: Some(true),
+    }).await;
+    let watch_data = parse_mcp(&watch_result);
 
-    let pty_info = {
-        let pty = app.pty_lock();
-        if pty.has_agent(pane_num) {
-            let screen = pty.screen_text(pane_num).unwrap_or_default();
-            let output = pty.last_output(pane_num, 100).unwrap_or_default();
-            let running = pty.is_running(pane_num);
-            let health = pty.check_health(pane_num, &markers);
-            let line_count = pty.line_count(pane_num);
-            Some((screen, output, running, health, line_count))
-        } else {
-            None
+    // Merge watch data into config data
+    if let Some(obj) = data.as_object_mut() {
+        if let Some(w) = watch_data.as_object() {
+            for key in ["screen", "output", "pty_running", "line_count",
+                        "pty_done", "pty_error", "pty_done_marker", "health",
+                        "error_analysis", "progress"] {
+                if let Some(v) = w.get(key) {
+                    obj.insert(key.to_string(), v.clone());
+                }
+            }
         }
-    };
-
-    if let Some((screen, output, running, health, line_count)) = pty_info {
-        Json(json!({
-            "pane": pane_num,
-            "theme": config::theme_name(pane_num),
-            "theme_color": config::theme_fg(pane_num),
-            "project": pd.project,
-            "project_path": pd.project_path,
-            "role": pd.role,
-            "task": pd.task,
-            "status": pd.status,
-            "started_at": pd.started_at,
-            "issue_id": pd.issue_id,
-            "space": pd.space,
-            "branch": pd.branch_name,
-            "workspace": pd.workspace_path,
-            "acu_spent": pd.acu_spent,
-            "pty_running": running,
-            "pty_done": health.done,
-            "pty_error": health.error,
-            "pty_done_marker": health.done_marker,
-            "line_count": line_count,
-            "screen": screen,
-            "output": output,
-        }))
-    } else {
-        Json(json!({
-            "pane": pane_num,
-            "theme": config::theme_name(pane_num),
-            "theme_color": config::theme_fg(pane_num),
-            "project": pd.project,
-            "project_path": pd.project_path,
-            "role": pd.role,
-            "task": pd.task,
-            "status": pd.status,
-            "started_at": pd.started_at,
-            "issue_id": pd.issue_id,
-            "space": pd.space,
-            "branch": pd.branch_name,
-            "workspace": pd.workspace_path,
-            "acu_spent": pd.acu_spent,
-            "pty_running": false,
-            "pty_active": false,
-            "line_count": 0,
-            "screen": "",
-            "output": "",
-        }))
     }
+
+    Json(data)
 }
 
-/// GET /api/pane/:id/output — PTY output for a pane
+/// GET /api/pane/:id/output — PTY output (via tools::watch)
 pub async fn get_pane_output(
     State(app): State<AppState>,
     Path(pane_ref): Path<String>,
     Query(params): Query<PaneQuery>,
 ) -> Json<Value> {
-    let pane_num = match config::resolve_pane(&pane_ref) {
-        Some(n) => n,
-        None => return Json(json!({"error": format!("Invalid pane: {}", pane_ref)})),
-    };
-
-    let lines = params.lines.unwrap_or(50);
-    let pty = app.pty_lock();
-    let output = pty.last_output(pane_num, lines).unwrap_or_default();
-    let screen = pty.screen_text(pane_num).unwrap_or_default();
-    let running = pty.is_running(pane_num);
-    let line_count = pty.line_count(pane_num);
-    drop(pty);
-
-    Json(json!({
-        "pane": pane_num,
-        "running": running,
-        "line_count": line_count,
-        "output": output,
-        "screen": screen,
-    }))
+    let result = tools::watch(&app, types::WatchRequest {
+        pane: pane_ref,
+        tail: params.lines.map(|l| l),
+        analyze_errors: Some(false),
+    }).await;
+    Json(parse_mcp(&result))
 }
 
-/// GET /api/health — PTY health for all panes
+/// GET /api/health — PTY health for all panes (via tools::health)
 pub async fn get_health(State(app): State<AppState>) -> Json<Value> {
-    let state_snap = app.state.get_state_snapshot().await;
-    let markers = state_snap.config.completion_markers.clone();
-    let stuck_mins = state_snap.config.stuck_threshold_minutes;
-
-    let mut pane_states = Vec::new();
-    for i in 1..=config::pane_count() {
-        pane_states.push((i, app.state.get_pane(i).await));
-    }
-
-    let pty = app.pty_lock();
-    let mut results = Vec::new();
-    for (i, pd) in &pane_states {
-        let has_pty = pty.has_agent(*i);
-        if has_pty {
-            let health = pty.check_health(*i, &markers);
-            let mut health_status = if health.error.is_some() {
-                "error"
-            } else if health.done {
-                "done"
-            } else if health.running {
-                "ok"
-            } else {
-                "stopped"
-            };
-
-            if pd.status == "active" && health.running && !health.done {
-                if let Some(started) = &pd.started_at {
-                    if let Ok(start_dt) = chrono::NaiveDateTime::parse_from_str(started, "%Y-%m-%dT%H:%M:%S") {
-                        let now = chrono::Local::now().naive_local();
-                        let mins = (now - start_dt).num_minutes();
-                        if mins > (stuck_mins * 10) as i64 {
-                            health_status = "stuck";
-                        }
-                    }
-                }
-            }
-
-            results.push(json!({
-                "pane": i,
-                "theme": config::theme_name(*i),
-                "theme_color": config::theme_fg(*i),
-                "status": pd.status,
-                "health": health_status,
-                "pty_running": health.running,
-                "has_output": health.has_output,
-                "error": health.error,
-                "done_marker": health.done_marker,
-                "line_count": pty.line_count(*i),
-            }));
-        } else {
-            let health_status = match pd.status.as_str() {
-                "idle" | "" => "idle",
-                "active" => "no_pty",
-                "done" => "done",
-                "error" => "error",
-                _ => "unknown",
-            };
-            results.push(json!({
-                "pane": i,
-                "theme": config::theme_name(*i),
-                "theme_color": config::theme_fg(*i),
-                "status": pd.status,
-                "health": health_status,
-                "pty_running": false,
-                "has_output": false,
-                "error": Value::Null,
-                "done_marker": Value::Null,
-                "line_count": 0,
-            }));
-        }
-    }
-    drop(pty);
-
-    let active = results.iter().filter(|r| r["status"] == "active").count();
-    let stuck = results.iter().filter(|r| r["health"] == "stuck").count();
-    let errors = results.iter().filter(|r| r["health"] == "error").count();
-
-    Json(json!({
-        "panes": results,
-        "summary": {
-            "active": active,
-            "stuck": stuck,
-            "errors": errors,
-            "idle": config::pane_count() as usize - active,
-        }
-    }))
+    let result = tools::health(&app).await;
+    Json(parse_mcp(&result))
 }
 
-/// GET /api/logs — Activity log
+/// GET /api/logs — Activity log (via tools::logs)
 pub async fn get_logs(
     State(app): State<AppState>,
     Query(_params): Query<SpaceQuery>,
 ) -> Json<Value> {
-    let state = app.state.get_state_snapshot().await;
-    let log: Vec<_> = state.activity_log.into_iter().collect();
-    Json(json!(log))
+    let result = tools::logs(&app, types::LogsRequest {
+        pane: None,
+        lines: None,
+    }).await;
+    Json(parse_mcp(&result))
 }
 
-// === Tracker / capacity endpoints (backward compat with hub_mcp dashboard) ===
+// === Tracker / capacity endpoints (file-based, no MCP equivalent) ===
 
 /// GET /api/spaces — List tracker spaces
 pub async fn get_spaces() -> Json<Value> {
@@ -309,36 +133,17 @@ pub async fn get_spaces() -> Json<Value> {
     Json(json!(spaces))
 }
 
-/// GET /api/agents — Agent list (from in-memory state, not agents.json)
+/// GET /api/agents — Agent list (via tools::status, filtered to active)
 pub async fn get_agents(State(app): State<AppState>) -> Json<Value> {
-    let mut pane_states = Vec::new();
-    for i in 1..=config::pane_count() {
-        pane_states.push((i, app.state.get_pane(i).await));
-    }
+    let result = tools::status(&app).await;
+    let data = parse_mcp(&result);
 
-    let pty = app.pty_lock();
-    let mut agents = Vec::new();
-    for (i, pd) in &pane_states {
-        if pd.status == "active" || pty.has_agent(*i) {
-            let window = (*i as u32 - 1) / 3 + 1;
-            let pane = (*i as u32 - 1) % 3 + 1;
-            agents.push(json!({
-                "pane": format!("{}:{}.{}", config::session_name(), window, pane),
-                "pane_num": i,
-                "theme": config::theme_name(*i),
-                "theme_color": config::theme_fg(*i),
-                "project": pd.project,
-                "task": pd.task,
-                "role": pd.role,
-                "status": pd.status,
-                "branch": pd.branch_name,
-                "workspace": pd.workspace_path,
-                "pty_running": pty.is_running(*i),
-                "files": [],
-            }));
-        }
-    }
-    drop(pty);
+    let agents: Vec<Value> = data["panes"].as_array()
+        .map(|panes| panes.iter().filter(|p| {
+            p["status"].as_str().map_or(false, |s| s == "active")
+                || p["pty_active"].as_bool().unwrap_or(false)
+        }).cloned().collect())
+        .unwrap_or_default();
 
     Json(json!(agents))
 }
@@ -365,7 +170,6 @@ pub async fn get_capacity_dashboard(Query(_params): Query<SpaceQuery>) -> Json<V
         "balanced"
     };
 
-    // Role utilization from capacity config
     let cfg_path = config::capacity_root().join("config.json");
     let cfg = crate::state::persistence::read_json(&cfg_path);
     let mut roles = serde_json::Map::new();
@@ -429,30 +233,18 @@ pub async fn get_burndown(Query(params): Query<SprintQuery>) -> Json<Value> {
     Json(json!(data))
 }
 
-/// GET /api/mcps — List all available MCPs
-pub async fn get_mcps(Query(params): Query<SpaceQuery>) -> Json<Value> {
-    let registry = crate::mcp_registry::load_registry();
-    let filtered: Vec<_> = if let Some(project) = &params.space {
-        registry.into_iter().filter(|mcp| {
-            mcp.projects.iter().any(|p| p.eq_ignore_ascii_case(project))
-        }).collect()
-    } else {
-        registry
-    };
-
-    let items: Vec<Value> = filtered.iter().map(|mcp| {
-        json!({
-            "name": mcp.name,
-            "description": mcp.description,
-            "category": mcp.category,
-            "capabilities": mcp.capabilities,
-            "projects": mcp.projects,
-        })
-    }).collect();
-    Json(json!(items))
+/// GET /api/mcps — List all available MCPs (via tools::mcp_list)
+pub async fn get_mcps(State(app): State<AppState>, Query(params): Query<SpaceQuery>) -> Json<Value> {
+    let result = tools::mcp_list(&app, types::McpListRequest {
+        category: None,
+        project: params.space,
+    }).await;
+    let data = parse_mcp(&result);
+    // Return just the mcps array for backward compat
+    Json(data.get("mcps").cloned().unwrap_or(json!([])))
 }
 
-/// GET /api/mcps/route — Smart route MCPs for a project+task
+/// GET /api/mcps/route — Smart route MCPs (via tools::mcp_route)
 #[derive(Deserialize, Default)]
 pub struct McpRouteQuery {
     pub project: Option<String>,
@@ -460,31 +252,18 @@ pub struct McpRouteQuery {
     pub role: Option<String>,
 }
 
-pub async fn get_mcp_route(Query(params): Query<McpRouteQuery>) -> Json<Value> {
+pub async fn get_mcp_route(State(app): State<AppState>, Query(params): Query<McpRouteQuery>) -> Json<Value> {
     let project = params.project.unwrap_or_default();
-    let task = params.task.unwrap_or_default();
-    let role = params.role.unwrap_or_else(|| "developer".into());
-
     if project.is_empty() {
         return Json(json!({"error": "missing project parameter"}));
     }
-
-    let matches = crate::mcp_registry::route_mcps(&project, &task, &role);
-    let suggestions: Vec<Value> = matches.iter().take(10).map(|m| {
-        json!({
-            "name": m.name,
-            "score": m.score,
-            "reasons": m.reasons,
-            "description": m.description,
-        })
-    }).collect();
-
-    Json(json!({
-        "project": project,
-        "task": task,
-        "role": role,
-        "suggestions": suggestions,
-    }))
+    let result = tools::mcp_route(&app, types::McpRouteRequest {
+        project,
+        task: params.task.unwrap_or_default(),
+        role: params.role,
+        apply: Some(false),
+    }).await;
+    Json(parse_mcp(&result))
 }
 
 /// GET /api/roles — Role config
@@ -494,54 +273,45 @@ pub async fn get_roles() -> Json<Value> {
     Json(cfg.get("roles").cloned().unwrap_or_else(|| json!({})))
 }
 
-/// POST /api/queue/add — Add a task from web UI
+/// POST /api/queue/add — Add task (via tools::queue_add)
 pub async fn post_queue_add(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
-    let project = body.get("project").and_then(|v| v.as_str()).unwrap_or("");
-    let task = body.get("task").and_then(|v| v.as_str()).unwrap_or("");
-    let role = body.get("role").and_then(|v| v.as_str()).unwrap_or("developer");
-    let priority = body.get("priority").and_then(|v| v.as_u64()).unwrap_or(3) as u8;
-    let prompt = body.get("prompt").and_then(|v| v.as_str()).unwrap_or(task);
+    let project = body.get("project").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let task = body.get("task").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let role = body.get("role").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let priority = body.get("priority").and_then(|v| v.as_u64()).map(|p| p as u8);
+    let prompt = body.get("prompt").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let depends_on: Option<Vec<String>> = body.get("depends_on")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect());
 
     if project.is_empty() || task.is_empty() {
         return Json(json!({"error": "project and task are required"}));
     }
 
-    let deps: Vec<String> = body.get("depends_on")
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
-        .unwrap_or_default();
-
-    match queue::add_task(project, role, task, prompt, priority, deps) {
-        Ok(t) => {
-            app.state.event_bus.send(crate::state::events::StateEvent::QueueChanged {
-                action: "added".into(),
-                task_id: t.id.clone(),
-                task: t.task.clone(),
-            });
-            Json(json!({"status": "added", "task_id": t.id}))
-        }
-        Err(e) => Json(json!({"error": format!("{}", e)})),
-    }
+    let result = tools::queue_add(&app, types::QueueAddRequest {
+        project,
+        task,
+        role,
+        prompt,
+        priority,
+        depends_on,
+        max_retries: None,
+    }).await;
+    Json(parse_mcp(&result))
 }
 
-/// POST /api/queue/done — Mark a task done from web UI
+/// POST /api/queue/done — Mark task done (via tools::queue_done)
 pub async fn post_queue_done(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
-    let task_id = body.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
-    let result = body.get("result").and_then(|v| v.as_str()).unwrap_or("done");
+    let task_id = body.get("task_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let result_str = body.get("result").and_then(|v| v.as_str()).unwrap_or("done").to_string();
     if task_id.is_empty() {
         return Json(json!({"error": "task_id required"}));
     }
-    match queue::mark_done(task_id, result) {
-        Ok(()) => {
-            app.state.event_bus.send(crate::state::events::StateEvent::QueueChanged {
-                action: "done".into(),
-                task_id: task_id.to_string(),
-                task: String::new(),
-            });
-            Json(json!({"status": "done", "task_id": task_id}))
-        }
-        Err(e) => Json(json!({"error": format!("{}", e)})),
-    }
+    let result = tools::queue_done(&app, types::QueueDoneRequest {
+        task_id,
+        result: Some(result_str),
+    }).await;
+    Json(parse_mcp(&result))
 }
 
 /// POST /api/queue/delete — Remove a task from queue
@@ -602,92 +372,44 @@ pub async fn post_queue_retry(State(app): State<AppState>, Json(body): Json<Valu
     }
 }
 
-/// GET /api/queue — Task queue with status counts
-pub async fn get_queue() -> Json<Value> {
-    let q = queue::load_queue();
-    let cfg = queue::load_auto_config();
-
-    let mut pending = 0usize;
-    let mut running = 0usize;
-    let mut done = 0usize;
-    let mut failed = 0usize;
-    let mut blocked = 0usize;
-
-    let tasks: Vec<Value> = q.tasks.iter().map(|t| {
-        match t.status {
-            queue::QueueStatus::Pending => pending += 1,
-            queue::QueueStatus::Running => running += 1,
-            queue::QueueStatus::Done => done += 1,
-            queue::QueueStatus::Failed => failed += 1,
-            queue::QueueStatus::Blocked => blocked += 1,
-        }
-        json!({
-            "id": t.id,
-            "project": t.project,
-            "role": t.role,
-            "task": t.task,
-            "priority": t.priority,
-            "status": t.status,
-            "pane": t.pane,
-            "added_at": t.added_at,
-            "started_at": t.started_at,
-            "completed_at": t.completed_at,
-            "result": t.result,
-            "depends_on": t.depends_on,
-        })
-    }).collect();
-
-    Json(json!({
-        "tasks": tasks,
-        "summary": {
-            "pending": pending,
-            "running": running,
-            "done": done,
-            "failed": failed,
-            "blocked": blocked,
-            "total": tasks.len(),
-        },
-        "config": {
-            "max_parallel": cfg.max_parallel,
-            "reserved_panes": cfg.reserved_panes,
-            "auto_complete": cfg.auto_complete,
-            "auto_assign": cfg.auto_assign,
-        }
-    }))
+/// GET /api/queue — Task queue (via tools::queue_list)
+pub async fn get_queue(State(app): State<AppState>) -> Json<Value> {
+    let result = tools::queue_list(&app, types::QueueListRequest {
+        status: None,
+    }).await;
+    Json(parse_mcp(&result))
 }
 
 // === Enhanced monitoring endpoints ===
 
-/// GET /api/monitor — Full monitoring overview
+/// GET /api/monitor — Full monitoring overview (via tools::monitor)
 pub async fn get_monitor(State(app): State<AppState>) -> Json<Value> {
-    let req = crate::mcp::types::MonitorRequest { include_output: Some(false) };
-    let result = crate::mcp::tools::monitor(&app, req).await;
-    Json(serde_json::from_str(&result).unwrap_or(json!({"error": "parse failed"})))
+    let result = tools::monitor(&app, types::MonitorRequest { include_output: Some(false) }).await;
+    Json(parse_mcp(&result))
 }
 
-/// GET /api/pane/:id/watch — Watch pane output with analysis
+/// GET /api/pane/:id/watch — Watch pane output (via tools::watch)
 pub async fn get_watch(
     State(app): State<AppState>,
     Path(pane_ref): Path<String>,
     Query(params): Query<PaneQuery>,
 ) -> Json<Value> {
-    let req = crate::mcp::types::WatchRequest {
+    let result = tools::watch(&app, types::WatchRequest {
         pane: pane_ref,
         tail: params.lines.or(Some(50)),
         analyze_errors: Some(true),
-    };
-    let result = crate::mcp::tools::watch(&app, req).await;
-    Json(serde_json::from_str(&result).unwrap_or(json!({"error": "parse failed"})))
+    }).await;
+    Json(parse_mcp(&result))
 }
 
-// === Analytics endpoints (serve FORGE-ported data to TUI) ===
+// === Analytics endpoints ===
 
 /// GET /api/analytics/digest — 24h daily digest
 pub async fn get_analytics_digest() -> Json<Value> {
     Json(crate::dashboard::dash_daily_digest(None))
 }
 
-/// GET /api/analytics/alerts — Active alerts (dead agents, high error rates, etc.)
+/// GET /api/analytics/alerts — Active alerts
 pub async fn get_analytics_alerts() -> Json<Value> {
     Json(crate::dashboard::dash_alerts(None))
 }
@@ -706,7 +428,7 @@ pub async fn get_analytics_quality(Query(params): Query<QualityQuery>) -> Json<V
     Json(crate::quality::project_health(&project))
 }
 
-/// GET /api/analytics/leaderboard — Agent rankings (last 7 days)
+/// GET /api/analytics/leaderboard — Agent rankings
 pub async fn get_analytics_leaderboard() -> Json<Value> {
     Json(crate::dashboard::dash_leaderboard(7, None))
 }
@@ -716,7 +438,7 @@ pub async fn get_analytics_overview() -> Json<Value> {
     Json(crate::dashboard::dash_overview(None))
 }
 
-// === Helpers ===
+// === Helpers (file-based tracker data) ===
 
 fn load_all_issues(space: &str) -> Vec<Value> {
     let dir = config::collab_root().join("spaces").join(space).join("issues");
@@ -757,7 +479,6 @@ fn build_board(space: &str) -> Value {
         }
     }
 
-    // Only include non-empty columns
     let mut result = serde_json::Map::new();
     for status in &statuses {
         if let Some(cards) = columns.get(status) {
@@ -812,7 +533,6 @@ fn compute_burndown(sprint_id: &str) -> Value {
 
     let daily_burn = if days > 0 { planned_acu / days as f64 } else { 0.0 };
 
-    // Ideal burndown
     let mut ideal = Vec::new();
     for d in 0..=days {
         let date = start + chrono::Duration::days(d as i64);
@@ -823,7 +543,6 @@ fn compute_burndown(sprint_id: &str) -> Value {
         }));
     }
 
-    // Actual burndown from work log
     let log_path = config::capacity_root().join("work_log.json");
     let log = crate::state::persistence::read_json(&log_path);
     let entries = log.get("entries").and_then(|v| v.as_array()).cloned().unwrap_or_default();

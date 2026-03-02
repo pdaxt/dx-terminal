@@ -1644,3 +1644,37 @@ pub struct ProjectDepsRequest {
     #[schemars(description = "Project name (omit for full dep graph)")]
     pub project: Option<String>,
 }
+
+// === AUDIT TYPES ===
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AuditCodeRequest {
+    #[schemars(description = "Project name or absolute path to audit")]
+    pub project: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AuditSecurityRequest {
+    #[schemars(description = "Project name or absolute path to audit")]
+    pub project: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AuditIntentRequest {
+    #[schemars(description = "Project name or absolute path to audit")]
+    pub project: String,
+    #[schemars(description = "Description of what the project should do (for intent verification)")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AuditDepsRequest {
+    #[schemars(description = "Project name or absolute path to audit")]
+    pub project: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AuditFullRequest {
+    #[schemars(description = "Project name or absolute path to audit")]
+    pub project: String,
+}

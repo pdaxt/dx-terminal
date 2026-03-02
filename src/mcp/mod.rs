@@ -1751,6 +1751,54 @@ impl AgentOSService {
         };
         Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
     }
+
+    // === AUDIT TOOLS (5 tools) ===
+
+    #[tool(description = "Audit code quality: find dead code, fragmentation, loose ends (TODO/FIXME/HACK), empty impls, and incomplete patterns. Works on any project in the registry or by absolute path.")]
+    async fn audit_code(
+        &self,
+        Parameters(req): Parameters<types::AuditCodeRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::audit::audit_code(&req.project);
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Security audit: scan for hardcoded secrets, unsafe code, command injection vectors, path traversal, and dependency CVEs (via cargo audit). Returns findings by severity.")]
+    async fn audit_security(
+        &self,
+        Parameters(req): Parameters<types::AuditSecurityRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::audit::audit_security(&req.project);
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Intent verification: check if code matches its purpose. Finds stub functions, untested modules, missing module files, and compares README claims against actual source. Optionally provide a description of intended functionality.")]
+    async fn audit_intent(
+        &self,
+        Parameters(req): Parameters<types::AuditIntentRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let desc = req.description.as_deref().unwrap_or("");
+        let result = crate::audit::audit_intent(&req.project, desc);
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Dependency health audit: check for wildcard versions, excessive dependencies, duplicate crate versions, and known vulnerabilities in Cargo.lock/package.json.")]
+    async fn audit_deps(
+        &self,
+        Parameters(req): Parameters<types::AuditDepsRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::audit::audit_deps(&req.project);
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
+
+    #[tool(description = "Full audit: runs code, security, intent, and dependency audits. Returns aggregate grade (A-F), findings by severity, and stores results for trend tracking. Use this for production readiness checks.")]
+    async fn audit_full(
+        &self,
+        Parameters(req): Parameters<types::AuditFullRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = crate::audit::audit_full(&req.project);
+        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+    }
 }
 
 #[tool_handler]

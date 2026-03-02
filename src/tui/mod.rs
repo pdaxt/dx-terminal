@@ -29,6 +29,8 @@ pub enum ViewMode {
     Board,
     Coord,
     Projects,
+    Infra,
+    Intel,
 }
 
 // ========== TUI Mode (State Machine) ==========
@@ -404,6 +406,12 @@ fn handle_navigate(
         }
         KeyCode::Char('p') => {
             *view_mode = if *view_mode == ViewMode::Projects { ViewMode::Normal } else { ViewMode::Projects };
+        }
+        KeyCode::Char('i') => {
+            *view_mode = if *view_mode == ViewMode::Infra { ViewMode::Normal } else { ViewMode::Infra };
+        }
+        KeyCode::Char('g') => {
+            *view_mode = if *view_mode == ViewMode::Intel { ViewMode::Normal } else { ViewMode::Intel };
         }
 
         // Pane selection
