@@ -117,10 +117,11 @@ pub struct DashboardData {
     pub coord: CoordSnapshot,
     pub started_at: Vec<(u8, String)>,  // (pane, started_at timestamp)
     pub projects: Vec<ProjectSnapshot>,
+    pub feature_cursor: usize,
 }
 
 /// Collect all data in one pass (lock once, release)
-pub fn collect_data(app: &App, selected: u8, view_mode: ViewMode) -> DashboardData {
+pub fn collect_data(app: &App, selected: u8, view_mode: ViewMode, feature_cursor: usize) -> DashboardData {
     let state = app.state.blocking_read();
 
     let max_panes = config::pane_count();
@@ -250,12 +251,8 @@ pub fn collect_data(app: &App, selected: u8, view_mode: ViewMode) -> DashboardDa
         Vec::new()
     };
 
-    // Feature data
-    let features = if view_mode == ViewMode::Features {
-        collect_features(&q)
-    } else {
-        Vec::new()
-    };
+    // Feature data — always collect for Normal view summary + Features view
+    let features = collect_features(&q);
 
     // Project data
     let projects = if view_mode == ViewMode::Projects {
@@ -305,6 +302,7 @@ pub fn collect_data(app: &App, selected: u8, view_mode: ViewMode) -> DashboardDa
         coord,
         started_at,
         projects,
+        feature_cursor,
     }
 }
 
@@ -578,7 +576,7 @@ pub fn render(f: &mut Frame, data: &DashboardData) {
             render_board(f, chunks[2], data);
             render_queue(f, bottom[0], data);
             render_activity_log(f, bottom[1], data);
-            render_help_bar(f, chunks[4]);
+            render_help_bar(f, chunks[4], data);
         }
         ViewMode::Features => {
             let feature_height = (data.features.iter()
@@ -605,7 +603,7 @@ pub fn render(f: &mut Frame, data: &DashboardData) {
             render_features(f, chunks[3], data);
             render_pty_output(f, chunks[4], data);
             render_queue(f, chunks[5], data);
-            render_help_bar(f, chunks[6]);
+            render_help_bar(f, chunks[6], data);
         }
         ViewMode::Coord => {
             let chunks = Layout::default()
@@ -652,7 +650,7 @@ pub fn render(f: &mut Frame, data: &DashboardData) {
             render_coord_branches(f, mid_split[1], data);
             render_coord_deps(f, right_split[0], data);
             render_queue(f, right_split[1], data);
-            render_help_bar(f, chunks[4]);
+            render_help_bar(f, chunks[4], data);
         }
         ViewMode::Projects => {
             let project_height = (data.projects.len() as u16 + 3).max(5).min(25);
@@ -672,7 +670,7 @@ pub fn render(f: &mut Frame, data: &DashboardData) {
             if alert_height > 0 { render_alert_bar(f, chunks[1], data); }
             render_projects(f, chunks[2], data);
             render_queue(f, chunks[3], data);
-            render_help_bar(f, chunks[4]);
+            render_help_bar(f, chunks[4], data);
         }
         ViewMode::Normal => {
             let chunks = Layout::default()
@@ -701,10 +699,10 @@ pub fn render(f: &mut Frame, data: &DashboardData) {
             if alert_height > 0 { render_alert_bar(f, chunks[1], data); }
             render_pane_table(f, chunks[2], data);
             render_pty_output(f, middle[0], data);
-            render_roles(f, middle[1], data);
+            render_feature_summary(f, middle[1], data);
             render_queue(f, bottom[0], data);
             render_activity_log(f, bottom[1], data);
-            render_help_bar(f, chunks[5]);
+            render_help_bar(f, chunks[5], data);
         }
     }
 }
@@ -863,26 +861,34 @@ fn render_pty_output(f: &mut Frame, area: Rect, data: &DashboardData) {
     f.render_widget(p, area);
 }
 
-fn render_roles(f: &mut Frame, area: Rect, data: &DashboardData) {
+fn render_feature_summary(f: &mut Frame, area: Rect, data: &DashboardData) {
     let available = area.height.saturating_sub(2) as usize;
 
-    let lines: Vec<Line> = if data.roles.is_empty() {
-        vec![Line::from(Span::styled("  No role data", Style::default().fg(Color::DarkGray)))]
+    let active_features: Vec<&FeatureSnapshot> = data.features.iter()
+        .filter(|f| f.status != "done" && f.status != "closed")
+        .collect();
+
+    let lines: Vec<Line> = if active_features.is_empty() {
+        vec![Line::from(Span::styled("  No active features", Style::default().fg(Color::DarkGray)))]
     } else {
-        data.roles.iter().take(available).map(|(name, util)| {
-            let (bar, color) = widgets::gauge_bar(*util, 100.0, 8);
+        active_features.iter().take(available).map(|feat| {
+            let pct = if feat.total > 0 { feat.done * 100 / feat.total } else { 0 };
+            let bar = progress_bar(feat.done, feat.total, 8);
+            let pct_color = if pct == 100 { Color::Green } else if pct > 50 { Color::Yellow } else { Color::White };
             Line::from(vec![
-                Span::styled(format!(" {:<12}", widgets::truncate_pub(name, 12)), Style::default().fg(Color::White)),
-                Span::styled(bar, Style::default().fg(color)),
-                Span::styled(format!(" {:>3.0}%", util), Style::default().fg(color)),
+                Span::styled(format!(" {:<6}", widgets::truncate_pub(&feat.id, 6)), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("{} ", bar), Style::default().fg(pct_color)),
+                Span::styled(format!("{:>3}% ", pct), Style::default().fg(pct_color)),
+                Span::styled(widgets::truncate_pub(&feat.title, 18), Style::default().fg(Color::White)),
             ])
         }).collect()
     };
 
+    let title = format!(" Features ({} active) ", active_features.len());
     let block = Block::default()
-        .title(" Roles ")
+        .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
+        .border_style(Style::default().fg(Color::Magenta));
     let p = Paragraph::new(lines).block(block);
     f.render_widget(p, area);
 }
@@ -1020,6 +1026,7 @@ fn render_features(f: &mut Frame, area: Rect, data: &DashboardData) {
         ))]
     } else {
         let mut result = Vec::new();
+        let mut flat_idx: usize = 0;
         for feat in &data.features {
             if result.len() >= available { break; }
 
@@ -1032,22 +1039,40 @@ fn render_features(f: &mut Frame, area: Rect, data: &DashboardData) {
                 _ => Color::Yellow,
             };
 
+            let is_selected = flat_idx == data.feature_cursor;
+            let sel_marker = if is_selected { "▸" } else { " " };
+            let base_style = if is_selected {
+                Style::default().add_modifier(Modifier::REVERSED)
+            } else {
+                Style::default()
+            };
+
             result.push(Line::from(vec![
-                Span::styled(format!(" {} ", feat.id), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-                Span::styled(format!("{} ", bar), Style::default().fg(status_color)),
-                Span::styled(format!("{}% ", pct), Style::default().fg(if pct == 100 { Color::Green } else { Color::White })),
-                Span::styled(widgets::truncate_pub(&feat.title, 28), Style::default().fg(Color::White)),
-                Span::styled(format!("  {}/{} ", feat.done, feat.total), Style::default().fg(Color::DarkGray)),
-                Span::styled(format!("({})", feat.space), Style::default().fg(Color::DarkGray)),
+                Span::styled(sel_marker, base_style.fg(Color::White)),
+                Span::styled(format!("{} ", feat.id), base_style.fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("{} ", bar), base_style.fg(status_color)),
+                Span::styled(format!("{}% ", pct), base_style.fg(if pct == 100 { Color::Green } else { Color::White })),
+                Span::styled(widgets::truncate_pub(&feat.title, 28), base_style.fg(Color::White)),
+                Span::styled(format!("  {}/{} ", feat.done, feat.total), base_style.fg(Color::DarkGray)),
+                Span::styled(format!("({})", feat.space), base_style.fg(Color::DarkGray)),
             ]));
+            flat_idx += 1;
 
             for child in &feat.children {
                 if result.len() >= available { break; }
+                let child_selected = flat_idx == data.feature_cursor;
+                let cs_marker = if child_selected { " ▸" } else { "  " };
+                let cs = if child_selected {
+                    Style::default().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::default()
+                };
+
                 let icon = match child.status.as_str() {
-                    "done" | "closed" => "  [x]",
-                    "in_progress" => "  [>]",
-                    "blocked" => "  [!]",
-                    _ => "  [ ]",
+                    "done" | "closed" => "[x]",
+                    "in_progress" => "[>]",
+                    "blocked" => "[!]",
+                    _ => "[ ]",
                 };
                 let child_color = match child.status.as_str() {
                     "done" | "closed" => Color::Green,
@@ -1056,21 +1081,23 @@ fn render_features(f: &mut Frame, area: Rect, data: &DashboardData) {
                     _ => Color::DarkGray,
                 };
                 let mut spans = vec![
-                    Span::styled(icon.to_string(), Style::default().fg(child_color)),
-                    Span::styled(format!(" {} ", child.id), Style::default().fg(Color::DarkGray)),
-                    Span::styled(widgets::truncate_pub(&child.title, 35), Style::default().fg(child_color)),
+                    Span::styled(cs_marker.to_string(), cs.fg(Color::White)),
+                    Span::styled(icon.to_string(), cs.fg(child_color)),
+                    Span::styled(format!(" {} ", child.id), cs.fg(Color::DarkGray)),
+                    Span::styled(widgets::truncate_pub(&child.title, 35), cs.fg(child_color)),
                 ];
                 if let Some(qs) = &child.queue_status {
                     let qc = match qs.as_str() {
                         "Running" => Color::Green, "Pending" => Color::Yellow,
                         "Failed" => Color::Red, _ => Color::DarkGray,
                     };
-                    spans.push(Span::styled(format!(" Q:{}", qs), Style::default().fg(qc)));
+                    spans.push(Span::styled(format!(" Q:{}", qs), cs.fg(qc)));
                 }
                 if let Some(p) = child.pane {
-                    spans.push(Span::styled(format!(" P{}", p), Style::default().fg(Color::Cyan)));
+                    spans.push(Span::styled(format!(" P{}", p), cs.fg(Color::Cyan)));
                 }
                 result.push(Line::from(spans));
+                flat_idx += 1;
             }
         }
         result
@@ -1367,37 +1394,64 @@ fn render_projects(f: &mut Frame, area: Rect, data: &DashboardData) {
     f.render_widget(p, area);
 }
 
-fn render_help_bar(f: &mut Frame, area: Rect) {
-    let help = Line::from(vec![
-        Span::styled(" [s]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-        Span::styled("pawn ", Style::default().fg(Color::DarkGray)),
-        Span::styled("[t]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Span::styled("ask ", Style::default().fg(Color::DarkGray)),
-        Span::styled("[a]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::styled("uto ", Style::default().fg(Color::DarkGray)),
-        Span::styled("[k]", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-        Span::styled("ill ", Style::default().fg(Color::DarkGray)),
-        Span::styled("[d]", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
-        Span::styled("one ", Style::default().fg(Color::DarkGray)),
-        Span::styled("[:]", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-        Span::styled("cmd ", Style::default().fg(Color::DarkGray)),
-        Span::styled("│ ", Style::default().fg(Color::DarkGray)),
-        Span::styled("[f]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-        Span::styled("eat ", Style::default().fg(Color::DarkGray)),
-        Span::styled("[b]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-        Span::styled("oard ", Style::default().fg(Color::DarkGray)),
-        Span::styled("[c]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-        Span::styled("oord ", Style::default().fg(Color::DarkGray)),
-        Span::styled("[p]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-        Span::styled("roj ", Style::default().fg(Color::DarkGray)),
-        Span::styled("│ ", Style::default().fg(Color::DarkGray)),
-        Span::styled("[1-9]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::styled(" ", Style::default().fg(Color::DarkGray)),
-        Span::styled("[Tab]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::styled(" ", Style::default().fg(Color::DarkGray)),
-        Span::styled("[q]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::styled("uit", Style::default().fg(Color::DarkGray)),
-    ]);
+fn render_help_bar(f: &mut Frame, area: Rect, data: &DashboardData) {
+    let help = if data.view_mode == ViewMode::Features {
+        Line::from(vec![
+            Span::styled(" [j/k]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled("nav ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[n]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled("ew ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[Enter]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled("queue ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[u]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+            Span::styled("pdate ", Style::default().fg(Color::DarkGray)),
+            Span::styled("│ ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[s]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled("pawn ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[a]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled("uto ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[:]", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled("cmd ", Style::default().fg(Color::DarkGray)),
+            Span::styled("│ ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[f]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+            Span::styled("eat ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[b]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+            Span::styled("oard ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[q]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled("uit", Style::default().fg(Color::DarkGray)),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled(" [s]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled("pawn ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[t]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled("ask ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[a]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled("uto ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[k]", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled("ill ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[d]", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
+            Span::styled("one ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[:]", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled("cmd ", Style::default().fg(Color::DarkGray)),
+            Span::styled("│ ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[f]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+            Span::styled("eat ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[b]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+            Span::styled("oard ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[c]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+            Span::styled("oord ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[p]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+            Span::styled("roj ", Style::default().fg(Color::DarkGray)),
+            Span::styled("│ ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[1-9]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(" ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[Tab]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(" ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[q]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled("uit", Style::default().fg(Color::DarkGray)),
+        ])
+    };
     let p = Paragraph::new(help);
     f.render_widget(p, area);
 }

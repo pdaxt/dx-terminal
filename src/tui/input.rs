@@ -23,6 +23,7 @@ pub struct FormState {
 pub enum FormKind {
     Spawn,
     QueueAdd,
+    FeatureCreate,
 }
 
 /// Create a spawn form pre-filled with selected pane
@@ -103,6 +104,38 @@ pub fn create_queue_form() -> FormState {
     }
 }
 
+/// Create a feature-create form
+pub fn create_feature_form() -> FormState {
+    FormState {
+        title: "Create Feature".into(),
+        fields: vec![
+            FormField {
+                label: "Space".into(),
+                value: String::new(),
+                cursor: 0,
+                required: true,
+                placeholder: "collab space name".into(),
+            },
+            FormField {
+                label: "Title".into(),
+                value: String::new(),
+                cursor: 0,
+                required: true,
+                placeholder: "feature title".into(),
+            },
+            FormField {
+                label: "Priority".into(),
+                value: "medium".into(),
+                cursor: 6,
+                required: false,
+                placeholder: "critical/high/medium/low".into(),
+            },
+        ],
+        focused: 0,
+        kind: FormKind::FeatureCreate,
+    }
+}
+
 /// Check if all required fields have values
 pub fn form_is_valid(form: &FormState) -> bool {
     form.fields.iter().all(|f| !f.required || !f.value.trim().is_empty())
@@ -124,6 +157,12 @@ pub fn form_to_command(form: &FormState) -> Option<TuiCommand> {
             let role = non_empty(&form.fields[2].value);
             let priority = form.fields[3].value.trim().parse::<u8>().ok();
             Some(TuiCommand::QueueAdd { project, task, role, priority })
+        }
+        FormKind::FeatureCreate => {
+            let space = form.fields[0].value.trim().to_string();
+            let title = form.fields[1].value.trim().to_string();
+            let priority = non_empty(&form.fields[2].value);
+            Some(TuiCommand::FeatureCreate { space, title, issue_type: "feature".into(), priority })
         }
     }
 }
@@ -154,6 +193,21 @@ pub fn parse_command(input: &str) -> Option<TuiCommand> {
         }
         Some("auto" | "cycle") => {
             Some(TuiCommand::AutoCycle)
+        }
+        Some("feature" | "feat") if parts.len() >= 3 => {
+            Some(TuiCommand::FeatureCreate {
+                space: parts[1].to_string(),
+                title: parts[2].to_string(),
+                issue_type: "feature".into(),
+                priority: None,
+            })
+        }
+        Some("queue-feature" | "qf") if parts.len() >= 3 => {
+            let ids: Vec<String> = parts[2].split(',').map(|s| s.trim().to_string()).collect();
+            Some(TuiCommand::FeatureToQueue {
+                space: parts[1].to_string(),
+                issue_ids: ids,
+            })
         }
         _ => None,
     }
