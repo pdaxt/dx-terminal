@@ -653,6 +653,7 @@ pub async fn dispatch_mcp_tool(app: &App, tool: &str, args: Value) -> String {
         "factory_list" | "pipelines" => tools::factory_tools::factory_list(),
         "factory_gate" | "gate" => tools::factory_tools::factory_gate(&deser!(args, FactoryStatusRequest)),
         "pipeline_conflicts" => tools::factory_tools::conflict_scan(&deser!(args, FactoryStatusRequest)),
+        "factory_cancel" | "pipeline_cancel" | "cancel_pipeline" => tools::factory_tools::factory_cancel(app, &deser!(args, FactoryStatusRequest)).await,
 
         // === ORCHESTRATION ===
         "orchestrate" => tools::orchestrate::orchestrate(app, deser!(args, OrchestrateRequest)).await,
@@ -883,6 +884,7 @@ pub const MCP_TOOLS: &[(&str, &str)] = &[
     ("pipelines", "List all pipelines"),
     ("gate", "Run quality gate on pipeline"),
     ("pipeline_conflicts", "Scan pipeline file conflicts"),
+    ("factory_cancel", "Cancel a pipeline"),
     // Orchestration
     ("orchestrate", "Auto-build: NL → agents"),
     // Gateway (micro MCPs)

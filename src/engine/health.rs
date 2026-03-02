@@ -42,6 +42,7 @@ pub async fn run_tests(info: &ProjectInfo) -> Option<TestResult> {
 }
 
 /// Run build command for a project, log result via quality::log_build
+#[allow(dead_code)]
 pub async fn run_build(info: &ProjectInfo) -> Option<bool> {
     let build_cmd = info.build_cmd.as_ref()?;
 

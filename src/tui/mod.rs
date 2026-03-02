@@ -46,7 +46,7 @@ pub enum TuiMode {
     Command { input: String, cursor: usize, completions: Vec<(String, String)>, comp_idx: Option<usize> },
     Input { form: input::FormState },
     Confirm { action: PendingAction, message: String },
-    Executing { description: String, started: Instant },
+    Executing { description: String, _started: Instant },
     Result { message: String, is_error: bool, shown_at: Instant },
 }
 
@@ -364,7 +364,7 @@ fn run_loop(
                                     });
                                     mode = TuiMode::Executing {
                                         description: "Updating status...".into(),
-                                        started: Instant::now(),
+                                        _started: Instant::now(),
                                     };
                                 }
                                 true
@@ -443,7 +443,7 @@ fn handle_navigate(
             let _ = cmd_tx.send(TuiCommand::AutoCycle);
             *mode = TuiMode::Executing {
                 description: "Running auto-cycle...".into(),
-                started: Instant::now(),
+                _started: Instant::now(),
             };
         }
 
@@ -564,7 +564,7 @@ fn handle_command(
             if let Some(cmd) = input::parse_command(&trimmed) {
                 let desc = format!(":{}", &trimmed);
                 let _ = cmd_tx.send(cmd);
-                *mode = TuiMode::Executing { description: desc, started: Instant::now() };
+                *mode = TuiMode::Executing { description: desc, _started: Instant::now() };
             } else if trimmed.is_empty() {
                 *mode = TuiMode::Navigate;
             } else {
@@ -634,7 +634,7 @@ fn handle_input(
                 if let Some(cmd) = input::form_to_command(form) {
                     let desc = form.title.clone();
                     let _ = cmd_tx.send(cmd);
-                    *mode = TuiMode::Executing { description: desc, started: Instant::now() };
+                    *mode = TuiMode::Executing { description: desc, _started: Instant::now() };
                 }
             } else {
                 *mode = TuiMode::Result {
@@ -702,7 +702,7 @@ fn handle_confirm(
                 ),
             };
             let _ = cmd_tx.send(cmd);
-            *mode = TuiMode::Executing { description: desc, started: Instant::now() };
+            *mode = TuiMode::Executing { description: desc, _started: Instant::now() };
         }
         KeyCode::Char('n') | KeyCode::Esc => {
             *mode = TuiMode::Navigate;

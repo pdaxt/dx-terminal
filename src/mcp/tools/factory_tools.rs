@@ -137,6 +137,34 @@ pub fn factory_list() -> String {
     }).to_string()
 }
 
+/// Cancel a running pipeline — kills pending stages and returns panes to kill.
+pub async fn factory_cancel(app: &App, req: &FactoryStatusRequest) -> String {
+    let pid = match &req.pipeline_id {
+        Some(pid) => pid.clone(),
+        None => return json_err("pipeline_id required to cancel a pipeline"),
+    };
+
+    match factory::cancel_pipeline(&pid) {
+        Ok(result) => {
+            // Kill running agents on the returned panes
+            for pane in &result.running_panes {
+                let _ = super::panes::kill(app, super::super::types::KillRequest {
+                    pane: pane.to_string(),
+                    reason: Some(format!("Pipeline {} cancelled", pid)),
+                }).await;
+            }
+
+            serde_json::json!({
+                "status": "cancelled",
+                "pipeline_id": result.pipeline_id,
+                "cancelled_tasks": result.cancelled_tasks,
+                "killed_panes": result.running_panes,
+            }).to_string()
+        }
+        Err(e) => json_err(&format!("Cancel failed: {}", e)),
+    }
+}
+
 /// Scan for conflicts in a pipeline's project.
 pub fn conflict_scan(req: &FactoryStatusRequest) -> String {
     match &req.pipeline_id {

@@ -1594,6 +1594,15 @@ impl AgentOSService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
+    #[tool(description = "Cancel a factory pipeline. Marks all pending/blocked stages as failed and kills any running agents. Use when a pipeline is broken or no longer needed.")]
+    async fn factory_cancel(
+        &self,
+        Parameters(req): Parameters<types::FactoryStatusRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::factory_tools::factory_cancel(&self.app, &req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
     // === ORCHESTRATION ===
 
     #[tool(description = "Orchestrate: say what you want in natural language. AgentOS identifies the project, decomposes into dev + QA + security tasks, spawns agents on free panes, monitors to completion. The 'machine that builds machines' command.")]

@@ -1616,6 +1616,7 @@ pub struct ConflictScanRequest {
 // --- Project Intelligence ---
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[allow(dead_code)]
 pub struct ProjectScanRequest {
     #[schemars(description = "Force a full rescan even if recently scanned")]
     pub force: Option<bool>,

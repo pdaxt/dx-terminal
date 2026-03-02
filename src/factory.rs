@@ -231,13 +231,14 @@ pub fn create_pipeline(
 
             let task_label = format!("[{}] {}", stage.name, description);
 
-            let task = queue::add_task(
+            let task = queue::add_task_with_pipeline(
                 project,
                 stage.role,
                 &task_label,
                 &prompt,
                 priority,
                 prev_group_ids.clone(),
+                Some(pipeline_id.clone()),
             )?;
 
             group_ids.push(task.id.clone());
@@ -246,16 +247,6 @@ pub fn create_pipeline(
 
         prev_group_ids = group_ids;
     }
-
-    // Batch-assign pipeline_id to all tasks in one load+save (not N+1)
-    let mut q = queue::load_queue();
-    let id_set: HashSet<&str> = task_ids.iter().map(|s| s.as_str()).collect();
-    for t in q.tasks.iter_mut() {
-        if id_set.contains(t.id.as_str()) {
-            t.pipeline_id = Some(pipeline_id.clone());
-        }
-    }
-    queue::save_queue(&q)?;
 
     Ok((pipeline_id, task_ids))
 }

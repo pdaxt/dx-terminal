@@ -54,6 +54,7 @@ pub struct MicroFeatureSnapshot {
 }
 
 /// Project health snapshot for project view
+#[allow(dead_code)]
 pub struct ProjectSnapshot {
     pub name: String,
     pub tech: String,
@@ -155,6 +156,7 @@ pub struct PipelineSnapshot {
     pub gate_passed: Option<bool>,
 }
 
+#[allow(dead_code)]
 pub struct PipelineStageSnapshot {
     pub name: String,
     pub role: String,
@@ -163,6 +165,7 @@ pub struct PipelineStageSnapshot {
 }
 
 /// Full dashboard snapshot
+#[allow(dead_code)]
 pub struct DashboardData {
     pub panes: Vec<PaneSnapshot>,
     pub selected: u8,

@@ -170,6 +170,11 @@ fn gen_id() -> String {
 
 /// Add a task to the queue
 pub fn add_task(project: &str, role: &str, task: &str, prompt: &str, priority: u8, depends_on: Vec<String>) -> Result<QueueTask> {
+    add_task_with_pipeline(project, role, task, prompt, priority, depends_on, None)
+}
+
+/// Add a task with an optional pipeline_id set atomically on creation
+pub fn add_task_with_pipeline(project: &str, role: &str, task: &str, prompt: &str, priority: u8, depends_on: Vec<String>, pipeline_id: Option<String>) -> Result<QueueTask> {
     let mut queue = load_queue();
 
     let new_task = QueueTask {
@@ -191,7 +196,7 @@ pub fn add_task(project: &str, role: &str, task: &str, prompt: &str, priority: u
         last_error: None,
         issue_id: None,
         space: None,
-        pipeline_id: None,
+        pipeline_id,
     };
 
     queue.tasks.push(new_task.clone());
