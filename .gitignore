@@ -1,1 +1,4 @@
 target/
+
+# MCP Registry tokens
+.mcpregistry_*
