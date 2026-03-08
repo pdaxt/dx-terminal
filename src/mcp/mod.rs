@@ -1,15 +1,18 @@
-//! Built-in MCP server — the terminal IS the MCP.
+//! Micro MCP Architecture — each domain is an independent tool module.
 //!
-//! Other Claude agents can control this terminal via MCP tools:
-//!   - list_sessions: See all running agent sessions
-//!   - spawn_agent: Start a new agent in a pane
-//!   - send_input: Send text to a pane
-//!   - get_content: Read pane output
-//!   - get_analytics: Token/cost metrics
-//!   - kill_agent: Stop an agent
+//! DX Terminal exposes itself as an MCP server so other AI agents can:
+//!   - Discover and control agent sessions
+//!   - Read terminal output from any pane
+//!   - Spawn/kill agents
+//!   - Query analytics and costs
+//!   - Check git status per agent
 //!
-//! Built natively in Rust — no external dependencies.
+//! Architecture: Each tool module registers its own tools via the `MicroMcp` trait.
+//! The router composes them into a single MCP server.
 
+mod router;
 mod server;
+pub mod tools;
 
+pub use router::McpRouter;
 pub use server::McpServerHandle;

@@ -1,152 +1,114 @@
-//! MCP server implementation using rmcp.
+//! MCP server implementation — exposes DX Terminal as an MCP.
 //!
-//! Exposes terminal orchestration as MCP tools that any Claude Code
-//! instance can call to spawn, monitor, and control agents.
+//! Uses the micro MCP router to compose tool definitions from
+//! independent domain modules (sessions, pty, analytics, git).
 
-use serde_json::{json, Value};
+use serde_json::Value;
 use tokio::sync::mpsc;
 
-/// Commands the MCP server sends to the main app
+use super::router::McpRouter;
+
+/// Commands the MCP server sends to the main app loop.
 #[derive(Debug)]
 pub enum McpCommand {
-    ListSessions,
+    // --- Sessions ---
+    ListSessions { filter: String },
     SpawnAgent {
         pane_num: u8,
         project: String,
         role: String,
         task: String,
+        agent: String,
         autonomous: bool,
     },
-    KillAgent {
-        pane_num: u8,
-    },
+    KillAgent { pane_num: u8 },
+    GetStatus { pane_num: u8 },
+
+    // --- PTY Control ---
     SendInput {
         pane_num: u8,
         input: String,
+        enter: bool,
     },
     GetContent {
         pane_num: u8,
         lines: usize,
+        from_bottom: bool,
     },
-    GetAnalytics,
-    GetGitInfo {
+    SendApproval {
         pane_num: u8,
+        approve: bool,
     },
+    SendChoice {
+        pane_num: u8,
+        choice: u8,
+    },
+    ResizePane {
+        pane_num: u8,
+        cols: u16,
+        rows: u16,
+    },
+
+    // --- Analytics ---
+    GetUsage { period: String, group_by: String },
+    GetCostBreakdown { days: u32 },
+    GetSystemStats,
+
+    // --- Git ---
+    GetBranch { pane_num: u8 },
+    GetDiff { pane_num: u8, staged: bool },
+    GetLog { pane_num: u8, count: usize },
 }
 
-/// Response from the main app back to MCP
+/// Response from the main app back to MCP.
 #[derive(Debug, Clone)]
 pub struct McpResponse {
     pub data: Value,
 }
 
-/// Handle for the MCP server
+/// Handle for the MCP server — used by the main app to receive commands.
 pub struct McpServerHandle {
-    command_tx: mpsc::Sender<(McpCommand, tokio::sync::oneshot::Sender<McpResponse>)>,
+    _command_tx: mpsc::Sender<(McpCommand, tokio::sync::oneshot::Sender<McpResponse>)>,
+    router: McpRouter,
 }
 
 impl McpServerHandle {
-    /// Create a new MCP server handle with a command channel
+    /// Create a new MCP server handle with command channel and micro MCP router.
     pub fn new() -> (
         Self,
         mpsc::Receiver<(McpCommand, tokio::sync::oneshot::Sender<McpResponse>)>,
     ) {
         let (tx, rx) = mpsc::channel(32);
-        (Self { command_tx: tx }, rx)
+        let router = McpRouter::new();
+
+        tracing::info!(
+            "MCP server initialized: {} tools across {} modules ({:?})",
+            router.tool_count(),
+            router.namespaces().len(),
+            router.namespaces()
+        );
+
+        (
+            Self {
+                _command_tx: tx,
+                router,
+            },
+            rx,
+        )
     }
 
-    /// Send a command and wait for response
-    pub async fn send(&self, cmd: McpCommand) -> Option<McpResponse> {
-        let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
-        self.command_tx.send((cmd, resp_tx)).await.ok()?;
-        resp_rx.await.ok()
+    /// Get all tool definitions from the micro MCP router.
+    pub fn tool_definitions(&self) -> Vec<Value> {
+        self.router.all_tools()
     }
-}
 
-/// Tool definitions that will be registered with the MCP server.
-/// These define what other agents can call.
-pub fn tool_definitions() -> Vec<Value> {
-    vec![
-        json!({
-            "name": "list_sessions",
-            "description": "List all active agent sessions with their status, project, role, and token usage.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }),
-        json!({
-            "name": "spawn_agent",
-            "description": "Spawn a new Claude Code agent in a pane with full auto-config.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "pane": { "type": "integer", "description": "Pane number (1-9)" },
-                    "project": { "type": "string", "description": "Project name or path" },
-                    "role": { "type": "string", "description": "Agent role (developer, qa, architect, etc.)", "default": "developer" },
-                    "task": { "type": "string", "description": "Task description for the agent" },
-                    "autonomous": { "type": "boolean", "description": "Run without permission prompts", "default": false }
-                },
-                "required": ["pane", "project", "task"]
-            }
-        }),
-        json!({
-            "name": "kill_agent",
-            "description": "Stop an agent running in a pane.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "pane": { "type": "integer", "description": "Pane number (1-9)" }
-                },
-                "required": ["pane"]
-            }
-        }),
-        json!({
-            "name": "send_input",
-            "description": "Send text input to an agent in a pane.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "pane": { "type": "integer", "description": "Pane number (1-9)" },
-                    "input": { "type": "string", "description": "Text to send" }
-                },
-                "required": ["pane", "input"]
-            }
-        }),
-        json!({
-            "name": "get_content",
-            "description": "Get the terminal output from an agent's pane.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "pane": { "type": "integer", "description": "Pane number (1-9)" },
-                    "lines": { "type": "integer", "description": "Number of lines to capture", "default": 50 }
-                },
-                "required": ["pane"]
-            }
-        }),
-        json!({
-            "name": "get_analytics",
-            "description": "Get token usage, cost, and performance analytics for all sessions.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "period": { "type": "string", "description": "Time period: 'session', 'today', 'week'", "default": "session" }
-                },
-                "required": []
-            }
-        }),
-        json!({
-            "name": "get_git_info",
-            "description": "Get git branch, PR status, and commit info for an agent's project.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "pane": { "type": "integer", "description": "Pane number (1-9)" }
-                },
-                "required": ["pane"]
-            }
-        }),
-    ]
+    /// Get the total number of MCP tools.
+    pub fn tool_count(&self) -> usize {
+        self.router.tool_count()
+    }
+
+    /// Get module namespaces for display.
+    pub fn namespaces(&self) -> Vec<&str> {
+        self.router.namespaces()
+    }
 }
