@@ -1,6 +1,6 @@
 //! Dashboard panel — shows capacity, sprint, board, MCPs, activity, session info.
 
-use crate::agentos::{AlertsResponse, AnalyticsDigest};
+use crate::hub_client::{AlertsResponse, AnalyticsDigest};
 use crate::app::AppState;
 use crate::state_reader::DashboardData;
 use ratatui::{

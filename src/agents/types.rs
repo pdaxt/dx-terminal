@@ -207,7 +207,7 @@ pub struct MonitoredAgent {
     pub last_updated: Instant,
     /// Context remaining percentage (0-100), if detectable
     pub context_remaining: Option<u8>,
-    /// Git branch name (from AgentOS API)
+    /// Git branch name (from hub API or git)
     pub branch: Option<String>,
 }
 

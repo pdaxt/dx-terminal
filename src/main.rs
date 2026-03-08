@@ -39,13 +39,13 @@ struct Cli {
     #[arg(short = 'f', long, value_name = "FILE")]
     config: Option<PathBuf>,
 
-    /// AgentOS API URL (overrides config file)
+    /// Hub API URL (overrides config file)
     #[arg(long, value_name = "URL")]
-    agentos_url: Option<String>,
+    api_url: Option<String>,
 
-    /// Native PTY mode — own terminal processes directly (no tmux dependency)
+    /// Legacy tmux mode — monitor existing tmux panes instead of native PTY
     #[arg(long)]
-    native: bool,
+    tmux: bool,
 
     /// Write debug logs to dx-terminal.log
     #[arg(short, long)]
@@ -118,13 +118,13 @@ async fn main() -> Result<()> {
     // CLI args override config file
     config.poll_interval_ms = cli.poll_interval;
     config.capture_lines = cli.capture_lines;
-    config.native_mode = cli.native;
-    if let Some(url) = cli.agentos_url {
-        config.agentos_url = Some(url);
+    config.native_mode = !cli.tmux;
+    if let Some(url) = cli.api_url {
+        config.api_url = Some(url);
     }
     // Default to localhost if no URL in config or CLI
-    if config.agentos_url.is_none() {
-        config.agentos_url = Some("http://localhost:3100".to_string());
+    if config.api_url.is_none() {
+        config.api_url = Some("http://localhost:3100".to_string());
     }
 
     // Run the application

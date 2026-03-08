@@ -1,4 +1,4 @@
-pub mod agentos;
+pub mod hub_client;
 pub mod agents;
 pub mod analytics;
 pub mod app;

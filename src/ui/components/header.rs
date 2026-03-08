@@ -81,8 +81,8 @@ impl HeaderWidget {
             spans.push(Span::styled(" ready ", Style::default().fg(Color::Green)));
         }
 
-        // Queue info (if connected to AgentOS)
-        if state.agentos_connected {
+        // Queue info (if connected to hub)
+        if state.hub_connected {
             spans.push(Span::styled("│", Style::default().fg(Color::DarkGray)));
             spans.push(Span::styled(
                 format!(" Q:{}/{} ", queue_running, queue_pending + queue_running),
@@ -183,7 +183,7 @@ impl HeaderWidget {
 
         // API connection status
         spans.push(Span::styled("│", Style::default().fg(Color::DarkGray)));
-        if state.agentos_connected {
+        if state.hub_connected {
             spans.push(Span::styled(" API ", Style::default().fg(Color::Green)));
         } else {
             spans.push(Span::styled(" API ", Style::default().fg(Color::DarkGray)));

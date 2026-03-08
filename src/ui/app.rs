@@ -14,7 +14,7 @@ use crossterm::{
 use ratatui::{backend::CrosstermBackend, Terminal};
 use tokio::sync::mpsc;
 
-use crate::agentos::AgentOSClient;
+use crate::hub_client::HubClient;
 use crate::app::{Action, AppState, Config};
 use crate::monitor::{FactoryCommand, MonitorTask, SystemStatsCollector};
 use crate::parsers::ParserRegistry;
@@ -45,24 +45,24 @@ pub async fn run_app(config: Config) -> Result<()> {
     let tmux_client = Arc::new(TmuxClient::with_capture_lines(config.capture_lines));
     let parser_registry = Arc::new(ParserRegistry::new());
 
-    // Native mode: create PTY manager; otherwise check tmux
+    // Native mode (default): create PTY manager; legacy tmux mode if --tmux
     let mut pty_manager = if native_mode {
-        state.flash("DX Terminal — native PTY mode".to_string());
+        state.flash("DX Terminal v0.3.0".to_string());
         Some(PtyManager::new())
     } else {
         if !tmux_client.is_available() {
             state.set_error(
-                "tmux is not running. Use --native for native PTY mode.".to_string(),
+                "tmux is not running. Remove --tmux flag for native mode.".to_string(),
             );
         }
         None
     };
 
-    // Create AgentOS client if URL configured
-    let agentos_client = config
-        .agentos_url
+    // Create hub client if URL configured
+    let hub_client = config
+        .api_url
         .as_ref()
-        .map(|url| AgentOSClient::new(Some(url.clone())));
+        .map(|url| HubClient::new(Some(url.clone())));
 
     // Create channel for monitor updates
     let (tx, mut rx) = mpsc::channel(32);
@@ -70,11 +70,11 @@ pub async fn run_app(config: Config) -> Result<()> {
     // Create channel for factory commands (TUI → monitor)
     let (factory_tx, factory_rx) = mpsc::channel(8);
 
-    // Start monitor task (watches tmux panes + AgentOS API)
+    // Start monitor task (watches tmux panes + hub API)
     let monitor = MonitorTask::new(
         tmux_client.clone(),
         parser_registry.clone(),
-        agentos_client,
+        hub_client,
         tx,
         factory_rx,
         Duration::from_millis(config.poll_interval_ms),
@@ -232,7 +232,7 @@ async fn run_loop(
             Some(update) = rx.recv() => {
                 state.agents = update.agents;
                 state.queue_tasks = update.queue_tasks;
-                state.agentos_connected = update.agentos_connected;
+                state.hub_connected = update.hub_connected;
                 if let Some(msg) = update.flash {
                     state.flash(msg);
                 }

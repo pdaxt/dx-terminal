@@ -1,4 +1,4 @@
-use crate::agentos::{AgentOSQueueTask, AlertsResponse, AnalyticsDigest, FactoryRequest};
+use crate::hub_client::{QueueTask, AlertsResponse, AnalyticsDigest, FactoryRequest};
 use crate::agents::MonitoredAgent;
 use crate::analytics::UsageTracker;
 use crate::github::{GitHubTracker, GitInfo};
@@ -117,10 +117,10 @@ pub struct AppState {
     last_tick: Instant,
     /// System resource statistics
     pub system_stats: SystemStats,
-    /// AgentOS queue tasks
-    pub queue_tasks: Vec<AgentOSQueueTask>,
-    /// Whether AgentOS is connected
-    pub agentos_connected: bool,
+    /// Queue tasks
+    pub queue_tasks: Vec<QueueTask>,
+    /// Whether hub API is connected
+    pub hub_connected: bool,
     /// Whether queue panel is shown
     pub show_queue: bool,
     /// Dashboard data (capacity, sprint, board, MCPs, activity)
@@ -131,9 +131,9 @@ pub struct AppState {
     pub show_factory: bool,
     /// Factory pipeline requests
     pub factory_requests: Vec<FactoryRequest>,
-    /// 24h analytics digest from AgentOS API
+    /// 24h analytics digest from hub API
     pub digest: AnalyticsDigest,
-    /// Active alerts from AgentOS API
+    /// Active alerts from hub API
     pub alerts: AlertsResponse,
     /// Token usage tracker (persists to SQLite)
     pub usage_tracker: UsageTracker,
@@ -167,7 +167,7 @@ impl AppState {
             last_tick: Instant::now(),
             system_stats: SystemStats::new(),
             queue_tasks: Vec::new(),
-            agentos_connected: false,
+            hub_connected: false,
             show_queue: true,
             dashboard: DashboardData::default(),
             show_dashboard: true,

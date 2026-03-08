@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tracing::{debug, error, warn};
 
-use crate::agentos::{AgentOSClient, AgentOSQueueTask, AlertsResponse, AnalyticsDigest, FactoryRequest};
+use crate::hub_client::{HubClient, QueueTask, AlertsResponse, AnalyticsDigest, FactoryRequest};
 use crate::agents::{AgentStatus, MonitoredAgent};
 use crate::app::AgentTree;
 use crate::parsers::ParserRegistry;
@@ -25,8 +25,8 @@ pub enum FactoryCommand {
 #[derive(Debug, Clone)]
 pub struct MonitorUpdate {
     pub agents: AgentTree,
-    pub queue_tasks: Vec<AgentOSQueueTask>,
-    pub agentos_connected: bool,
+    pub queue_tasks: Vec<QueueTask>,
+    pub hub_connected: bool,
     /// Flash message for connection state changes
     pub flash: Option<String>,
     /// 24h analytics digest (fetched on slow cadence)
@@ -39,11 +39,11 @@ pub struct MonitorUpdate {
     pub factory_requests: Option<Vec<FactoryRequest>>,
 }
 
-/// Background task that monitors tmux panes and AgentOS for AI agents
+/// Background task that monitors tmux panes and hub API for AI agents
 pub struct MonitorTask {
     tmux_client: Arc<TmuxClient>,
     parser_registry: Arc<ParserRegistry>,
-    agentos_client: Option<AgentOSClient>,
+    hub_client: Option<HubClient>,
     tx: mpsc::Sender<MonitorUpdate>,
     factory_rx: mpsc::Receiver<FactoryCommand>,
     poll_interval: Duration,
@@ -62,7 +62,7 @@ impl MonitorTask {
     pub fn new(
         tmux_client: Arc<TmuxClient>,
         parser_registry: Arc<ParserRegistry>,
-        agentos_client: Option<AgentOSClient>,
+        hub_client: Option<HubClient>,
         tx: mpsc::Sender<MonitorUpdate>,
         factory_rx: mpsc::Receiver<FactoryCommand>,
         poll_interval: Duration,
@@ -70,7 +70,7 @@ impl MonitorTask {
         Self {
             tmux_client,
             parser_registry,
-            agentos_client,
+            hub_client,
             tx,
             factory_rx,
             poll_interval,
@@ -89,7 +89,7 @@ impl MonitorTask {
             while let Ok(cmd) = self.factory_rx.try_recv() {
                 match cmd {
                     FactoryCommand::Submit { request } => {
-                        if let Some(ref client) = self.agentos_client {
+                        if let Some(ref client) = self.hub_client {
                             match client.submit_factory(&request).await {
                                 Ok(resp) => {
                                     flash_from_factory = Some(format!(
@@ -104,7 +104,7 @@ impl MonitorTask {
                             }
                         } else {
                             flash_from_factory =
-                                Some("Factory: AgentOS not connected".to_string());
+                                Some("Factory: Hub not connected".to_string());
                         }
                     }
                 }
@@ -123,9 +123,9 @@ impl MonitorTask {
                 Some(msg)
             } else if connected && !self.was_connected {
                 self.api_fail_count = 0;
-                Some("AgentOS connected".to_string())
+                Some("Hub connected".to_string())
             } else if !connected && self.was_connected {
-                Some("AgentOS disconnected".to_string())
+                Some("Hub disconnected".to_string())
             } else {
                 None
             };
@@ -138,7 +138,7 @@ impl MonitorTask {
             let mut dashboard = None;
             let mut factory_requests = None;
             if connected && self.analytics_counter % 10 == 0 {
-                if let Some(ref client) = self.agentos_client {
+                if let Some(ref client) = self.hub_client {
                     // Single /api/dashboard call returns everything including digest + alerts
                     match client.fetch_dashboard().await {
                         Ok(result) => {
@@ -165,7 +165,7 @@ impl MonitorTask {
             let update = MonitorUpdate {
                 agents: tree,
                 queue_tasks,
-                agentos_connected: connected,
+                hub_connected: connected,
                 flash,
                 digest,
                 alerts,
@@ -181,15 +181,15 @@ impl MonitorTask {
         }
     }
 
-    async fn poll_all(&mut self) -> anyhow::Result<(AgentTree, Vec<AgentOSQueueTask>, bool)> {
+    async fn poll_all(&mut self) -> anyhow::Result<(AgentTree, Vec<QueueTask>, bool)> {
         // Poll tmux agents
         let mut tree = self.poll_tmux_agents().await?;
 
-        // Poll AgentOS (if configured)
+        // Poll Hub (if configured)
         let mut queue_tasks = Vec::new();
         let mut connected = false;
 
-        if let Some(ref client) = self.agentos_client {
+        if let Some(ref client) = self.hub_client {
             // Exponential backoff: skip API calls if failing repeatedly
             // After N failures, only try every 2^N polls (max 32 = ~16s at 500ms)
             let backoff_polls = (1u32 << self.api_fail_count.min(5)) as u64;
@@ -205,7 +205,7 @@ impl MonitorTask {
                 return Ok((tree, queue_tasks, false));
             }
 
-            // Fetch panes from AgentOS
+            // Fetch panes from Hub
             match client.fetch_panes().await {
                 Ok(panes) => {
                     connected = true;
@@ -214,7 +214,7 @@ impl MonitorTask {
                         let has_project = pane.project != "--" && !pane.project.is_empty();
                         let is_active = pane.pty_running || pane.status == "active";
                         if has_project || is_active {
-                            let agent = AgentOSClient::pane_to_agent(pane);
+                            let agent = HubClient::pane_to_agent(pane);
                             // Only add if not already detected via tmux
                             let already_exists = tree
                                 .root_agents
@@ -229,7 +229,7 @@ impl MonitorTask {
                 Err(e) => {
                     self.api_fail_count = self.api_fail_count.saturating_add(1);
                     debug!(
-                        "AgentOS API unavailable (fail #{}): {}",
+                        "Hub API unavailable (fail #{}): {}",
                         self.api_fail_count, e
                     );
                 }
@@ -241,7 +241,7 @@ impl MonitorTask {
                     queue_tasks = tasks;
                 }
                 Err(e) => {
-                    debug!("AgentOS queue unavailable: {}", e);
+                    debug!("Hub queue unavailable: {}", e);
                 }
             }
         }

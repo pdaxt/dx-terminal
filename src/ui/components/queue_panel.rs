@@ -1,4 +1,4 @@
-use crate::agentos::AgentOSQueueTask;
+use crate::hub_client::QueueTask;
 use crate::app::AppState;
 use chrono::{NaiveDateTime, Utc};
 use ratatui::{
@@ -14,7 +14,7 @@ pub struct QueuePanelWidget;
 impl QueuePanelWidget {
     pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
         // Filter out stale completed/failed tasks (older than 1 hour)
-        let tasks: Vec<&AgentOSQueueTask> = state
+        let tasks: Vec<&QueueTask> = state
             .queue_tasks
             .iter()
             .filter(|t| {
@@ -38,7 +38,7 @@ impl QueuePanelWidget {
             .filter(|t| !t.depends_on.is_empty() && t.status == "pending")
             .count();
 
-        let title = if state.agentos_connected {
+        let title = if state.hub_connected {
             format!(
                 " Queue ({} run, {} pend, {} blk) ",
                 running, pending, blocked
@@ -54,10 +54,10 @@ impl QueuePanelWidget {
             .border_style(Style::default().fg(Color::Magenta));
 
         if tasks.is_empty() {
-            let msg = if state.agentos_connected {
+            let msg = if state.hub_connected {
                 "No tasks in queue"
             } else {
-                "AgentOS not connected"
+                "Hub API not connected"
             };
             let paragraph = Paragraph::new(Line::from(Span::styled(
                 msg,

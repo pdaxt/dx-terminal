@@ -1,5 +1,4 @@
-//! AgentOS integration — reads ALL state from hub_mcp HTTP API.
-//! Zero direct file reads. Pure API consumer.
+//! DX Hub client — reads state from hub API. Pure API consumer.
 
 use std::collections::HashMap;
 
@@ -16,12 +15,12 @@ use crate::state_reader::{
 const DEFAULT_API_URL: &str = "http://localhost:3100";
 
 // =============================================================================
-// AgentOS API response types (match hub_mcp JSON exactly)
+// Hub API response types (match hub_mcp JSON exactly)
 // =============================================================================
 
-/// AgentOS pane state from the /api/status endpoint
+/// Hub pane state from the /api/status endpoint
 #[derive(Debug, Deserialize)]
-pub struct AgentOSPane {
+pub struct HubPane {
     #[serde(default)]
     pub pane: u8,
     #[serde(default)]
@@ -58,9 +57,9 @@ pub struct AgentOSPane {
     pub issue_id: Option<String>,
 }
 
-/// AgentOS queue task from /api/queue endpoint
+/// Queue task from /api/queue endpoint
 #[derive(Debug, Clone, Deserialize)]
-pub struct AgentOSQueueTask {
+pub struct QueueTask {
     #[serde(default)]
     pub id: String,
     #[serde(default)]
@@ -197,12 +196,12 @@ pub struct AlertsResponse {
 
 #[derive(Debug, Deserialize)]
 struct StatusResponse {
-    panes: Vec<AgentOSPane>,
+    panes: Vec<HubPane>,
 }
 
 #[derive(Debug, Deserialize)]
 struct QueueResponse {
-    tasks: Vec<AgentOSQueueTask>,
+    tasks: Vec<QueueTask>,
 }
 
 /// Aggregate /api/dashboard response
@@ -273,15 +272,15 @@ pub struct FullDashboardResult {
 }
 
 // =============================================================================
-// AgentOS Client
+// Hub Client
 // =============================================================================
 
-pub struct AgentOSClient {
+pub struct HubClient {
     api_url: String,
     client: reqwest::Client,
 }
 
-impl AgentOSClient {
+impl HubClient {
     pub fn new(api_url: Option<String>) -> Self {
         Self {
             api_url: api_url.unwrap_or_else(|| DEFAULT_API_URL.to_string()),
@@ -292,15 +291,15 @@ impl AgentOSClient {
         }
     }
 
-    /// Fetch pane states from AgentOS API
-    pub async fn fetch_panes(&self) -> anyhow::Result<Vec<AgentOSPane>> {
+    /// Fetch pane states from hub API
+    pub async fn fetch_panes(&self) -> anyhow::Result<Vec<HubPane>> {
         let url = format!("{}/api/status", self.api_url);
         let resp: StatusResponse = self.client.get(&url).send().await?.json().await?;
         Ok(resp.panes)
     }
 
-    /// Fetch queue tasks from AgentOS API
-    pub async fn fetch_queue(&self) -> anyhow::Result<Vec<AgentOSQueueTask>> {
+    /// Fetch queue tasks from hub API
+    pub async fn fetch_queue(&self) -> anyhow::Result<Vec<QueueTask>> {
         let url = format!("{}/api/queue", self.api_url);
         let resp: QueueResponse = self.client.get(&url).send().await?.json().await?;
         Ok(resp.tasks)
@@ -480,8 +479,8 @@ impl AgentOSClient {
         Ok(resp.requests)
     }
 
-    /// Convert AgentOS pane to MonitoredAgent
-    pub fn pane_to_agent(pane: &AgentOSPane) -> MonitoredAgent {
+    /// Convert hub pane to MonitoredAgent
+    pub fn pane_to_agent(pane: &HubPane) -> MonitoredAgent {
         let status = match pane.status.as_str() {
             "active" if pane.pty_running => AgentStatus::Processing {
                 activity: pane.task.clone(),
@@ -491,7 +490,7 @@ impl AgentOSClient {
             _ => AgentStatus::Unknown,
         };
 
-        let session_name = format!("agentos-{}", pane.theme.to_lowercase());
+        let session_name = format!("dx-{}", pane.theme.to_lowercase());
         let window_name = if pane.project != "--" {
             pane.project.clone()
         } else {
@@ -499,8 +498,8 @@ impl AgentOSClient {
         };
 
         let mut agent = MonitoredAgent::new(
-            format!("agentos-{}", pane.pane),
-            format!("agentos:{}:{}", pane.pane, pane.theme.to_lowercase()),
+            format!("dx-{}", pane.pane),
+            format!("dx:{}:{}", pane.pane, pane.theme.to_lowercase()),
             session_name,
             0,
             window_name,

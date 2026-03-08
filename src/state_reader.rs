@@ -1,5 +1,5 @@
 //! Dashboard data types used by the TUI.
-//! Data is fetched from hub_mcp's HTTP API by AgentOSClient — zero file reads.
+//! Data is fetched from hub API by HubClient — zero file reads.
 
 use serde::Deserialize;
 use std::collections::HashMap;

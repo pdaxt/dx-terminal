@@ -8,7 +8,7 @@
 //!   - get_analytics: Token/cost metrics
 //!   - kill_agent: Stop an agent
 //!
-//! This replaces the Python agentos_mcp entirely.
+//! Built natively in Rust — no external dependencies.
 
 mod server;
 

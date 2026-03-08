@@ -13,9 +13,9 @@ pub struct Config {
     #[serde(default = "default_capture_lines")]
     pub capture_lines: u32,
 
-    /// AgentOS API URL (e.g. http://localhost:3100)
+    /// Hub API URL (e.g. http://localhost:3100)
     #[serde(default)]
-    pub agentos_url: Option<String>,
+    pub api_url: Option<String>,
 
     /// Native PTY mode — own processes directly instead of using tmux
     #[serde(default)]
@@ -35,7 +35,7 @@ impl Default for Config {
         Self {
             poll_interval_ms: default_poll_interval(),
             capture_lines: default_capture_lines(),
-            agentos_url: None,
+            api_url: None,
             native_mode: false,
         }
     }
