@@ -247,6 +247,80 @@ pub fn list_windows() -> Vec<(u32, String, bool)> {
     }
 }
 
+/// A live tmux pane running Claude (discovered from any session).
+#[derive(Clone, Debug)]
+pub struct LivePane {
+    /// Full tmux target (e.g., "dx-build:1.1")
+    pub target: String,
+    /// Session name
+    pub session: String,
+    /// Window index
+    pub window: u32,
+    /// Pane index within window
+    pub pane_idx: u32,
+    /// Window name (e.g., "build-1")
+    pub window_name: String,
+    /// Process running in the pane (e.g., "claude")
+    pub command: String,
+}
+
+/// Discover all tmux panes running Claude across all sessions.
+/// Returns them ordered by session, window, pane.
+pub fn discover_live_panes() -> Vec<LivePane> {
+    // List all panes across all sessions
+    let output = Command::new("tmux")
+        .args([
+            "list-panes", "-a", "-F",
+            "#{session_name}|#{window_index}|#{pane_index}|#{window_name}|#{pane_current_command}"
+        ])
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .filter_map(|line| {
+                    let parts: Vec<&str> = line.splitn(5, '|').collect();
+                    if parts.len() >= 5 {
+                        let session = parts[0].to_string();
+                        let window: u32 = parts[1].parse().ok()?;
+                        let pane_idx: u32 = parts[2].parse().ok()?;
+                        let window_name = parts[3].to_string();
+                        let command = parts[4].to_string();
+                        // Only include panes running claude
+                        if command == "claude" || command == "node" {
+                            Some(LivePane {
+                                target: format!("{}:{}.{}", session, window, pane_idx),
+                                session,
+                                window,
+                                pane_idx,
+                                window_name,
+                                command,
+                            })
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        }
+        _ => vec![],
+    }
+}
+
+/// Capture output from a tmux pane — extended version with more lines for live view.
+pub fn capture_output_extended(target: &str, lines: u32) -> String {
+    Command::new("tmux")
+        .args(["capture-pane", "-t", target, "-p", "-S", &format!("-{}", lines)])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default()
+}
+
 /// Shell-escape a path (wrap in single quotes).
 fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))

@@ -86,46 +86,103 @@ async fn handle_socket(socket: WebSocket, app: Arc<App>) {
     poll_handle.abort();
 }
 
-/// Build complete state snapshot for initial connection
+/// Build complete state snapshot for initial connection.
+/// Merges DX Terminal state with auto-discovered live tmux panes.
 async fn build_full_snapshot(app: &App) -> Value {
-    // Use async state read instead of blocking_read()
     let state = app.state.get_state_snapshot().await;
     let max_panes = crate::config::pane_count();
 
-    let mut panes = Vec::new();
-    for i in 1..=max_panes {
-        let ps = state.panes.get(&i.to_string());
-        // Use tmux_target from state if available (set during spawn)
-        let tmux_target = ps
-            .and_then(|p| p.tmux_target.clone())
-            .unwrap_or_default();
+    // Auto-discover all live Claude panes across all tmux sessions
+    let live_panes = tokio::task::spawn_blocking(|| {
+        tmux::discover_live_panes()
+    }).await.unwrap_or_default();
 
-        // Capture current terminal output via spawn_blocking (tmux is sync)
-        let output = if !tmux_target.is_empty() {
-            let target = tmux_target.clone();
+    let mut panes = Vec::new();
+
+    // Map: first use DX Terminal state panes, then overlay/extend with live discovery
+    let themes = crate::config::all_themes();
+    let total_panes = std::cmp::max(max_panes as usize, live_panes.len());
+
+    for i in 0..total_panes {
+        let pane_num = (i + 1) as u8;
+        let ps = state.panes.get(&pane_num.to_string());
+
+        // Determine tmux target: prefer state, fall back to discovered live pane
+        let (tmux_target, live) = if let Some(ref p) = ps {
+            if let Some(ref t) = p.tmux_target {
+                if tmux::pane_exists(t) {
+                    (Some(t.clone()), None)
+                } else if i < live_panes.len() {
+                    (Some(live_panes[i].target.clone()), Some(&live_panes[i]))
+                } else {
+                    (None, None)
+                }
+            } else if i < live_panes.len() {
+                (Some(live_panes[i].target.clone()), Some(&live_panes[i]))
+            } else {
+                (None, None)
+            }
+        } else if i < live_panes.len() {
+            (Some(live_panes[i].target.clone()), Some(&live_panes[i]))
+        } else {
+            (None, None)
+        };
+
+        // Capture output
+        let output = if let Some(ref target) = tmux_target {
+            let t = target.clone();
             tokio::task::spawn_blocking(move || {
-                tmux::capture_output(&target)
+                tmux::capture_output_extended(&t, 80)
             }).await.unwrap_or_default()
         } else {
             String::new()
         };
 
-        let lines: Vec<&str> = output.lines().collect();
-        let tail: String = lines.iter().rev().take(50).rev()
+        let line_vec: Vec<&str> = output.lines().collect();
+        let tail: String = line_vec.iter().rev().take(50).rev()
             .copied().collect::<Vec<&str>>().join("\n");
 
+        let theme_idx = i % themes.len();
+        let status = if tmux_target.is_some() && !output.trim().is_empty() {
+            if let Some(ref p) = ps { p.status.as_str() } else { "active" }
+        } else {
+            if let Some(ref p) = ps { p.status.as_str() } else { "idle" }
+        };
+
+        let project = if let Some(ref p) = ps {
+            p.project.clone()
+        } else if let Some(lp) = live {
+            format!("{}/{}", lp.session, lp.window_name)
+        } else {
+            "--".to_string()
+        };
+
+        let task = if let Some(ref p) = ps {
+            let t = &p.task;
+            if t.len() > 80 { t[..80].to_string() } else { t.clone() }
+        } else if let Some(lp) = live {
+            format!("Claude in {}", lp.target)
+        } else {
+            "--".to_string()
+        };
+
+        let role = if let Some(ref p) = ps {
+            crate::config::role_short(&p.role).to_string()
+        } else {
+            "AG".to_string()  // Agent
+        };
+
         panes.push(json!({
-            "pane": i,
-            "theme": crate::config::theme_name(i),
-            "status": ps.map(|p| p.status.as_str()).unwrap_or("idle"),
-            "project": ps.map(|p| p.project.as_str()).unwrap_or("--"),
-            "task": ps.map(|p| {
-                let t = &p.task;
-                if t.len() > 80 { &t[..80] } else { t.as_str() }
-            }).unwrap_or("--"),
-            "role": ps.map(|p| crate::config::role_short(&p.role)).unwrap_or("--"),
+            "pane": pane_num,
+            "theme": themes[theme_idx].0,
+            "status": status,
+            "project": project,
+            "task": task,
+            "role": role,
             "output": tail,
-            "line_count": lines.len(),
+            "line_count": line_vec.len(),
+            "tmux_target": tmux_target,
+            "live": live.is_some(),
         }));
     }
 
@@ -138,7 +195,7 @@ async fn build_full_snapshot(app: &App) -> Value {
         "failed": q.tasks.iter().filter(|t| t.status == crate::queue::QueueStatus::Failed).count(),
     });
 
-    // Screens
+    // Screens (from tmux sessions)
     let screens = {
         let mgr = app.screens.read().unwrap();
         let screen_list = mgr.list_screens();
@@ -148,12 +205,15 @@ async fn build_full_snapshot(app: &App) -> Value {
         })
     };
 
+    let active_count = panes.iter().filter(|p| p["status"] == "active").count();
+
     json!({
         "panes": panes,
         "queue": queue_summary,
         "screens": screens,
-        "active_count": panes.iter().filter(|p| p["status"] == "active").count(),
-        "total_panes": max_panes,
+        "active_count": active_count,
+        "total_panes": total_panes,
+        "live_discovered": live_panes.len(),
     })
 }
 
@@ -201,54 +261,83 @@ async fn forward_events(
     }
 }
 
-/// Poll tmux pane output every 1s and push diffs to WebSocket
+/// Poll tmux pane output every 1s and push diffs to WebSocket.
+/// Auto-discovers live Claude panes across ALL tmux sessions.
 async fn poll_terminal_output(
     app: Arc<App>,
     sender: WsSender,
 ) {
-    let mut prev_outputs: HashMap<u8, String> = HashMap::new();
+    // Key by pane_num for state-managed panes, or by tmux target for discovered ones
+    let mut prev_outputs: HashMap<String, String> = HashMap::new();
     let interval = tokio::time::Duration::from_secs(1);
 
     loop {
         tokio::time::sleep(interval).await;
 
-        // Use async state read instead of blocking_read()
         let state = app.state.get_state_snapshot().await;
         let max_panes = crate::config::pane_count();
 
-        // Collect which panes are active and their tmux targets
-        let mut active_panes: Vec<(u8, String)> = Vec::new();
+        // Collect targets: first from state, then merge with live discovery
+        let mut pane_targets: Vec<(u8, String)> = Vec::new();
+
+        // 1) State-managed panes with tmux targets
         for i in 1..=max_panes {
-            let ps = state.panes.get(&i.to_string());
-            if let Some(p) = ps {
-                if p.status == "active" {
-                    if let Some(ref target) = p.tmux_target {
-                        active_panes.push((i, target.clone()));
-                    }
+            if let Some(p) = state.panes.get(&i.to_string()) {
+                if let Some(ref target) = p.tmux_target {
+                    pane_targets.push((i, target.clone()));
                 }
             }
         }
 
-        if active_panes.is_empty() {
+        // 2) Auto-discover live Claude panes from ALL tmux sessions
+        let live_panes = tokio::task::spawn_blocking(|| {
+            tmux::discover_live_panes()
+        }).await.unwrap_or_default();
+
+        // Merge discovered panes — assign pane numbers beyond state-managed ones
+        let mut used_targets: std::collections::HashSet<String> = pane_targets.iter()
+            .map(|(_, t)| t.clone()).collect();
+        let mut next_pane = max_panes + 1;
+        for lp in &live_panes {
+            if !used_targets.contains(&lp.target) {
+                pane_targets.push((next_pane, lp.target.clone()));
+                used_targets.insert(lp.target.clone());
+                next_pane += 1;
+            }
+        }
+
+        // Also add discovered panes that match state panes with no target
+        for i in 1..=max_panes {
+            let has_target = pane_targets.iter().any(|(p, _)| *p == i);
+            if !has_target && (i as usize) <= live_panes.len() {
+                let lp = &live_panes[(i as usize) - 1];
+                if !used_targets.contains(&lp.target) {
+                    pane_targets.push((i, lp.target.clone()));
+                    used_targets.insert(lp.target.clone());
+                }
+            }
+        }
+
+        if pane_targets.is_empty() {
             continue;
         }
 
-        // Capture all active pane outputs via spawn_blocking
-        let captures: Vec<(u8, String)> = tokio::task::spawn_blocking(move || {
-            active_panes.iter().map(|(i, target)| {
-                (*i, tmux::capture_output(target))
+        // Capture all pane outputs via spawn_blocking
+        let captures: Vec<(u8, String, String)> = tokio::task::spawn_blocking(move || {
+            pane_targets.iter().map(|(i, target)| {
+                (*i, target.clone(), tmux::capture_output(target))
             }).collect()
         }).await.unwrap_or_default();
 
         let mut updates = Vec::new();
-        for (i, output) in captures {
-            let prev = prev_outputs.get(&i).map(|s| s.as_str()).unwrap_or("");
+        for (pane_num, target, output) in captures {
+            let key = format!("{}:{}", pane_num, target);
+            let prev = prev_outputs.get(&key).map(|s| s.as_str()).unwrap_or("");
             if output != prev {
-                // Extract only the new lines (diff)
+                // Extract diff
                 let new_lines = if output.len() > prev.len() && output.starts_with(prev) {
                     output[prev.len()..].to_string()
                 } else {
-                    // Output scrolled/changed completely — send last 30 lines
                     let lines: Vec<&str> = output.lines().collect();
                     let tail_start = lines.len().saturating_sub(30);
                     lines[tail_start..].join("\n")
@@ -256,13 +345,14 @@ async fn poll_terminal_output(
 
                 if !new_lines.trim().is_empty() {
                     updates.push(json!({
-                        "pane": i,
+                        "pane": pane_num,
                         "output": new_lines,
                         "full_lines": output.lines().count(),
+                        "tmux_target": target,
                     }));
                 }
 
-                prev_outputs.insert(i, output);
+                prev_outputs.insert(key, output);
             }
         }
 
@@ -312,9 +402,9 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
             if pane == 0 || message.is_empty() {
                 return json!({"error": "pane (number) and message required"});
             }
-            // Get tmux target from state
-            let pane_data = app.state.get_pane(pane).await;
-            let target = match pane_data.tmux_target {
+            // Get tmux target: first from state, then from live discovery
+            let target = resolve_pane_target(app, pane).await;
+            let target = match target {
                 Some(t) => t,
                 None => return json!({"error": format!("pane {} has no tmux target", pane)}),
             };
@@ -361,8 +451,8 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
             if pane == 0 {
                 return json!({"error": "pane number required"});
             }
-            let pane_data = app.state.get_pane(pane).await;
-            let target = match pane_data.tmux_target {
+            let target = resolve_pane_target(app, pane).await;
+            let target = match target {
                 Some(t) => t,
                 None => return json!({"pane": pane, "output": "", "lines": 0, "error": "no tmux target"}),
             };
@@ -372,5 +462,28 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
             json!({"pane": pane, "output": output, "lines": output.lines().count()})
         }
         _ => json!({"error": format!("unknown command: {}", cmd_type)}),
+    }
+}
+
+/// Resolve a pane number to its tmux target.
+/// First checks state, then falls back to auto-discovered live panes.
+async fn resolve_pane_target(app: &App, pane: u8) -> Option<String> {
+    // 1) Check state
+    let pane_data = app.state.get_pane(pane).await;
+    if let Some(ref t) = pane_data.tmux_target {
+        if tmux::pane_exists(t) {
+            return Some(t.clone());
+        }
+    }
+
+    // 2) Fall back to live discovery (pane number maps to index)
+    let live = tokio::task::spawn_blocking(|| tmux::discover_live_panes())
+        .await.unwrap_or_default();
+
+    let idx = (pane as usize).wrapping_sub(1);
+    if idx < live.len() {
+        Some(live[idx].target.clone())
+    } else {
+        None
     }
 }
