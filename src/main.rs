@@ -22,6 +22,7 @@ mod engine;
 mod scanner;
 mod audit;
 mod factory;
+mod screen;
 #[allow(dead_code)]
 mod tmux;
 
@@ -29,7 +30,7 @@ use std::sync::Arc;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "agentos", about = "AgentOS: AI agent orchestration runtime")]
+#[command(name = "dx", about = "DX Terminal: AI-native terminal multiplexer for AI agent teams")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -57,7 +58,7 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Initialize config singleton (reads ~/.config/agentos/config.json)
+    // Initialize config singleton (reads ~/.config/dx-terminal/config.json)
     let cfg = config::init();
 
     let cli = Cli::parse();

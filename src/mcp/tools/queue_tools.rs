@@ -225,7 +225,7 @@ pub async fn queue_clear(_app: &App, req: QueueClearRequest) -> String {
 /// Auto-cycle: scan all panes, complete finished agents, spawn next tasks
 pub async fn auto_cycle(app: &App) -> String {
     // Process-level lock
-    let lock_path = config::agentos_root().join("auto_cycle.lock");
+    let lock_path = config::dx_root().join("auto_cycle.lock");
     let lock_file = match std::fs::OpenOptions::new()
         .create(true)
         .write(true)
@@ -357,8 +357,8 @@ pub async fn auto_cycle(app: &App) -> String {
                         );
                         let _ = tracker::issue_comment(
                             space, issue_id,
-                            &format!("Auto-completed by AgentOS queue task {}", qt.id),
-                            "agentos",
+                            &format!("Auto-completed by DX Terminal queue task {}", qt.id),
+                            "dx-terminal",
                         );
                         // Micro-helper: check if all siblings done → close parent
                         check_feature_closure(space, issue_id);
@@ -386,7 +386,7 @@ pub async fn auto_cycle(app: &App) -> String {
                         let _ = tracker::issue_comment(
                             space, issue_id,
                             &format!("Queue task {} failed: {}", qt.id, h.error.as_deref().unwrap_or("unknown")),
-                            "agentos",
+                            "dx-terminal",
                         );
                     }
                 }

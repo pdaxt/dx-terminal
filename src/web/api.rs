@@ -47,7 +47,7 @@ pub struct PaneQuery {
     pub lines: Option<usize>,
 }
 
-// === AgentOS state endpoints — thin adapters over MCP tools ===
+// === DX Terminal state endpoints — thin adapters over MCP tools ===
 
 /// GET /api/status — All panes with PTY state (via tools::status)
 pub async fn get_status(State(app): State<AppState>) -> Json<Value> {

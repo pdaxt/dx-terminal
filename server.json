@@ -1,29 +1,11 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.pdaxt/agentos",
-  "description": "AI agent orchestration runtime — spawn, coordinate, and monitor fleets of autonomous coding agents. 210+ MCP tools for agent lifecycle, git isolation, quality gates, and multi-agent coordination.",
+  "name": "io.github.pdaxt/dx-terminal",
+  "description": "DX Terminal: AI-native terminal multiplexer for AI agent teams. Spawn, coordinate, monitor autonomous agents.",
   "repository": {
-    "url": "https://github.com/pdaxt/agentos",
+    "url": "https://github.com/pdaxt/dx-terminal",
     "source": "github"
   },
   "version": "1.0.0",
-  "packages": [
-    {
-      "registryType": "npm",
-      "identifier": "@pdaxt/agentos-mcp",
-      "version": "1.0.0",
-      "transport": {
-        "type": "stdio"
-      },
-      "environmentVariables": [
-        {
-          "description": "Port for the web dashboard",
-          "isRequired": false,
-          "format": "string",
-          "isSecret": false,
-          "name": "AGENTOS_WEB_PORT"
-        }
-      ]
-    }
-  ]
+  "packages": []
 }

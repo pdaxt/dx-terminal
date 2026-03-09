@@ -804,7 +804,7 @@ fn collect_audit() -> AuditSnapshot {
             top_findings.truncate(5);
 
             // Last audit time from file modification
-            let audit_path = config::agentos_root().join("audits").join(name).join("latest.json");
+            let audit_path = config::dx_root().join("audits").join(name).join("latest.json");
             let last_audit = std::fs::metadata(&audit_path)
                 .and_then(|m| m.modified())
                 .ok()
@@ -1200,7 +1200,7 @@ fn render_header(f: &mut Frame, area: Rect, data: &DashboardData) {
     };
 
     let header = Line::from(vec![
-        Span::styled(" AgentOS ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(" DX Terminal ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         status_label,
         view_label,
         Span::styled(" │ ACU ", Style::default().fg(Color::DarkGray)),

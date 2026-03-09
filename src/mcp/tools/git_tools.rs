@@ -127,7 +127,7 @@ pub async fn git_pr(app: &App, req: GitPrRequest) -> String {
         format!("[Pane {}] {}", pane_num, truncate(&pane_data.task, 50))
     });
     let body = req.body.unwrap_or_else(|| {
-        format!("## Task\n{}\n\nAutomated PR from AgentOS pane {}", pane_data.task, pane_num)
+        format!("## Task\n{}\n\nAutomated PR from DX Terminal pane {}", pane_data.task, pane_num)
     });
     let pr_result = workspace::create_pr(&ws, &title, &body);
 

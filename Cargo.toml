@@ -3,10 +3,14 @@ members = [".", "crates/*"]
 resolver = "2"
 
 [package]
-name = "agentos"
+name = "dx-terminal"
 version = "0.1.0"
 edition = "2021"
-description = "AgentOS: AI agent orchestration runtime"
+description = "DX Terminal: AI-native terminal multiplexer for AI agent teams"
+
+[[bin]]
+name = "dx"
+path = "src/main.rs"
 
 [dependencies]
 # Async runtime
@@ -51,8 +55,8 @@ uuid = { version = "1", features = ["v4"] }
 walkdir = "2.5.0"
 
 # Workspace crates
-agentos-types = { path = "crates/types" }
-agentos-gateway = { path = "crates/gateway" }
+dx-types = { path = "crates/types" }
+dx-gateway = { path = "crates/gateway" }
 
 # TOML parsing (for MCP descriptors)
 toml = "0.8"

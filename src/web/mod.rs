@@ -15,7 +15,7 @@ pub fn build_router(app: Arc<App>) -> Router {
     Router::new()
         // Dashboard
         .route("/", get(api::index))
-        // AgentOS state endpoints (real-time from memory + PTY)
+        // DX Terminal state endpoints (real-time from memory + PTY)
         .route("/api/status", get(api::get_status))
         .route("/api/pane/{id}", get(api::get_pane))
         .route("/api/pane/{id}/output", get(api::get_pane_output))
@@ -56,8 +56,8 @@ pub fn build_router(app: Arc<App>) -> Router {
 pub async fn run_web_server(app: Arc<App>, port: u16) -> anyhow::Result<()> {
     let router = build_router(app);
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
-    tracing::info!("AgentOS web dashboard: http://localhost:{}", port);
-    eprintln!("AgentOS web dashboard: http://localhost:{}", port);
+    tracing::info!("DX Terminal web dashboard: http://localhost:{}", port);
+    eprintln!("DX Terminal web dashboard: http://localhost:{}", port);
     axum::serve(listener, router).await?;
     Ok(())
 }

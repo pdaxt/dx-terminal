@@ -13,13 +13,13 @@ use crate::app::App;
 use self::types::*;
 
 #[derive(Clone)]
-pub struct AgentOSService {
+pub struct DxTerminalService {
     app: Arc<App>,
     tool_router: ToolRouter<Self>,
 }
 
 #[tool_router]
-impl AgentOSService {
+impl DxTerminalService {
     pub fn new(app: Arc<App>) -> Self {
         Self {
             app,
@@ -593,7 +593,7 @@ impl AgentOSService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Add an inter-agent task to the shared queue (not the AgentOS auto-cycle queue).")]
+    #[tool(description = "Add an inter-agent task to the shared queue (not the DX Terminal auto-cycle queue).")]
     async fn ma_task_add(
         &self,
         Parameters(req): Parameters<MaTaskAddRequest>,
@@ -1733,7 +1733,7 @@ impl AgentOSService {
 
     // === ORCHESTRATION ===
 
-    #[tool(description = "Orchestrate: say what you want in natural language. AgentOS identifies the project, decomposes into dev + QA + security tasks, spawns agents on free panes, monitors to completion. The 'machine that builds machines' command.")]
+    #[tool(description = "Orchestrate: say what you want in natural language. DX Terminal identifies the project, decomposes into dev + QA + security tasks, spawns agents on free panes, monitors to completion. The 'machine that builds machines' command.")]
     async fn orchestrate(
         &self,
         Parameters(req): Parameters<types::OrchestrateRequest>,
@@ -1770,14 +1770,52 @@ impl AgentOSService {
         let result = tools::gateway_tools::gateway_list(&self.app, req).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
+
+    // === SCREEN MANAGEMENT ===
+
+    #[tool(description = "Add a new screen with configurable layout. Creates a tmux window with N panes. Layouts: single (1), split2 (2), horizontal (3, default), vertical (3), grid2x2 (4).")]
+    async fn dx_add_screen(
+        &self,
+        Parameters(req): Parameters<types::AddScreenRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::screen_tools::add_screen(&self.app, req.name, req.layout, req.panes);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Remove a screen and its panes. Fails if agents are active unless force=true. Cannot remove the last screen.")]
+    async fn dx_remove_screen(
+        &self,
+        Parameters(req): Parameters<types::RemoveScreenRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::screen_tools::remove_screen(&self.app, req.screen, req.force.unwrap_or(false));
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "List all screens with their panes, agent status, and layout. Shows active/idle counts per screen.")]
+    async fn dx_list_screens(
+        &self,
+        Parameters(_req): Parameters<types::ListScreensRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::screen_tools::list_screens(&self.app);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Get screen layout summary: total screens, total panes, session name.")]
+    async fn dx_screen_summary(
+        &self,
+        Parameters(_req): Parameters<types::ScreenSummaryRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::screen_tools::screen_summary(&self.app);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
 }
 
 #[tool_handler]
-impl ServerHandler for AgentOSService {
+impl ServerHandler for DxTerminalService {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             instructions: Some(
-                "AgentOS: Terminal orchestrator for AI agent teams. \
+                "DX Terminal: AI-native terminal multiplexer for AI agent teams. \
                  Spawns, assigns, monitors Claude agents across configurable panes \
                  from a single control plane. Fully autonomous with auto-cycle.".into()
             ),
@@ -1790,14 +1828,14 @@ impl ServerHandler for AgentOSService {
 }
 
 pub async fn run_mcp_server(app: Arc<App>) -> anyhow::Result<()> {
-    tracing::info!("Starting AgentOS MCP server");
+    tracing::info!("Starting DX Terminal MCP server");
 
-    let server = AgentOSService::new(app);
+    let server = DxTerminalService::new(app);
     let service = server.serve(stdio()).await.inspect_err(|e| {
         tracing::error!("MCP serve error: {:?}", e);
     })?;
 
     service.waiting().await?;
-    tracing::info!("AgentOS MCP server stopped");
+    tracing::info!("DX Terminal MCP server stopped");
     Ok(())
 }

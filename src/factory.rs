@@ -478,7 +478,7 @@ pub fn log_pipeline_event(pipeline_id: &str, event: &str, detail: &str) {
         detail: detail.to_string(),
     };
 
-    let log_dir = crate::config::agentos_root().join("pipeline_events");
+    let log_dir = crate::config::dx_root().join("pipeline_events");
     let _ = std::fs::create_dir_all(&log_dir);
     let log_file = log_dir.join(format!("{}.jsonl", pipeline_id));
 
@@ -492,7 +492,7 @@ pub fn log_pipeline_event(pipeline_id: &str, event: &str, detail: &str) {
 
 /// Read all events for a pipeline.
 pub fn get_pipeline_events(pipeline_id: &str) -> Vec<PipelineEvent> {
-    let log_file = crate::config::agentos_root()
+    let log_file = crate::config::dx_root()
         .join("pipeline_events")
         .join(format!("{}.jsonl", pipeline_id));
 
@@ -601,7 +601,7 @@ pub fn run_gate(pipeline_id: &str) -> Result<GateResult> {
 
     // Save gate result
     let gate_path = std::path::PathBuf::from(
-        crate::config::agentos_root().join("gates")
+        crate::config::dx_root().join("gates")
     );
     let _ = std::fs::create_dir_all(&gate_path);
     let gate_file = gate_path.join(format!("{}.json", pipeline_id));
@@ -696,7 +696,7 @@ fn run_check(project_path: &str, command: &str) -> GateCheck {
 
 /// Get the most recent gate result for a pipeline.
 pub fn get_gate_result(pipeline_id: &str) -> Option<GateResult> {
-    let gate_file = crate::config::agentos_root()
+    let gate_file = crate::config::dx_root()
         .join("gates")
         .join(format!("{}.json", pipeline_id));
     let data = std::fs::read_to_string(&gate_file).ok()?;
@@ -830,7 +830,7 @@ pub fn conflict_scan(pipeline_id: &str) -> serde_json::Value {
 // ============================================================
 
 fn paused_file() -> std::path::PathBuf {
-    crate::config::agentos_root().join("paused_pipelines.json")
+    crate::config::dx_root().join("paused_pipelines.json")
 }
 
 fn load_paused() -> HashSet<String> {
@@ -942,7 +942,7 @@ pub struct FactoryInbox {
 }
 
 fn inbox_path() -> std::path::PathBuf {
-    crate::config::agentos_root().join("factory_inbox.json")
+    crate::config::dx_root().join("factory_inbox.json")
 }
 
 pub fn load_inbox() -> FactoryInbox {
@@ -1349,7 +1349,7 @@ mod tests {
     fn test_pipeline_events_log_and_read() {
         let _g = crate::queue::tests::env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("AGENTOS_ROOT", tmp.path());
+        std::env::set_var("DX_ROOT", tmp.path());
 
         // Initially empty
         assert!(get_pipeline_events("test_pipe").is_empty());
@@ -1366,14 +1366,14 @@ mod tests {
         // Different pipeline has no events
         assert!(get_pipeline_events("other_pipe").is_empty());
 
-        std::env::remove_var("AGENTOS_ROOT");
+        std::env::remove_var("DX_ROOT");
     }
 
     #[test]
     fn test_retry_pipeline_with_queue() {
         let _g = crate::queue::tests::env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("AGENTOS_ROOT", tmp.path());
+        std::env::set_var("DX_ROOT", tmp.path());
 
         // Create tasks with pipeline_id
         let t1 = queue::add_task_with_pipeline("p", "dev", "[dev] build", "go", 1, vec![], Some("retry_test".into())).unwrap();
@@ -1394,20 +1394,20 @@ mod tests {
             assert_eq!(task.retry_count, 1);
         }
 
-        std::env::remove_var("AGENTOS_ROOT");
+        std::env::remove_var("DX_ROOT");
     }
 
     #[test]
     fn test_retry_no_failed_stages() {
         let _g = crate::queue::tests::env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("AGENTOS_ROOT", tmp.path());
+        std::env::set_var("DX_ROOT", tmp.path());
 
         queue::add_task_with_pipeline("p", "dev", "t", "go", 1, vec![], Some("no_fail".into())).unwrap();
 
         let result = retry_pipeline("no_fail");
         assert!(result.is_err()); // No failed stages to retry
 
-        std::env::remove_var("AGENTOS_ROOT");
+        std::env::remove_var("DX_ROOT");
     }
 }

@@ -1676,7 +1676,7 @@ pub struct ProjectDepsRequest {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct OrchestrateRequest {
-    #[schemars(description = "Natural language request: what you want built/done. AgentOS will identify the project, decompose into tasks, spawn developer + QA + security agents.")]
+    #[schemars(description = "Natural language request: what you want built/done. DX Terminal will identify the project, decompose into tasks, spawn developer + QA + security agents.")]
     pub request: String,
     #[schemars(description = "Explicit project name (auto-detected from request if empty)")]
     pub project: Option<String>,
@@ -1795,3 +1795,29 @@ pub struct AuditFullRequest {
     #[schemars(description = "Project name or absolute path to audit")]
     pub project: String,
 }
+
+// ── Screen Management ──
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AddScreenRequest {
+    #[schemars(description = "Screen name (e.g., 'Dev Screen', 'QA Screen'). Auto-generated if not provided.")]
+    pub name: Option<String>,
+    #[schemars(description = "Layout: single, split2, horizontal (default, 3 panes), vertical, grid2x2")]
+    pub layout: Option<String>,
+    #[schemars(description = "Override number of panes (default: based on layout)")]
+    pub panes: Option<u8>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RemoveScreenRequest {
+    #[schemars(description = "Screen ID (number) or name to remove")]
+    pub screen: String,
+    #[schemars(description = "Force remove even if agents are active (default: false)")]
+    pub force: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListScreensRequest {}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ScreenSummaryRequest {}

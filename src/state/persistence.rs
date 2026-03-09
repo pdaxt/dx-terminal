@@ -1,8 +1,8 @@
 use std::path::Path;
 use anyhow::Result;
-use crate::state::types::AgentOSState;
+use crate::state::types::DxTerminalState;
 
-pub fn load_state(path: &Path) -> AgentOSState {
+pub fn load_state(path: &Path) -> DxTerminalState {
     if path.exists() {
         match std::fs::read_to_string(path) {
             Ok(contents) => {
@@ -14,12 +14,12 @@ pub fn load_state(path: &Path) -> AgentOSState {
             Err(e) => tracing::warn!("Failed to read state.json: {}", e),
         }
     }
-    let state = AgentOSState::default();
+    let state = DxTerminalState::default();
     let _ = save_state(path, &state);
     state
 }
 
-pub fn save_state(path: &Path, state: &AgentOSState) -> Result<()> {
+pub fn save_state(path: &Path, state: &DxTerminalState) -> Result<()> {
     let json = serde_json::to_string_pretty(state)?;
     atomic_write(path, json.as_bytes())
 }

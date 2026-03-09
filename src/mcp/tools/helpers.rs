@@ -44,7 +44,7 @@ pub fn save_agent_output(app: &App, pane_num: u8, reason: &str) -> Option<String
     let path = dir.join(&filename);
 
     let content = format!(
-        "=== AgentOS Output Log ===\nPane: {}\nReason: {}\nTimestamp: {}\n\n=== Screen ===\n{}\n\n=== Last 200 Lines ===\n{}\n",
+        "=== DX Terminal Output Log ===\nPane: {}\nReason: {}\nTimestamp: {}\n\n=== Screen ===\n{}\n\n=== Last 200 Lines ===\n{}\n",
         pane_num, reason, state::now(), screen, output
     );
     let _ = std::fs::write(&path, &content);
@@ -121,7 +121,7 @@ pub fn prepare_workspace(project: &str, pane_num: u8, task: &str) -> WorkspaceSe
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| project.to_string());
 
-    let skip_worktrees = std::env::var("AGENTOS_SKIP_WORKTREES").is_ok();
+    let skip_worktrees = std::env::var("DX_SKIP_WORKTREES").is_ok();
     let (spawn_cwd, ws_path, ws_branch, ws_base) = if !skip_worktrees && workspace::is_git_repo(&project_path) {
         match workspace::create_worktree(&project_path, pane_num, task) {
             Ok(info) => {
@@ -135,7 +135,7 @@ pub fn prepare_workspace(project: &str, pane_num: u8, task: &str) -> WorkspaceSe
         }
     } else {
         if skip_worktrees {
-            tracing::info!("Skipping worktree for pane {} (AGENTOS_SKIP_WORKTREES set)", pane_num);
+            tracing::info!("Skipping worktree for pane {} (DX_SKIP_WORKTREES set)", pane_num);
         }
         (project_path.clone(), None, None, None)
     };
@@ -189,7 +189,7 @@ pub fn finalize_git(ws: &str, branch: &str, base_project: &str, pane_num: u8, ta
     let push_result = workspace::push_branch(ws, branch);
     let pr_title = format!("[Pane {}] {}", pane_num, truncate(task, 50));
     let pr_body = format!(
-        "## Task\n{}\n\n## Summary\n{}\n\n## ACU\n{:.2}\n\nAutomated PR from AgentOS pane {}",
+        "## Task\n{}\n\n## Summary\n{}\n\n## ACU\n{:.2}\n\nAutomated PR from DX Terminal pane {}",
         task, if summary.is_empty() { "completed" } else { summary }, acu, pane_num
     );
     let pr_result = workspace::create_pr(ws, &pr_title, &pr_body);
@@ -232,7 +232,7 @@ pub fn check_feature_closure(space: &str, issue_id: &str) -> bool {
                 let _ = tracker::issue_comment(
                     space, parent_id,
                     &format!("All {} micro-features completed. Feature auto-closed.", total),
-                    "agentos",
+                    "dx-terminal",
                 );
                 return true;
             }

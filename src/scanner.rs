@@ -45,7 +45,7 @@ pub struct ProjectInfo {
 }
 
 fn registry_path() -> PathBuf {
-    config::agentos_root().join("projects.json")
+    config::dx_root().join("projects.json")
 }
 
 /// Load registry from disk (returns empty if file missing/corrupt)

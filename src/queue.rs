@@ -102,11 +102,11 @@ impl Default for AutoConfig {
 }
 
 fn queue_path() -> PathBuf {
-    config::agentos_root().join("queue.json")
+    config::dx_root().join("queue.json")
 }
 
 fn auto_config_path() -> PathBuf {
-    config::agentos_root().join("auto_config.json")
+    config::dx_root().join("auto_config.json")
 }
 
 /// Load the task queue
@@ -387,21 +387,21 @@ pub mod tests {
     use super::*;
     use std::sync::Mutex;
 
-    // Serialize tests that share AGENTOS_ROOT via process env.
+    // Serialize tests that share DX_ROOT via process env.
     // Public so other test modules (e.g. claude::tests) can use it.
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     /// Acquire the env-var lock. Other modules should call this before
-    /// setting AGENTOS_ROOT to avoid races.
+    /// setting DX_ROOT to avoid races.
     pub fn env_lock() -> std::sync::MutexGuard<'static, ()> {
         TEST_LOCK.lock().unwrap()
     }
 
-    /// Set AGENTOS_ROOT to a fresh tempdir and reset the queue.
+    /// Set DX_ROOT to a fresh tempdir and reset the queue.
     fn setup() -> (std::sync::MutexGuard<'static, ()>, tempfile::TempDir) {
         let guard = env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("AGENTOS_ROOT", tmp.path());
+        std::env::set_var("DX_ROOT", tmp.path());
         std::fs::create_dir_all(tmp.path()).unwrap();
         let _ = save_queue(&TaskQueue::default());
         (guard, tmp)

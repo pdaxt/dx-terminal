@@ -22,4 +22,5 @@ pub mod engine;
 pub mod scanner;
 pub mod audit;
 pub mod factory;
+pub mod screen;
 pub mod tmux;

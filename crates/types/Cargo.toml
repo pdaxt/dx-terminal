@@ -1,8 +1,8 @@
 [package]
-name = "agentos-types"
+name = "dx-types"
 version = "0.1.0"
 edition = "2021"
-description = "Shared types for AgentOS micro MCPs"
+description = "Shared types for DX Terminal micro MCPs"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

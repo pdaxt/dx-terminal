@@ -111,7 +111,7 @@ pub async fn dashboard(app: &App, req: DashboardRequest) -> String {
     let now_str = state::now();
     let display_ts = now_str.get(..16).unwrap_or(&now_str);
     let mut lines = vec![
-        format!("AgentOS Dashboard — {}", display_ts),
+        format!("DX Terminal Dashboard — {}", display_ts),
         format!("ACU: {}/{} ({}%)  Reviews: {}/{}  Bottleneck: {}",
             cap.acu_used, cap.acu_total, acu_pct, cap.reviews_used, cap.reviews_total, bn),
         String::new(),

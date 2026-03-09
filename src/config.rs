@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
 
-/// Runtime configuration — loaded once at startup from ~/.config/agentos/config.json
+/// Runtime configuration — loaded once at startup from ~/.config/dx-terminal/config.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeConfig {
     /// Number of agent panes (1-20, default 9)
@@ -29,7 +29,7 @@ pub struct ThemeEntry {
 }
 
 fn default_pane_count() -> u8 { 9 }
-fn default_session_name() -> String { "agentos".into() }
+fn default_session_name() -> String { "dx".into() }
 fn default_web_port() -> u16 { 3100 }
 
 /// Default color palette (cycles if pane_count > len)
@@ -60,7 +60,7 @@ impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
             pane_count: 9,
-            session_name: "agentos".into(),
+            session_name: "dx".into(),
             web_port: 3100,
             themes: Vec::new(),
             scan_dirs: Vec::new(),
@@ -71,7 +71,7 @@ impl Default for RuntimeConfig {
 impl RuntimeConfig {
     /// Load from disk or create default
     pub fn load() -> Self {
-        let path = agentos_root().join("config.json");
+        let path = dx_root().join("config.json");
         if path.exists() {
             if let Ok(content) = std::fs::read_to_string(&path) {
                 if let Ok(mut cfg) = serde_json::from_str::<RuntimeConfig>(&content) {
@@ -97,7 +97,7 @@ impl RuntimeConfig {
     }
 
     pub fn save(&self) -> anyhow::Result<()> {
-        let path = agentos_root().join("config.json");
+        let path = dx_root().join("config.json");
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -200,11 +200,21 @@ pub fn role_short(role: &str) -> &'static str {
 
 // --- Path helpers ---
 
-pub fn agentos_root() -> PathBuf {
+pub fn dx_root() -> PathBuf {
+    if let Ok(root) = std::env::var("DX_ROOT") {
+        return PathBuf::from(root);
+    }
+    // Also check legacy env var for backward compatibility
     if let Ok(root) = std::env::var("AGENTOS_ROOT") {
         return PathBuf::from(root);
     }
-    home_dir().join(".config").join("agentos")
+    let new_path = home_dir().join(".config").join("dx-terminal");
+    let old_path = home_dir().join(".config").join("agentos");
+    // Migration: if old path exists and new path does not, create a symlink
+    if old_path.exists() && !new_path.exists() {
+        let _ = std::os::unix::fs::symlink(&old_path, &new_path);
+    }
+    new_path
 }
 
 pub fn capacity_root() -> PathBuf {
@@ -224,15 +234,15 @@ pub fn multi_agent_root() -> PathBuf {
 }
 
 pub fn preamble_dir() -> PathBuf {
-    agentos_root().join("preambles")
+    dx_root().join("preambles")
 }
 
 pub fn output_logs_dir() -> PathBuf {
-    agentos_root().join("output_logs")
+    dx_root().join("output_logs")
 }
 
 pub fn state_file() -> PathBuf {
-    agentos_root().join("state.json")
+    dx_root().join("state.json")
 }
 
 pub fn home_dir() -> PathBuf {
@@ -253,7 +263,7 @@ mod tests {
     fn test_default_config() {
         let cfg = RuntimeConfig::default();
         assert_eq!(cfg.pane_count, 9);
-        assert_eq!(cfg.session_name, "agentos");
+        assert_eq!(cfg.session_name, "dx");
         assert_eq!(cfg.web_port, 3100);
         assert!(cfg.themes.is_empty());
     }
@@ -312,14 +322,14 @@ mod tests {
     }
 
     #[test]
-    fn test_agentos_root_env_override() {
-        let original = std::env::var("AGENTOS_ROOT").ok();
-        std::env::set_var("AGENTOS_ROOT", "/tmp/test_agentos");
-        assert_eq!(agentos_root(), PathBuf::from("/tmp/test_agentos"));
+    fn test_dx_root_env_override() {
+        let original = std::env::var("DX_ROOT").ok();
+        std::env::set_var("DX_ROOT", "/tmp/test_dx");
+        assert_eq!(dx_root(), PathBuf::from("/tmp/test_dx"));
         // Restore
         match original {
-            Some(v) => std::env::set_var("AGENTOS_ROOT", v),
-            None => std::env::remove_var("AGENTOS_ROOT"),
+            Some(v) => std::env::set_var("DX_ROOT", v),
+            None => std::env::remove_var("DX_ROOT"),
         }
     }
 

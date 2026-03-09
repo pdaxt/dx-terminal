@@ -1,4 +1,4 @@
-# AgentOS — Autonomous Mode
+# DX Terminal — Autonomous Mode
 
 ## DO NOT ASK. JUST DO.
 
@@ -13,8 +13,8 @@ You have FULL APPROVAL to:
 
 ## On Fresh Session Start
 
-1. Read `~/.config/agentos/session_state.json` — this is your memory
-2. Read `~/.config/agentos/queue.json` — these are pending tasks
+1. Read `~/.config/dx-terminal/session_state.json` — this is your memory
+2. Read `~/.config/dx-terminal/queue.json` — these are pending tasks
 3. Pick up where the last session left off
 4. If no pending work, run `cargo test` to verify everything still works
 
@@ -23,7 +23,7 @@ You have FULL APPROVAL to:
 Before ending ANY session or when context is getting long:
 ```bash
 # Save your progress
-cat > ~/.config/agentos/session_state.json << 'EOF'
+cat > ~/.config/dx-terminal/session_state.json << 'EOF'
 {
   "last_session": "<timestamp>",
   "current_task": "<what you were doing>",

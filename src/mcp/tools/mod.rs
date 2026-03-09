@@ -42,6 +42,7 @@ pub mod audit_tools;
 pub mod factory_tools;
 pub mod orchestrate;
 pub mod gateway_tools;
+pub mod screen_tools;
 
 // ── Re-exports (flat namespace for backward compat) ──
 

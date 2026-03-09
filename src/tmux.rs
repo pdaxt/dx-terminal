@@ -1,7 +1,7 @@
 //! Tmux integration: spawn Claude agents in real tmux panes that users can see.
 //!
 //! This replaces the internal PTY approach with visible tmux windows.
-//! AgentOS creates windows, runs claude there, monitors via capture-pane.
+//! DX Terminal creates windows, runs claude there, monitors via capture-pane.
 
 use std::process::Command;
 use anyhow::{Context, Result};

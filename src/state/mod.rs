@@ -7,13 +7,13 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use chrono::Local;
 
-use self::types::{AgentOSState, LogEntry, PaneState};
+use self::types::{DxTerminalState, LogEntry, PaneState};
 use self::persistence::{load_state, save_state};
 use self::events::{EventBus, StateEvent};
 use crate::config;
 
 pub struct StateManager {
-    state: Arc<RwLock<AgentOSState>>,
+    state: Arc<RwLock<DxTerminalState>>,
     state_file: PathBuf,
     pub event_bus: Arc<EventBus>,
 }
@@ -72,12 +72,12 @@ impl StateManager {
         });
     }
 
-    pub async fn get_state_snapshot(&self) -> AgentOSState {
+    pub async fn get_state_snapshot(&self) -> DxTerminalState {
         self.state.read().await.clone()
     }
 
     /// Blocking read for non-async contexts (TUI thread)
-    pub fn blocking_read(&self) -> tokio::sync::RwLockReadGuard<'_, AgentOSState> {
+    pub fn blocking_read(&self) -> tokio::sync::RwLockReadGuard<'_, DxTerminalState> {
         self.state.blocking_read()
     }
 

@@ -50,10 +50,10 @@ pub fn load_registry() -> Vec<McpInfo> {
     registry
 }
 
-/// Optional enrichment file: ~/.config/agentos/mcp_metadata.json
+/// Optional enrichment file: ~/.config/dx-terminal/mcp_metadata.json
 /// Users can add descriptions, keywords, project associations
 fn load_enrichment() -> Vec<McpInfo> {
-    let path = crate::config::agentos_root().join("mcp_metadata.json");
+    let path = crate::config::dx_root().join("mcp_metadata.json");
     if path.exists() {
         if let Ok(content) = std::fs::read_to_string(&path) {
             if let Ok(mcps) = serde_json::from_str::<Vec<McpInfo>>(&content) {

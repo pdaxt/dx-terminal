@@ -19,7 +19,7 @@ pub struct MachineIdentity {
 }
 
 fn registry_path() -> PathBuf {
-    config::agentos_root().join("machines.json")
+    config::dx_root().join("machines.json")
 }
 
 /// Generate IP for a pane: 127.0.0.{100+N}

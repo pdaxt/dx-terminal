@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentOSState {
+pub struct DxTerminalState {
     #[serde(default)]
     pub panes: HashMap<String, PaneState>,
     #[serde(default)]
@@ -12,17 +12,17 @@ pub struct AgentOSState {
     #[serde(default)]
     pub activity_log: VecDeque<LogEntry>,
     #[serde(default)]
-    pub config: AgentOSConfig,
+    pub config: DxTerminalConfig,
 }
 
-impl Default for AgentOSState {
+impl Default for DxTerminalState {
     fn default() -> Self {
         Self {
             panes: HashMap::new(),
             project_mcps: HashMap::new(),
             space_project_map: HashMap::new(),
             activity_log: VecDeque::new(),
-            config: AgentOSConfig::default(),
+            config: DxTerminalConfig::default(),
         }
     }
 }
@@ -99,7 +99,7 @@ pub struct LogEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentOSConfig {
+pub struct DxTerminalConfig {
     #[serde(default = "default_markers")]
     pub completion_markers: Vec<String>,
     #[serde(default = "default_stuck")]
@@ -114,7 +114,7 @@ fn default_markers() -> Vec<String> {
 fn default_stuck() -> u64 { 5 }
 fn default_role() -> String { "developer".into() }
 
-impl Default for AgentOSConfig {
+impl Default for DxTerminalConfig {
     fn default() -> Self {
         Self {
             completion_markers: default_markers(),

@@ -64,7 +64,7 @@ fn task_slug(task: &str) -> String {
 
 /// Workspace root directory
 fn workspaces_root() -> PathBuf {
-    config::agentos_root().join("workspaces")
+    config::dx_root().join("workspaces")
 }
 
 /// Create a git worktree for a pane working on a project
@@ -174,7 +174,7 @@ pub fn commit_all(worktree_path: &str, message: &str) -> Result<String> {
         return Ok("nothing to commit".into());
     }
 
-    let msg = if message.is_empty() { "AgentOS: work in progress" } else { message };
+    let msg = if message.is_empty() { "DX Terminal: work in progress" } else { message };
     let output = Command::new("git")
         .args(["commit", "-m", msg])
         .current_dir(worktree_path)

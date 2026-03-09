@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn test_write_preamble_and_exists() {
-        // Directly test file ops without setting AGENTOS_ROOT (avoids env races).
+        // Directly test file ops without setting DX_ROOT (avoids env races).
         // Instead, use a known unique temp path and write/read directly.
         let tmp = tempfile::tempdir().unwrap();
         let preamble_dir = tmp.path().join("preambles");

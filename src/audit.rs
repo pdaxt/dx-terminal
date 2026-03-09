@@ -577,7 +577,7 @@ fn store_audit(project: &str, result: &Value) {
     let name = Path::new(project).file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| project.replace('/', "_"));
-    let dir = config::agentos_root().join("audits").join(&name);
+    let dir = config::dx_root().join("audits").join(&name);
     let _ = fs::create_dir_all(&dir);
     let ts = chrono::Utc::now().format("%Y%m%dT%H%M%S").to_string();
     let path = dir.join(format!("{}.json", ts));
@@ -590,7 +590,7 @@ fn store_audit(project: &str, result: &Value) {
 
 /// Load the latest audit result for a project by name.
 pub fn load_latest_audit(project_name: &str) -> Option<Value> {
-    let dir = config::agentos_root().join("audits").join(project_name);
+    let dir = config::dx_root().join("audits").join(project_name);
     let latest = dir.join("latest.json");
     if !latest.exists() {
         return None;
@@ -601,7 +601,7 @@ pub fn load_latest_audit(project_name: &str) -> Option<Value> {
 
 /// List all projects that have stored audit results.
 pub fn list_audited_projects() -> Vec<String> {
-    let audits_dir = config::agentos_root().join("audits");
+    let audits_dir = config::dx_root().join("audits");
     if !audits_dir.exists() {
         return Vec::new();
     }

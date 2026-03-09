@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use agentos_types::{MCPCallResult, MCPDescriptor, MCPStatus};
+use dx_types::{MCPCallResult, MCPDescriptor, MCPStatus};
 use rmcp::model::{CallToolRequestParams, Tool};
 use rmcp::service::RunningService;
 use rmcp::transport::TokioChildProcess;
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn test_descriptor_loading() {
-        let dir = std::env::temp_dir().join("agentos_test_mcps");
+        let dir = std::env::temp_dir().join("dx_test_mcps");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
@@ -332,7 +332,7 @@ mod tests {
 
     #[test]
     fn test_register_programmatic() {
-        let dir = std::env::temp_dir().join("agentos_test_mcps_reg");
+        let dir = std::env::temp_dir().join("dx_test_mcps_reg");
         let _ = std::fs::remove_dir_all(&dir);
 
         let mut registry = MCPRegistry::new(dir.clone());

@@ -1,11 +1,11 @@
 [package]
-name = "agentos-gateway"
+name = "dx-gateway"
 version = "0.1.0"
 edition = "2021"
 description = "MCP Gateway: spawn, route, and cache micro MCPs"
 
 [dependencies]
-agentos-types = { path = "../types" }
+dx-types = { path = "../types" }
 
 # MCP client (for spawning child MCPs)
 rmcp = { version = "0.15", features = ["server", "client", "transport-io", "transport-child-process", "macros"] }
