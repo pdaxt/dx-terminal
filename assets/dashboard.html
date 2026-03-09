@@ -480,6 +480,19 @@ canvas{width:100%;display:block}
       </div>
     </div>
 
+    <!-- Vision -->
+    <div class="col-2" id="vision-section" style="display:none">
+      <div class="card">
+        <h3>Vision <span id="vision-project" style="color:var(--blue);font-size:10px;margin-left:4px"></span></h3>
+        <div id="vision-mission" style="font-size:11px;color:var(--fg);padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:6px"></div>
+        <div id="vision-goals"></div>
+      </div>
+      <div class="card">
+        <h3>Vision Changes</h3>
+        <div id="vision-changes"></div>
+      </div>
+    </div>
+
     <div id="sprint-section"></div>
     <div class="burndown-wrap" id="burndown-section" style="display:none">
       <div class="card"><h3>Sprint Burndown</h3><canvas id="burndown-chart" width="700" height="140"></canvas></div>
@@ -1218,13 +1231,93 @@ async function renderInfra(){
   </div>`;
 }
 
+// === Vision ===
+async function renderVision(){
+  // Determine which project to show vision for
+  const ws=currentSpace||'all';
+  const section=document.getElementById('vision-section');
+  if(ws==='all'){
+    // Try to load vision list
+    const list=await fetchJSON('/api/vision/list');
+    if(!list||!list.visions||!list.visions.length){section.style.display='none';return;}
+    // Show first vision found
+    await renderVisionProject(list.visions[0].project);
+    return;
+  }
+  await renderVisionProject(ws);
+}
+async function renderVisionProject(project){
+  const section=document.getElementById('vision-section');
+  const d=await fetchJSON(`/api/vision/summary?project=${encodeURIComponent(project)}`);
+  if(!d||d.error){section.style.display='none';return;}
+  section.style.display='';
+  document.getElementById('vision-project').textContent=d.project||project;
+  document.getElementById('vision-mission').textContent=d.mission||'';
+  // Goals
+  const g=d.goals||{};
+  const total=g.total||0;
+  const achieved=g.achieved||0;
+  const inProg=g.in_progress||0;
+  const planned=g.planned||0;
+  const deferred=g.deferred||0;
+  const goalPct=total?Math.round(achieved/total*100):0;
+  let goalsHtml=`<div class="stat-grid" style="margin-bottom:8px">
+    <div class="stat-tile"><div class="val" style="color:var(--green)">${achieved}</div><div class="label">Achieved</div></div>
+    <div class="stat-tile"><div class="val" style="color:var(--blue)">${inProg}</div><div class="label">In Progress</div></div>
+    <div class="stat-tile"><div class="val" style="color:var(--dim)">${planned}</div><div class="label">Planned</div></div>
+    <div class="stat-tile"><div class="val" style="color:var(--orange)">${deferred}</div><div class="label">Deferred</div></div>
+  </div>`;
+  // Active milestones
+  const ms=d.milestones||{};
+  if(ms.active&&ms.active.length){
+    goalsHtml+=`<div style="font-size:10px;color:var(--dim);margin:6px 0 4px;text-transform:uppercase;letter-spacing:.5px">Active Milestones</div>`;
+    for(const m of ms.active){
+      const pct=m.progress||0;
+      const barColor=pct>=80?'var(--green)':pct>=40?'var(--blue)':'var(--orange)';
+      goalsHtml+=`<div style="margin:4px 0">
+        <div style="display:flex;justify-content:space-between;font-size:10px">
+          <span style="color:var(--fg)">${escHtml(m.title)}</span>
+          <span style="color:var(--dim)">${pct}%${m.target?' · '+m.target:''}</span>
+        </div>
+        <div style="height:3px;background:var(--surface2);border-radius:2px;margin-top:2px">
+          <div style="height:100%;width:${pct}%;background:${barColor};border-radius:2px"></div>
+        </div>
+      </div>`;
+    }
+  }
+  // Arch decisions + principles
+  if(d.arch_decisions)goalsHtml+=`<div style="font-size:10px;color:var(--dim);margin-top:8px">${d.arch_decisions} architecture decisions</div>`;
+  if(d.principles&&d.principles.length){
+    goalsHtml+=`<div style="font-size:10px;color:var(--dim);margin-top:4px">Principles: ${d.principles.map(p=>`<span style="color:var(--teal)">${escHtml(p)}</span>`).join(' · ')}</div>`;
+  }
+  if(d.github&&d.github.repo){
+    goalsHtml+=`<div style="font-size:9px;color:var(--dim);margin-top:6px">GitHub: <a href="https://github.com/${d.github.repo}" target="_blank" style="color:var(--blue)">${d.github.repo}</a>${d.github.sync?' · sync on':''}</div>`;
+  }
+  document.getElementById('vision-goals').innerHTML=goalsHtml;
+  // Changes
+  const changes=d.recent_changes||[];
+  if(!changes.length){
+    document.getElementById('vision-changes').innerHTML='<div class="no-data">No changes yet</div>';
+  } else {
+    document.getElementById('vision-changes').innerHTML=changes.map(c=>{
+      const typeColor=c.type==='pivot'?'var(--red)':c.type==='added'?'var(--green)':c.type==='status_change'?'var(--blue)':'var(--orange)';
+      return `<div style="font-size:10px;padding:3px 0;border-bottom:1px solid var(--border)">
+        <span style="color:${typeColor};font-weight:600">${c.type||'?'}</span>
+        <span style="color:var(--dim);margin:0 4px">${c.field||''}</span>
+        <span style="color:var(--fg)">${escHtml(c.reason||'')}</span>
+        <span style="color:var(--dim);font-size:9px;float:right">${(c.time||'').slice(5,10)}</span>
+      </div>`;
+    }).join('');
+  }
+}
+
 // === Refresh ===
 async function refresh(){
   currentSpace=document.getElementById('space-select').value;
   await loadMonitor();
   renderPanes();
   renderLogs();
-  await Promise.all([renderGauges(),renderRoles(),renderQueue(),renderBoard(),renderSprint(),renderDigest(),renderOverview(),renderInfra()]);
+  await Promise.all([renderGauges(),renderRoles(),renderQueue(),renderBoard(),renderSprint(),renderDigest(),renderOverview(),renderInfra(),renderVision()]);
 }
 
 async function init(){

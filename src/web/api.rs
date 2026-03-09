@@ -582,3 +582,81 @@ fn compute_burndown(sprint_id: &str) -> Value {
         "actual": actual,
     })
 }
+
+// === Vision endpoints ===
+
+#[derive(Deserialize, Default)]
+pub struct VisionQuery {
+    pub project: Option<String>,
+    pub path: Option<String>,
+}
+
+fn resolve_project_path(q: &VisionQuery) -> String {
+    if let Some(ref p) = q.path {
+        return p.clone();
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".to_string());
+    if let Some(ref name) = q.project {
+        format!("{}/Projects/{}", home, name)
+    } else {
+        format!("{}/Projects", home)
+    }
+}
+
+/// GET /api/vision?project=NAME — Get vision for a project
+pub async fn get_vision(Query(q): Query<VisionQuery>) -> Json<Value> {
+    let path = resolve_project_path(&q);
+    let result = crate::vision::get_vision(&path);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// GET /api/vision/summary?project=NAME — Dashboard-friendly summary
+pub async fn get_vision_summary(Query(q): Query<VisionQuery>) -> Json<Value> {
+    let path = resolve_project_path(&q);
+    let result = crate::vision::vision_summary(&path);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// GET /api/vision/diff?project=NAME — Recent vision changes
+pub async fn get_vision_diff(Query(q): Query<VisionQuery>) -> Json<Value> {
+    let path = resolve_project_path(&q);
+    let result = crate::vision::vision_diff(&path, 20);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// GET /api/vision/list — All visions across projects
+pub async fn list_visions() -> Json<Value> {
+    let result = crate::vision::list_visions();
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/vision/init — Initialize vision
+pub async fn init_vision(Json(body): Json<Value>) -> Json<Value> {
+    let path = body["path"].as_str().unwrap_or("").to_string();
+    let project = body["project"].as_str().unwrap_or("").to_string();
+    let mission = body["mission"].as_str().unwrap_or("").to_string();
+    let repo = body["repo"].as_str().unwrap_or("").to_string();
+
+    if project.is_empty() || mission.is_empty() {
+        return Json(json!({"error": "project and mission required"}));
+    }
+
+    let project_path = if path.is_empty() {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".to_string());
+        format!("{}/Projects/{}", home, project)
+    } else {
+        path
+    };
+
+    let result = crate::vision::init_vision(&project_path, &project, &mission, &repo);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/vision/sync — Sync vision to GitHub
+pub async fn sync_vision(Json(body): Json<Value>) -> Json<Value> {
+    let project = body["project"].as_str().unwrap_or("").to_string();
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".to_string());
+    let path = format!("{}/Projects/{}", home, project);
+    let result = crate::vision::github_sync(&path);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
