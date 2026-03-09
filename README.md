@@ -1,39 +1,57 @@
-<p align="center">
-  <h1 align="center">This project has moved to DX Terminal</h1>
-</p>
+# DX Terminal
 
-<p align="center">
-  <strong>AgentOS has been rebranded and merged into <a href="https://github.com/pdaxt/dx-terminal">DX Terminal</a>.</strong>
-</p>
+**AI-native terminal multiplexer for AI agent teams.**
 
----
+Monitor, manage, and orchestrate multiple Claude Code agents from one screen. Real-time terminal streaming, task queuing, and 206 MCP tools — all in a single Rust binary.
 
-## DX Terminal
+## Features
 
-The AI-native terminal multiplexer. Monitor, manage, and orchestrate AI coding agents from one screen.
+- **TUI Dashboard** — Ratatui-based operator console with 10 view modes
+- **Web Dashboard** — Real-time WebSocket streaming at `localhost:3100`
+- **206 MCP Tools** — Full agent lifecycle, queue management, project scanning, code auditing
+- **Native PTY** — Direct terminal management, no tmux dependency required
+- **Screen Management** — Dynamic multi-screen layouts (up to 48 panes)
+- **Task Queue** — Priority-based auto-cycling with dependency tracking
+- **MCP Gateway** — Spawn and route micro MCPs on-demand
+- **Project Scanner** — Auto-discover projects with tech stack detection
+- **Real-time Streaming** — Bidirectional WebSocket for live terminal output
 
-**Go to the new repo:** [github.com/pdaxt/dx-terminal](https://github.com/pdaxt/dx-terminal)
-
-### What changed?
-
-AgentOS and TmuxCC were merged into a single product: **DX Terminal** (`dx`).
-
-- Binary: `dx` (was `agentos`)
-- Package: `dx-terminal` (was `agentos`)
-- Native PTY mode (no tmux dependency)
-- Real-time token cost tracking
-- Context window gauges
-- 30k+ lines of Rust, 9.5MB single binary
-
-### Quick start
+## Quick Start
 
 ```bash
-git clone https://github.com/pdaxt/dx-terminal.git
-cd dx-terminal
 cargo build --release
-./target/release/dx
+./target/release/dx          # TUI dashboard (default)
+./target/release/dx web      # Web dashboard only
+./target/release/dx mcp      # MCP server mode (stdio)
 ```
 
----
+## Architecture
 
-This repo is archived. All development continues at [pdaxt/dx-terminal](https://github.com/pdaxt/dx-terminal).
+```
+dx (single binary)
+├── TUI        Ratatui dashboard with keybind-driven navigation
+├── Web        Axum REST + SSE + WebSocket server
+├── MCP        rmcp-based MCP server (206 tools)
+├── PTY        Native pseudo-terminal management
+├── Engine     Background tasks: reaper, retention, health checks
+├── Queue      Priority task queue with auto-cycle
+├── Gateway    Micro MCP spawning and routing
+├── Scanner    Project discovery and tech detection
+└── State      Persistent state with broadcast event bus
+```
+
+## Config
+
+`~/.config/dx-terminal/config.json`
+
+```json
+{
+  "pane_count": 9,
+  "session_name": "dx",
+  "web_port": 3100
+}
+```
+
+## License
+
+MIT

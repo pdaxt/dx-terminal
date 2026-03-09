@@ -732,9 +732,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_audit_full_on_agentos() {
-        // Run full audit on the agentos project itself
-        let result = audit_full("/Users/pran/Projects/agentos");
+    fn test_audit_full_on_dx_terminal() {
+        let result = audit_full(env!("CARGO_MANIFEST_DIR"));
         assert!(result.get("grade").is_some(), "Should return a grade");
         assert!(result.get("total_findings").is_some());
         // Print to stdout for manual review
@@ -742,8 +741,8 @@ mod tests {
     }
 
     #[test]
-    fn test_audit_code_on_agentos() {
-        let result = audit_code("/Users/pran/Projects/agentos");
+    fn test_audit_code_on_dx_terminal() {
+        let result = audit_code(env!("CARGO_MANIFEST_DIR"));
         assert!(result.get("findings").is_some());
         let findings = result["findings"].as_array().unwrap();
         println!("Code audit: {} findings", findings.len());
@@ -757,8 +756,8 @@ mod tests {
     }
 
     #[test]
-    fn test_audit_security_on_agentos() {
-        let result = audit_security("/Users/pran/Projects/agentos");
+    fn test_audit_security_on_dx_terminal() {
+        let result = audit_security(env!("CARGO_MANIFEST_DIR"));
         assert!(result.get("findings").is_some());
         let findings = result["findings"].as_array().unwrap();
         println!("Security audit: {} findings", findings.len());
@@ -773,7 +772,7 @@ mod tests {
 
     #[test]
     fn test_resolve_path_absolute() {
-        let p = resolve_path("/Users/pran/Projects/agentos");
+        let p = resolve_path(env!("CARGO_MANIFEST_DIR"));
         assert!(p.exists());
     }
 }

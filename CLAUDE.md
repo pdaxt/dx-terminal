@@ -67,7 +67,7 @@ src/
 ## Build & Test
 
 ```bash
-cd /Users/pran/Projects/agentos
+cd /Users/pran/Projects/agentos  # TODO: rename directory to dx-terminal
 cargo build --release    # Must pass
 cargo test               # Must pass (16 tests)
 git add -A && git commit -m "<msg>" && git push

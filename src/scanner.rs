@@ -109,7 +109,9 @@ pub fn scan_all() -> ProjectRegistry {
 
 /// Scan a single project directory
 pub fn scan_single(path: &Path) -> Option<ProjectInfo> {
-    let name = path.file_name()?.to_string_lossy().to_string();
+    let dir_name = path.file_name()?.to_string_lossy().to_string();
+    // Prefer package name from manifest over directory name
+    let name = package_name(path).unwrap_or(dir_name);
     let abs_path = path.to_string_lossy().to_string();
 
     let (tech, build_cmd, test_cmd, lint_cmd) = detect_tech(path);
@@ -202,6 +204,35 @@ pub fn project_detail(name: &str) -> Value {
 }
 
 // --- Detection ---
+
+/// Extract package name from Cargo.toml or package.json
+fn package_name(path: &Path) -> Option<String> {
+    // Rust: Cargo.toml [package] name
+    let cargo = path.join("Cargo.toml");
+    if cargo.exists() {
+        if let Ok(content) = std::fs::read_to_string(&cargo) {
+            if let Ok(parsed) = content.parse::<toml::Table>() {
+                if let Some(pkg) = parsed.get("package").and_then(|p| p.as_table()) {
+                    if let Some(name) = pkg.get("name").and_then(|n| n.as_str()) {
+                        return Some(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+    // Node: package.json name
+    let pkg_json = path.join("package.json");
+    if pkg_json.exists() {
+        if let Ok(content) = std::fs::read_to_string(&pkg_json) {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(name) = parsed.get("name").and_then(|n| n.as_str()) {
+                    return Some(name.to_string());
+                }
+            }
+        }
+    }
+    None
+}
 
 fn detect_tech(path: &Path) -> (Vec<String>, Option<String>, Option<String>, Option<String>) {
     let mut tech = Vec::new();
@@ -335,7 +366,12 @@ fn readme_summary(path: &Path) -> Option<String> {
                     .join(" ");
                 if !summary.is_empty() {
                     return Some(if summary.len() > 200 {
-                        format!("{}...", &summary[..197])
+                        let end = summary.char_indices()
+                            .take_while(|&(i, _)| i <= 197)
+                            .last()
+                            .map(|(i, _)| i)
+                            .unwrap_or(0);
+                        format!("{}...", &summary[..end])
                     } else {
                         summary
                     });
@@ -413,10 +449,10 @@ mod tests {
     }
 
     #[test]
-    fn test_scan_agentos_itself() {
+    fn test_scan_dx_terminal_itself() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"));
         if let Some(info) = scan_single(path) {
-            assert_eq!(info.name, "agentos");
+            assert_eq!(info.name, "dx-terminal");
             assert!(info.tech.contains(&"rust".to_string()));
             assert_eq!(info.test_cmd.as_deref(), Some("cargo test"));
             assert_eq!(info.build_cmd.as_deref(), Some("cargo build --release"));

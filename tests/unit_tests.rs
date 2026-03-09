@@ -225,7 +225,7 @@ fn test_capacity_defaults() {
 // Test atomic write pattern doesn't corrupt
 #[test]
 fn test_atomic_write_pattern() {
-    let dir = std::env::temp_dir().join("agentos_test");
+    let dir = std::env::temp_dir().join("dx_terminal_test");
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join("test_atomic.json");
 
@@ -296,7 +296,7 @@ fn test_pipeline_id_serialization() {
     // Construct a QueueTask with pipeline_id set
     let task_json = r#"{
         "id": "t_test_123",
-        "project": "agentos",
+        "project": "dx-terminal",
         "role": "developer",
         "task": "[dev] Add auth",
         "prompt": "Build it",
@@ -376,7 +376,7 @@ fn test_queue_roundtrip_with_pipeline_id() {
         tasks: vec![
             serde_json::from_value(serde_json::json!({
                 "id": "t_1",
-                "project": "agentos",
+                "project": "dx-terminal",
                 "role": "developer",
                 "task": "[dev] Build feature",
                 "prompt": "go",
@@ -398,7 +398,7 @@ fn test_queue_roundtrip_with_pipeline_id() {
             })).unwrap(),
             serde_json::from_value(serde_json::json!({
                 "id": "t_2",
-                "project": "agentos",
+                "project": "dx-terminal",
                 "role": "qa",
                 "task": "[qa] Test feature",
                 "prompt": "test",

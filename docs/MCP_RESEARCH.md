@@ -637,42 +637,42 @@ impl GatewayMCP {
 
 ---
 
-## 11. Next Steps for AgentOS
+## 11. Next Steps for DX Terminal
 
 ### Current State
 
-AgentOS is an MCP server that spawns **Claude agents** (not MCP servers).
+DX Terminal is an MCP server that spawns **Claude agents** (not MCP servers).
 It uses PTY to run `claude` CLI processes.
 
 ### How to Add MCP Composition
 
-**Option A: Embed MCP clients in AgentOS**
-- AgentOS spawns child MCP servers using `TokioChildProcess`
+**Option A: Embed MCP clients in DX Terminal**
+- DX Terminal spawns child MCP servers using `TokioChildProcess`
 - New tools: `mcp_discover`, `mcp_list_available`, `mcp_spawn`, `mcp_call`
-- Agents can discover and use other MCPs through AgentOS
+- Agents can discover and use other MCPs through DX Terminal
 - All in one binary, simpler deployment
 
 **Option B: Separate MCP Gateway**
 - Build new `mcp-gateway` crate
-- AgentOS focuses on agent orchestration
+- DX Terminal focuses on agent orchestration
 - Gateway focuses on MCP composition
 - Clean separation of concerns
 
 **Option C: Hybrid**
-- AgentOS gets basic MCP routing (for agent workflows)
+- DX Terminal gets basic MCP routing (for agent workflows)
 - Separate gateway for advanced features (HTTP, auth, K8s)
 - Best of both worlds
 
 ### Recommendation: Start with Option A
 
-1. Add `src/mcp_gateway.rs` module to AgentOS
+1. Add `src/mcp_gateway.rs` module to DX Terminal
 2. Implement `MCPRegistry` with `TokioChildProcess` spawning
 3. Add MCP tools: `mcp_discover`, `mcp_list`, `mcp_spawn`, `mcp_call`
 4. Load MCP descriptors from `~/.claude.json` or separate config
 5. Agents can now load MCPs on-demand during workflows
 6. Later extract to separate crate if scalability demands
 
-**Rationale:** Aligns with AgentOS mission to orchestrate AI workflows with minimal friction. Agents get MCP composition "for free" without extra setup.
+**Rationale:** Aligns with DX Terminal mission to orchestrate AI workflows with minimal friction. Agents get MCP composition "for free" without extra setup.
 
 ---
 
@@ -703,8 +703,8 @@ It uses PTY to run `claude` CLI processes.
 ## Appendix: Example Code Locations
 
 - **rmcp source:** `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-0.15.0/`
-- **AgentOS MCP implementation:** `/Users/pran/Projects/agentos/src/mcp/mod.rs`
-- **AgentOS uses rmcp v0.15.0** with features: `server`, `transport-io`, `macros`
+- **DX Terminal MCP implementation:** `/Users/pran/Projects/dx-terminal/src/mcp/mod.rs`
+- **DX Terminal uses rmcp v0.15.0** with features: `server`, `transport-io`, `macros`
 
 **Key rmcp files:**
 - `src/transport/child_process.rs` - TokioChildProcess for spawning
@@ -718,6 +718,6 @@ It uses PTY to run `claude` CLI processes.
 
 MCP composition is mature and well-supported in 2026. Multiple production-ready patterns exist for building modular AI applications where MCPs are lego blocks.
 
-**For AgentOS:** Adding basic MCP gateway capabilities enables agents to dynamically load tools based on their tasks, making the system more autonomous and capable.
+**For DX Terminal:** Adding basic MCP gateway capabilities enables agents to dynamically load tools based on their tasks, making the system more autonomous and capable.
 
-**Next:** Implement `MCPRegistry` + `mcp_discover/spawn/call` tools in AgentOS.
+**Next:** Implement `MCPRegistry` + `mcp_discover/spawn/call` tools in DX Terminal.

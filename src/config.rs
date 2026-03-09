@@ -204,17 +204,7 @@ pub fn dx_root() -> PathBuf {
     if let Ok(root) = std::env::var("DX_ROOT") {
         return PathBuf::from(root);
     }
-    // Also check legacy env var for backward compatibility
-    if let Ok(root) = std::env::var("AGENTOS_ROOT") {
-        return PathBuf::from(root);
-    }
-    let new_path = home_dir().join(".config").join("dx-terminal");
-    let old_path = home_dir().join(".config").join("agentos");
-    // Migration: if old path exists and new path does not, create a symlink
-    if old_path.exists() && !new_path.exists() {
-        let _ = std::os::unix::fs::symlink(&old_path, &new_path);
-    }
-    new_path
+    home_dir().join(".config").join("dx-terminal")
 }
 
 pub fn capacity_root() -> PathBuf {
