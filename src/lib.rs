@@ -24,3 +24,4 @@ pub mod audit;
 pub mod factory;
 pub mod screen;
 pub mod tmux;
+pub mod session_stream;

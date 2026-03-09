@@ -272,7 +272,14 @@ select:hover{border-color:var(--border-bright)}
 .btn-blue{background:rgba(77,166,255,.15);color:var(--blue)}.btn-blue:hover{background:rgba(77,166,255,.25)}
 .btn-green{background:rgba(68,217,140,.15);color:var(--green)}.btn-green:hover{background:rgba(68,217,140,.25)}
 .terminal-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.chat-log{overflow-y:auto;padding:8px 14px;max-height:40%;border-bottom:1px solid var(--border)}
+.panel-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);background:var(--surface2);flex-shrink:0}
+.ptab{padding:6px 16px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;border:none;background:none;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;font-family:var(--mono);transition:var(--transition)}
+.ptab:hover{color:var(--fg)}
+.ptab.active{color:var(--blue);border-bottom-color:var(--blue)}
+.tab-content{display:none;flex:1;overflow-y:auto;flex-direction:column}
+.tab-content.active{display:flex}
+#session-log{flex:1;overflow-y:auto;padding:8px 10px;font-size:11px}
+.chat-log{overflow-y:auto;padding:8px 14px;flex:1}
 .chat-log:empty{display:none}
 .chat-log::-webkit-scrollbar{width:5px}
 .chat-log::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
@@ -286,6 +293,24 @@ select:hover{border-color:var(--border-bright)}
 .chat-quick{display:flex;gap:4px;padding:4px 14px;border-bottom:1px solid var(--border);background:var(--surface2);flex-wrap:wrap}
 .chat-quick button{font-size:9px;padding:2px 8px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;font-family:var(--mono);transition:var(--transition)}
 .chat-quick button:hover{border-color:var(--blue);color:var(--blue);background:rgba(77,166,255,.08)}
+#session-log::-webkit-scrollbar{width:5px}
+#session-log::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+.sev{padding:4px 6px;margin-bottom:3px;border-radius:4px;font-family:var(--mono);line-height:1.4;animation:slideIn .15s ease}
+.sev-tool{background:rgba(77,166,255,.08);border-left:3px solid var(--blue);display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.sev-icon{font-size:12px}
+.sev-name{color:var(--blue);font-weight:600;font-size:10px}
+.sev-ts{color:var(--dim);font-size:8px;margin-left:auto}
+.sev-detail{width:100%;color:var(--muted);font-size:10px;padding-left:18px}
+.sev-result{background:rgba(68,217,140,.05);border-left:3px solid rgba(68,217,140,.3)}
+.sev-output{margin:0;font-size:9px;color:var(--muted);max-height:80px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+.sev-text{padding:6px 8px}
+.sev-assistant{background:rgba(176,122,255,.06);border-left:3px solid var(--purple)}
+.sev-user{background:rgba(77,166,255,.06);border-left:3px solid var(--blue)}
+.sev-content{color:#c8d6e5;font-size:11px;line-height:1.5}
+.sev-thinking{background:rgba(255,159,67,.06);border-left:3px solid rgba(255,159,67,.4);font-size:10px;color:var(--muted)}
+.sev-bash{background:rgba(0,0,0,.3);border-left:3px solid var(--green)}
+.sev-cost{color:var(--yellow);font-size:9px;text-align:right;padding:2px 6px}
+.sev-waiting{color:var(--dim);font-size:10px;font-style:italic}
 .terminal{
   flex:1;overflow-y:auto;padding:12px 14px;
   font-family:var(--mono);font-size:11px;line-height:1.6;
@@ -470,15 +495,27 @@ canvas{width:100%;display:block}
     <div class="panel-meta" id="panel-meta"></div>
     <div class="panel-actions" id="panel-actions"></div>
     <div class="terminal-wrap">
-      <div class="chat-log" id="chat-log"></div>
-      <div class="chat-quick" id="chat-quick">
-        <button onclick="quickTalk('continue')">continue</button>
-        <button onclick="quickTalk('status')">status</button>
-        <button onclick="quickTalk('yes')">yes</button>
-        <button onclick="quickTalk('no')">no</button>
-        <button onclick="quickTalk('/compact')">compact</button>
+      <div class="panel-tabs" id="panel-tabs">
+        <button class="ptab active" data-tab="session" onclick="switchTab('session')">Session</button>
+        <button class="ptab" data-tab="terminal" onclick="switchTab('terminal')">Terminal</button>
+        <button class="ptab" data-tab="chat" onclick="switchTab('chat')">Chat</button>
       </div>
-      <div class="terminal" id="panel-terminal"></div>
+      <div class="tab-content tab-session active" id="tab-session">
+        <div id="session-log"></div>
+      </div>
+      <div class="tab-content tab-terminal" id="tab-terminal">
+        <div class="terminal" id="panel-terminal"></div>
+      </div>
+      <div class="tab-content tab-chat" id="tab-chat">
+        <div class="chat-log" id="chat-log"></div>
+        <div class="chat-quick" id="chat-quick">
+          <button onclick="quickTalk('continue')">continue</button>
+          <button onclick="quickTalk('status')">status</button>
+          <button onclick="quickTalk('yes')">yes</button>
+          <button onclick="quickTalk('no')">no</button>
+          <button onclick="quickTalk('/compact')">compact</button>
+        </div>
+      </div>
     </div>
     <div class="talk-bar">
       <input class="talk-input" id="talk-input" placeholder="Send message to agent..." onkeydown="talkKeydown(event)">
@@ -503,6 +540,8 @@ let pollTimer=null;
 let ws=null;
 let wsState=null;
 let paneOutputs={};
+let paneEvents={};   // Structured JSONL events per pane
+let paneSessionInfo={}; // session_id, jsonl_path, cwd per pane
 let activePaneNum=null;
 
 // === Theme colors per pane (fallback; overridden by API theme_color) ===
@@ -705,8 +744,15 @@ function openPanel(paneNum){
   term.textContent=output;
   term.scrollTop=term.scrollHeight;
 
+  // Render session events (structured JSONL)
+  renderSessionLog(paneNum);
+
   // Render chat history for this pane
   renderChatLog(paneNum);
+
+  // Default to session tab if events exist, otherwise terminal
+  const hasEvents=(paneEvents[paneNum]||[]).length>0;
+  switchTab(hasEvents?'session':'terminal');
 
   // Focus the talk input
   setTimeout(()=>{const inp=document.getElementById('talk-input');if(inp)inp.focus()},100);
@@ -720,6 +766,11 @@ function closePanel(){
   document.getElementById('app').classList.remove('has-panel');
   document.getElementById('panel').style.display='none';
   renderPanes();
+}
+
+function switchTab(tab){
+  document.querySelectorAll('.ptab').forEach(b=>{b.classList.toggle('active',b.dataset.tab===tab)});
+  document.querySelectorAll('.tab-content').forEach(c=>{c.classList.toggle('active',c.id==='tab-'+tab)});
 }
 
 let chatHistories={};
@@ -776,6 +827,38 @@ function renderChatLog(pane){
       <div class="chat-bubble">${escHtml(m.text)}</div>
       ${m.type!=='user'?`<span class="chat-ts">${m.ts}</span>`:''}
     </div>`).join('');
+  el.scrollTop=el.scrollHeight;
+}
+
+function renderSessionLog(pane){
+  const el=document.getElementById('session-log');
+  if(!el)return;
+  const events=paneEvents[pane]||[];
+  if(!events.length){el.innerHTML='<div style="color:var(--dim);padding:8px">No session events yet</div>';return;}
+  el.innerHTML=events.map(ev=>{
+    const ts=ev.timestamp?new Date(ev.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'';
+    switch(ev.kind){
+      case 'tool_use':
+        const icon=ev.tool==='Bash'?'$':ev.tool==='Read'?'📖':ev.tool==='Write'?'✏️':ev.tool==='Edit'?'🔧':ev.tool==='Grep'?'🔍':ev.tool==='Agent'?'🤖':'⚡';
+        return `<div class="sev sev-tool"><span class="sev-icon">${icon}</span><span class="sev-name">${escHtml(ev.tool||'')}</span><span class="sev-ts">${ts}</span><div class="sev-detail">${escHtml(ev.text||'')}</div></div>`;
+      case 'tool_result':
+        const txt=(ev.text||'').slice(0,300);
+        return `<div class="sev sev-result"><pre class="sev-output">${escHtml(txt)}</pre></div>`;
+      case 'text':
+        const role=ev.role||'assistant';
+        return `<div class="sev sev-text sev-${role}"><span class="sev-ts">${ts}</span><div class="sev-content">${escHtml(ev.text||'')}</div></div>`;
+      case 'thinking':
+        return `<div class="sev sev-thinking"><span class="sev-ts">${ts}</span><div class="sev-content">💭 ${escHtml((ev.text||'').slice(0,200))}</div></div>`;
+      case 'bash_output':
+        return `<div class="sev sev-bash"><pre class="sev-output">${escHtml((ev.text||'').slice(0,300))}</pre></div>`;
+      case 'result':
+        return `<div class="sev sev-cost">💰 $${(ev.cost_usd||0).toFixed(4)} · ${ev.tokens_in||0}in/${ev.tokens_out||0}out</div>`;
+      case 'waiting':
+        return `<div class="sev sev-waiting">⏳ ${escHtml(ev.text||'Waiting...')}</div>`;
+      default:
+        return `<div class="sev">${ev.kind}: ${escHtml(ev.text||'')}</div>`;
+    }
+  }).join('');
   el.scrollTop=el.scrollHeight;
 }
 
@@ -934,7 +1017,11 @@ function handleWSMessage(msg){
   switch(msg.type){
     case 'init':
       wsState=msg.data;
-      for(const p of wsState.panes||[]){if(p.output)paneOutputs[p.pane]=p.output;}
+      for(const p of wsState.panes||[]){
+        if(p.output)paneOutputs[p.pane]=p.output;
+        if(p.events&&p.events.length)paneEvents[p.pane]=p.events;
+        if(p.session_id)paneSessionInfo[p.pane]={session_id:p.session_id,jsonl_path:p.jsonl_path,cwd:p.cwd};
+      }
       renderPanes();renderGauges();
       break;
     case 'terminal_output':
@@ -976,6 +1063,14 @@ function handleWSMessage(msg){
           addChatMsg(msg.result.pane||activePaneNum,'error',msg.result.error);
         } else if(msg.result.status==='sent'){
           addChatMsg(msg.result.pane,'system','Message delivered to agent');
+        }
+      }
+      break;
+    case 'session_events':
+      for(const u of msg.updates||[]){
+        paneEvents[u.pane]=u.events; // Replace with latest N events
+        if(activePaneNum===u.pane){
+          renderSessionLog(u.pane);
         }
       }
       break;

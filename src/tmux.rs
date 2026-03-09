@@ -248,7 +248,7 @@ pub fn list_windows() -> Vec<(u32, String, bool)> {
 }
 
 /// A live tmux pane running Claude (discovered from any session).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct LivePane {
     /// Full tmux target (e.g., "dx-build:1.1")
     pub target: String,
@@ -262,40 +262,50 @@ pub struct LivePane {
     pub window_name: String,
     /// Process running in the pane (e.g., "claude")
     pub command: String,
+    /// Working directory of the pane
+    pub cwd: String,
+    /// Shell PID of the pane
+    pub pid: u32,
+    /// Resolved JSONL session file (if found)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jsonl_path: Option<String>,
+    /// Session ID from the JSONL file
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
 }
 
 /// Discover all tmux panes running Claude across all sessions.
 /// Returns them ordered by session, window, pane.
+/// Also resolves each pane's working directory and JSONL session file.
 pub fn discover_live_panes() -> Vec<LivePane> {
-    // List all panes across all sessions
     let output = Command::new("tmux")
         .args([
             "list-panes", "-a", "-F",
-            "#{session_name}|#{window_index}|#{pane_index}|#{window_name}|#{pane_current_command}"
+            "#{session_name}|#{window_index}|#{pane_index}|#{window_name}|#{pane_current_command}|#{pane_current_path}|#{pane_pid}"
         ])
         .output();
 
-    match output {
+    let mut panes: Vec<LivePane> = match output {
         Ok(o) if o.status.success() => {
             String::from_utf8_lossy(&o.stdout)
                 .lines()
                 .filter_map(|line| {
-                    let parts: Vec<&str> = line.splitn(5, '|').collect();
-                    if parts.len() >= 5 {
+                    let parts: Vec<&str> = line.splitn(7, '|').collect();
+                    if parts.len() >= 7 {
                         let session = parts[0].to_string();
                         let window: u32 = parts[1].parse().ok()?;
                         let pane_idx: u32 = parts[2].parse().ok()?;
                         let window_name = parts[3].to_string();
                         let command = parts[4].to_string();
-                        // Only include panes running claude
+                        let cwd = parts[5].to_string();
+                        let pid: u32 = parts[6].parse().unwrap_or(0);
                         if command == "claude" || command == "node" {
                             Some(LivePane {
                                 target: format!("{}:{}.{}", session, window, pane_idx),
-                                session,
-                                window,
-                                pane_idx,
-                                window_name,
-                                command,
+                                session, window, pane_idx, window_name, command,
+                                cwd, pid,
+                                jsonl_path: None,
+                                session_id: None,
                             })
                         } else {
                             None
@@ -307,7 +317,105 @@ pub fn discover_live_panes() -> Vec<LivePane> {
                 .collect()
         }
         _ => vec![],
+    };
+
+    // Resolve JSONL session files for each pane
+    resolve_jsonl_sessions(&mut panes);
+    panes
+}
+
+/// Map each live pane to its Claude JSONL session file.
+/// Uses cwd matching + most-recently-modified heuristic.
+fn resolve_jsonl_sessions(panes: &mut [LivePane]) {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".into());
+    let projects_dir = format!("{}/.claude/projects", home);
+
+    // Scan all JSONL files modified in last 2 hours
+    let cutoff = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()
+        .saturating_sub(7200);
+
+    // Build index: project_dir_key -> Vec<(jsonl_path, session_id, cwd, mtime)>
+    let mut jsonl_index: Vec<(String, String, String, u64)> = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(&projects_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            // Skip subdirectories (subagents, etc.) — only top-level dirs
+            if path.is_dir() {
+                // Scan JSONL files inside project dir
+                if let Ok(files) = std::fs::read_dir(&path) {
+                    for f in files.flatten() {
+                        let fp = f.path();
+                        if fp.extension().map(|e| e == "jsonl").unwrap_or(false)
+                            && !fp.to_string_lossy().contains("/subagents/")
+                        {
+                            if let Ok(meta) = fp.metadata() {
+                                let mtime = meta.modified().ok()
+                                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                                    .map(|d| d.as_secs()).unwrap_or(0);
+                                if mtime > cutoff {
+                                    // Read first line for sessionId and cwd
+                                    if let Some((sid, cwd)) = read_jsonl_header(&fp) {
+                                        jsonl_index.push((
+                                            fp.to_string_lossy().to_string(),
+                                            sid, cwd, mtime,
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if path.extension().map(|e| e == "jsonl").unwrap_or(false) {
+                // Top-level JSONL file
+                if let Ok(meta) = path.metadata() {
+                    let mtime = meta.modified().ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs()).unwrap_or(0);
+                    if mtime > cutoff {
+                        if let Some((sid, cwd)) = read_jsonl_header(&path) {
+                            jsonl_index.push((
+                                path.to_string_lossy().to_string(),
+                                sid, cwd, mtime,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
     }
+
+    // Sort by mtime descending (most recent first)
+    jsonl_index.sort_by(|a, b| b.3.cmp(&a.3));
+
+    // Match each pane to a JSONL file by cwd
+    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for pane in panes.iter_mut() {
+        for (jpath, sid, cwd, _mtime) in &jsonl_index {
+            if used.contains(jpath) { continue; }
+            // Match: pane cwd starts with jsonl cwd or vice versa
+            if pane.cwd == *cwd || pane.cwd.starts_with(cwd) || cwd.starts_with(&pane.cwd) {
+                pane.jsonl_path = Some(jpath.clone());
+                pane.session_id = Some(sid.clone());
+                used.insert(jpath.clone());
+                break;
+            }
+        }
+    }
+}
+
+/// Read the first line of a JSONL file to extract sessionId and cwd.
+fn read_jsonl_header(path: &std::path::Path) -> Option<(String, String)> {
+    use std::io::BufRead;
+    let f = std::fs::File::open(path).ok()?;
+    let mut reader = std::io::BufReader::new(f);
+    let mut line = String::new();
+    reader.read_line(&mut line).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&line).ok()?;
+    let sid = v.get("sessionId")?.as_str()?.to_string();
+    let cwd = v.get("cwd")?.as_str()?.to_string();
+    Some((sid, cwd))
 }
 
 /// Capture output from a tmux pane — extended version with more lines for live view.

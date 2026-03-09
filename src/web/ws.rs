@@ -16,6 +16,7 @@ use tokio::sync::broadcast;
 use crate::app::App;
 use crate::state::events::StateEvent;
 use crate::tmux;
+use crate::session_stream;
 use crate::mcp::{tools, types};
 
 type AppState = Arc<App>;
@@ -172,6 +173,23 @@ async fn build_full_snapshot(app: &App) -> Value {
             "AG".to_string()  // Agent
         };
 
+        // JSONL session info
+        let (jsonl_path, session_id) = if let Some(lp) = live {
+            (lp.jsonl_path.clone(), lp.session_id.clone())
+        } else {
+            (None, None)
+        };
+
+        // Get last 20 structured events from JSONL
+        let session_events = if let Some(ref jp) = jsonl_path {
+            let jp_clone = jp.clone();
+            tokio::task::spawn_blocking(move || {
+                session_stream::tail_session_events(&jp_clone, 20)
+            }).await.unwrap_or_default()
+        } else {
+            vec![]
+        };
+
         panes.push(json!({
             "pane": pane_num,
             "theme": themes[theme_idx].0,
@@ -183,6 +201,10 @@ async fn build_full_snapshot(app: &App) -> Value {
             "line_count": line_vec.len(),
             "tmux_target": tmux_target,
             "live": live.is_some(),
+            "jsonl_path": jsonl_path,
+            "session_id": session_id,
+            "events": session_events,
+            "cwd": live.map(|l| l.cwd.clone()),
         }));
     }
 
@@ -364,6 +386,50 @@ async fn poll_terminal_output(
             let mut s = sender.lock().await;
             if s.send(Message::Text(msg.to_string().into())).await.is_err() {
                 break;
+            }
+        }
+
+        // --- JSONL session event streaming ---
+        // Build pane→jsonl mapping from live panes
+        let mut jsonl_polls: Vec<(u8, String)> = Vec::new();
+        for (idx, lp) in live_panes.iter().enumerate() {
+            if let Some(ref jp) = lp.jsonl_path {
+                let pane_num = if idx < max_panes as usize {
+                    (idx + 1) as u8
+                } else {
+                    max_panes + 1 + idx as u8
+                };
+                jsonl_polls.push((pane_num, jp.clone()));
+            }
+        }
+
+        if !jsonl_polls.is_empty() {
+            // Poll new JSONL events (use a static-ish tailer per connection)
+            // For simplicity, we re-read last 5 events each cycle
+            // (SessionTailer would be better but needs persistent state)
+            let session_updates: Vec<Value> = tokio::task::spawn_blocking(move || {
+                let mut results = Vec::new();
+                for (pane_num, jp) in &jsonl_polls {
+                    let events = session_stream::tail_session_events(jp, 5);
+                    if !events.is_empty() {
+                        results.push(json!({
+                            "pane": pane_num,
+                            "events": events,
+                        }));
+                    }
+                }
+                results
+            }).await.unwrap_or_default();
+
+            if !session_updates.is_empty() {
+                let msg = json!({
+                    "type": "session_events",
+                    "updates": session_updates,
+                });
+                let mut s = sender.lock().await;
+                if s.send(Message::Text(msg.to_string().into())).await.is_err() {
+                    break;
+                }
             }
         }
     }
