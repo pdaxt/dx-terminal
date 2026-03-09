@@ -33,3 +33,18 @@ logs/
 
 # Debug files
 *.dSYM/
+demo/agent-plain.txt
+demo/agent-selected-full.html
+demo/agent-selected.ansi
+demo/agent-selected.html
+demo/dashboard-full.html
+demo/dashboard.ansi
+demo/demo-full.cast
+demo/demo-raw.cast
+demo/demo.cast
+demo/demo.gif
+demo/help-full.html
+demo/help.ansi
+demo/main-view-full.html
+demo/main-view.ansi
+demo/main-view.html
