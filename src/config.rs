@@ -144,6 +144,11 @@ pub fn theme_fg(pane: u8) -> &'static str {
     get().theme_fg(pane)
 }
 
+/// Get all theme entries (name, fg_color). Uses the static default palette for cycling.
+pub fn all_themes() -> &'static [(&'static str, &'static str)] {
+    DEFAULT_THEMES
+}
+
 pub fn pane_count() -> u8 {
     get().pane_count
 }

@@ -572,7 +572,9 @@ async function renderGauges(){
   const d=await fetchJSON(`/api/capacity/dashboard?space=${currentSpace}`);
   const sm=monitorData?monitorData.summary:{active:0};
   const q=monitorData?monitorData.queue:{pending:0,running:0};
-  const total=sm.total||9;const active=sm.active||0;
+  const total=wsState&&wsState.total_panes?wsState.total_panes:(sm.total||9);
+  const liveDisc=wsState?wsState.live_discovered||0:0;
+  const active=liveDisc||sm.active||0;
   const acuPct=d?Math.min(d.acu_pct,100):0;
   const revPct=d?Math.min(d.reviews_pct||0,100):0;
   const wsOk=ws&&ws.readyState===1;
@@ -608,7 +610,7 @@ function renderPanes(){
   let activeCount=0;let html='';
   for(const p of src){
     const sp=getStatusPane(p.pane); // extra fields from /api/status
-    const isActive=p.status==='active'||(sp&&sp.running);
+    const isActive=p.status==='active'||p.live||(sp&&sp.running);
     const hasProject=p.project&&p.project!=='--';
     const color=paneColor(p.pane);
     const preview=paneOutputs[p.pane];
@@ -647,7 +649,7 @@ function renderPanes(){
           <span class="badge b-lines" id="pane-lines-${p.pane}">${p.line_count||p.lines||0}L</span>
           ${runtime?`<span class="badge b-runtime">${runtime}</span>`:''}
           ${sp&&sp.acu?`<span class="badge" style="background:rgba(176,122,255,.1);color:var(--purple)">${sp.acu} ACU</span>`:''}
-          ${isActive?'<span class="badge b-live">LIVE</span>':''}
+          ${isActive||p.live?'<span class="badge b-live">LIVE</span>':''}
           ${h==='error'?'<span class="badge b-err">ERR</span>':''}
           ${h==='done'?'<span class="badge b-done">DONE</span>':''}
           ${sp&&sp.workspace?'<span class="badge" style="background:rgba(61,214,208,.1);color:var(--teal)">WT</span>':''}
@@ -691,6 +693,7 @@ function openPanel(paneNum){
     <div><dt>ACU</dt><dd>${sp?sp.acu||0:0}</dd></div>
     <div><dt>Space</dt><dd>${sp&&sp.space?sp.space:'--'}</dd></div>
     <div><dt>Issue</dt><dd>${sp&&sp.issue_id?sp.issue_id:'--'}</dd></div>
+    <div><dt>Target</dt><dd style="font-family:monospace;font-size:9px">${p&&p.tmux_target?p.tmux_target:'--'}</dd></div>
     <div style="grid-column:1/-1"><dt>Task</dt><dd style="max-width:380px;white-space:normal;font-size:10px">${p?p.task||'--':'--'}</dd></div>`;
 
   document.getElementById('panel-actions').innerHTML=`
