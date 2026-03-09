@@ -47,6 +47,13 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/analytics/quality", get(api::get_analytics_quality))
         .route("/api/analytics/leaderboard", get(api::get_analytics_leaderboard))
         .route("/api/analytics/overview", get(api::get_analytics_overview))
+        // Vision
+        .route("/api/vision", get(api::get_vision))
+        .route("/api/vision/summary", get(api::get_vision_summary))
+        .route("/api/vision/diff", get(api::get_vision_diff))
+        .route("/api/vision/list", get(api::list_visions))
+        .route("/api/vision/init", post(api::init_vision))
+        .route("/api/vision/sync", post(api::sync_vision))
         // SSE events
         .route("/api/events", get(sse::event_stream))
         // WebSocket — real-time bidirectional
