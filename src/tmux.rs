@@ -418,6 +418,60 @@ fn read_jsonl_header(path: &std::path::Path) -> Option<(String, String)> {
     Some((sid, cwd))
 }
 
+/// Read the effective project cwd from a JSONL file.
+/// If the header cwd is a generic parent (e.g. ~/Projects), scan tool_use entries
+/// for the most-referenced project subdirectory.
+pub fn read_jsonl_cwd(path: &str) -> Option<String> {
+    use std::io::BufRead;
+    let (_, header_cwd) = read_jsonl_header(std::path::Path::new(path))?;
+
+    // If the cwd already points to a specific project, use it
+    let projects_parent = std::env::var("HOME")
+        .map(|h| format!("{}/Projects", h))
+        .unwrap_or_else(|_| "/Users/pran/Projects".to_string());
+    if header_cwd != projects_parent {
+        return Some(header_cwd);
+    }
+
+    // Header cwd is generic ~/Projects — scan file for most-used project path
+    let prefix = format!("{}/", projects_parent);
+    let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+
+    let f = std::fs::File::open(path).ok()?;
+    let reader = std::io::BufReader::new(f);
+    let mut lines_read = 0usize;
+    for line in reader.lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+        lines_read += 1;
+        if lines_read > 500 { break; } // cap scan to first 500 lines
+
+        // Find all occurrences of /Users/pran/Projects/<name>
+        let mut start = 0;
+        while let Some(pos) = line[start..].find(&prefix) {
+            let abs = start + pos + prefix.len();
+            if abs < line.len() {
+                let rest = &line[abs..];
+                let end = rest.find(|c: char| !c.is_alphanumeric() && c != '-' && c != '_' && c != '.')
+                    .unwrap_or(rest.len());
+                if end > 0 {
+                    let name = &rest[..end];
+                    *counts.entry(name.to_string()).or_insert(0) += 1;
+                }
+            }
+            start = abs;
+        }
+    }
+
+    // Return the most-referenced project, or fall back to header cwd
+    counts.into_iter()
+        .max_by_key(|(_, c)| *c)
+        .map(|(name, _)| format!("{}/{}", projects_parent, name))
+        .or(Some(header_cwd))
+}
+
 /// Capture output from a tmux pane — extended version with more lines for live view.
 pub fn capture_output_extended(target: &str, lines: u32) -> String {
     Command::new("tmux")

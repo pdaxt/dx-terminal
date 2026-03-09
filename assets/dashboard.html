@@ -560,13 +560,24 @@ function updateClock(){
 }
 setInterval(updateClock,1000);updateClock();
 
-// === Spaces ===
-async function loadSpaces(){
+// === Spaces / Workspaces ===
+function updateWorkspaces(workspaces){
   const sel=document.getElementById('space-select');
-  const spaces=await fetchJSON('/api/spaces');
-  if(!spaces||!spaces.length){sel.innerHTML='<option>default</option>';return;}
-  sel.innerHTML=spaces.map(s=>`<option value="${s}">${s}</option>`).join('');
-  currentSpace=spaces[0];sel.value=currentSpace;
+  const prev=sel.value;
+  let opts='<option value="all">All Projects</option>';
+  if(workspaces&&workspaces.length){
+    opts+=workspaces.map(s=>`<option value="${s}">${s}</option>`).join('');
+  }
+  sel.innerHTML=opts;
+  // Restore previous selection if still valid
+  if(prev&&[...sel.options].some(o=>o.value===prev)){sel.value=prev;currentSpace=prev;}
+  else{sel.value='all';currentSpace='all';}
+}
+async function loadSpaces(){
+  // Initial load from API, will be overridden by WS workspaces
+  const sel=document.getElementById('space-select');
+  sel.innerHTML='<option value="all">All Projects</option>';
+  currentSpace='all';
 }
 
 // === Monitor + Status + Alerts ===
@@ -643,8 +654,11 @@ function getStatusPane(paneNum){
   return statusData&&statusData.panes?statusData.panes.find(p=>p.pane===paneNum):null;
 }
 function renderPanes(){
-  const src=wsState?wsState.panes:(monitorData?monitorData.panes:null);
-  if(!src)return;
+  const allPanes=wsState?wsState.panes:(monitorData?monitorData.panes:null);
+  if(!allPanes)return;
+  // Filter by workspace
+  const ws=currentSpace||'all';
+  const src=ws==='all'?allPanes:allPanes.filter(p=>p.project===ws||(!p.project||p.project==='--'));
   const el=document.getElementById('panes');
   let activeCount=0;let html='';
   for(const p of src){
@@ -1038,6 +1052,7 @@ function handleWSMessage(msg){
         if(p.events&&p.events.length)paneEvents[p.pane]=p.events;
         if(p.session_id)paneSessionInfo[p.pane]={session_id:p.session_id,jsonl_path:p.jsonl_path,cwd:p.cwd};
       }
+      updateWorkspaces(wsState.workspaces);
       renderPanes();renderGauges();
       break;
     case 'terminal_output':

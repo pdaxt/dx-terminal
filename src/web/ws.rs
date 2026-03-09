@@ -150,10 +150,25 @@ async fn build_full_snapshot(app: &App) -> Value {
             if let Some(ref p) = ps { p.status.as_str() } else { "idle" }
         };
 
-        let project = if let Some(ref p) = ps {
+        // Project: prefer JSONL cwd (most accurate), then tmux cwd, then state
+        let project = if let Some(lp) = live {
+            // If we have a JSONL session, its cwd might be more specific
+            if let Some(ref jp) = lp.jsonl_path {
+                // Read the JSONL header cwd (session start dir)
+                let jp_clone = jp.clone();
+                let jsonl_cwd = tokio::task::spawn_blocking(move || {
+                    crate::tmux::read_jsonl_cwd(&jp_clone)
+                }).await.unwrap_or(None);
+                if let Some(jcwd) = jsonl_cwd {
+                    project_from_cwd(&jcwd)
+                } else {
+                    project_from_cwd(&lp.cwd)
+                }
+            } else {
+                project_from_cwd(&lp.cwd)
+            }
+        } else if let Some(ref p) = ps {
             p.project.clone()
-        } else if let Some(lp) = live {
-            format!("{}/{}", lp.session, lp.window_name)
         } else {
             "--".to_string()
         };
@@ -229,6 +244,15 @@ async fn build_full_snapshot(app: &App) -> Value {
 
     let active_count = panes.iter().filter(|p| p["status"] == "active").count();
 
+    // Collect unique workspaces from all panes
+    let mut workspaces: Vec<String> = panes.iter()
+        .filter_map(|p| p["project"].as_str())
+        .filter(|s| *s != "--")
+        .map(|s| s.to_string())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter().collect();
+    workspaces.sort();
+
     json!({
         "panes": panes,
         "queue": queue_summary,
@@ -236,7 +260,20 @@ async fn build_full_snapshot(app: &App) -> Value {
         "active_count": active_count,
         "total_panes": total_panes,
         "live_discovered": live_panes.len(),
+        "workspaces": workspaces,
     })
+}
+
+/// Extract project name from a working directory path.
+/// e.g. "/Users/pran/Projects/dataxlr8-workspace" → "dataxlr8-workspace"
+/// e.g. "/Users/pran/Projects" → "Projects"
+fn project_from_cwd(cwd: &str) -> String {
+    let path = std::path::Path::new(cwd);
+    // If it's a direct child of ~/Projects, use the folder name
+    // If it IS ~/Projects, use "Projects" (root workspace)
+    path.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| cwd.to_string())
 }
 
 /// Forward state events from EventBus → WebSocket
