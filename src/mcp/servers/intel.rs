@@ -412,6 +412,8 @@ impl ServerHandler for DxIntelService {
 }
 
 pub async fn run(app: Arc<App>) -> anyhow::Result<()> {
+    // Red banner for intel server
+    eprintln!("\x1b[31m━━━ DX Intel ━━━ 49 tools ━━━\x1b[0m");
     tracing::info!("Starting intel MCP server (49 tools)");
     let server = DxIntelService::new(app);
     let service = server.serve(stdio()).await.inspect_err(|e| {

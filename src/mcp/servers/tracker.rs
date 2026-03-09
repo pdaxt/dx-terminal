@@ -343,6 +343,8 @@ impl ServerHandler for DxTrackerService {
 }
 
 pub async fn run(app: Arc<App>) -> anyhow::Result<()> {
+    // Yellow banner for tracker server
+    eprintln!("\x1b[33m━━━ DX Tracker ━━━ 32 tools ━━━\x1b[0m");
     tracing::info!("Starting tracker MCP server (32 tools)");
     let server = DxTrackerService::new(app);
     let service = server.serve(stdio()).await.inspect_err(|e| {

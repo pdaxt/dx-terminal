@@ -518,6 +518,8 @@ impl ServerHandler for DxCoordService {
 }
 
 pub async fn run(app: Arc<App>) -> anyhow::Result<()> {
+    // Magenta banner for coord server
+    eprintln!("\x1b[35m━━━ DX Coord ━━━ 53 tools ━━━\x1b[0m");
     tracing::info!("Starting coord MCP server (53 tools)");
     let server = DxCoordService::new(app);
     let service = server.serve(stdio()).await.inspect_err(|e| {

@@ -427,6 +427,8 @@ impl ServerHandler for DxCoreService {
 }
 
 pub async fn run(app: Arc<App>) -> anyhow::Result<()> {
+    // Cyan banner for core server
+    eprintln!("\x1b[36m━━━ DX Core ━━━ 43 tools ━━━\x1b[0m");
     tracing::info!("Starting core MCP server (43 tools)");
     let server = DxCoreService::new(app);
     let service = server.serve(stdio()).await.inspect_err(|e| {

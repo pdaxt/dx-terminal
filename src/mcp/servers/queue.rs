@@ -312,6 +312,8 @@ impl ServerHandler for DxQueueService {
 }
 
 pub async fn run(app: Arc<App>) -> anyhow::Result<()> {
+    // Green banner for queue server
+    eprintln!("\x1b[32m━━━ DX Queue ━━━ 29 tools ━━━\x1b[0m");
     tracing::info!("Starting queue MCP server (29 tools)");
     let server = DxQueueService::new(app);
     let service = server.serve(stdio()).await.inspect_err(|e| {
