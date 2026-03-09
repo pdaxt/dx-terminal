@@ -851,7 +851,13 @@ function closeModal(){
 async function refresh(){
   currentSpace=document.getElementById('space-select').value;
   await loadMonitor();
-  renderPanesFromMonitor();
+  // If WS is connected and has state, use WS pane rendering (openPaneLive)
+  // Otherwise fall back to HTTP monitor rendering (openPaneWatch)
+  if(wsState&&ws&&ws.readyState===WebSocket.OPEN){
+    renderPanesFromWS();
+  } else {
+    renderPanesFromMonitor();
+  }
   renderLogsFromMonitor();
   await Promise.all([renderGauges(),renderRoles(),renderQueue(),renderBoard(),renderSprint()]);
 }

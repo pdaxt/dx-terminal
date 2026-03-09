@@ -88,7 +88,8 @@ async fn handle_socket(socket: WebSocket, app: Arc<App>) {
 
 /// Build complete state snapshot for initial connection
 async fn build_full_snapshot(app: &App) -> Value {
-    let state = app.state.blocking_read();
+    // Use async state read instead of blocking_read()
+    let state = app.state.get_state_snapshot().await;
     let max_panes = crate::config::pane_count();
 
     let mut panes = Vec::new();
@@ -96,8 +97,12 @@ async fn build_full_snapshot(app: &App) -> Value {
         let ps = state.panes.get(&i.to_string());
         let tmux_target = format!("claude6:{}.{}", (i - 1) / 3, (i - 1) % 3);
 
-        // Capture current terminal output
-        let output = tmux::capture_output(&tmux_target);
+        // Capture current terminal output via spawn_blocking (tmux is sync)
+        let target = tmux_target.clone();
+        let output = tokio::task::spawn_blocking(move || {
+            tmux::capture_output(&target)
+        }).await.unwrap_or_default();
+
         let lines: Vec<&str> = output.lines().collect();
         let tail: String = lines.iter().rev().take(50).rev()
             .copied().collect::<Vec<&str>>().join("\n");
@@ -200,32 +205,44 @@ async fn poll_terminal_output(
     loop {
         tokio::time::sleep(interval).await;
 
-        let state = app.state.blocking_read();
+        // Use async state read instead of blocking_read()
+        let state = app.state.get_state_snapshot().await;
         let max_panes = crate::config::pane_count();
-        let mut updates = Vec::new();
 
+        // Collect which panes are active and their tmux targets
+        let mut active_panes: Vec<(u8, String)> = Vec::new();
         for i in 1..=max_panes {
             let ps = state.panes.get(&i.to_string());
             let is_active = ps.map(|p| p.status == "active").unwrap_or(false);
-
-            // Only poll active panes to save CPU
-            if !is_active {
-                continue;
+            if is_active {
+                let tmux_target = format!("claude6:{}.{}", (i - 1) / 3, (i - 1) % 3);
+                active_panes.push((i, tmux_target));
             }
+        }
 
-            let tmux_target = format!("claude6:{}.{}", (i - 1) / 3, (i - 1) % 3);
-            let output = tmux::capture_output(&tmux_target);
+        if active_panes.is_empty() {
+            continue;
+        }
 
+        // Capture all active pane outputs via spawn_blocking
+        let captures: Vec<(u8, String)> = tokio::task::spawn_blocking(move || {
+            active_panes.iter().map(|(i, target)| {
+                (*i, tmux::capture_output(target))
+            }).collect()
+        }).await.unwrap_or_default();
+
+        let mut updates = Vec::new();
+        for (i, output) in captures {
             let prev = prev_outputs.get(&i).map(|s| s.as_str()).unwrap_or("");
             if output != prev {
                 // Extract only the new lines (diff)
                 let new_lines = if output.len() > prev.len() && output.starts_with(prev) {
-                    &output[prev.len()..]
+                    output[prev.len()..].to_string()
                 } else {
                     // Output scrolled/changed completely — send last 30 lines
                     let lines: Vec<&str> = output.lines().collect();
                     let tail_start = lines.len().saturating_sub(30);
-                    &output[output.lines().take(tail_start).map(|l| l.len() + 1).sum::<usize>()..]
+                    lines[tail_start..].join("\n")
                 };
 
                 if !new_lines.trim().is_empty() {
@@ -282,15 +299,18 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
         }
         "talk" => {
             let pane = cmd.get("pane").and_then(|p| p.as_u64()).unwrap_or(0) as u8;
-            let message = cmd.get("message").and_then(|m| m.as_str()).unwrap_or("");
+            let message = cmd.get("message").and_then(|m| m.as_str()).unwrap_or("").to_string();
             if pane == 0 || message.is_empty() {
                 return json!({"error": "pane (number) and message required"});
             }
-            // Send via tmux
+            // Send via tmux in spawn_blocking
             let target = format!("claude6:{}.{}", (pane - 1) / 3, (pane - 1) % 3);
-            match tmux::send_command(&target, message) {
-                Ok(()) => json!({"status": "sent", "pane": pane}),
-                Err(e) => json!({"error": format!("{}", e)}),
+            match tokio::task::spawn_blocking(move || {
+                tmux::send_command(&target, &message)
+            }).await {
+                Ok(Ok(())) => json!({"status": "sent", "pane": pane}),
+                Ok(Err(e)) => json!({"error": format!("{}", e)}),
+                Err(e) => json!({"error": format!("task join error: {}", e)}),
             }
         }
         "queue_add" => {
@@ -323,13 +343,15 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
             serde_json::from_str(&result).unwrap_or(json!({"raw": result}))
         }
         "capture" => {
-            // On-demand full capture of a specific pane
+            // On-demand full capture of a specific pane via spawn_blocking
             let pane = cmd.get("pane").and_then(|p| p.as_u64()).unwrap_or(0) as u8;
             if pane == 0 {
                 return json!({"error": "pane number required"});
             }
             let target = format!("claude6:{}.{}", (pane - 1) / 3, (pane - 1) % 3);
-            let output = tmux::capture_output(&target);
+            let output = tokio::task::spawn_blocking(move || {
+                tmux::capture_output(&target)
+            }).await.unwrap_or_default();
             json!({"pane": pane, "output": output, "lines": output.lines().count()})
         }
         _ => json!({"error": format!("unknown command: {}", cmd_type)}),
