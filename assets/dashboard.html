@@ -113,6 +113,34 @@ select:hover{border-color:var(--border-bright)}
 .pane-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:20px}
 @media(max-width:900px){.pane-grid{grid-template-columns:repeat(2,1fr)}}
 
+/* Build environment grid */
+.build-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:10px}
+@media(max-width:1100px){.build-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:700px){.build-grid{grid-template-columns:repeat(2,1fr)}}
+.build-card{
+  border:1px solid var(--border);border-radius:var(--radius);
+  padding:10px 12px;position:relative;overflow:hidden;
+  transition:var(--transition);
+}
+.build-card:hover{transform:translateY(-1px);box-shadow:var(--shadow)}
+.build-card::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:3px;
+  border-radius:0 0 var(--radius) var(--radius);
+}
+.build-card .build-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.build-card .build-num{
+  font-family:var(--mono);font-size:12px;font-weight:800;
+  padding:2px 8px;border-radius:4px;color:#000;
+}
+.build-card .build-theme{font-size:10px;color:var(--muted);font-weight:600;letter-spacing:.3px}
+.build-card .build-panes{display:flex;gap:4px;margin-top:4px}
+.build-pane-dot{
+  width:20px;height:20px;border-radius:4px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:8px;font-weight:800;font-family:var(--mono);
+}
+.build-card .build-desc{font-size:9px;color:var(--dim);margin-top:4px}
+
 .pane-card{
   border:1px solid var(--border);border-radius:var(--radius);
   padding:12px 14px;cursor:pointer;position:relative;overflow:hidden;
@@ -478,6 +506,14 @@ canvas{width:100%;display:block}
         <h3>Quality Gate</h3>
         <div id="quality-gate"></div>
       </div>
+    </div>
+
+    <!-- Build Environments -->
+    <div class="card" id="builds-section">
+      <h3>Build Environments <span class="count" id="build-count">0/5</span>
+        <button class="btn btn-blue" onclick="restyleBuilds()" style="font-size:9px;padding:2px 8px;margin-left:8px">Restyle All</button>
+      </h3>
+      <div class="build-grid" id="builds"></div>
     </div>
 
     <div id="sprint-section"></div>
@@ -1218,13 +1254,53 @@ async function renderInfra(){
   </div>`;
 }
 
+// === Build Environments ===
+const buildThemeColors={1:'#e84040',2:'#3ddc84',3:'#5c9aff',4:'#a78bfa',5:'#fbbf24'};
+async function renderBuilds(){
+  try{
+    const r=await fetch('/api/builds');
+    const data=await r.json();
+    const el=document.getElementById('builds');
+    const countEl=document.getElementById('build-count');
+    if(!data.builds||!data.builds.length){
+      el.innerHTML='<div style="color:var(--dim);font-size:11px;padding:8px">No build environments found</div>';
+      countEl.textContent='0/5';
+      return;
+    }
+    countEl.textContent=`${data.builds.length}/5`;
+    el.innerHTML=data.builds.map(b=>{
+      const color=buildThemeColors[b.number]||'var(--muted)';
+      const panesDots=b.panes.map(p=>{
+        const c=p.colors||{};
+        return `<div class="build-pane-dot" style="background:${c.bg||'#111'};color:${c.fg||'#888'}" title="Pane ${p.index}: ${p.command} in ${p.cwd}">${p.index}</div>`;
+      }).join('');
+      return `<div class="build-card" style="--pane-color:${color};border-left:3px solid ${color}">
+        <div class="build-header">
+          <span class="build-num" style="background:${color}">${b.number}</span>
+          <span class="build-theme">${b.theme}</span>
+        </div>
+        <div class="build-panes">${panesDots}</div>
+        <div class="build-desc">${b.theme_desc} &middot; ${b.pane_count} panes</div>
+      </div>`;
+    }).join('');
+  }catch(e){
+    document.getElementById('builds').innerHTML='<div style="color:var(--red);font-size:11px">Failed to load builds</div>';
+  }
+}
+async function restyleBuilds(){
+  try{
+    await fetch('/api/builds/restyle',{method:'POST'});
+    await renderBuilds();
+  }catch(e){console.error('restyle failed',e)}
+}
+
 // === Refresh ===
 async function refresh(){
   currentSpace=document.getElementById('space-select').value;
   await loadMonitor();
   renderPanes();
   renderLogs();
-  await Promise.all([renderGauges(),renderRoles(),renderQueue(),renderBoard(),renderSprint(),renderDigest(),renderOverview(),renderInfra()]);
+  await Promise.all([renderGauges(),renderRoles(),renderQueue(),renderBoard(),renderSprint(),renderDigest(),renderOverview(),renderInfra(),renderBuilds()]);
 }
 
 async function init(){

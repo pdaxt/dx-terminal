@@ -1824,3 +1824,35 @@ pub struct ListScreensRequest {}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ScreenSummaryRequest {}
+
+// === Build Environment Types ===
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct BuildEnvStatusRequest {}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct BuildEnvCreateRequest {
+    #[schemars(description = "Build number 1-5 (auto-assigns next if omitted)")]
+    pub number: Option<u8>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct BuildEnvRestyleRequest {}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct BuildEnvSendRequest {
+    #[schemars(description = "Build number (1-5)")]
+    pub build: u8,
+    #[schemars(description = "Pane number within the build (1-3)")]
+    pub pane: u8,
+    #[schemars(description = "Shell command to execute in the pane")]
+    pub command: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct BuildEnvRenameRequest {
+    #[schemars(description = "Build number to rename (1-5)")]
+    pub build: u8,
+    #[schemars(description = "New window name")]
+    pub name: String,
+}

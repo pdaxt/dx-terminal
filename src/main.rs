@@ -25,6 +25,7 @@ mod factory;
 mod screen;
 mod tmux;
 mod session_stream;
+mod build;
 
 use std::sync::Arc;
 use clap::{Parser, Subcommand};

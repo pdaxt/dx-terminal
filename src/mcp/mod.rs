@@ -1809,6 +1809,53 @@ impl DxTerminalService {
         let result = tools::screen_tools::screen_summary(&self.app);
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
+
+    // === BUILD ENVIRONMENTS ===
+
+    #[tool(description = "List all build environments with theme colors, pane info, and session count. 5 color-coded builds: Bloodstream, Matrix, Ghost Protocol, Neon Noir, Molten.")]
+    async fn dx_build_env_status(
+        &self,
+        Parameters(_req): Parameters<types::BuildEnvStatusRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::build_tools::build_status();
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Create a new build environment or restyle an existing one. Each build gets 3 vertical panes with unique neon colors. Auto-assigns next number if omitted.")]
+    async fn dx_build_env_create(
+        &self,
+        Parameters(req): Parameters<types::BuildEnvCreateRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::build_tools::build_create(req.number);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Restyle all existing build environments — refreshes colors and prompts across all sessions.")]
+    async fn dx_build_env_restyle(
+        &self,
+        Parameters(_req): Parameters<types::BuildEnvRestyleRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::build_tools::build_restyle();
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Send a shell command to a specific build pane. Specify build number (1-5) and pane number (1-3).")]
+    async fn dx_build_env_send(
+        &self,
+        Parameters(req): Parameters<types::BuildEnvSendRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::build_tools::build_send(req.build, req.pane, req.command);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Rename a build window across all sessions.")]
+    async fn dx_build_env_rename(
+        &self,
+        Parameters(req): Parameters<types::BuildEnvRenameRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::build_tools::build_rename(req.build, req.name);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
 }
 
 #[tool_handler]

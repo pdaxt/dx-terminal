@@ -444,6 +444,81 @@ pub async fn get_analytics_overview() -> Json<Value> {
     Json(crate::dashboard::dash_overview(None))
 }
 
+// === Build environment endpoints ===
+
+/// GET /api/builds — All build environments with colors and pane info
+pub async fn get_builds() -> Json<Value> {
+    let builds = crate::build::build_status();
+    let sessions = crate::build::session_count();
+
+    let build_list: Vec<Value> = builds.iter().map(|b| {
+        json!({
+            "number": b.number,
+            "name": b.name,
+            "theme": b.theme,
+            "theme_desc": crate::build::theme_desc(b.number),
+            "pane_count": b.pane_count,
+            "panes": b.panes.iter().map(|p| json!({
+                "index": p.pane_index,
+                "pane_id": p.pane_id,
+                "command": p.command,
+                "cwd": p.cwd,
+                "colors": {
+                    "bg": p.colors.bg,
+                    "fg": p.colors.fg,
+                }
+            })).collect::<Vec<_>>(),
+        })
+    }).collect();
+
+    Json(json!({
+        "builds": build_list,
+        "total_builds": builds.len(),
+        "total_panes": builds.iter().map(|b| b.pane_count).sum::<usize>(),
+        "sessions": sessions,
+    }))
+}
+
+/// POST /api/builds/create — Create or restyle a build
+pub async fn post_build_create(Json(body): Json<Value>) -> Json<Value> {
+    let number = body.get("number").and_then(|v| v.as_u64()).map(|n| n as u8);
+    let result = crate::mcp::tools::build_tools::build_create(number);
+    Json(parse_mcp(&result))
+}
+
+/// POST /api/builds/restyle — Restyle all builds
+pub async fn post_build_restyle() -> Json<Value> {
+    let result = crate::mcp::tools::build_tools::build_restyle();
+    Json(parse_mcp(&result))
+}
+
+/// POST /api/builds/send — Send command to a build pane
+pub async fn post_build_send(Json(body): Json<Value>) -> Json<Value> {
+    let build = body.get("build").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
+    let pane = body.get("pane").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
+    let command = body.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+    if build == 0 || pane == 0 || command.is_empty() {
+        return Json(json!({"error": "build (1-5), pane (1-3), and command are required"}));
+    }
+
+    let result = crate::mcp::tools::build_tools::build_send(build, pane, command);
+    Json(parse_mcp(&result))
+}
+
+/// POST /api/builds/rename — Rename a build window
+pub async fn post_build_rename(Json(body): Json<Value>) -> Json<Value> {
+    let build = body.get("build").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
+    let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+    if build == 0 || name.is_empty() {
+        return Json(json!({"error": "build (1-5) and name are required"}));
+    }
+
+    let result = crate::mcp::tools::build_tools::build_rename(build, name);
+    Json(parse_mcp(&result))
+}
+
 // === Helpers (file-based tracker data) ===
 
 fn load_all_issues(space: &str) -> Vec<Value> {
