@@ -47,6 +47,12 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/analytics/quality", get(api::get_analytics_quality))
         .route("/api/analytics/leaderboard", get(api::get_analytics_leaderboard))
         .route("/api/analytics/overview", get(api::get_analytics_overview))
+        // Build environments
+        .route("/api/builds", get(api::get_builds))
+        .route("/api/builds/create", post(api::post_build_create))
+        .route("/api/builds/restyle", post(api::post_build_restyle))
+        .route("/api/builds/send", post(api::post_build_send))
+        .route("/api/builds/rename", post(api::post_build_rename))
         // SSE events
         .route("/api/events", get(sse::event_stream))
         // WebSocket — real-time bidirectional
