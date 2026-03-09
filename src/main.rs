@@ -37,8 +37,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Run as MCP server (stdio transport) — default
+    /// Run as MCP server (stdio transport) — default (all 206 tools)
     Mcp {
+        /// Server subset: core, queue, tracker, coord, intel (default: all)
+        #[arg(value_name = "SERVER")]
+        server: Option<String>,
         /// Also start web dashboard in background
         #[arg(long)]
         web_port: Option<u16>,
@@ -75,9 +78,9 @@ async fn main() -> anyhow::Result<()> {
     let _shutdown_guard = ShutdownGuard(shutdown_app);
 
     match cli.command {
-        Some(Commands::Mcp { web_port, no_web }) => {
+        Some(Commands::Mcp { server, web_port, no_web }) => {
             let port = web_port.unwrap_or(cfg.web_port);
-            run_mcp_mode(application, port, no_web).await?;
+            run_mcp_mode(application, port, no_web, server).await?;
         }
         None => {
             // Default: launch TUI dashboard with MCP + web running in background
@@ -116,7 +119,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn run_mcp_mode(app: Arc<app::App>, web_port: u16, no_web: bool) -> anyhow::Result<()> {
+async fn run_mcp_mode(app: Arc<app::App>, web_port: u16, no_web: bool, server: Option<String>) -> anyhow::Result<()> {
     init_tracing();
 
     if !no_web {
@@ -173,7 +176,21 @@ async fn run_mcp_mode(app: Arc<app::App>, web_port: u16, no_web: bool) -> anyhow
         }
     });
 
-    mcp::run_mcp_server(app).await
+    // Dispatch to the right server (split servers respond much faster to tools/list)
+    match server.as_deref() {
+        Some("core") => mcp::servers::core_server::run(app).await,
+        Some("queue") => mcp::servers::queue::run(app).await,
+        Some("tracker") => mcp::servers::tracker::run(app).await,
+        Some("coord") => mcp::servers::coord::run(app).await,
+        Some("intel") => mcp::servers::intel::run(app).await,
+        Some(unknown) => {
+            anyhow::bail!("Unknown MCP server '{}'. Options: core, queue, tracker, coord, intel", unknown);
+        }
+        None => {
+            // Default: monolithic server (all 206 tools)
+            mcp::run_mcp_server(app).await
+        }
+    }
 }
 
 fn init_tracing() {

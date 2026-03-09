@@ -1,5 +1,6 @@
 pub mod types;
 pub mod tools;
+pub mod servers;
 
 use std::sync::Arc;
 use rmcp::{
