@@ -1,5 +1,6 @@
 # Build artifacts
 /target
+target/
 
 # Environment variables and secrets
 .env
@@ -48,3 +49,6 @@ demo/help.ansi
 demo/main-view-full.html
 demo/main-view.ansi
 demo/main-view.html
+
+# MCP Registry tokens
+.mcpregistry_*

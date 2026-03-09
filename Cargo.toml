@@ -1,54 +1,71 @@
+[workspace]
+members = [".", "crates/*"]
+resolver = "2"
+
 [package]
 name = "dx-terminal"
 version = "0.3.0"
 edition = "2021"
-description = "DX Terminal — the AI-native terminal multiplexer. Monitor, manage, and orchestrate AI coding agents with real-time cost tracking."
-authors = ["DX Terminal Contributors"]
-license = "MIT"
+description = "DX Terminal: AI-native terminal multiplexer for AI agent teams"
 repository = "https://github.com/pdaxt/dx-terminal"
-readme = "README.md"
-keywords = ["terminal", "ai", "multiplexer", "claude", "developer-tools", "tui"]
-categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "dx"
 path = "src/main.rs"
 
 [dependencies]
-ratatui = "0.29"
-crossterm = "0.28"
+# Async runtime
 tokio = { version = "1", features = ["full"] }
-clap = { version = "4", features = ["derive"] }
-anyhow = "1"
-regex = "1"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# MCP server
+rmcp = { version = "0.15", features = ["server", "transport-io", "macros"] }
+schemars = "1.0"
+
+# PTY management (replaces tmux)
+portable-pty = "0.9"
+vt100 = "0.16"
+
+# TUI
+ratatui = "0.30"
+crossterm = { version = "0.29", features = ["event-stream"] }
+
+# Web server
+axum = { version = "0.8", features = ["ws"] }
+tower-http = { version = "0.6", features = ["cors"] }
+
+# Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.8"
+
+# Utilities
 chrono = { version = "0.4", features = ["serde"] }
-dirs = "5"
-parking_lot = "0.12"
-unicode-width = "0.1"
-sysinfo = "0.32"
-reqwest = { version = "0.12", features = ["json"] }
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+clap = { version = "4", features = ["derive"] }
+futures-util = "0.3"
+async-stream = "0.3"
+tokio-stream = { version = "0.1", features = ["sync"] }
+nix = { version = "0.30", features = ["signal", "process"] }
+regex = "1"
+libc = "0.2"
 
-# PTY management — own the terminal, no tmux dependency
-portable-pty = "0.8"
-vte = "0.13"
-
-# Built-in MCP server
-rmcp = { version = "1.1", features = ["server", "transport-io"] }
-
-# GitHub integration
-octocrab = "0.41"
-
-# Analytics persistence
+# SQLite (knowledge graph, session replay, truthguard)
 rusqlite = { version = "0.31", features = ["bundled"] }
-
-# Misc
 uuid = { version = "1", features = ["v4"] }
-bytes = "1"
+walkdir = "2.5.0"
+
+# Workspace crates
+dx-types = { path = "crates/types" }
+dx-gateway = { path = "crates/gateway" }
+
+# TOML parsing (for MCP descriptors)
+toml = "0.8"
 
 [dev-dependencies]
 tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
