@@ -4,250 +4,427 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DX Terminal</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230d1117'/><text x='16' y='23' text-anchor='middle' font-size='20' fill='%2358a6ff'>A</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230d1117'/><text x='16' y='23' text-anchor='middle' font-size='18' fill='%2358a6ff'>DX</text></svg>">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#0d1117;--surface:#161b22;--border:#30363d;--text:#c9d1d9;--muted:#8b949e;--dim:#484f58;
---blue:#58a6ff;--green:#3fb950;--yellow:#d29922;--red:#f85149;--purple:#a371f7;--teal:#00cec9}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+:root{
+  --bg:#0a0e14;--surface:#111820;--surface2:#161d27;--border:#1e2a3a;--border-bright:#2d4a6a;
+  --text:#d4dce8;--muted:#6b7d95;--dim:#3d4f63;
+  --blue:#4da6ff;--green:#44d98c;--yellow:#f0c040;--red:#ff5c5c;--purple:#b07aff;--teal:#3dd6d0;--orange:#ff9f43;--pink:#ff6b9d;
+  --mono:'SF Mono','JetBrains Mono','Cascadia Code',Monaco,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',sans-serif;
+  --radius:10px;--radius-sm:6px;
+  --shadow:0 2px 12px rgba(0,0,0,.4);
+  --transition:all .2s cubic-bezier(.4,0,.2,1);
+}
 
-/* Header */
-.header{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
-.header h1{font-size:16px;color:var(--blue);font-weight:700;letter-spacing:-.3px}
-.header h1 span{color:var(--muted);font-weight:400}
-.controls{display:flex;gap:12px;align-items:center}
-.live-dot{width:7px;height:7px;background:var(--green);border-radius:50%;display:inline-block;animation:pulse 2s infinite}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+
+/* === Layout: sidebar + main + terminal panel === */
+.app{display:grid;grid-template-columns:1fr;grid-template-rows:auto 1fr;height:100vh}
+.app.has-panel{grid-template-columns:1fr 420px}
+.app.has-panel .main{grid-column:1}
+.app.has-panel .panel{grid-column:2;grid-row:1/3}
+
+/* === Header === */
+.header{
+  grid-column:1/-1;
+  background:linear-gradient(180deg,var(--surface) 0%,var(--surface2) 100%);
+  border-bottom:1px solid var(--border);
+  padding:0 20px;height:48px;
+  display:flex;align-items:center;justify-content:space-between;
+  backdrop-filter:blur(12px);z-index:100;
+}
+.logo{display:flex;align-items:center;gap:10px}
+.logo-mark{
+  width:28px;height:28px;border-radius:7px;
+  background:linear-gradient(135deg,var(--blue),var(--purple));
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:11px;font-weight:800;color:#fff;letter-spacing:-0.5px;
+}
+.logo h1{font-size:15px;font-weight:700;color:var(--text);letter-spacing:-.3px}
+.logo h1 span{color:var(--muted);font-weight:400;margin-left:4px;font-size:13px}
+.header-right{display:flex;gap:10px;align-items:center}
+.live-badge{
+  display:flex;align-items:center;gap:5px;
+  padding:3px 10px;border-radius:20px;
+  background:rgba(68,217,140,.1);border:1px solid rgba(68,217,140,.2);
+  font-size:10px;font-weight:700;color:var(--green);letter-spacing:.5px;
+}
+.live-dot{width:6px;height:6px;background:var(--green);border-radius:50%;animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-.live-label{font-size:11px;color:var(--green);font-weight:600;letter-spacing:.5px}
-.last-updated{font-size:10px;color:var(--dim);font-family:monospace}
-select{background:#21262d;color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:6px;font-size:12px;cursor:pointer}
-.status-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;letter-spacing:.5px}
-.status-ok{background:#3fb95022;color:var(--green)}
-.status-idle{background:#21262d;color:var(--dim)}
-.status-warn{background:#d2992222;color:var(--yellow)}
-.status-alert{background:#f8514933;color:var(--red);animation:pulse 1.5s infinite}
+.clock{font-family:var(--mono);font-size:11px;color:var(--dim)}
+select{
+  background:var(--surface2);color:var(--text);
+  border:1px solid var(--border);padding:4px 10px;
+  border-radius:var(--radius-sm);font-size:11px;cursor:pointer;
+  transition:var(--transition);
+}
+select:hover{border-color:var(--border-bright)}
 
-/* Alert Bar */
-.alert-bar{padding:6px 24px;display:flex;gap:8px;overflow-x:auto;align-items:center}
+/* === Main Content === */
+.main{padding:16px 20px;overflow-y:auto}
+
+/* === Alert Bar === */
+.alert-bar{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto;flex-wrap:wrap}
 .alert-bar:empty{display:none}
-.alert-item{font-size:11px;padding:4px 10px;border-radius:4px;white-space:nowrap;display:flex;align-items:center;gap:5px}
-.alert-error{background:#f8514922;color:var(--red);border:1px solid #f8514944}
-.alert-warning{background:#d2992222;color:var(--yellow);border:1px solid #d2992244}
-.alert-info{background:#58a6ff22;color:var(--blue);border:1px solid #58a6ff44}
+.alert-item{
+  font-size:10px;padding:5px 10px;border-radius:20px;
+  white-space:nowrap;display:flex;align-items:center;gap:4px;
+  font-weight:600;letter-spacing:.2px;
+  animation:slideIn .3s ease;
+}
+@keyframes slideIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+.alert-error{background:rgba(255,92,92,.1);color:var(--red);border:1px solid rgba(255,92,92,.15)}
+.alert-warning{background:rgba(240,192,64,.1);color:var(--yellow);border:1px solid rgba(240,192,64,.15)}
+.alert-info{background:rgba(77,166,255,.1);color:var(--blue);border:1px solid rgba(77,166,255,.15)}
 
-/* Layout */
-.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:16px 24px}
-.grid-3-1{display:grid;grid-template-columns:1fr 300px;gap:16px;padding:0 24px 16px}
-.section{padding:0 24px 16px}
+/* === Gauge Row === */
+.gauge-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.gauge{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px 16px;position:relative;overflow:hidden;
+  transition:var(--transition);
+}
+.gauge:hover{border-color:var(--border-bright);transform:translateY(-1px);box-shadow:var(--shadow)}
+.gauge::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:3px;
+  border-radius:0 0 var(--radius) var(--radius);opacity:.6;
+}
+.gauge.g-blue::after{background:var(--blue)}.gauge.g-green::after{background:var(--green)}
+.gauge.g-yellow::after{background:var(--yellow)}.gauge.g-red::after{background:var(--red)}
+.gauge.g-purple::after{background:var(--purple)}
+.gauge-label{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700;letter-spacing:.6px;margin-bottom:6px}
+.gauge-value{font-size:26px;font-weight:800;line-height:1;font-feature-settings:'tnum'}
+.gauge-value small{font-size:13px;color:var(--muted);font-weight:500}
+.gauge-sub{font-size:11px;color:var(--muted);margin-top:4px}
+.gauge-bar{height:4px;background:var(--surface2);border-radius:2px;margin-top:8px;overflow:hidden}
+.gauge-fill{height:100%;border-radius:2px;transition:width .8s cubic-bezier(.4,0,.2,1)}
 
-/* Cards */
-.card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px}
-.card h3{font-size:11px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;letter-spacing:.6px;font-weight:600}
-.gauge-val{font-size:28px;font-weight:700;line-height:1.1}
-.gauge-sub{font-size:11px;color:var(--muted);margin-top:2px}
-.gauge-bar{height:5px;background:#21262d;border-radius:3px;margin-top:8px;overflow:hidden}
-.gauge-fill{height:100%;border-radius:3px;transition:width .6s ease}
-.c-green{color:var(--green)}.c-green .gauge-fill{background:var(--green)}
-.c-yellow{color:var(--yellow)}.c-yellow .gauge-fill{background:var(--yellow)}
-.c-red{color:var(--red)}.c-red .gauge-fill{background:var(--red)}
-.c-blue{color:var(--blue)}
+/* === Pane Grid === */
+.section-head{
+  font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.6px;margin-bottom:10px;display:flex;align-items:center;gap:8px;
+}
+.section-head .count{
+  font-size:10px;padding:2px 7px;border-radius:10px;
+  background:var(--surface2);color:var(--dim);font-weight:600;
+}
+.pane-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:20px}
+@media(max-width:900px){.pane-grid{grid-template-columns:repeat(2,1fr)}}
 
-/* Pane Grid */
-.pane-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.pane-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;cursor:pointer;transition:border-color .2s,transform .1s}
-.pane-card:hover{border-color:var(--blue);transform:translateY(-1px)}
-.pane-card.active{border-left:3px solid}
-.pane-card.idle{opacity:.45;padding:8px 12px}
-.pane-card.has-error{border-color:var(--red);box-shadow:0 0 8px #f8514933}
-.pane-card.is-done{border-color:var(--green);box-shadow:0 0 8px #3fb95033}
-.pane-card.is-stuck{border-color:var(--yellow);box-shadow:0 0 8px #d2992233}
-.pane-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
-.pane-num{font-size:11px;font-weight:700;padding:1px 5px;border-radius:3px;color:#000}
-.pane-status{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
-.pane-status.s-active{color:var(--green)}
-.pane-status.s-idle{color:var(--dim)}
-.pane-status.s-done{color:var(--blue)}
-.pane-status.s-error{color:var(--red)}
-.pane-status.s-stuck{color:var(--yellow)}
+.pane-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:12px 14px;cursor:pointer;position:relative;overflow:hidden;
+  transition:var(--transition);border-left:3px solid transparent;
+}
+.pane-card:hover{border-color:var(--border-bright);transform:translateY(-1px);box-shadow:var(--shadow)}
+.pane-card.selected{box-shadow:0 0 0 2px var(--blue),var(--shadow)}
+.pane-card.idle{opacity:.35;padding:8px 14px}
+.pane-card.idle:hover{opacity:.6}
+.pane-card.has-error{box-shadow:inset 0 0 20px rgba(255,92,92,.05)}
+.pane-card.is-done{box-shadow:inset 0 0 20px rgba(68,217,140,.05)}
+
+/* Shimmer for active agents */
+.pane-card.active::before{
+  content:'';position:absolute;top:0;left:-100%;width:60%;height:100%;
+  background:linear-gradient(90deg,transparent,rgba(77,166,255,.03),transparent);
+  animation:shimmer 3s infinite;
+}
+@keyframes shimmer{0%{left:-100%}100%{left:200%}}
+
+.pane-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+.pane-num{
+  font-family:var(--mono);font-size:10px;font-weight:800;
+  padding:2px 6px;border-radius:4px;color:#000;min-width:20px;text-align:center;
+}
+.pane-status{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+.s-active{color:var(--green)}.s-idle{color:var(--dim)}.s-done{color:var(--teal)}.s-error{color:var(--red)}.s-stuck{color:var(--yellow)}
 .pane-project{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pane-task{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
-.pane-meta{display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap}
-.badge{font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;text-transform:uppercase;letter-spacing:.3px}
-.badge-role{background:#1f6feb22;color:var(--blue)}
-.badge-pty{background:#3fb95022;color:var(--green)}
-.badge-lines{background:#21262d;color:var(--muted)}
-.badge-runtime{background:#a371f722;color:var(--purple)}
-.badge-phase{background:#00cec922;color:var(--teal)}
-.badge-errors{background:#f8514922;color:var(--red)}
-.badge-done{background:#3fb95022;color:var(--green)}
+.pane-task{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.pane-meta{display:flex;gap:4px;margin-top:6px;flex-wrap:wrap}
+.badge{
+  font-size:8px;font-weight:700;padding:2px 6px;border-radius:4px;
+  text-transform:uppercase;letter-spacing:.3px;
+}
+.b-role{background:rgba(77,166,255,.1);color:var(--blue)}
+.b-live{background:rgba(68,217,140,.1);color:var(--green)}
+.b-lines{background:var(--surface2);color:var(--dim)}
+.b-runtime{background:rgba(176,122,255,.1);color:var(--purple)}
+.b-err{background:rgba(255,92,92,.1);color:var(--red)}
+.b-done{background:rgba(61,214,208,.1);color:var(--teal)}
 
-/* Sidebar */
-.sidebar{display:flex;flex-direction:column;gap:12px}
-.log-list{max-height:300px;overflow-y:auto}
-.log-entry{font-size:11px;padding:5px 0;border-bottom:1px solid #21262d;display:flex;gap:8px}
-.log-entry:last-child{border-bottom:none}
-.log-ts{color:var(--dim);font-family:monospace;flex-shrink:0}
-.log-pane{color:var(--blue);font-weight:600;flex-shrink:0}
-.log-msg{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Mini output preview on pane card */
+.pane-preview{
+  font-family:var(--mono);font-size:9px;line-height:1.3;color:var(--dim);
+  margin-top:6px;padding:4px 6px;background:var(--bg);border-radius:4px;
+  max-height:36px;overflow:hidden;white-space:pre;
+}
 
-/* Role bars */
-.role-bar{margin-bottom:8px}
-.role-bar:last-child{margin-bottom:0}
-.role-label{display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px}
-.role-track{height:6px;background:#21262d;border-radius:3px;overflow:hidden}
-.role-fill{height:100%;background:var(--blue);border-radius:3px;transition:width .5s}
+/* === Content Grid (Queue + Board side by side) === */
+.content-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+@media(max-width:1100px){.content-grid{grid-template-columns:1fr}}
 
-/* Kanban */
-.kanban{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px}
-.kanban-col{min-width:170px;flex:1}
-.kanban-col h4{font-size:11px;text-transform:uppercase;color:var(--muted);padding:6px 8px;text-align:center;background:var(--surface);border:1px solid var(--border);border-radius:6px 6px 0 0;letter-spacing:.4px}
-.kanban-cards{background:var(--bg);border:1px solid var(--border);border-top:none;border-radius:0 0 6px 6px;padding:6px;min-height:60px}
-.k-card{background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:8px;margin-bottom:6px;font-size:11px}
-.k-card:last-child{margin-bottom:0}
-.k-id{color:var(--dim);font-size:10px;font-family:monospace}
-.k-title{font-weight:500;margin:2px 0}
-.k-tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
-.tag{padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;letter-spacing:.2px}
-.tag-critical{background:#f8514922;color:var(--red)}
-.tag-high{background:#d2992222;color:var(--yellow)}
-.tag-medium{background:#58a6ff22;color:var(--blue)}
-.tag-low{background:#3fb95022;color:var(--green)}
-.tag-acu{background:#a371f722;color:var(--purple)}
-.tag-role{background:#1f6feb22;color:var(--blue)}
+/* === Cards === */
+.card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px 16px;transition:var(--transition);
+}
+.card:hover{border-color:var(--border-bright)}
+.card h3{font-size:10px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;letter-spacing:.6px;font-weight:700;display:flex;align-items:center;justify-content:space-between}
 
-/* Output modal */
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center}
-.modal-overlay.open{display:flex}
-.modal{background:var(--surface);border:1px solid var(--border);border-radius:10px;width:90%;max-width:900px;max-height:85vh;display:flex;flex-direction:column}
-.modal-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border)}
-.modal-header h2{font-size:14px;display:flex;align-items:center;gap:8px}
-.modal-close{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:2px 8px;border-radius:4px}
-.modal-close:hover{background:#21262d;color:var(--text)}
-.modal-body{flex:1;overflow-y:auto;padding:14px 18px}
-.terminal{background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:12px;font-family:'SF Mono',Monaco,'Cascadia Code',monospace;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-all;color:#e6edf3;max-height:400px;overflow-y:auto}
-.modal-meta{display:flex;gap:16px;margin-bottom:12px;font-size:12px;flex-wrap:wrap}
-.modal-meta dt{color:var(--muted);font-size:10px;text-transform:uppercase}
-.modal-meta dd{font-weight:600}
-.modal-errors{margin-bottom:12px}
-.modal-errors h4{font-size:11px;color:var(--red);margin-bottom:4px}
-.error-line{font-size:11px;font-family:monospace;padding:3px 6px;margin-bottom:2px;background:#f8514911;border-radius:3px;color:var(--red)}
-.warning-line{font-size:11px;font-family:monospace;padding:3px 6px;margin-bottom:2px;background:#d2992211;border-radius:3px;color:var(--yellow)}
+/* === Queue Table === */
+.q-table{width:100%;border-collapse:collapse;font-size:11px}
+.q-table th{
+  text-align:left;font-size:9px;text-transform:uppercase;color:var(--dim);
+  padding:6px 8px;border-bottom:1px solid var(--border);letter-spacing:.5px;font-weight:700;
+}
+.q-table td{padding:7px 8px;border-bottom:1px solid rgba(30,42,58,.5)}
+.q-table tr{transition:var(--transition)}
+.q-table tr:hover{background:rgba(77,166,255,.03)}
+.q-id{font-family:var(--mono);color:var(--dim);font-size:9px}
+.q-status{
+  font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;
+  padding:2px 7px;border-radius:10px;
+}
+.q-pending{background:rgba(240,192,64,.1);color:var(--yellow)}
+.q-running{background:rgba(68,217,140,.1);color:var(--green)}
+.q-done{background:rgba(61,214,208,.1);color:var(--teal)}
+.q-failed{background:rgba(255,92,92,.1);color:var(--red)}
+.q-blocked{background:rgba(176,122,255,.1);color:var(--purple)}
+.q-priority{
+  font-size:9px;font-weight:800;display:inline-block;
+  width:18px;height:18px;line-height:18px;text-align:center;border-radius:50%;
+}
+.q-p1{background:var(--red);color:#000}.q-p2{background:var(--yellow);color:#000}
+.q-p3{background:var(--blue);color:#000}.q-p4{background:var(--dim);color:var(--text)}
 
-/* Sprint */
-.sprint-info{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
-.sprint-name{font-size:14px;font-weight:700;color:var(--blue)}
+/* === Kanban Board === */
+.kanban{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
+.kanban-col{min-width:140px;flex:1}
+.kanban-col h4{
+  font-size:9px;text-transform:uppercase;color:var(--dim);
+  padding:6px 8px;text-align:center;letter-spacing:.5px;font-weight:700;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm) var(--radius-sm) 0 0;
+}
+.kanban-cards{
+  background:var(--bg);border:1px solid var(--border);border-top:none;
+  border-radius:0 0 var(--radius-sm) var(--radius-sm);padding:4px;min-height:40px;
+}
+.k-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:6px 8px;margin-bottom:4px;font-size:10px;transition:var(--transition);
+}
+.k-card:hover{border-color:var(--border-bright)}
+.k-id{color:var(--dim);font-size:9px;font-family:var(--mono)}
+.k-title{font-weight:500;margin:2px 0;font-size:10px}
+
+/* === Roles === */
+.role-bar{margin-bottom:6px}
+.role-label{display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;color:var(--muted)}
+.role-track{height:4px;background:var(--surface2);border-radius:2px;overflow:hidden}
+.role-fill{height:100%;background:var(--blue);border-radius:2px;transition:width .6s ease}
+
+/* === Activity Log === */
+.log-list{max-height:260px;overflow-y:auto}
+.log-entry{
+  font-size:10px;padding:4px 0;border-bottom:1px solid rgba(30,42,58,.3);
+  display:flex;gap:6px;animation:fadeIn .3s ease;
+}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.log-ts{color:var(--dim);font-family:var(--mono);flex-shrink:0;font-size:9px}
+.log-pane{color:var(--blue);font-weight:700;flex-shrink:0;font-size:9px}
+.log-msg{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}
+
+/* === Right Panel (Terminal View) === */
+.panel{
+  background:var(--surface);border-left:1px solid var(--border);
+  display:flex;flex-direction:column;grid-row:1/3;
+  animation:slideRight .25s ease;
+}
+@keyframes slideRight{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+.panel-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 14px;border-bottom:1px solid var(--border);flex-shrink:0;
+}
+.panel-header h2{font-size:13px;display:flex;align-items:center;gap:8px;font-weight:700}
+.panel-close{
+  background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;
+  padding:4px 8px;border-radius:var(--radius-sm);transition:var(--transition);
+}
+.panel-close:hover{background:var(--surface2);color:var(--text)}
+.panel-meta{
+  display:flex;gap:12px;padding:8px 14px;border-bottom:1px solid var(--border);
+  font-size:10px;flex-wrap:wrap;flex-shrink:0;
+}
+.panel-meta dt{color:var(--dim);font-size:9px;text-transform:uppercase;letter-spacing:.3px}
+.panel-meta dd{color:var(--text);font-weight:600;font-size:11px}
+.panel-actions{
+  display:flex;gap:6px;padding:8px 14px;border-bottom:1px solid var(--border);flex-shrink:0;
+}
+.btn{
+  border:none;padding:5px 12px;border-radius:var(--radius-sm);
+  font-size:10px;font-weight:700;cursor:pointer;transition:var(--transition);
+  letter-spacing:.3px;
+}
+.btn:hover{filter:brightness(1.15);transform:translateY(-1px)}
+.btn-red{background:rgba(255,92,92,.15);color:var(--red)}.btn-red:hover{background:rgba(255,92,92,.25)}
+.btn-blue{background:rgba(77,166,255,.15);color:var(--blue)}.btn-blue:hover{background:rgba(77,166,255,.25)}
+.btn-green{background:rgba(68,217,140,.15);color:var(--green)}.btn-green:hover{background:rgba(68,217,140,.25)}
+.terminal{
+  flex:1;overflow-y:auto;padding:12px 14px;
+  font-family:var(--mono);font-size:11px;line-height:1.6;
+  white-space:pre-wrap;word-break:break-all;color:#c8d6e5;
+  background:var(--bg);
+}
+.terminal::-webkit-scrollbar{width:5px}
+.terminal::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+.talk-bar{
+  display:flex;gap:6px;padding:8px 14px;border-top:1px solid var(--border);flex-shrink:0;
+  background:var(--surface2);
+}
+.talk-input{
+  flex:1;background:var(--bg);color:var(--text);
+  border:1px solid var(--border);padding:7px 10px;
+  border-radius:var(--radius-sm);font-size:11px;font-family:var(--mono);
+  transition:var(--transition);
+}
+.talk-input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 2px rgba(77,166,255,.15)}
+.talk-input::placeholder{color:var(--dim)}
+
+/* === Queue Add Form === */
+.add-form{
+  display:none;margin-bottom:10px;padding:12px;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+}
+.add-form.open{display:flex;gap:8px;flex-wrap:wrap;align-items:end;animation:slideIn .2s ease}
+.add-form label{font-size:9px;color:var(--dim);display:block;margin-bottom:2px;text-transform:uppercase;letter-spacing:.3px}
+.add-form input,.add-form select{
+  background:var(--bg);color:var(--text);border:1px solid var(--border);
+  padding:5px 8px;border-radius:var(--radius-sm);font-size:11px;
+}
+
+/* === Sprint === */
+.sprint-info{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.sprint-name{font-size:13px;font-weight:700;color:var(--blue)}
 .sprint-stat{text-align:center}
-.sprint-stat .val{font-size:20px;font-weight:700}
-.sprint-stat .label{font-size:10px;color:var(--muted);text-transform:uppercase}
-
-.no-data{color:var(--dim);font-size:12px;text-align:center;padding:24px}
-.section-title{font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px}
-
-/* Burndown */
-.burndown-wrap{position:relative}
+.sprint-stat .val{font-size:18px;font-weight:800}
+.sprint-stat .label{font-size:9px;color:var(--dim);text-transform:uppercase}
+.burndown-wrap{margin-bottom:16px}
 canvas{width:100%;display:block}
 
-/* Queue table */
-.q-table{width:100%;border-collapse:collapse;font-size:12px}
-.q-table th{text-align:left;font-size:10px;text-transform:uppercase;color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--border);letter-spacing:.4px;font-weight:600}
-.q-table td{padding:6px 8px;border-bottom:1px solid #21262d}
-.q-table tr:hover{background:#21262d}
-.q-id{font-family:monospace;color:var(--dim);font-size:10px}
-.q-status{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;padding:1px 6px;border-radius:3px}
-.q-pending{background:#d2992222;color:var(--yellow)}
-.q-running{background:#3fb95022;color:var(--green)}
-.q-done{background:#58a6ff22;color:var(--blue)}
-.q-failed{background:#f8514922;color:var(--red)}
-.q-blocked{background:#a371f722;color:var(--purple)}
-.q-priority{font-size:10px;font-weight:700;display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:50%}
-.q-p1{background:var(--red);color:#000}.q-p2{background:var(--yellow);color:#000}.q-p3{background:var(--blue);color:#000}
-.q-p4{background:var(--dim);color:var(--text)}.q-p5{background:#21262d;color:var(--muted)}
-.q-empty{text-align:center;padding:20px;color:var(--dim);font-size:12px}
+/* === No Data === */
+.no-data{color:var(--dim);font-size:11px;text-align:center;padding:20px}
 
-/* Scrollbar */
-::-webkit-scrollbar{width:6px;height:6px}
+/* === Scrollbar === */
+::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:var(--dim)}
+
+/* === Command Palette === */
+.palette-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:300;align-items:flex-start;justify-content:center;padding-top:15vh;backdrop-filter:blur(4px)}
+.palette-overlay.open{display:flex}
+.palette{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  width:500px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.5);overflow:hidden;
+}
+.palette input{
+  width:100%;background:transparent;border:none;padding:14px 18px;
+  font-size:15px;color:var(--text);font-family:var(--sans);
+}
+.palette input:focus{outline:none}
+.palette input::placeholder{color:var(--dim)}
+.palette-results{border-top:1px solid var(--border);max-height:300px;overflow-y:auto}
+.palette-item{
+  padding:10px 18px;cursor:pointer;display:flex;align-items:center;gap:10px;
+  transition:background .1s;font-size:13px;
+}
+.palette-item:hover,.palette-item.active{background:rgba(77,166,255,.08)}
+.palette-item .key{font-family:var(--mono);font-size:10px;color:var(--dim);margin-left:auto;padding:2px 6px;background:var(--surface2);border-radius:3px}
 </style>
 </head>
 <body>
 
-<div class="header">
-  <h1>DX Terminal <span>Runtime</span></h1>
-  <div class="controls">
-    <span id="status-indicator" class="status-badge status-idle">IDLE</span>
-    <span class="live-dot"></span>
-    <span class="live-label">LIVE</span>
-    <span class="last-updated" id="last-updated"></span>
-    <select id="space-select" onchange="refresh()"></select>
+<div class="app" id="app">
+  <div class="header">
+    <div class="logo">
+      <div class="logo-mark">DX</div>
+      <h1>DX Terminal<span>v2</span></h1>
+    </div>
+    <div class="header-right">
+      <div class="live-badge"><span class="live-dot"></span> LIVE</div>
+      <span class="clock" id="clock"></span>
+      <select id="space-select" onchange="refresh()"></select>
+    </div>
   </div>
-</div>
 
-<div class="alert-bar" id="alerts"></div>
-
-<div class="grid-4" id="gauges"></div>
-
-<div class="grid-3-1">
-  <div>
-    <div class="section-title">Agent Panes</div>
+  <div class="main" id="main">
+    <div class="alert-bar" id="alerts"></div>
+    <div class="gauge-row" id="gauges"></div>
+    <div class="section-head">Agent Panes <span class="count" id="pane-count">0/9</span></div>
     <div class="pane-grid" id="panes"></div>
-  </div>
-  <div class="sidebar">
-    <div class="card" id="roles-card">
-      <h3>Role Utilization</h3>
-      <div id="roles"></div>
+
+    <div class="content-grid">
+      <div>
+        <div class="card">
+          <h3>Task Queue <button class="btn btn-green" onclick="toggleAdd()" style="font-size:9px;padding:2px 8px">+ Add</button></h3>
+          <div class="add-form" id="add-form">
+            <div><label>Project</label><input id="qa-project" placeholder="project-name" style="width:130px"></div>
+            <div><label>Task</label><input id="qa-task" placeholder="Task description" style="width:180px"></div>
+            <div><label>Role</label><select id="qa-role"><option>developer</option><option>frontend</option><option>backend</option><option>qa</option><option>devops</option></select></div>
+            <div><label>Priority</label><select id="qa-priority"><option value="1">P1</option><option value="2">P2</option><option value="3" selected>P3</option></select></div>
+            <button class="btn btn-blue" onclick="submitTask()">Queue</button>
+          </div>
+          <div id="queue-table"></div>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <h3>Board</h3>
+          <div class="kanban" id="kanban"></div>
+        </div>
+      </div>
     </div>
-    <div class="card">
-      <h3>Activity Log</h3>
-      <div class="log-list" id="logs"></div>
+
+    <div class="content-grid">
+      <div class="card">
+        <h3>Role Utilization</h3>
+        <div id="roles"></div>
+      </div>
+      <div class="card">
+        <h3>Activity</h3>
+        <div class="log-list" id="logs"></div>
+      </div>
+    </div>
+
+    <div id="sprint-section"></div>
+    <div class="burndown-wrap" id="burndown-section" style="display:none">
+      <div class="card"><h3>Sprint Burndown</h3><canvas id="burndown-chart" width="700" height="140"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Right panel: terminal view -->
+  <div class="panel" id="panel" style="display:none">
+    <div class="panel-header">
+      <h2 id="panel-title">Terminal</h2>
+      <button class="panel-close" onclick="closePanel()">&times;</button>
+    </div>
+    <div class="panel-meta" id="panel-meta"></div>
+    <div class="panel-actions" id="panel-actions"></div>
+    <div class="terminal" id="panel-terminal"></div>
+    <div class="talk-bar">
+      <input class="talk-input" id="talk-input" placeholder="Send message to agent..." onkeydown="if(event.key==='Enter')sendTalk()">
+      <button class="btn btn-green" onclick="sendTalk()">Send</button>
     </div>
   </div>
 </div>
 
-<div class="section" id="queue-section">
-  <div class="section-title" style="display:flex;align-items:center;gap:12px">
-    Task Queue <span id="queue-summary" style="font-weight:400;color:var(--muted);font-size:11px"></span>
-    <button onclick="toggleAddForm()" style="background:var(--green);color:#000;border:none;padding:2px 10px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer">+ Add</button>
-  </div>
-  <div id="queue-add-form" style="display:none;margin-bottom:12px">
-    <div class="card" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
-      <div><label style="font-size:10px;color:var(--muted);display:block">Project</label><input id="qa-project" style="background:#21262d;color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:12px;width:140px" placeholder="project-name"></div>
-      <div><label style="font-size:10px;color:var(--muted);display:block">Task</label><input id="qa-task" style="background:#21262d;color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:12px;width:200px" placeholder="Task description"></div>
-      <div><label style="font-size:10px;color:var(--muted);display:block">Role</label><select id="qa-role" style="background:#21262d;color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:12px"><option>developer</option><option>frontend</option><option>backend</option><option>qa</option><option>devops</option><option>pm</option></select></div>
-      <div><label style="font-size:10px;color:var(--muted);display:block">Priority</label><select id="qa-priority" style="background:#21262d;color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:12px"><option value="1">1 Critical</option><option value="2">2 High</option><option value="3" selected>3 Normal</option><option value="4">4 Low</option><option value="5">5 Nice-to-have</option></select></div>
-      <button onclick="submitTask()" style="background:var(--blue);color:#fff;border:none;padding:5px 16px;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer">Queue</button>
-    </div>
-  </div>
-  <div id="queue-table"></div>
-</div>
-
-<div class="section" id="sprint-section"></div>
-
-<div class="section">
-  <div class="section-title">Board</div>
-  <div class="kanban" id="kanban"></div>
-</div>
-
-<div class="section burndown-wrap" id="burndown-section" style="display:none">
-  <div class="card">
-    <h3>Sprint Burndown</h3>
-    <canvas id="burndown-chart" width="700" height="160"></canvas>
-  </div>
-</div>
-
-<!-- Pane output modal -->
-<div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
-  <div class="modal">
-    <div class="modal-header">
-      <h2 id="modal-title">Pane Output</h2>
-      <button class="modal-close" onclick="closeModal()">&times;</button>
-    </div>
-    <div class="modal-body">
-      <div class="modal-meta" id="modal-meta"></div>
-      <div class="modal-errors" id="modal-errors"></div>
-      <div class="terminal" id="modal-output"></div>
-    </div>
+<!-- Command Palette -->
+<div class="palette-overlay" id="palette" onclick="if(event.target===this)closePalette()">
+  <div class="palette">
+    <input id="palette-input" placeholder="Type a command..." oninput="filterPalette()" onkeydown="palKey(event)">
+    <div class="palette-results" id="palette-results"></div>
   </div>
 </div>
 
@@ -255,201 +432,165 @@ canvas{width:100%;display:block}
 const API='';
 let currentSpace='';
 let pollTimer=null;
-let monitorData=null;
+let ws=null;
+let wsState=null;
+let paneOutputs={};
+let activePaneNum=null;
 
-async function fetchJSON(url){
-  try{const r=await fetch(API+url);if(!r.ok)return null;return await r.json();}catch(e){return null;}
-}
+// === Theme colors per pane ===
+const COLORS=['#4da6ff','#44d98c','#b07aff','#ff9f43','#ff6b9d','#f0c040','#c0c8d4','#3dd6d0','#ff5c5c'];
+function paneColor(n){return COLORS[(n-1)%COLORS.length]}
 
-function gc(pct){return pct>80?'c-red':pct>50?'c-yellow':'c-green'}
+// === Helpers ===
+async function fetchJSON(url){try{const r=await fetch(API+url);if(!r.ok)return null;return await r.json();}catch{return null;}}
 function fmtMins(m){if(!m&&m!==0)return'';if(m<60)return m+'m';return Math.floor(m/60)+'h'+(m%60?m%60+'m':'');}
 
-function updateTimestamp(){
-  const now=new Date();
-  const h=String(now.getHours()).padStart(2,'0');
-  const m=String(now.getMinutes()).padStart(2,'0');
-  const s=String(now.getSeconds()).padStart(2,'0');
-  document.getElementById('last-updated').textContent=h+':'+m+':'+s;
+function updateClock(){
+  const d=new Date();
+  document.getElementById('clock').textContent=
+    [d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');
 }
-
-// === Monitor (single-call data source) ===
-async function loadMonitor(){
-  monitorData=await fetchJSON('/api/monitor');
-  if(!monitorData)return;
-
-  // Update status indicator — IDLE when nothing running, ALL CLEAR when agents active and healthy
-  const ind=document.getElementById('status-indicator');
-  const s=monitorData.status;
-  const active=monitorData.summary?monitorData.summary.active:0;
-  const hasAlerts=monitorData.alerts&&monitorData.alerts.length>0;
-
-  if(s==='ATTENTION NEEDED'){
-    ind.textContent='ATTENTION NEEDED';
-    ind.className='status-badge status-alert';
-  } else if(active>0&&!hasAlerts){
-    ind.textContent='ALL CLEAR';
-    ind.className='status-badge status-ok';
-  } else if(active>0){
-    ind.textContent='OK';
-    ind.className='status-badge status-warn';
-  } else {
-    ind.textContent='IDLE';
-    ind.className='status-badge status-idle';
-  }
-
-  // Render alerts
-  const alertEl=document.getElementById('alerts');
-  if(monitorData.alerts&&monitorData.alerts.length){
-    alertEl.innerHTML=monitorData.alerts.map(a=>{
-      const cls=a.level==='error'?'alert-error':a.level==='warning'?'alert-warning':'alert-info';
-      const icon=a.level==='error'?'&#x26D4;':a.level==='warning'?'&#x26A0;':'&#x2139;';
-      return `<div class="alert-item ${cls}">${icon} P${a.pane} ${a.theme}: ${a.message}</div>`;
-    }).join('');
-  }else{
-    alertEl.innerHTML='';
-  }
-
-  updateTimestamp();
-}
+setInterval(updateClock,1000);updateClock();
 
 // === Spaces ===
 async function loadSpaces(){
   const sel=document.getElementById('space-select');
   const spaces=await fetchJSON('/api/spaces');
-  if(!spaces||!spaces.length){sel.innerHTML='<option>No spaces</option>';return;}
+  if(!spaces||!spaces.length){sel.innerHTML='<option>default</option>';return;}
   sel.innerHTML=spaces.map(s=>`<option value="${s}">${s}</option>`).join('');
   currentSpace=spaces[0];sel.value=currentSpace;
+}
+
+// === Monitor ===
+let monitorData=null;
+async function loadMonitor(){
+  monitorData=await fetchJSON('/api/monitor');
 }
 
 // === Gauges ===
 async function renderGauges(){
   const d=await fetchJSON(`/api/capacity/dashboard?space=${currentSpace}`);
-  if(!d)return;
   const sm=monitorData?monitorData.summary:{active:0};
   const q=monitorData?monitorData.queue:{pending:0,running:0};
-  const acuC=gc(d.acu_pct);const revC=gc(d.reviews_pct);
-  const total=sm.total||9;
+  const total=sm.total||9;const active=sm.active||0;
+  const acuPct=d?Math.min(d.acu_pct,100):0;
   document.getElementById('gauges').innerHTML=`
-    <div class="card ${acuC}"><h3>ACU Today</h3><div class="gauge-val">${d.acu_used}</div>
-      <div class="gauge-sub">of ${d.acu_total} capacity</div>
-      <div class="gauge-bar"><div class="gauge-fill" style="width:${Math.min(d.acu_pct,100)}%"></div></div></div>
-    <div class="card ${revC}"><h3>Reviews</h3><div class="gauge-val">${d.reviews_used}</div>
-      <div class="gauge-sub">of ${d.reviews_total} bandwidth</div>
-      <div class="gauge-bar"><div class="gauge-fill" style="width:${Math.min(d.reviews_pct,100)}%"></div></div></div>
-    <div class="card c-blue"><h3>Agents</h3><div class="gauge-val">${sm.active||0}<span style="font-size:14px;color:var(--muted)"> / ${total}</span></div>
-      <div class="gauge-sub">${sm.errors?'<span style="color:var(--red)">'+sm.errors+' errors</span> &middot; ':''} ${sm.stuck?'<span style="color:var(--yellow)">'+sm.stuck+' stuck</span> &middot; ':''} ${sm.done||0} done</div>
-      <div class="gauge-bar"><div class="gauge-fill" style="width:${(sm.active||0)/total*100}%;background:var(--blue)"></div></div></div>
-    <div class="card ${q.pending>5?'c-yellow':'c-green'}"><h3>Queue</h3><div class="gauge-val">${q.pending||0}<span style="font-size:14px;color:var(--muted)"> pending</span></div>
-      <div class="gauge-sub">${q.running||0} running &middot; ${q.done||0} done${q.failed?' &middot; <span style=color:var(--red)>'+q.failed+' failed</span>':''}</div>
-      <div class="gauge-bar"><div class="gauge-fill" style="width:${Math.min((q.running||0)/Math.max(total,1)*100,100)}%;background:var(--green)"></div></div></div>`;
+    <div class="gauge g-blue"><div class="gauge-label">Agents</div>
+      <div class="gauge-value">${active}<small> / ${total}</small></div>
+      <div class="gauge-sub">${sm.errors?'<span style="color:var(--red)">'+sm.errors+' errors</span> &middot; ':''} ${sm.done||0} done</div>
+      <div class="gauge-bar"><div class="gauge-fill" style="width:${active/total*100}%;background:var(--blue)"></div></div></div>
+    <div class="gauge g-green"><div class="gauge-label">Queue</div>
+      <div class="gauge-value">${q.pending||0}<small> pending</small></div>
+      <div class="gauge-sub">${q.running||0} running &middot; ${q.done||0} done</div>
+      <div class="gauge-bar"><div class="gauge-fill" style="width:${Math.min((q.running||0)/Math.max(total,1)*100,100)}%;background:var(--green)"></div></div></div>
+    <div class="gauge g-purple"><div class="gauge-label">ACU Today</div>
+      <div class="gauge-value">${d?d.acu_used:0}<small> / ${d?d.acu_total:'?'}</small></div>
+      <div class="gauge-sub">${acuPct.toFixed(0)}% capacity</div>
+      <div class="gauge-bar"><div class="gauge-fill" style="width:${acuPct}%;background:var(--purple)"></div></div></div>
+    <div class="gauge g-yellow"><div class="gauge-label">WebSocket</div>
+      <div class="gauge-value" style="color:${ws&&ws.readyState===1?'var(--green)':'var(--dim)'}">${ws&&ws.readyState===1?'LIVE':'--'}</div>
+      <div class="gauge-sub">Real-time terminal diffs</div>
+      <div class="gauge-bar"><div class="gauge-fill" style="width:${ws&&ws.readyState===1?100:0}%;background:var(--yellow)"></div></div></div>`;
 }
 
-// === Pane Grid (uses monitor data) ===
-function renderPanesFromMonitor(){
-  if(!monitorData||!monitorData.panes)return;
+// === Pane Grid ===
+function renderPanes(){
+  const src=wsState?wsState.panes:(monitorData?monitorData.panes:null);
+  if(!src)return;
   const el=document.getElementById('panes');
-  let html='';
-  for(const p of monitorData.panes){
-    const h=p.health;
-    const isIdle=h==='idle';
-    const isActive=h==='active'||h==='done'||h==='error'||h==='stuck';
+  let activeCount=0;let html='';
+  for(const p of src){
+    const isActive=p.status==='active';
     const hasProject=p.project&&p.project!=='--';
+    const color=paneColor(p.pane);
+    const preview=paneOutputs[p.pane];
+    const previewLines=preview?preview.trim().split('\n').slice(-2).join('\n'):'';
+    if(isActive)activeCount++;
+    const h=p.health||p.status||'idle';
+    const sc=h==='active'||isActive?'s-active':h==='done'?'s-done':h==='error'?'s-error':h==='stuck'?'s-stuck':'s-idle';
     let cls=isActive?'active':'idle';
     if(h==='error')cls+=' has-error';
-    else if(h==='done')cls+=' is-done';
-    else if(h==='stuck')cls+=' is-stuck';
-    const sc=h==='active'?'s-active':h==='done'?'s-done':h==='error'?'s-error':h==='stuck'?'s-stuck':'s-idle';
-    const color=p.theme_color||getThemeColor(p.pane);
+    if(h==='done')cls+=' is-done';
+    if(activePaneNum===p.pane)cls+=' selected';
 
-    if(isIdle&&!hasProject){
-      // Compact idle pane — no stale data
-      html+=`<div class="pane-card idle" style="border-left-color:${color}" onclick="openPaneWatch(${p.pane})">
+    if(!isActive&&!hasProject){
+      html+=`<div class="pane-card idle" style="border-left-color:${color}" onclick="openPanel(${p.pane})">
         <div class="pane-top" style="margin-bottom:0">
           <span class="pane-num" style="background:${color}">${p.pane}</span>
           <span class="pane-status s-idle">available</span>
-        </div>
-      </div>`;
+        </div></div>`;
     } else {
-      // Active or has-data pane
-      html+=`<div class="pane-card ${cls}" style="border-left-color:${color}" onclick="openPaneWatch(${p.pane})">
+      html+=`<div class="pane-card ${cls}" style="border-left-color:${color}" onclick="openPanel(${p.pane})">
         <div class="pane-top">
           <span class="pane-num" style="background:${color}">${p.pane}</span>
           <span class="pane-status ${sc}">${h}</span>
         </div>
         <div class="pane-project">${p.project||'--'}</div>
-        <div class="pane-task">${p.task||'No task assigned'}</div>
+        <div class="pane-task">${(p.task||'').slice(0,60)}</div>
         <div class="pane-meta">
-          ${p.role&&p.role!=='--'?`<span class="badge badge-role">${p.role}</span>`:''}
-          ${p.pty?'<span class="badge badge-pty">PTY</span>':''}
-          ${p.lines>0?`<span class="badge badge-lines">${p.lines}L</span>`:''}
-          ${p.runtime_mins?`<span class="badge badge-runtime">${fmtMins(p.runtime_mins)}</span>`:''}
-          ${p.error?'<span class="badge badge-errors">ERR</span>':''}
-          ${h==='done'?'<span class="badge badge-done">DONE</span>':''}
+          ${p.role&&p.role!=='--'?`<span class="badge b-role">${p.role}</span>`:''}
+          <span class="badge b-lines" id="pane-lines-${p.pane}">${p.line_count||p.lines||0}L</span>
+          ${p.runtime_mins?`<span class="badge b-runtime">${fmtMins(p.runtime_mins)}</span>`:''}
+          ${isActive?'<span class="badge b-live">LIVE</span>':''}
+          ${h==='error'?'<span class="badge b-err">ERR</span>':''}
+          ${h==='done'?'<span class="badge b-done">DONE</span>':''}
         </div>
+        ${previewLines?`<div class="pane-preview">${escHtml(previewLines)}</div>`:''}
       </div>`;
     }
   }
   el.innerHTML=html;
+  document.getElementById('pane-count').textContent=`${activeCount}/${src.length}`;
 }
 
-const THEME_COLORS=['#00d4ff','#00ff41','#bf00ff','#ff9500','#ff3366','#ffcc00','#c0c0c0','#00cec9','#fd79a8'];
-function getThemeColor(n){return THEME_COLORS[(n-1)%THEME_COLORS.length]}
+function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 
-// === Pane Watch Modal ===
-async function openPaneWatch(paneNum){
-  const d=await fetchJSON(`/api/pane/${paneNum}/watch?lines=80`);
-  if(!d)return;
-  const color=d.theme_color||getThemeColor(paneNum);
-  document.getElementById('modal-title').innerHTML=
-    `<span class="pane-num" style="background:${color}">${d.pane}</span> ${d.theme} &mdash; ${d.project&&d.project!=='--'?d.project:'idle'}`;
-  document.getElementById('modal-meta').innerHTML=`
-    <div><dt>Role</dt><dd>${d.role&&d.role!=='--'?d.role:'--'}</dd></div>
-    <div><dt>Status</dt><dd>${d.status||'idle'}</dd></div>
-    <div><dt>Phase</dt><dd>${d.phase||'--'}</dd></div>
-    <div><dt>PTY</dt><dd>${d.pty_running?'Running':'Off'}</dd></div>
-    <div><dt>Lines</dt><dd>${d.line_count}</dd></div>
-    <div><dt>Runtime</dt><dd>${fmtMins(d.runtime_mins)||'--'}</dd></div>
-    <div><dt>Branch</dt><dd>${d.branch||'--'}</dd></div>
-    ${d.done?'<div><dt>Done</dt><dd style="color:var(--green)">YES</dd></div>':''}`;
+// === Right Panel: Terminal ===
+function openPanel(paneNum){
+  activePaneNum=paneNum;
+  const app=document.getElementById('app');
+  const panel=document.getElementById('panel');
+  app.classList.add('has-panel');
+  panel.style.display='flex';
 
-  // Errors section
-  const errEl=document.getElementById('modal-errors');
-  let errHtml='';
-  if(d.errors&&d.errors.length){
-    errHtml+=`<h4>Errors (${d.error_count})</h4>`;
-    for(const e of d.errors.slice(0,10)){
-      errHtml+=`<div class="error-line">L${e.line}: ${e.text}</div>`;
-    }
-  }
-  if(d.warnings&&d.warnings.length){
-    errHtml+=`<h4 style="color:var(--yellow);margin-top:6px">Warnings (${d.warning_count})</h4>`;
-    for(const w of d.warnings.slice(0,5)){
-      errHtml+=`<div class="warning-line">L${w.line}: ${w.text}</div>`;
-    }
-  }
-  errEl.innerHTML=errHtml;
+  const p=(wsState?wsState.panes:(monitorData?monitorData.panes:[]))?.find(x=>x.pane===paneNum);
+  const color=paneColor(paneNum);
 
-  const out=d.output||'[No output yet]';
-  const termEl=document.getElementById('modal-output');
-  termEl.textContent=out;
-  document.getElementById('modal').classList.add('open');
-  termEl.scrollTop=termEl.scrollHeight;
+  document.getElementById('panel-title').innerHTML=
+    `<span class="pane-num" style="background:${color}">${paneNum}</span> ${p&&p.project!=='--'?p.project:'idle'}`;
 
-  // Auto-refresh modal with watch endpoint
-  if(pollTimer)clearInterval(pollTimer);
-  pollTimer=setInterval(async()=>{
-    const u=await fetchJSON(`/api/pane/${paneNum}/watch?lines=80`);
-    if(u&&u.output){
-      termEl.textContent=u.output;
-      termEl.scrollTop=termEl.scrollHeight;
-    }
-  },3000);
+  document.getElementById('panel-meta').innerHTML=`
+    <div><dt>Status</dt><dd>${p?p.status:'idle'}</dd></div>
+    <div><dt>Role</dt><dd>${p&&p.role!=='--'?p.role:'--'}</dd></div>
+    <div><dt>Task</dt><dd style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p?p.task||'--':'--'}</dd></div>`;
+
+  document.getElementById('panel-actions').innerHTML=`
+    <button class="btn btn-red" onclick="wsSend({cmd:'kill',pane:'${paneNum}',reason:'web dashboard'})">Kill</button>
+    <button class="btn btn-blue" onclick="wsSend({cmd:'capture',pane:${paneNum}})">Refresh</button>`;
+
+  const output=paneOutputs[paneNum]||'Waiting for output...';
+  const term=document.getElementById('panel-terminal');
+  term.textContent=output;
+  term.scrollTop=term.scrollHeight;
+
+  wsSend({cmd:'capture',pane:paneNum});
+  renderPanes(); // Update selection highlight
 }
-function closeModal(){
-  document.getElementById('modal').classList.remove('open');
-  if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
+
+function closePanel(){
+  activePaneNum=null;
+  document.getElementById('app').classList.remove('has-panel');
+  document.getElementById('panel').style.display='none';
+  renderPanes();
 }
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+
+function sendTalk(){
+  const input=document.getElementById('talk-input');
+  const msg=input.value.trim();
+  if(!msg||!activePaneNum)return;
+  wsSend({cmd:'talk',pane:activePaneNum,message:msg});
+  input.value='';
+}
 
 // === Roles ===
 async function renderRoles(){
@@ -457,50 +598,35 @@ async function renderRoles(){
   if(!d||!d.roles)return;
   const el=document.getElementById('roles');
   const entries=Object.entries(d.roles);
-  const anyActive=entries.some(([,v])=>v.pct>0);
-  if(!anyActive){
-    el.innerHTML='<div class="no-data" style="padding:12px">No active agents</div>';
-    return;
-  }
-  let html='';
-  for(const[k,v]of entries){
-    html+=`<div class="role-bar"><div class="role-label"><span>${v.name}</span><span>${v.pct}%</span></div>
-      <div class="role-track"><div class="role-fill" style="width:${v.pct}%"></div></div></div>`;
-  }
-  el.innerHTML=html;
+  if(!entries.some(([,v])=>v.pct>0)){el.innerHTML='<div class="no-data">No active agents</div>';return;}
+  el.innerHTML=entries.map(([,v])=>`<div class="role-bar"><div class="role-label"><span>${v.name}</span><span>${v.pct}%</span></div>
+    <div class="role-track"><div class="role-fill" style="width:${v.pct}%"></div></div></div>`).join('');
 }
 
-// === Logs (uses monitor data + full log) ===
-function renderLogsFromMonitor(){
-  const el=document.getElementById('logs');
-  // Fetch full log for sidebar
+// === Logs ===
+function renderLogs(){
   fetchJSON('/api/logs').then(logs=>{
+    const el=document.getElementById('logs');
     if(!logs||!logs.length){el.innerHTML='<div class="no-data">No activity yet</div>';return;}
-    let html='';
-    for(const l of logs.slice(0,20)){
+    el.innerHTML=logs.slice(0,20).map(l=>{
       const ts=l.ts&&l.ts.length>=16?l.ts.slice(11,16):l.ts||'';
-      const fullMsg=l.summary||l.event||'';
-      html+=`<div class="log-entry" title="${fullMsg.replace(/"/g,'&quot;')}"><span class="log-ts">${ts}</span><span class="log-pane">P${l.pane}</span><span class="log-msg">${fullMsg}</span></div>`;
-    }
-    el.innerHTML=html;
+      return `<div class="log-entry"><span class="log-ts">${ts}</span><span class="log-pane">P${l.pane}</span><span class="log-msg">${escHtml(l.summary||l.event||'')}</span></div>`;
+    }).join('');
   });
 }
 
-// === Queue Form ===
-function toggleAddForm(){document.getElementById('queue-add-form').style.display=document.getElementById('queue-add-form').style.display==='none'?'block':'none';}
+// === Queue ===
+function toggleAdd(){document.getElementById('add-form').classList.toggle('open')}
 async function submitTask(){
   const project=document.getElementById('qa-project').value.trim();
   const task=document.getElementById('qa-task').value.trim();
   const role=document.getElementById('qa-role').value;
   const priority=parseInt(document.getElementById('qa-priority').value);
-  if(!project||!task)return alert('Project and task are required');
-  const r=await fetch('/api/queue/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project,task,role,priority})});
-  const d=await r.json();
-  if(d.error){alert(d.error);return;}
+  if(!project||!task)return;
+  await fetch('/api/queue/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project,task,role,priority})});
   document.getElementById('qa-task').value='';
   await renderQueue();
 }
-
 async function deleteTask(id){
   await fetch('/api/queue/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task_id:id})});
   await renderQueue();
@@ -509,37 +635,27 @@ async function retryTask(id){
   await fetch('/api/queue/retry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task_id:id})});
   await renderQueue();
 }
-
-// === Queue ===
 async function renderQueue(){
-  const d=await fetchJSON('/api/queue');
-  if(!d)return;
-  const sumEl=document.getElementById('queue-summary');
-  const s=d.summary;
-  sumEl.textContent=`${s.pending} pending \u00b7 ${s.running} running \u00b7 ${s.done} done${s.failed?' \u00b7 '+s.failed+' failed':''}`;
+  const d=await fetchJSON('/api/queue');if(!d)return;
   const el=document.getElementById('queue-table');
   const active=d.tasks.filter(t=>t.status!=='done');
-  const failed=d.tasks.filter(t=>t.status==='failed');
-  const done=d.tasks.filter(t=>t.status==='done').slice(-3).reverse();
+  const done=d.tasks.filter(t=>t.status==='done').slice(-2).reverse();
   const show=[...active,...done];
-  if(!show.length){el.innerHTML='<div class="q-empty">Queue empty &mdash; use + Add or MCP os_queue_add</div>';return;}
-  let html='<table class="q-table"><thead><tr><th>ID</th><th>P</th><th>Status</th><th>Project</th><th>Task</th><th>Role</th><th>Pane</th><th></th></tr></thead><tbody>';
+  if(!show.length){el.innerHTML='<div class="no-data">Queue empty</div>';return;}
+  let html='<table class="q-table"><thead><tr><th>ID</th><th>P</th><th>Status</th><th>Project</th><th>Task</th><th></th></tr></thead><tbody>';
   for(const t of show){
     const sc=t.status==='pending'?'q-pending':t.status==='running'?'q-running':t.status==='done'?'q-done':t.status==='failed'?'q-failed':'q-blocked';
     const pc='q-p'+(t.priority||3);
-    const pane=t.pane?'P'+t.pane:'\u2014';
-    const proj=(t.project||'').split('/').pop();
-    const fullTask=t.task||'';
     let actions='';
-    if(t.status==='failed'||t.status==='done')actions+=`<button onclick="retryTask('${t.id}')" style="background:var(--yellow);color:#000;border:none;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:700;cursor:pointer;margin-right:3px">RETRY</button>`;
-    if(t.status!=='running')actions+=`<button onclick="deleteTask('${t.id}')" style="background:var(--red);color:#fff;border:none;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:700;cursor:pointer">DEL</button>`;
+    if(t.status==='failed')actions+=`<button class="btn btn-blue" onclick="retryTask('${t.id}')" style="padding:1px 6px;font-size:8px">RETRY</button> `;
+    if(t.status!=='running')actions+=`<button class="btn btn-red" onclick="deleteTask('${t.id}')" style="padding:1px 6px;font-size:8px">DEL</button>`;
     html+=`<tr><td class="q-id">${t.id}</td><td><span class="q-priority ${pc}">${t.priority}</span></td>
       <td><span class="q-status ${sc}">${t.status}</span></td>
-      <td>${proj}</td><td title="${fullTask.replace(/"/g,'&quot;')}">${fullTask.slice(0,40)}${fullTask.length>40?'...':''}</td><td><span class="badge badge-role">${t.role||'dev'}</span></td>
-      <td>${pane}</td><td>${actions}</td></tr>`;
+      <td>${(t.project||'').split('/').pop()}</td>
+      <td title="${escHtml(t.task||'')}">${(t.task||'').slice(0,35)}${(t.task||'').length>35?'...':''}</td>
+      <td>${actions}</td></tr>`;
   }
-  html+='</tbody></table>';
-  el.innerHTML=html;
+  el.innerHTML=html+'</tbody></table>';
 }
 
 // === Board ===
@@ -547,327 +663,180 @@ async function renderBoard(){
   const d=await fetchJSON(`/api/board?space=${currentSpace}`);
   const order=['backlog','todo','in_progress','review','done'];
   const labels={backlog:'Backlog',todo:'To Do',in_progress:'In Progress',review:'Review',done:'Done'};
-  // Check if board has any data
-  const totalCards=d?order.reduce((sum,col)=>(d[col]?sum+d[col].length:sum),0):0;
-  if(!d||totalCards===0){
-    document.getElementById('kanban').innerHTML='<div class="no-data" style="width:100%">No issues tracked &mdash; create issues via MCP issue_create</div>';
-    return;
-  }
+  const total=d?order.reduce((s,c)=>(d[c]?s+d[c].length:s),0):0;
+  if(!d||total===0){document.getElementById('kanban').innerHTML='<div class="no-data" style="width:100%">No issues</div>';return;}
   let html='';
   for(const col of order){
     const cards=d[col]||[];
     html+=`<div class="kanban-col"><h4>${labels[col]} (${cards.length})</h4><div class="kanban-cards">`;
     for(const c of cards){
-      const acu=c.estimated_acu?`<span class="tag tag-acu">${c.estimated_acu} ACU</span>`:'';
-      const role=c.role?`<span class="tag tag-role">${c.role.toUpperCase()}</span>`:'';
-      html+=`<div class="k-card"><div class="k-id">${c.id}</div><div class="k-title">${(c.title||'').slice(0,50)}</div>
-        <div class="k-tags"><span class="tag tag-${c.priority}">${(c.priority||'').toUpperCase()}</span>${acu}${role}</div></div>`;
+      html+=`<div class="k-card"><div class="k-id">${c.id}</div><div class="k-title">${(c.title||'').slice(0,40)}</div></div>`;
     }
-    if(!cards.length)html+='<div class="no-data" style="padding:12px">Empty</div>';
+    if(!cards.length)html+='<div class="no-data" style="padding:8px">-</div>';
     html+='</div></div>';
   }
   document.getElementById('kanban').innerHTML=html;
 }
 
-// === Sprint ===
+// === Sprint + Burndown ===
 async function renderSprint(){
   const sprints=await fetchJSON(`/api/sprints?space=${currentSpace}`);
   const el=document.getElementById('sprint-section');
   const bdEl=document.getElementById('burndown-section');
   if(!sprints||!sprints.length){el.innerHTML='';bdEl.style.display='none';return;}
-  const active=sprints.find(s=>s.status==='active')||sprints[sprints.length-1];
-  const planned=active.planned||{};
-  el.innerHTML=`<div class="card"><div class="sprint-info">
-    <div class="sprint-name">${active.name||active.id}</div>
-    <div class="sprint-stat"><div class="val">${planned.total_acu||0}</div><div class="label">Planned ACU</div></div>
-    <div class="sprint-stat"><div class="val">${planned.total_reviews||0}</div><div class="label">Reviews</div></div>
-    <div class="sprint-stat"><div class="val">${(planned.issues||[]).length}</div><div class="label">Issues</div></div>
+  const s=sprints.find(s=>s.status==='active')||sprints[sprints.length-1];
+  const p=s.planned||{};
+  el.innerHTML=`<div class="card" style="margin-bottom:16px"><div class="sprint-info">
+    <div class="sprint-name">${s.name||s.id}</div>
+    <div class="sprint-stat"><div class="val">${p.total_acu||0}</div><div class="label">ACU</div></div>
+    <div class="sprint-stat"><div class="val">${(p.issues||[]).length}</div><div class="label">Issues</div></div>
   </div></div>`;
-
-  const bd=await fetchJSON(`/api/burndown?sprint=${active.id}`);
-  if(bd&&bd.ideal&&bd.ideal.length){bdEl.style.display='block';drawBurndown(bd);}
-  else{bdEl.style.display='none';}
+  const bd=await fetchJSON(`/api/burndown?sprint=${s.id}`);
+  if(bd&&bd.ideal&&bd.ideal.length){bdEl.style.display='block';drawBurndown(bd);}else{bdEl.style.display='none';}
 }
 
 function drawBurndown(bd){
-  const canvas=document.getElementById('burndown-chart');
-  if(!canvas)return;
+  const canvas=document.getElementById('burndown-chart');if(!canvas)return;
   const ctx=canvas.getContext('2d');
   const dpr=window.devicePixelRatio||1;
-  canvas.width=canvas.offsetWidth*dpr;canvas.height=160*dpr;
-  ctx.scale(dpr,dpr);
-  const W=canvas.offsetWidth,H=160;
-  ctx.clearRect(0,0,W,H);
+  canvas.width=canvas.offsetWidth*dpr;canvas.height=140*dpr;ctx.scale(dpr,dpr);
+  const W=canvas.offsetWidth,H=140;ctx.clearRect(0,0,W,H);
   const max=bd.planned_acu||1;const days=bd.ideal.length;
-  const pad={l:40,r:10,t:15,b:25};
-  const xS=(W-pad.l-pad.r)/Math.max(days-1,1);
-
-  ctx.strokeStyle='#21262d';ctx.lineWidth=1;
-  for(let i=0;i<5;i++){const y=pad.t+i*(H-pad.t-pad.b)/4;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();}
-  ctx.fillStyle='#484f58';ctx.font='10px sans-serif';ctx.textAlign='right';
-  for(let i=0;i<5;i++){const v=max-i*max/4;ctx.fillText(v.toFixed(0),pad.l-5,pad.t+4+i*(H-pad.t-pad.b)/4);}
-  ctx.textAlign='center';
-  for(let i=0;i<days;i+=Math.max(1,Math.floor(days/6))){
-    ctx.fillText(bd.ideal[i].date.slice(5),pad.l+i*xS,H-5);
-  }
-
-  ctx.strokeStyle='#30363d';ctx.lineWidth=1.5;ctx.setLineDash([4,4]);ctx.beginPath();
+  const pad={l:36,r:8,t:12,b:22};const xS=(W-pad.l-pad.r)/Math.max(days-1,1);
+  ctx.strokeStyle='#1e2a3a';ctx.lineWidth=1;
+  for(let i=0;i<4;i++){const y=pad.t+i*(H-pad.t-pad.b)/3;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();}
+  ctx.fillStyle='#3d4f63';ctx.font='9px sans-serif';ctx.textAlign='right';
+  for(let i=0;i<4;i++){ctx.fillText((max-i*max/3).toFixed(0),pad.l-4,pad.t+4+i*(H-pad.t-pad.b)/3);}
+  ctx.strokeStyle='#2d4a6a';ctx.lineWidth=1;ctx.setLineDash([3,3]);ctx.beginPath();
   for(let i=0;i<days;i++){const x=pad.l+i*xS,y=pad.t+(1-bd.ideal[i].remaining/max)*(H-pad.t-pad.b);i?ctx.lineTo(x,y):ctx.moveTo(x,y);}
   ctx.stroke();ctx.setLineDash([]);
-
   if(bd.actual&&bd.actual.length){
-    ctx.strokeStyle='#58a6ff';ctx.lineWidth=2;ctx.beginPath();
+    ctx.strokeStyle='#4da6ff';ctx.lineWidth=2;ctx.beginPath();
     for(let i=0;i<bd.actual.length;i++){const x=pad.l+i*xS,y=pad.t+(1-bd.actual[i].remaining/max)*(H-pad.t-pad.b);i?ctx.lineTo(x,y):ctx.moveTo(x,y);}
     ctx.stroke();
-    ctx.fillStyle='#58a6ff';
-    for(let i=0;i<bd.actual.length;i++){const x=pad.l+i*xS,y=pad.t+(1-bd.actual[i].remaining/max)*(H-pad.t-pad.b);ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fill();}
+    ctx.fillStyle='#4da6ff';
+    for(let i=0;i<bd.actual.length;i++){const x=pad.l+i*xS,y=pad.t+(1-bd.actual[i].remaining/max)*(H-pad.t-pad.b);ctx.beginPath();ctx.arc(x,y,2,0,Math.PI*2);ctx.fill();}
   }
 }
 
-// === WebSocket — Real-time bidirectional ===
-let ws=null;
-let wsState=null; // Full state from init message
-let paneOutputs={}; // pane -> accumulated output string
-let activePaneModal=null;
-
+// === WebSocket ===
 function connectWS(){
   const proto=location.protocol==='https:'?'wss:':'ws:';
   ws=new WebSocket(`${proto}//${location.host}/ws`);
-
-  ws.onopen=()=>{
-    console.log('WS connected');
-    document.getElementById('status-indicator').textContent='CONNECTED';
-    document.getElementById('status-indicator').className='status-badge status-ok';
-  };
-
-  ws.onmessage=(e)=>{
-    try{
-      const msg=JSON.parse(e.data);
-      handleWSMessage(msg);
-    }catch(err){console.error('WS parse error',err);}
-  };
-
-  ws.onclose=()=>{
-    console.log('WS disconnected, reconnecting...');
-    document.getElementById('status-indicator').textContent='RECONNECTING';
-    document.getElementById('status-indicator').className='status-badge status-warn';
-    setTimeout(connectWS,2000);
-  };
-
-  ws.onerror=()=>{ws.close();};
+  ws.onopen=()=>{renderGauges()};
+  ws.onmessage=(e)=>{try{handleWSMessage(JSON.parse(e.data))}catch{}};
+  ws.onclose=()=>{setTimeout(connectWS,2000)};
+  ws.onerror=()=>{ws.close()};
 }
 
 function handleWSMessage(msg){
-  updateTimestamp();
   switch(msg.type){
     case 'init':
       wsState=msg.data;
-      // Store initial outputs
-      for(const p of wsState.panes||[]){
-        if(p.output) paneOutputs[p.pane]=p.output;
-      }
-      renderFromWS();
+      for(const p of wsState.panes||[]){if(p.output)paneOutputs[p.pane]=p.output;}
+      renderPanes();renderGauges();
       break;
     case 'terminal_output':
       for(const u of msg.updates||[]){
         const prev=paneOutputs[u.pane]||'';
         paneOutputs[u.pane]=prev+u.output;
-        // Keep max 5000 chars per pane
-        if(paneOutputs[u.pane].length>5000){
-          paneOutputs[u.pane]=paneOutputs[u.pane].slice(-4000);
+        if(paneOutputs[u.pane].length>8000)paneOutputs[u.pane]=paneOutputs[u.pane].slice(-6000);
+        // Update live terminal panel
+        if(activePaneNum===u.pane){
+          const term=document.getElementById('panel-terminal');
+          if(term){term.textContent=paneOutputs[u.pane];term.scrollTop=term.scrollHeight;}
         }
-        // If this pane's modal is open, update it live
-        if(activePaneModal===u.pane){
-          const termEl=document.getElementById('modal-output');
-          if(termEl){
-            termEl.textContent=paneOutputs[u.pane];
-            termEl.scrollTop=termEl.scrollHeight;
-          }
-        }
-        // Update line count badge
+        // Update line badge
         const badge=document.getElementById(`pane-lines-${u.pane}`);
-        if(badge) badge.textContent=u.full_lines+'L';
+        if(badge)badge.textContent=u.full_lines+'L';
+      }
+      // Re-render pane previews
+      renderPanes();
+      break;
+    case 'pane_spawned':case 'pane_killed':case 'pane_status':
+      refresh();break;
+    case 'log':
+      addLogEntry(msg);break;
+    case 'queue':
+      renderQueue();break;
+    case 'cmd_result':
+      // Flash capture result into panel terminal
+      if(msg.cmd==='capture'&&msg.result&&msg.result.output){
+        const pn=msg.result.pane;
+        paneOutputs[pn]=msg.result.output;
+        if(activePaneNum===pn){
+          const term=document.getElementById('panel-terminal');
+          if(term){term.textContent=msg.result.output;term.scrollTop=term.scrollHeight;}
+        }
       }
       break;
-    case 'pane_spawned':
-    case 'pane_killed':
-    case 'pane_status':
-      // Refresh full state on structural changes
-      refresh();
-      break;
-    case 'log':
-      addLogEntry(msg);
-      break;
-    case 'queue':
-      renderQueue();
-      break;
-    case 'cmd_result':
-      showCmdResult(msg);
-      break;
-    case 'refresh':
-      refresh();
-      break;
+    case 'refresh':refresh();break;
   }
 }
 
 function addLogEntry(msg){
   const el=document.getElementById('logs');
   const now=new Date();
-  const ts=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
-  const entry=document.createElement('div');
-  entry.className='log-entry';
-  entry.innerHTML=`<span class="log-ts">${ts}</span><span class="log-pane">P${msg.pane}</span><span class="log-msg">${msg.summary||msg.event||''}</span>`;
+  const ts=[now.getHours(),now.getMinutes()].map(n=>String(n).padStart(2,'0')).join(':');
+  const entry=document.createElement('div');entry.className='log-entry';
+  entry.innerHTML=`<span class="log-ts">${ts}</span><span class="log-pane">P${msg.pane}</span><span class="log-msg">${escHtml(msg.summary||msg.event||'')}</span>`;
   el.insertBefore(entry,el.firstChild);
-  // Keep max 30 entries
-  while(el.children.length>30) el.removeChild(el.lastChild);
+  while(el.children.length>25)el.removeChild(el.lastChild);
 }
 
-function showCmdResult(msg){
-  const r=msg.result;
-  const status=r.error?'ERROR':'OK';
-  const text=r.error||r.status||JSON.stringify(r).slice(0,80);
-  // Flash in status bar
-  const ind=document.getElementById('status-indicator');
-  ind.textContent=`${msg.cmd}: ${status}`;
-  ind.className=r.error?'status-badge status-alert':'status-badge status-ok';
-  setTimeout(()=>{ind.textContent=wsState?'LIVE':'IDLE';ind.className='status-badge status-ok';},3000);
-}
+function wsSend(cmd){if(ws&&ws.readyState===1)ws.send(JSON.stringify(cmd))}
 
-// Send command to server via WS
-function wsSend(cmd){
-  if(ws&&ws.readyState===WebSocket.OPEN){
-    ws.send(JSON.stringify(cmd));
+// === Command Palette ===
+const COMMANDS=[
+  {name:'Spawn agent',key:'s',action:()=>{/* TODO: open spawn form */}},
+  {name:'Kill agent',key:'k',action:()=>{if(activePaneNum)wsSend({cmd:'kill',pane:String(activePaneNum),reason:'palette'})}},
+  {name:'Refresh all',key:'r',action:()=>refresh()},
+  {name:'Toggle queue form',key:'q',action:()=>toggleAdd()},
+  {name:'Close panel',key:'Esc',action:()=>closePanel()},
+];
+
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();openPalette();}
+  if(e.key==='Escape'){closePalette();if(!activePaneNum)return;}
+});
+
+function openPalette(){
+  document.getElementById('palette').classList.add('open');
+  document.getElementById('palette-input').value='';
+  document.getElementById('palette-input').focus();
+  filterPalette();
+}
+function closePalette(){document.getElementById('palette').classList.remove('open')}
+function filterPalette(){
+  const q=document.getElementById('palette-input').value.toLowerCase();
+  const results=COMMANDS.filter(c=>c.name.toLowerCase().includes(q));
+  document.getElementById('palette-results').innerHTML=results.map((c,i)=>
+    `<div class="palette-item${i===0?' active':''}" onclick="runCmd(${COMMANDS.indexOf(c)})">${c.name}<span class="key">${c.key}</span></div>`
+  ).join('');
+}
+function palKey(e){
+  if(e.key==='Enter'){
+    const q=document.getElementById('palette-input').value.toLowerCase();
+    const c=COMMANDS.find(c=>c.name.toLowerCase().includes(q));
+    if(c){c.action();closePalette();}
   }
+  if(e.key==='Escape')closePalette();
 }
+function runCmd(i){COMMANDS[i].action();closePalette();}
 
-// === Render from WS state ===
-function renderFromWS(){
-  if(!wsState) return;
-  renderPanesFromWS();
-  renderGaugesFromWS();
-  renderLogsFromMonitor();
-  renderQueue();
-  renderBoard();
-}
-
-function renderPanesFromWS(){
-  if(!wsState||!wsState.panes) return;
-  const el=document.getElementById('panes');
-  let html='';
-  for(const p of wsState.panes){
-    const isActive=p.status==='active';
-    const hasProject=p.project&&p.project!=='--';
-    const color=getThemeColor(p.pane);
-    const hasOutput=!!paneOutputs[p.pane];
-
-    if(!isActive&&!hasProject){
-      html+=`<div class="pane-card idle" style="border-left-color:${color}" onclick="openPaneLive(${p.pane})">
-        <div class="pane-top" style="margin-bottom:0">
-          <span class="pane-num" style="background:${color}">${p.pane}</span>
-          <span class="pane-status s-idle">available</span>
-        </div>
-      </div>`;
-    } else {
-      html+=`<div class="pane-card ${isActive?'active':'idle'}" style="border-left-color:${color}" onclick="openPaneLive(${p.pane})">
-        <div class="pane-top">
-          <span class="pane-num" style="background:${color}">${p.pane}</span>
-          <span class="pane-status ${isActive?'s-active':'s-idle'}">${p.status}</span>
-        </div>
-        <div class="pane-project">${p.project||'--'}</div>
-        <div class="pane-task">${p.task||'No task'}</div>
-        <div class="pane-meta">
-          ${p.role&&p.role!=='--'?`<span class="badge badge-role">${p.role}</span>`:''}
-          <span class="badge badge-lines" id="pane-lines-${p.pane}">${p.line_count||0}L</span>
-          ${hasOutput?'<span class="badge badge-pty" title="Has terminal output">LIVE</span>':''}
-        </div>
-      </div>`;
-    }
-  }
-  el.innerHTML=html;
-}
-
-function renderGaugesFromWS(){
-  if(!wsState) return;
-  const active=wsState.active_count||0;
-  const total=wsState.total_panes||9;
-  const q=wsState.queue||{};
-  document.getElementById('gauges').innerHTML=`
-    <div class="card c-blue"><h3>Agents</h3><div class="gauge-val">${active}<span style="font-size:14px;color:var(--muted)"> / ${total}</span></div>
-      <div class="gauge-sub">${total-active} idle</div>
-      <div class="gauge-bar"><div class="gauge-fill" style="width:${active/total*100}%;background:var(--blue)"></div></div></div>
-    <div class="card c-green"><h3>Screens</h3><div class="gauge-val">${wsState.screens?wsState.screens.count:1}</div>
-      <div class="gauge-sub">${wsState.screens&&wsState.screens.names?wsState.screens.names.join(', '):'default'}</div>
-      <div class="gauge-bar"><div class="gauge-fill" style="width:100%;background:var(--green)"></div></div></div>
-    <div class="card ${q.pending>5?'c-yellow':'c-green'}"><h3>Queue</h3><div class="gauge-val">${q.pending||0}<span style="font-size:14px;color:var(--muted)"> pending</span></div>
-      <div class="gauge-sub">${q.running||0} running · ${q.done||0} done${q.failed?' · <span style=color:var(--red)>'+q.failed+' failed</span>':''}</div>
-      <div class="gauge-bar"><div class="gauge-fill" style="width:${Math.min((q.running||0)/Math.max(total,1)*100,100)}%;background:var(--green)"></div></div></div>
-    <div class="card"><h3>WebSocket</h3><div class="gauge-val" style="color:var(--green)">LIVE</div>
-      <div class="gauge-sub">Real-time · 1s updates</div>
-      <div class="gauge-bar"><div class="gauge-fill" style="width:100%;background:var(--green)"></div></div></div>`;
-}
-
-// === Live Pane Modal (with terminal output + command input) ===
-function openPaneLive(paneNum){
-  activePaneModal=paneNum;
-  const p=wsState&&wsState.panes?wsState.panes.find(x=>x.pane===paneNum):null;
-  const color=getThemeColor(paneNum);
-
-  document.getElementById('modal-title').innerHTML=
-    `<span class="pane-num" style="background:${color}">${paneNum}</span> ${p?p.theme:'--'} — ${p&&p.project!=='--'?p.project:'idle'}`;
-
-  document.getElementById('modal-meta').innerHTML=`
-    <div><dt>Status</dt><dd>${p?p.status:'idle'}</dd></div>
-    <div><dt>Role</dt><dd>${p&&p.role!=='--'?p.role:'--'}</dd></div>
-    <div><dt>Task</dt><dd>${p?p.task:'--'}</dd></div>`;
-
-  document.getElementById('modal-errors').innerHTML=`
-    <div style="display:flex;gap:6px;margin-top:8px">
-      <button onclick="wsSend({cmd:'kill',pane:'${paneNum}',reason:'web dashboard'})" style="background:var(--red);color:#fff;border:none;padding:4px 12px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer">Kill</button>
-      <button onclick="wsSend({cmd:'capture',pane:${paneNum}})" style="background:var(--blue);color:#fff;border:none;padding:4px 12px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer">Refresh</button>
-    </div>
-    <div style="margin-top:8px;display:flex;gap:6px">
-      <input id="talk-input" placeholder="Send message to agent..." style="flex:1;background:#21262d;color:var(--text);border:1px solid var(--border);padding:6px 10px;border-radius:4px;font-size:12px;font-family:monospace"
-        onkeydown="if(event.key==='Enter'){wsSend({cmd:'talk',pane:${paneNum},message:this.value});this.value=''}">
-      <button onclick="const i=document.getElementById('talk-input');wsSend({cmd:'talk',pane:${paneNum},message:i.value});i.value=''" style="background:var(--green);color:#000;border:none;padding:4px 12px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer">Send</button>
-    </div>`;
-
-  const output=paneOutputs[paneNum]||'[No output captured yet — output streams in real-time]';
-  const termEl=document.getElementById('modal-output');
-  termEl.textContent=output;
-  document.getElementById('modal').classList.add('open');
-  termEl.scrollTop=termEl.scrollHeight;
-
-  // Request fresh capture
-  wsSend({cmd:'capture',pane:paneNum});
-}
-
-function closeModal(){
-  activePaneModal=null;
-  document.getElementById('modal').classList.remove('open');
-  if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
-}
-
-// === Refresh (fallback for structural changes) ===
+// === Refresh ===
 async function refresh(){
   currentSpace=document.getElementById('space-select').value;
   await loadMonitor();
-  // If WS is connected and has state, use WS pane rendering (openPaneLive)
-  // Otherwise fall back to HTTP monitor rendering (openPaneWatch)
-  if(wsState&&ws&&ws.readyState===WebSocket.OPEN){
-    renderPanesFromWS();
-  } else {
-    renderPanesFromMonitor();
-  }
-  renderLogsFromMonitor();
+  renderPanes();
+  renderLogs();
   await Promise.all([renderGauges(),renderRoles(),renderQueue(),renderBoard(),renderSprint()]);
 }
 
 async function init(){
   await loadSpaces();
-  // Initial load via HTTP (fast), then switch to WS
   await refresh();
   connectWS();
-  // Slow fallback poll (30s) in case WS drops
   setInterval(refresh,30000);
 }
 init();
