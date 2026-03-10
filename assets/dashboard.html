@@ -70,7 +70,7 @@ select:hover{border-color:var(--border-bright)}
 .main{padding:18px 24px;overflow-y:auto;scroll-behavior:smooth}
 
 /* === Alert Bar === */
-.alert-bar{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto;flex-wrap:wrap}
+.alert-bar{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
 .alert-bar:empty{display:none}
 .alert-item{
   font-size:10px;padding:5px 10px;border-radius:20px;
@@ -85,6 +85,8 @@ select:hover{border-color:var(--border-bright)}
 
 /* === Gauge Row === */
 .gauge-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+@media(max-width:900px){.gauge-row{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:500px){.gauge-row{grid-template-columns:1fr}}
 .gauge{
   background:linear-gradient(145deg,var(--surface) 0%,var(--surface2) 100%);
   border:1px solid var(--border);border-radius:var(--radius);
@@ -158,7 +160,7 @@ select:hover{border-color:var(--border-bright)}
 }
 .pane-card:hover{transform:translateY(-2px);box-shadow:0 6px 24px color-mix(in srgb,var(--pane-color,var(--blue)) 15%,transparent),var(--shadow);border-color:var(--border-bright)}
 .pane-card.selected{box-shadow:0 0 0 2px var(--pane-color,var(--blue)),var(--shadow);background:color-mix(in srgb,var(--pane-color,var(--blue)) 3%,var(--surface))}
-.pane-card.idle{opacity:.3;padding:8px 14px}
+.pane-card.idle{opacity:.3;padding:12px 14px}
 .pane-card.idle:hover{opacity:.55}
 .pane-card.has-error{box-shadow:inset 0 0 20px rgba(255,92,92,.1)}
 .pane-card.is-done{box-shadow:inset 0 0 20px rgba(68,217,140,.1)}
@@ -455,8 +457,11 @@ canvas{width:100%;display:block}
 .port-svc{color:var(--text);font-weight:500}
 .port-pane{color:var(--dim);margin-left:auto;font-size:9px}
 
-/* === No Data === */
+/* === No Data + Loading === */
 .no-data{color:var(--dim);font-size:11px;text-align:center;padding:24px;font-style:italic;opacity:.6}
+.loading{color:var(--dim);font-size:11px;text-align:center;padding:20px;opacity:.5}
+.loading::after{content:'';display:inline-block;width:12px;height:12px;border:2px solid var(--dim);border-top-color:var(--blue);border-radius:50%;animation:spin .6s linear infinite;margin-left:8px;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
 
 /* === Scrollbar === */
 ::-webkit-scrollbar{width:6px;height:6px}
@@ -478,6 +483,32 @@ canvas{width:100%;display:block}
 .palette input:focus{outline:none}
 .palette input::placeholder{color:var(--dim)}
 .palette-results{border-top:1px solid var(--border);max-height:300px;overflow-y:auto}
+
+/* === Mobile Responsive === */
+@media(max-width:700px){
+  .header{padding:0 12px;height:46px}
+  .logo h1{font-size:13px}
+  .header-right{gap:6px}
+  .main{padding:12px}
+  .pane-grid{grid-template-columns:1fr}
+  .content-grid{grid-template-columns:1fr}
+  .build-grid{grid-template-columns:1fr}
+  .stat-grid{grid-template-columns:repeat(auto-fill,minmax(70px,1fr))}
+  .app.has-panel{grid-template-columns:1fr}
+  .app.has-panel .panel{position:fixed;inset:0;z-index:200;width:100%;grid-column:1;grid-row:1/3}
+  .panel{width:100%!important}
+  .card{padding:12px 14px}
+  .gauge{padding:12px 14px}
+  .gauge-value{font-size:22px}
+  .kanban{flex-direction:column}
+  .kanban-col{min-width:unset}
+}
+@media(max-width:500px){
+  .pane-meta{gap:3px}
+  .badge{font-size:7px;padding:1px 4px}
+  .q-table{font-size:10px}
+  .q-table th,.q-table td{padding:6px 6px}
+}
 .palette-item{
   padding:10px 18px;cursor:pointer;display:flex;align-items:center;gap:10px;
   transition:background .1s;font-size:13px;
@@ -503,9 +534,9 @@ canvas{width:100%;display:block}
 
   <div class="main" id="main">
     <div class="alert-bar" id="alerts"></div>
-    <div class="gauge-row" id="gauges"></div>
+    <div class="gauge-row" id="gauges"><div class="loading">Loading</div></div>
     <div class="section-head">Agent Panes <span class="count" id="pane-count">0/9</span></div>
-    <div class="pane-grid" id="panes"></div>
+    <div class="pane-grid" id="panes"><div class="loading">Loading agents</div></div>
 
     <div class="content-grid">
       <div>
@@ -710,8 +741,10 @@ function renderAlerts(){
 }
 
 // === Gauges ===
+let cachedCapacity=null;
+async function loadCapacity(){cachedCapacity=await fetchJSON(`/api/capacity/dashboard?space=${currentSpace}`);return cachedCapacity;}
 async function renderGauges(){
-  const d=await fetchJSON(`/api/capacity/dashboard?space=${currentSpace}`);
+  const d=cachedCapacity||await loadCapacity();
   const sm=monitorData?monitorData.summary:{active:0};
   const q=monitorData?monitorData.queue:{pending:0,running:0};
   const total=wsState&&wsState.total_panes?wsState.total_panes:(sm.total||9);
@@ -823,7 +856,7 @@ function paneLastActivity(pane){
   }
   return '';
 }
-function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 
 // === Right Panel: Terminal ===
 function openPanel(paneNum){
@@ -1106,7 +1139,7 @@ function talkKeydown(e){
 
 // === Roles ===
 async function renderRoles(){
-  const d=await fetchJSON(`/api/capacity/dashboard?space=${currentSpace}`);
+  const d=cachedCapacity||await loadCapacity();
   if(!d||!d.roles)return;
   const el=document.getElementById('roles');
   const entries=Object.entries(d.roles);
@@ -1135,8 +1168,12 @@ async function submitTask(){
   const role=document.getElementById('qa-role').value;
   const priority=parseInt(document.getElementById('qa-priority').value);
   if(!project||!task)return;
-  await fetch('/api/queue/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project,task,role,priority})});
-  document.getElementById('qa-task').value='';
+  try{
+    const r=await fetch('/api/queue/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project,task,role,priority})});
+    if(!r.ok)throw new Error(`HTTP ${r.status}`);
+    document.getElementById('qa-task').value='';
+    showCopyToast('Task queued');
+  }catch(e){showCopyToast('Failed to add task: '+e.message);return;}
   await renderQueue();
 }
 async function deleteTask(id){
@@ -1322,7 +1359,7 @@ function wsSend(cmd){if(ws&&ws.readyState===1)ws.send(JSON.stringify(cmd))}
 
 // === Command Palette ===
 const COMMANDS=[
-  {name:'Spawn agent',key:'s',action:()=>{/* TODO: open spawn form */}},
+  {name:'Spawn agent',key:'s',action:()=>{const project=prompt('Project path:');if(project){const role=prompt('Role (developer/qa/devops):','developer')||'developer';wsSend({cmd:'spawn',project,role});setTimeout(refresh,1500);}}},
   {name:'Kill agent',key:'k',action:()=>{if(activePaneNum)wsSend({cmd:'kill',pane:String(activePaneNum),reason:'palette'})}},
   {name:'Refresh all',key:'r',action:()=>refresh()},
   {name:'Toggle queue form',key:'q',action:()=>toggleAdd()},
@@ -1420,11 +1457,10 @@ async function renderInfra(){
 const buildThemeColors={1:'#e84040',2:'#3ddc84',3:'#5c9aff',4:'#a78bfa',5:'#fbbf24'};
 async function renderBuilds(){
   try{
-    const r=await fetch('/api/builds');
-    const data=await r.json();
+    const data=await fetchJSON('/api/builds');
     const el=document.getElementById('builds');
     const countEl=document.getElementById('build-count');
-    if(!data.builds||!data.builds.length){
+    if(!data||!data.builds||!data.builds.length){
       el.innerHTML='<div style="color:var(--dim);font-size:11px;padding:8px">No build environments found</div>';
       countEl.textContent='0/5';
       return;
@@ -1460,6 +1496,8 @@ async function restyleBuilds(){
 async function refresh(){
   currentSpace=document.getElementById('space-select').value;
   await loadMonitor();
+  cachedCapacity=null; // bust cache
+  await loadCapacity();
   renderPanes();
   renderLogs();
   await Promise.all([renderGauges(),renderRoles(),renderQueue(),renderBoard(),renderSprint(),renderDigest(),renderOverview(),renderInfra(),renderBuilds()]);
