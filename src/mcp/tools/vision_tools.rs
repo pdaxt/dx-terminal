@@ -54,3 +54,15 @@ pub fn vision_update_task(
 pub fn vision_sync(project: Option<&str>) -> String {
     vision::sync_git_status(&resolve_project(project))
 }
+
+pub fn vision_init(project: &str, name: &str, mission: &str, repo: &str) -> String {
+    vision::init_vision(project, name, mission, repo)
+}
+
+pub fn vision_add_goal(project: Option<&str>, id: &str, title: &str, description: &str, priority: u8) -> String {
+    vision::add_goal(&resolve_project(project), id, title, description, priority)
+}
+
+pub fn vision_update_goal(project: Option<&str>, goal_id: &str, status: &str) -> String {
+    vision::update_goal_status(&resolve_project(project), goal_id, status, &format!("Status changed to {}", status))
+}

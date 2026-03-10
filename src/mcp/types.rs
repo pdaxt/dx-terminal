@@ -1929,6 +1929,48 @@ pub struct VisionSyncRequest {
     pub project: Option<String>,
 }
 
+// ── Vision Init / Goal Management ──
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VisionInitRequest {
+    #[schemars(description = "Project path (e.g. '/Users/pran/Projects/dataxlr8')")]
+    pub project: String,
+    #[schemars(description = "Project name (e.g. 'dataxlr8')")]
+    pub name: String,
+    #[schemars(description = "Project mission statement")]
+    pub mission: String,
+    #[schemars(description = "GitHub repo (e.g. 'pdaxt/dataxlr8')")]
+    #[serde(default)]
+    pub repo: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VisionAddGoalRequest {
+    #[schemars(description = "Project path")]
+    pub project: Option<String>,
+    #[schemars(description = "Goal ID (e.g. 'G-AUTH')")]
+    pub id: String,
+    #[schemars(description = "Goal title")]
+    pub title: String,
+    #[schemars(description = "Goal description")]
+    pub description: String,
+    #[schemars(description = "Priority: 1=critical, 2=high, 3=medium")]
+    #[serde(default = "default_priority")]
+    pub priority: u8,
+}
+
+fn default_priority() -> u8 { 2 }
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VisionUpdateGoalRequest {
+    #[schemars(description = "Project path")]
+    pub project: Option<String>,
+    #[schemars(description = "Goal ID")]
+    pub goal_id: String,
+    #[schemars(description = "New status: planned/in_progress/achieved/deferred/dropped")]
+    pub status: String,
+}
+
 // ── Screen Management ──
 
 #[derive(Debug, Deserialize, JsonSchema)]
