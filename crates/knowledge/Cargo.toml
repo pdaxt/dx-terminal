@@ -1,0 +1,16 @@
+[package]
+name = "dx-knowledge"
+version = "0.1.0"
+edition = "2021"
+description = "Knowledge graph, session replay, and fact verification framework"
+license = "MIT"
+repository = "https://github.com/pdaxt/dx-terminal"
+keywords = ["knowledge-graph", "session-replay", "facts", "framework"]
+categories = ["development-tools"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+regex = "1"

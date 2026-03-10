@@ -62,6 +62,7 @@ walkdir = "2.5.0"
 # Workspace crates
 dx-types = { path = "crates/types" }
 dx-gateway = { path = "crates/gateway" }
+dx-vision = { path = "crates/vision" }
 
 # TOML parsing (for MCP descriptors)
 toml = "0.8"
