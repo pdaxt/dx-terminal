@@ -241,6 +241,16 @@
       "reason": "Task status updated",
       "triggered_by": "agent",
       "github_issue": null
+    },
+    {
+      "timestamp": "2026-03-10T05:11:31Z",
+      "change_type": "added",
+      "field": "feature:F6.1",
+      "old_value": "",
+      "new_value": "Open Source Documentation",
+      "reason": "Feature added under goal G6",
+      "triggered_by": "user",
+      "github_issue": null
     }
   ],
   "features": [
@@ -311,6 +321,31 @@
       "parent_vision": null,
       "created_at": "2026-03-10T05:01:15Z",
       "updated_at": "2026-03-10T05:02:51Z"
+    },
+    {
+      "id": "F6.1",
+      "goal_id": "G6",
+      "title": "Open Source Documentation",
+      "description": "Write README and docs for GitHub launch",
+      "status": "specifying",
+      "questions": [
+        {
+          "id": "Q6.1.1",
+          "text": "What sections should the README include?",
+          "status": "open",
+          "answer": null,
+          "asked_at": "2026-03-10T05:11:31Z",
+          "answered_at": null,
+          "decision_id": null
+        }
+      ],
+      "decisions": [],
+      "tasks": [],
+      "acceptance_criteria": [],
+      "sub_vision": null,
+      "parent_vision": null,
+      "created_at": "2026-03-10T05:11:31Z",
+      "updated_at": "2026-03-10T05:11:31Z"
     }
   ],
   "github": {
@@ -322,5 +357,5 @@
       "vision"
     ]
   },
-  "updated_at": "2026-03-10T05:02:51Z"
+  "updated_at": "2026-03-10T05:11:31Z"
 }
