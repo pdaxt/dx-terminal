@@ -432,3 +432,147 @@ fn test_queue_roundtrip_with_pipeline_id() {
     assert_eq!(queue2.tasks[0].pipeline_id.as_deref(), Some("pipe_999_beef"));
     assert_eq!(queue2.tasks[1].pipeline_id.as_deref(), Some("pipe_999_beef"));
 }
+
+// ── VDD: Vision-Driven Development tests ──
+
+#[test]
+fn test_vdd_feature_lifecycle() {
+    use dx_terminal::vision::*;
+
+    let dir = std::env::temp_dir().join("dx_vdd_test");
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.to_str().unwrap();
+
+    // Init vision
+    let result = init_vision(path, "test-project", "Build amazing things", "test/repo");
+    assert!(result.contains("created"));
+
+    // Add a goal
+    let result = add_goal(path, "G1", "Dashboard", "Build a live dashboard", 1);
+    assert!(result.contains("added"));
+
+    // Add a feature
+    let result = add_feature(path, "G1", "WebSocket streaming", "Real-time data via WS", vec!["Sub-second latency".into()]);
+    assert!(result.contains("F1.1"));
+
+    // Add questions
+    let result = add_question(path, "F1.1", "Which protocol: WS or SSE?");
+    assert!(result.contains("Q1.1.1"));
+
+    // Answer question
+    let result = answer_question(path, "F1.1", "Q1.1.1", "WebSocket", "Bidirectional needed", vec!["SSE".into()]);
+    assert!(result.contains("D1.1.1"));
+
+    // Add task
+    let result = add_task(path, "F1.1", "Build WS handler", "Implement axum WS", Some("feat/ws-handler"));
+    assert!(result.contains("T1.1.1"));
+
+    // Update task status
+    let result = update_task_status(path, "F1.1", "T1.1.1", "in_progress", None, None, None);
+    assert!(result.contains("updated"));
+
+    // Vision tree
+    let result = vision_tree(path);
+    let tree: serde_json::Value = serde_json::from_str(&result).unwrap();
+    assert_eq!(tree["summary"]["features_total"], 1);
+    assert_eq!(tree["summary"]["tasks_total"], 1);
+
+    // Drill down
+    let result = drill_down(path, "G1");
+    let drill: serde_json::Value = serde_json::from_str(&result).unwrap();
+    assert_eq!(drill["feature_count"], 1);
+
+    // Assess work
+    let result = assess_work(path, "Add real-time dashboard streaming");
+    let assess: serde_json::Value = serde_json::from_str(&result).unwrap();
+    assert_eq!(assess["matched"], true);
+
+    // Cleanup
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_vdd_recursive_sub_vision() {
+    use dx_terminal::vision::*;
+
+    let dir = std::env::temp_dir().join("dx_vdd_recursive_test");
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.to_str().unwrap();
+
+    // Init + goal + feature
+    init_vision(path, "test-recursive", "Test recursive visions", "");
+    add_goal(path, "G1", "Feature A", "Main feature", 1);
+    add_feature(path, "G1", "Sub-feature", "A sub-feature", vec![]);
+
+    // Create sub-vision
+    let result = create_sub_vision(path, "F1.1", "Sub-vision mission");
+    assert!(result.contains("created"));
+    assert!(result.contains(".vision/features/G1.json"));
+
+    // Verify the sub-vision file exists and is valid
+    let sub_path = dir.join(".vision/features/G1.json");
+    assert!(sub_path.exists());
+    let content = std::fs::read_to_string(&sub_path).unwrap();
+    let sub: serde_json::Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(sub["mission"], "Sub-vision mission");
+
+    // Verify parent feature has sub_vision link
+    let vision = load_vision(path).unwrap();
+    assert_eq!(vision.features[0].sub_vision.as_deref(), Some(".vision/features/G1.json"));
+
+    // Cleanup
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_vdd_status_cascade() {
+    use dx_terminal::vision::*;
+
+    let dir = std::env::temp_dir().join("dx_vdd_cascade_test");
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.to_str().unwrap();
+
+    init_vision(path, "test-cascade", "Test status cascade", "");
+    add_goal(path, "G1", "Goal", "Test goal", 1);
+    add_feature(path, "G1", "Feature", "Test feature", vec![]);
+
+    // Add 2 tasks
+    add_task(path, "F1.1", "Task 1", "", None);
+    add_task(path, "F1.1", "Task 2", "", None);
+
+    // Mark first done
+    update_task_status(path, "F1.1", "T1.1.1", "done", None, None, None);
+    let v = load_vision(path).unwrap();
+    assert_eq!(v.features[0].status, FeatureStatus::Building); // not all done yet
+
+    // Mark second done
+    update_task_status(path, "F1.1", "T1.1.2", "done", None, None, None);
+    let v = load_vision(path).unwrap();
+    assert_eq!(v.features[0].status, FeatureStatus::Testing); // all tasks done → testing
+
+    // Cleanup
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_vdd_backward_compat() {
+    // Verify that a vision.json without the `features` field deserializes correctly
+    let json = r#"{
+        "project": "old-project",
+        "mission": "Legacy mission",
+        "principles": [],
+        "goals": [],
+        "milestones": [],
+        "architecture": [],
+        "changes": [],
+        "github": {"repo": "", "sync_enabled": false},
+        "updated_at": ""
+    }"#;
+
+    let vision: dx_terminal::vision::Vision = serde_json::from_str(json).unwrap();
+    assert_eq!(vision.features.len(), 0);
+    assert_eq!(vision.project, "old-project");
+}

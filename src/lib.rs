@@ -26,3 +26,7 @@ pub mod screen;
 pub mod tmux;
 pub mod session_stream;
 pub mod build;
+pub mod vision;
+pub mod design_tokens;
+pub mod ui_audit;
+pub mod ux_audit;

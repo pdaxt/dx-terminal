@@ -1,0 +1,6 @@
+{"timestamp":"2026-03-10T05:01:15Z","change_type":"added","field":"feature:F3.1","old_value":"","new_value":"Vision-Driven Development","reason":"Feature added under goal G3","triggered_by":"user","github_issue":null}
+{"timestamp":"2026-03-10T05:01:24Z","change_type":"modified","field":"question:Q3.1.1","old_value":"open","new_value":"answered: In vision.json with optional sub-vision files","reason":"Keeps it simple. Sub-visions only when a feature is complex enough.","triggered_by":"user","github_issue":null}
+{"timestamp":"2026-03-10T05:01:32Z","change_type":"status_change","field":"task:T3.1.1","old_value":"\"planned\"","new_value":"done","reason":"Task status updated","triggered_by":"agent","github_issue":null}
+{"timestamp":"2026-03-10T05:01:32Z","change_type":"status_change","field":"task:T3.1.2","old_value":"\"planned\"","new_value":"in_progress","reason":"Task status updated","triggered_by":"agent","github_issue":null}
+{"timestamp":"2026-03-10T05:02:51Z","change_type":"status_change","field":"task:T3.1.2","old_value":"\"in_progress\"","new_value":"done","reason":"Task status updated","triggered_by":"agent","github_issue":null}
+{"timestamp":"2026-03-10T05:11:31Z","change_type":"added","field":"feature:F6.1","old_value":"","new_value":"Open Source Documentation","reason":"Feature added under goal G6","triggered_by":"user","github_issue":null}

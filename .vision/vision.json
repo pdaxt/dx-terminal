@@ -1,0 +1,361 @@
+{
+  "project": "agentos",
+  "mission": "Build the worlds most powerful AI-native terminal multiplexer — a single Rust binary that orchestrates teams of Claude agents across tmux panes with real-time dashboards, smart task routing, and zero-config GitHub integration",
+  "principles": [
+    "Everything in Rust",
+    "MCP-first architecture",
+    "Single binary distribution",
+    "Zero-config for common workflows",
+    "Real-time over polling"
+  ],
+  "goals": [
+    {
+      "id": "G1",
+      "title": "Live tmux streaming dashboard",
+      "description": "Real-time web dashboard showing all agent panes with JSONL session events, terminal output, and smart project detection",
+      "status": "achieved",
+      "priority": 1,
+      "linked_issues": [],
+      "metrics": [
+        "15+ panes streaming",
+        "sub-second latency",
+        "smart workspace filtering"
+      ]
+    },
+    {
+      "id": "G2",
+      "title": "206-tool MCP server",
+      "description": "Monolithic MCP server exposing all DX Terminal capabilities as tools for Claude agents",
+      "status": "achieved",
+      "priority": 1,
+      "linked_issues": [],
+      "metrics": [
+        "206 tools registered",
+        "5 split server configs"
+      ]
+    },
+    {
+      "id": "G3",
+      "title": "Vision framework with GitHub sync",
+      "description": "Living product vision per project with change tracking, dashboard widget, and GitHub issue/milestone sync",
+      "status": "in_progress",
+      "priority": 1,
+      "linked_issues": [],
+      "metrics": [
+        "vision.json per project",
+        "GitHub sync",
+        "dashboard widget"
+      ]
+    },
+    {
+      "id": "G4",
+      "title": "Autonomous agent orchestration",
+      "description": "Spawn, monitor, and auto-cycle Claude agents across panes with health checks and dead agent reaping",
+      "status": "achieved",
+      "priority": 1,
+      "linked_issues": [],
+      "metrics": [
+        "auto-cycle working",
+        "dead agent reaper",
+        "48 panes across 4 screens"
+      ]
+    },
+    {
+      "id": "G5",
+      "title": "Bidirectional build verification",
+      "description": "Two-pass BE↔FE test framework ensuring zero delta between backend data and frontend rendering",
+      "status": "achieved",
+      "priority": 2,
+      "linked_issues": [],
+      "metrics": [
+        "24 checks",
+        "100% pass rate"
+      ]
+    },
+    {
+      "id": "G6",
+      "title": "GitHub Stardom — open source launch",
+      "description": "Prepare DX Terminal for public GitHub release with documentation, CI/CD, and community features",
+      "status": "planned",
+      "priority": 2,
+      "linked_issues": [],
+      "metrics": [
+        "README",
+        "CI pipeline",
+        "100+ stars first week"
+      ]
+    }
+  ],
+  "milestones": [
+    {
+      "id": "M1",
+      "title": "Core Platform",
+      "description": "Single Rust binary with MCP server, TUI, web dashboard, and tmux integration",
+      "status": "complete",
+      "target_date": "2026-03-01",
+      "goals": [
+        "G1",
+        "G2",
+        "G4"
+      ],
+      "github_milestone": null,
+      "progress_pct": 100
+    },
+    {
+      "id": "M2",
+      "title": "Intelligence Layer",
+      "description": "Vision framework, build verification, smart project detection, JSONL analytics",
+      "status": "active",
+      "target_date": "2026-03-15",
+      "goals": [
+        "G3",
+        "G5"
+      ],
+      "github_milestone": null,
+      "progress_pct": 75
+    },
+    {
+      "id": "M3",
+      "title": "Public Launch",
+      "description": "Open source release on GitHub with docs, CI/CD, and community engagement",
+      "status": "upcoming",
+      "target_date": "2026-04-01",
+      "goals": [
+        "G6"
+      ],
+      "github_milestone": null,
+      "progress_pct": 0
+    }
+  ],
+  "architecture": [
+    {
+      "id": "ADR1",
+      "title": "Single Rust binary",
+      "decision": "Ship everything as one binary (dx) — MCP server, web server, TUI, all tools",
+      "rationale": "Simplest deployment, no dependency management, instant startup",
+      "date": "2026-02-15",
+      "alternatives_considered": [
+        "Separate binaries per component",
+        "Node.js/Python hybrid"
+      ],
+      "linked_pr": null,
+      "status": "active"
+    },
+    {
+      "id": "ADR2",
+      "title": "include_str HTML embedding",
+      "decision": "Embed dashboard HTML at compile time via include_str! — no separate static files",
+      "rationale": "Single binary deployment, no file path issues, version-locked UI",
+      "date": "2026-02-20",
+      "alternatives_considered": [
+        "Serve from filesystem",
+        "Embedded web framework (Dioxus)"
+      ],
+      "linked_pr": null,
+      "status": "active"
+    },
+    {
+      "id": "ADR3",
+      "title": "WebSocket for real-time data",
+      "decision": "Use WebSocket for all live dashboard data instead of SSE or polling",
+      "rationale": "Bidirectional (commands + data), single connection, lower latency than SSE",
+      "date": "2026-03-05",
+      "alternatives_considered": [
+        "Server-Sent Events",
+        "Polling every 2s"
+      ],
+      "linked_pr": null,
+      "status": "active"
+    },
+    {
+      "id": "ADR4",
+      "title": "JSONL session scanning for project detection",
+      "decision": "Scan Claude JSONL tool_use entries for most-referenced project path when cwd is generic",
+      "rationale": "Tmux pane cwd is often ~/Projects (parent), but tool calls reveal the actual project being worked on",
+      "date": "2026-03-09",
+      "alternatives_considered": [
+        "Only use tmux cwd",
+        "Parse Claude session metadata"
+      ],
+      "linked_pr": null,
+      "status": "active"
+    }
+  ],
+  "changes": [
+    {
+      "timestamp": "2026-03-09T23:44:04Z",
+      "change_type": "added",
+      "field": "vision",
+      "old_value": "",
+      "new_value": "Vision initialized",
+      "reason": "First vision creation for DX Terminal",
+      "triggered_by": "user",
+      "github_issue": null
+    },
+    {
+      "timestamp": "2026-03-10T05:01:15Z",
+      "change_type": "added",
+      "field": "feature:F3.1",
+      "old_value": "",
+      "new_value": "Vision-Driven Development",
+      "reason": "Feature added under goal G3",
+      "triggered_by": "user",
+      "github_issue": null
+    },
+    {
+      "timestamp": "2026-03-10T05:01:24Z",
+      "change_type": "modified",
+      "field": "question:Q3.1.1",
+      "old_value": "open",
+      "new_value": "answered: In vision.json with optional sub-vision files",
+      "reason": "Keeps it simple. Sub-visions only when a feature is complex enough.",
+      "triggered_by": "user",
+      "github_issue": null
+    },
+    {
+      "timestamp": "2026-03-10T05:01:32Z",
+      "change_type": "status_change",
+      "field": "task:T3.1.1",
+      "old_value": "\"planned\"",
+      "new_value": "done",
+      "reason": "Task status updated",
+      "triggered_by": "agent",
+      "github_issue": null
+    },
+    {
+      "timestamp": "2026-03-10T05:01:32Z",
+      "change_type": "status_change",
+      "field": "task:T3.1.2",
+      "old_value": "\"planned\"",
+      "new_value": "in_progress",
+      "reason": "Task status updated",
+      "triggered_by": "agent",
+      "github_issue": null
+    },
+    {
+      "timestamp": "2026-03-10T05:02:51Z",
+      "change_type": "status_change",
+      "field": "task:T3.1.2",
+      "old_value": "\"in_progress\"",
+      "new_value": "done",
+      "reason": "Task status updated",
+      "triggered_by": "agent",
+      "github_issue": null
+    },
+    {
+      "timestamp": "2026-03-10T05:11:31Z",
+      "change_type": "added",
+      "field": "feature:F6.1",
+      "old_value": "",
+      "new_value": "Open Source Documentation",
+      "reason": "Feature added under goal G6",
+      "triggered_by": "user",
+      "github_issue": null
+    }
+  ],
+  "features": [
+    {
+      "id": "F3.1",
+      "goal_id": "G3",
+      "title": "Vision-Driven Development",
+      "description": "Recursive vision tree with features, questions, decisions, tasks",
+      "status": "testing",
+      "questions": [
+        {
+          "id": "Q3.1.1",
+          "text": "Should features be stored in vision.json or separate files?",
+          "status": "answered",
+          "answer": "In vision.json with optional sub-vision files",
+          "asked_at": "2026-03-10T05:01:24Z",
+          "answered_at": "2026-03-10T05:01:24Z",
+          "decision_id": "D3.1.1"
+        }
+      ],
+      "decisions": [
+        {
+          "id": "D3.1.1",
+          "question_id": "Q3.1.1",
+          "decision": "In vision.json with optional sub-vision files",
+          "rationale": "Keeps it simple. Sub-visions only when a feature is complex enough.",
+          "date": "2026-03-10T05:01:24Z",
+          "alternatives": [
+            "All in separate files",
+            "Database storage"
+          ]
+        }
+      ],
+      "tasks": [
+        {
+          "id": "T3.1.1",
+          "feature_id": "F3.1",
+          "title": "Extend vision data model",
+          "description": "Add Feature/Question/Decision/Task structs",
+          "status": "done",
+          "branch": "live-tmux-streaming",
+          "pr": "#a193ef9",
+          "commit": null,
+          "assignee": null,
+          "created_at": "2026-03-10T05:01:32Z",
+          "updated_at": "2026-03-10T05:01:32Z"
+        },
+        {
+          "id": "T3.1.2",
+          "feature_id": "F3.1",
+          "title": "Build vision cockpit dashboard",
+          "description": "Interactive tree view in dashboard.html",
+          "status": "done",
+          "branch": "live-tmux-streaming",
+          "pr": null,
+          "commit": null,
+          "assignee": null,
+          "created_at": "2026-03-10T05:01:32Z",
+          "updated_at": "2026-03-10T05:02:51Z"
+        }
+      ],
+      "acceptance_criteria": [
+        "Vision tree renders in dashboard",
+        "Tasks link to Git branches",
+        "Status cascades automatically"
+      ],
+      "sub_vision": null,
+      "parent_vision": null,
+      "created_at": "2026-03-10T05:01:15Z",
+      "updated_at": "2026-03-10T05:02:51Z"
+    },
+    {
+      "id": "F6.1",
+      "goal_id": "G6",
+      "title": "Open Source Documentation",
+      "description": "Write README and docs for GitHub launch",
+      "status": "specifying",
+      "questions": [
+        {
+          "id": "Q6.1.1",
+          "text": "What sections should the README include?",
+          "status": "open",
+          "answer": null,
+          "asked_at": "2026-03-10T05:11:31Z",
+          "answered_at": null,
+          "decision_id": null
+        }
+      ],
+      "decisions": [],
+      "tasks": [],
+      "acceptance_criteria": [],
+      "sub_vision": null,
+      "parent_vision": null,
+      "created_at": "2026-03-10T05:11:31Z",
+      "updated_at": "2026-03-10T05:11:31Z"
+    }
+  ],
+  "github": {
+    "repo": "pdaxt/dx-terminal",
+    "sync_enabled": true,
+    "wiki_page": null,
+    "project_board": null,
+    "labels": [
+      "vision"
+    ]
+  },
+  "updated_at": "2026-03-10T05:11:31Z"
+}

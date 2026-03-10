@@ -13,6 +13,10 @@ repository = "https://github.com/pdaxt/dx-terminal"
 name = "dx"
 path = "src/main.rs"
 
+[[bin]]
+name = "vision-hook"
+path = "src/bin/vision_hook.rs"
+
 [dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full"] }
