@@ -344,9 +344,43 @@ select:hover{border-color:var(--border-bright)}
   font-family:var(--mono);font-size:11px;line-height:1.6;
   white-space:pre-wrap;word-break:break-all;color:#c8d6e5;
   background:var(--bg);
+  user-select:text;-webkit-user-select:text;cursor:text;
 }
+.terminal::selection,.terminal *::selection{background:rgba(77,166,255,.3);color:#fff}
 .terminal::-webkit-scrollbar{width:5px}
 .terminal::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* Copy-able elements */
+.copyable{position:relative;cursor:text;user-select:text;-webkit-user-select:text}
+.copyable::selection,.copyable *::selection{background:rgba(77,166,255,.3);color:#fff}
+.copy-btn{
+  position:absolute;top:4px;right:4px;
+  background:var(--surface2);border:1px solid var(--border);color:var(--muted);
+  font-size:9px;padding:2px 6px;border-radius:3px;cursor:pointer;
+  opacity:0;transition:opacity .15s;z-index:5;font-family:var(--mono);
+}
+.copyable:hover .copy-btn{opacity:1}
+.copy-btn:hover{background:var(--border);color:var(--text)}
+.copy-btn.copied{background:rgba(68,217,140,.2);color:var(--green);border-color:var(--green)}
+.copy-toast{
+  position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+  background:rgba(68,217,140,.15);color:var(--green);border:1px solid rgba(68,217,140,.3);
+  padding:6px 16px;border-radius:20px;font-size:11px;font-weight:600;
+  font-family:var(--mono);letter-spacing:.3px;z-index:1000;
+  animation:toastIn .2s ease,toastOut .3s ease 1.2s forwards;
+}
+@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+@keyframes toastOut{to{opacity:0;transform:translateX(-50%) translateY(-10px)}}
+
+/* Session log: make output blocks copyable */
+.sev-output{
+  user-select:text;-webkit-user-select:text;cursor:text;
+  position:relative;
+}
+.sev-output::selection{background:rgba(77,166,255,.3);color:#fff}
+.sev-content{user-select:text;-webkit-user-select:text;cursor:text}
+.sev-content::selection{background:rgba(77,166,255,.3);color:#fff}
+#session-log{user-select:text;-webkit-user-select:text}
 .talk-bar{
   display:flex;gap:6px;padding:8px 14px;border-top:1px solid var(--border);flex-shrink:0;
   background:var(--surface2);
@@ -803,7 +837,9 @@ function openPanel(paneNum){
 
   document.getElementById('panel-actions').innerHTML=`
     <button class="btn btn-red" onclick="wsSend({cmd:'kill',pane:'${paneNum}',reason:'web dashboard'})">Kill</button>
-    <button class="btn btn-blue" onclick="wsSend({cmd:'capture',pane:${paneNum}})">Refresh</button>`;
+    <button class="btn btn-blue" onclick="wsSend({cmd:'capture',pane:${paneNum}})">Refresh</button>
+    <button class="btn btn-green" onclick="copyActiveTab()" id="copy-tab-btn">Copy</button>
+    <button class="btn" style="background:rgba(176,122,255,.15);color:var(--purple)" onclick="copySelection()">Copy Selection</button>`;
 
   const output=paneOutputs[paneNum]||'Waiting for output...';
   const term=document.getElementById('panel-terminal');
@@ -896,6 +932,110 @@ function renderChatLog(pane){
   el.scrollTop=el.scrollHeight;
 }
 
+// === Copy Functions ===
+function showCopyToast(msg){
+  const old=document.querySelector('.copy-toast');
+  if(old)old.remove();
+  const toast=document.createElement('div');
+  toast.className='copy-toast';
+  toast.textContent=msg||'Copied!';
+  document.body.appendChild(toast);
+  setTimeout(()=>toast.remove(),1600);
+}
+
+async function copyToClipboard(text){
+  try{
+    await navigator.clipboard.writeText(text);
+    return true;
+  }catch(e){
+    // Fallback for non-HTTPS or denied permissions
+    const ta=document.createElement('textarea');
+    ta.value=text;
+    ta.style.cssText='position:fixed;left:-9999px;top:-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok=document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  }
+}
+
+// Copy the content of the entire active tab
+async function copyActiveTab(){
+  const activeTab=document.querySelector('.tab-content.active');
+  if(!activeTab)return;
+  let text='';
+  if(activeTab.id==='tab-terminal'){
+    text=document.getElementById('panel-terminal').textContent;
+  }else if(activeTab.id==='tab-session'){
+    // Extract clean text from session log — preserving structure
+    const el=document.getElementById('session-log');
+    text=extractCleanText(el);
+  }else if(activeTab.id==='tab-chat'){
+    const el=document.getElementById('chat-log');
+    text=extractCleanText(el);
+  }
+  if(!text.trim()){showCopyToast('Nothing to copy');return;}
+  const ok=await copyToClipboard(text);
+  const btn=document.getElementById('copy-tab-btn');
+  if(ok){
+    showCopyToast(`Copied ${text.length} chars`);
+    if(btn){btn.textContent='Copied!';setTimeout(()=>{btn.textContent='Copy'},1500);}
+  }else{
+    showCopyToast('Copy failed — try selecting manually');
+  }
+}
+
+// Copy a single block (tool result, bash output, text)
+async function copyBlock(btn){
+  const block=btn.parentElement;
+  // Get the pre or sev-content text
+  const pre=block.querySelector('.sev-output')||block.querySelector('.sev-content');
+  const text=(pre?pre.textContent:block.textContent).trim();
+  if(!text){return;}
+  const ok=await copyToClipboard(text);
+  if(ok){
+    btn.textContent='copied!';
+    btn.classList.add('copied');
+    showCopyToast(`Copied ${text.length} chars`);
+    setTimeout(()=>{btn.textContent='copy';btn.classList.remove('copied')},1500);
+  }
+}
+
+// Copy whatever is currently selected
+async function copySelection(){
+  const sel=window.getSelection();
+  const text=sel?sel.toString():'';
+  if(!text.trim()){showCopyToast('Nothing selected — highlight text first');return;}
+  const ok=await copyToClipboard(text);
+  if(ok){showCopyToast(`Copied ${text.length} chars`);}
+}
+
+// Extract clean text from a DOM node, preserving line breaks
+function extractCleanText(el){
+  if(!el)return '';
+  const lines=[];
+  el.querySelectorAll('.sev').forEach(sev=>{
+    // Skip copy buttons
+    const clone=sev.cloneNode(true);
+    clone.querySelectorAll('.copy-btn').forEach(b=>b.remove());
+    const text=clone.textContent.trim();
+    if(text)lines.push(text);
+  });
+  if(!lines.length)return el.textContent||'';
+  return lines.join('\n');
+}
+
+// Keyboard shortcut: Ctrl+Shift+C copies active tab (when panel is open)
+document.addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key==='C'){
+    if(document.getElementById('panel').style.display!=='none'){
+      e.preventDefault();
+      copyActiveTab();
+    }
+  }
+});
+
 function renderSessionLog(pane){
   const el=document.getElementById('session-log');
   if(!el)return;
@@ -909,14 +1049,14 @@ function renderSessionLog(pane){
         return `<div class="sev sev-tool"><span class="sev-icon">${icon}</span><span class="sev-name">${escHtml(ev.tool||'')}</span><span class="sev-ts">${ts}</span><div class="sev-detail">${escHtml(ev.text||'')}</div></div>`;
       case 'tool_result':
         const txt=(ev.text||'').slice(0,300);
-        return `<div class="sev sev-result"><pre class="sev-output">${escHtml(txt)}</pre></div>`;
+        return `<div class="sev sev-result copyable"><pre class="sev-output">${escHtml(txt)}</pre><button class="copy-btn" onclick="copyBlock(this)">copy</button></div>`;
       case 'text':
         const role=ev.role||'assistant';
-        return `<div class="sev sev-text sev-${role}"><span class="sev-ts">${ts}</span><div class="sev-content">${escHtml(ev.text||'')}</div></div>`;
+        return `<div class="sev sev-text sev-${role} copyable"><span class="sev-ts">${ts}</span><div class="sev-content">${escHtml(ev.text||'')}</div><button class="copy-btn" onclick="copyBlock(this)">copy</button></div>`;
       case 'thinking':
         return `<div class="sev sev-thinking"><span class="sev-ts">${ts}</span><div class="sev-content">💭 ${escHtml((ev.text||'').slice(0,200))}</div></div>`;
       case 'bash_output':
-        return `<div class="sev sev-bash"><pre class="sev-output">${escHtml((ev.text||'').slice(0,300))}</pre></div>`;
+        return `<div class="sev sev-bash copyable"><pre class="sev-output">${escHtml((ev.text||'').slice(0,300))}</pre><button class="copy-btn" onclick="copyBlock(this)">copy</button></div>`;
       case 'result':
         return `<div class="sev sev-cost">💰 $${(ev.cost_usd||0).toFixed(4)} · ${ev.tokens_in||0}in/${ev.tokens_out||0}out</div>`;
       case 'waiting':
