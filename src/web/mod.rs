@@ -54,6 +54,16 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/vision/list", get(api::list_visions))
         .route("/api/vision/init", post(api::init_vision))
         .route("/api/vision/sync", post(api::sync_vision))
+        // VDD: Vision-Driven Development
+        .route("/api/vision/tree", get(api::get_vision_tree))
+        .route("/api/vision/drill", get(api::get_vision_drill))
+        .route("/api/vision/feature", post(api::add_vision_feature))
+        .route("/api/vision/question", post(api::add_vision_question))
+        .route("/api/vision/answer", post(api::answer_vision_question))
+        .route("/api/vision/task", post(api::add_vision_task))
+        .route("/api/vision/task/status", post(api::update_vision_task))
+        .route("/api/vision/git-sync", post(api::git_sync_vision))
+        .route("/api/vision/work", post(api::assess_vision_work))
         // UI/UX Audit
         .route("/api/audit/ui", get(api::get_audit_ui))
         .route("/api/audit/ux", get(api::get_audit_ux))

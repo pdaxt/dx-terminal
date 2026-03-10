@@ -661,6 +661,119 @@ pub async fn sync_vision(Json(body): Json<Value>) -> Json<Value> {
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
+// ── VDD: Vision-Driven Development ──
+
+#[derive(Deserialize, Default)]
+pub struct VisionDrillQuery {
+    pub project: Option<String>,
+    pub goal_id: Option<String>,
+}
+
+/// GET /api/vision/tree?project=NAME — Full vision tree with progress rollup
+pub async fn get_vision_tree(Query(q): Query<VisionQuery>) -> Json<Value> {
+    let path = resolve_project_path(&q);
+    let result = crate::vision::vision_tree(&path);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// GET /api/vision/drill?project=NAME&goal_id=G1 — Drill into goal features
+pub async fn get_vision_drill(Query(q): Query<VisionDrillQuery>) -> Json<Value> {
+    let vq = VisionQuery { project: q.project.clone(), path: None };
+    let path = resolve_project_path(&vq);
+    let goal_id = q.goal_id.as_deref().unwrap_or("G1");
+    let result = crate::vision::drill_down(&path, goal_id);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/vision/feature — Add feature under a goal
+pub async fn add_vision_feature(Json(body): Json<Value>) -> Json<Value> {
+    let project = body["project"].as_str().unwrap_or("").to_string();
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".to_string());
+    let path = if project.is_empty() { ".".to_string() } else { format!("{}/Projects/{}", home, project) };
+    let goal_id = body["goal_id"].as_str().unwrap_or("");
+    let title = body["title"].as_str().unwrap_or("");
+    let description = body["description"].as_str().unwrap_or("");
+    let criteria: Vec<String> = body["acceptance_criteria"].as_array()
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+    let result = crate::vision::add_feature(&path, goal_id, title, description, criteria);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/vision/question — Add question to a feature
+pub async fn add_vision_question(Json(body): Json<Value>) -> Json<Value> {
+    let project = body["project"].as_str().unwrap_or("").to_string();
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".to_string());
+    let path = if project.is_empty() { ".".to_string() } else { format!("{}/Projects/{}", home, project) };
+    let feature_id = body["feature_id"].as_str().unwrap_or("");
+    let question = body["question"].as_str().unwrap_or("");
+    let result = crate::vision::add_question(&path, feature_id, question);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/vision/answer — Answer a question with decision
+pub async fn answer_vision_question(Json(body): Json<Value>) -> Json<Value> {
+    let project = body["project"].as_str().unwrap_or("").to_string();
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".to_string());
+    let path = if project.is_empty() { ".".to_string() } else { format!("{}/Projects/{}", home, project) };
+    let feature_id = body["feature_id"].as_str().unwrap_or("");
+    let question_id = body["question_id"].as_str().unwrap_or("");
+    let answer = body["answer"].as_str().unwrap_or("");
+    let rationale = body["rationale"].as_str().unwrap_or("");
+    let alternatives: Vec<String> = body["alternatives"].as_array()
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+    let result = crate::vision::answer_question(&path, feature_id, question_id, answer, rationale, alternatives);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/vision/task — Add task to a feature
+pub async fn add_vision_task(Json(body): Json<Value>) -> Json<Value> {
+    let project = body["project"].as_str().unwrap_or("").to_string();
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".to_string());
+    let path = if project.is_empty() { ".".to_string() } else { format!("{}/Projects/{}", home, project) };
+    let feature_id = body["feature_id"].as_str().unwrap_or("");
+    let title = body["title"].as_str().unwrap_or("");
+    let description = body["description"].as_str().unwrap_or("");
+    let branch = body["branch"].as_str();
+    let result = crate::vision::add_task(&path, feature_id, title, description, branch);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/vision/task/status — Update task status with Git linking
+pub async fn update_vision_task(Json(body): Json<Value>) -> Json<Value> {
+    let project = body["project"].as_str().unwrap_or("").to_string();
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".to_string());
+    let path = if project.is_empty() { ".".to_string() } else { format!("{}/Projects/{}", home, project) };
+    let feature_id = body["feature_id"].as_str().unwrap_or("");
+    let task_id = body["task_id"].as_str().unwrap_or("");
+    let status = body["status"].as_str().unwrap_or("");
+    let branch = body["branch"].as_str();
+    let pr = body["pr"].as_str();
+    let commit = body["commit"].as_str();
+    let result = crate::vision::update_task_status(&path, feature_id, task_id, status, branch, pr, commit);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/vision/git-sync — Sync task statuses from Git
+pub async fn git_sync_vision(Json(body): Json<Value>) -> Json<Value> {
+    let project = body["project"].as_str().unwrap_or("").to_string();
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".to_string());
+    let path = if project.is_empty() { ".".to_string() } else { format!("{}/Projects/{}", home, project) };
+    let result = crate::vision::sync_git_status(&path);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/vision/work — Assess work against vision
+pub async fn assess_vision_work(Json(body): Json<Value>) -> Json<Value> {
+    let project = body["project"].as_str().unwrap_or("").to_string();
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".to_string());
+    let path = if project.is_empty() { ".".to_string() } else { format!("{}/Projects/{}", home, project) };
+    let description = body["description"].as_str().unwrap_or("");
+    let result = crate::vision::assess_work(&path, description);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
 // ── UI/UX Audit ──
 
 #[derive(Deserialize, Default)]
