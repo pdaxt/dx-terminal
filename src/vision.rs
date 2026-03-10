@@ -21,6 +21,8 @@ pub struct Vision {
     pub architecture: Vec<ArchDecision>,
     pub changes: Vec<VisionChange>,
     #[serde(default)]
+    pub features: Vec<Feature>,
+    #[serde(default)]
     pub github: GitHubConfig,
     #[serde(default)]
     pub updated_at: String,
@@ -127,6 +129,110 @@ pub struct GitHubConfig {
     pub labels: Vec<String>,   // labels to apply to vision-related issues
 }
 
+// ─── VDD: Feature/Question/Decision/Task ────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Feature {
+    pub id: String,                        // "F1.1"
+    pub goal_id: String,                   // links to parent goal
+    pub title: String,
+    pub description: String,
+    pub status: FeatureStatus,
+    #[serde(default)]
+    pub questions: Vec<Question>,
+    #[serde(default)]
+    pub decisions: Vec<VisionDecision>,
+    #[serde(default)]
+    pub tasks: Vec<VisionTask>,
+    #[serde(default)]
+    pub acceptance_criteria: Vec<String>,
+    #[serde(default)]
+    pub sub_vision: Option<String>,        // path to sub-vision file (recursive)
+    #[serde(default)]
+    pub parent_vision: Option<String>,     // link up the tree
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum FeatureStatus {
+    Planned,
+    Specifying,
+    Building,
+    Testing,
+    Done,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Question {
+    pub id: String,                        // "Q1.1.1"
+    pub text: String,
+    pub status: QuestionStatus,
+    #[serde(default)]
+    pub answer: Option<String>,
+    pub asked_at: String,
+    #[serde(default)]
+    pub answered_at: Option<String>,
+    #[serde(default)]
+    pub decision_id: Option<String>,       // links to the decision it produced
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum QuestionStatus {
+    Open,
+    Answered,
+    Revised,
+}
+
+/// Named VisionDecision to avoid conflict with ArchDecision
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VisionDecision {
+    pub id: String,                        // "D1.1.1"
+    #[serde(default)]
+    pub question_id: Option<String>,       // which question this answers
+    pub decision: String,
+    pub rationale: String,
+    pub date: String,
+    #[serde(default)]
+    pub alternatives: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VisionTask {
+    pub id: String,                        // "T1.1.1"
+    pub feature_id: String,
+    pub title: String,
+    #[serde(default)]
+    pub description: String,
+    pub status: TaskStatus,
+    #[serde(default)]
+    pub branch: Option<String>,            // Git branch name
+    #[serde(default)]
+    pub pr: Option<String>,                // PR number/URL
+    #[serde(default)]
+    pub commit: Option<String>,            // merge commit
+    #[serde(default)]
+    pub assignee: Option<String>,          // pane ID or agent name
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskStatus {
+    Planned,
+    InProgress,
+    Done,
+    Verified,
+    Blocked,
+}
+
 // ─── Storage ────────────────────────────────────────────────────────────────
 
 fn vision_dir(project_path: &str) -> PathBuf {
@@ -195,6 +301,7 @@ pub fn init_vision(project_path: &str, project_name: &str, mission: &str, repo: 
         milestones: vec![],
         architecture: vec![],
         changes: vec![],
+        features: vec![],
         github: GitHubConfig {
             repo: repo.to_string(),
             sync_enabled: !repo.is_empty(),
@@ -648,6 +755,727 @@ pub fn list_visions() -> String {
         "visions": visions,
         "count": visions.len(),
     }).to_string()
+}
+
+// ─── VDD: Feature CRUD ──────────────────────────────────────────────────────
+
+fn features_dir(project_path: &str) -> PathBuf {
+    vision_dir(project_path).join("features")
+}
+
+/// Add a feature under a goal.
+pub fn add_feature(
+    project_path: &str, goal_id: &str, title: &str, description: &str,
+    acceptance_criteria: Vec<String>,
+) -> String {
+    let mut vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    // Verify goal exists
+    if !vision.goals.iter().any(|g| g.id == goal_id) {
+        return serde_json::json!({"error": "goal_not_found", "id": goal_id}).to_string();
+    }
+
+    // Generate feature ID: count existing features for this goal + 1
+    let existing = vision.features.iter().filter(|f| f.goal_id == goal_id).count();
+    let feature_num = existing + 1;
+    let id = format!("F{}.{}", goal_id.trim_start_matches('G'), feature_num);
+
+    let feature = Feature {
+        id: id.clone(),
+        goal_id: goal_id.to_string(),
+        title: title.to_string(),
+        description: description.to_string(),
+        status: FeatureStatus::Planned,
+        questions: vec![],
+        decisions: vec![],
+        tasks: vec![],
+        acceptance_criteria,
+        sub_vision: None,
+        parent_vision: None,
+        created_at: now(),
+        updated_at: now(),
+    };
+
+    let change = VisionChange {
+        timestamp: now(),
+        change_type: ChangeType::Added,
+        field: format!("feature:{}", id),
+        old_value: String::new(),
+        new_value: title.to_string(),
+        reason: format!("Feature added under goal {}", goal_id),
+        triggered_by: "user".to_string(),
+        github_issue: None,
+    };
+
+    vision.features.push(feature);
+    vision.changes.push(change.clone());
+    vision.updated_at = now();
+    append_history(project_path, &change);
+
+    match save_vision(project_path, &vision) {
+        Ok(()) => serde_json::json!({
+            "status": "added",
+            "feature": id,
+            "goal": goal_id,
+        }).to_string(),
+        Err(e) => serde_json::json!({"error": e}).to_string(),
+    }
+}
+
+/// Add a question to a feature.
+pub fn add_question(project_path: &str, feature_id: &str, text: &str) -> String {
+    let mut vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
+        Some(f) => f,
+        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+    };
+
+    let q_num = feature.questions.len() + 1;
+    let id = format!("Q{}.{}", feature_id.trim_start_matches('F'), q_num);
+
+    let question = Question {
+        id: id.clone(),
+        text: text.to_string(),
+        status: QuestionStatus::Open,
+        answer: None,
+        asked_at: now(),
+        answered_at: None,
+        decision_id: None,
+    };
+
+    feature.questions.push(question);
+
+    // Move to specifying if it was planned
+    if feature.status == FeatureStatus::Planned {
+        feature.status = FeatureStatus::Specifying;
+    }
+    feature.updated_at = now();
+    vision.updated_at = now();
+
+    match save_vision(project_path, &vision) {
+        Ok(()) => serde_json::json!({
+            "status": "added",
+            "question": id,
+            "feature": feature_id,
+        }).to_string(),
+        Err(e) => serde_json::json!({"error": e}).to_string(),
+    }
+}
+
+/// Answer a question and record a decision.
+pub fn answer_question(
+    project_path: &str, feature_id: &str, question_id: &str,
+    answer: &str, rationale: &str, alternatives: Vec<String>,
+) -> String {
+    let mut vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
+        Some(f) => f,
+        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+    };
+
+    let question = match feature.questions.iter_mut().find(|q| q.id == question_id) {
+        Some(q) => q,
+        None => return serde_json::json!({"error": "question_not_found", "id": question_id}).to_string(),
+    };
+
+    // Create decision
+    let d_num = feature.decisions.len() + 1;
+    let decision_id = format!("D{}.{}", feature_id.trim_start_matches('F'), d_num);
+
+    let decision = VisionDecision {
+        id: decision_id.clone(),
+        question_id: Some(question_id.to_string()),
+        decision: answer.to_string(),
+        rationale: rationale.to_string(),
+        date: now(),
+        alternatives,
+    };
+
+    // Update question
+    question.status = QuestionStatus::Answered;
+    question.answer = Some(answer.to_string());
+    question.answered_at = Some(now());
+    question.decision_id = Some(decision_id.clone());
+
+    feature.decisions.push(decision);
+    feature.updated_at = now();
+    vision.updated_at = now();
+
+    let change = VisionChange {
+        timestamp: now(),
+        change_type: ChangeType::Modified,
+        field: format!("question:{}", question_id),
+        old_value: "open".to_string(),
+        new_value: format!("answered: {}", answer),
+        reason: rationale.to_string(),
+        triggered_by: "user".to_string(),
+        github_issue: None,
+    };
+    vision.changes.push(change.clone());
+    append_history(project_path, &change);
+
+    match save_vision(project_path, &vision) {
+        Ok(()) => serde_json::json!({
+            "status": "answered",
+            "question": question_id,
+            "decision": decision_id,
+            "feature": feature_id,
+        }).to_string(),
+        Err(e) => serde_json::json!({"error": e}).to_string(),
+    }
+}
+
+/// Add a task to a feature.
+pub fn add_task(
+    project_path: &str, feature_id: &str, title: &str, description: &str,
+    branch: Option<&str>,
+) -> String {
+    let mut vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
+        Some(f) => f,
+        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+    };
+
+    let t_num = feature.tasks.len() + 1;
+    let id = format!("T{}.{}", feature_id.trim_start_matches('F'), t_num);
+
+    let task = VisionTask {
+        id: id.clone(),
+        feature_id: feature_id.to_string(),
+        title: title.to_string(),
+        description: description.to_string(),
+        status: TaskStatus::Planned,
+        branch: branch.map(|s| s.to_string()),
+        pr: None,
+        commit: None,
+        assignee: None,
+        created_at: now(),
+        updated_at: now(),
+    };
+
+    feature.tasks.push(task);
+
+    // Move to building if it was specifying and all questions answered
+    let all_answered = feature.questions.iter().all(|q| q.status == QuestionStatus::Answered);
+    if (feature.status == FeatureStatus::Specifying || feature.status == FeatureStatus::Planned) && all_answered {
+        feature.status = FeatureStatus::Building;
+    }
+    feature.updated_at = now();
+    vision.updated_at = now();
+
+    match save_vision(project_path, &vision) {
+        Ok(()) => serde_json::json!({
+            "status": "added",
+            "task": id,
+            "feature": feature_id,
+        }).to_string(),
+        Err(e) => serde_json::json!({"error": e}).to_string(),
+    }
+}
+
+/// Update task status, optionally linking a branch or PR.
+pub fn update_task_status(
+    project_path: &str, feature_id: &str, task_id: &str,
+    new_status: &str, branch: Option<&str>, pr: Option<&str>, commit: Option<&str>,
+) -> String {
+    let mut vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
+        Some(f) => f,
+        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+    };
+
+    let task = match feature.tasks.iter_mut().find(|t| t.id == task_id) {
+        Some(t) => t,
+        None => return serde_json::json!({"error": "task_not_found", "id": task_id}).to_string(),
+    };
+
+    let parsed: TaskStatus = match new_status {
+        "planned" => TaskStatus::Planned,
+        "in_progress" => TaskStatus::InProgress,
+        "done" => TaskStatus::Done,
+        "verified" => TaskStatus::Verified,
+        "blocked" => TaskStatus::Blocked,
+        _ => return serde_json::json!({"error": "invalid_status", "options": ["planned","in_progress","done","verified","blocked"]}).to_string(),
+    };
+
+    let old_status = serde_json::to_string(&task.status).unwrap_or_default();
+    task.status = parsed;
+    if let Some(b) = branch { task.branch = Some(b.to_string()); }
+    if let Some(p) = pr { task.pr = Some(p.to_string()); }
+    if let Some(c) = commit { task.commit = Some(c.to_string()); }
+    task.updated_at = now();
+
+    // Auto-update feature status based on task completion
+    let all_done = feature.tasks.iter().all(|t| t.status == TaskStatus::Done || t.status == TaskStatus::Verified);
+    let any_in_progress = feature.tasks.iter().any(|t| t.status == TaskStatus::InProgress);
+    if all_done && !feature.tasks.is_empty() {
+        feature.status = FeatureStatus::Testing;
+    } else if any_in_progress && feature.status != FeatureStatus::Building {
+        feature.status = FeatureStatus::Building;
+    }
+    feature.updated_at = now();
+    vision.updated_at = now();
+
+    let feature_status = serde_json::to_string(&feature.status).unwrap_or_default();
+
+    let change = VisionChange {
+        timestamp: now(),
+        change_type: ChangeType::StatusChange,
+        field: format!("task:{}", task_id),
+        old_value: old_status,
+        new_value: new_status.to_string(),
+        reason: "Task status updated".to_string(),
+        triggered_by: "agent".to_string(),
+        github_issue: None,
+    };
+    vision.changes.push(change.clone());
+    append_history(project_path, &change);
+
+    match save_vision(project_path, &vision) {
+        Ok(()) => serde_json::json!({
+            "status": "updated",
+            "task": task_id,
+            "task_status": new_status,
+            "feature": feature_id,
+            "feature_status": feature_status,
+        }).to_string(),
+        Err(e) => serde_json::json!({"error": e}).to_string(),
+    }
+}
+
+/// Drill down into a goal — returns all features with questions/tasks.
+pub fn drill_down(project_path: &str, goal_id: &str) -> String {
+    let vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    let goal = match vision.goals.iter().find(|g| g.id == goal_id) {
+        Some(g) => g,
+        None => return serde_json::json!({"error": "goal_not_found", "id": goal_id}).to_string(),
+    };
+
+    let features: Vec<_> = vision.features.iter()
+        .filter(|f| f.goal_id == goal_id)
+        .map(|f| {
+            let open_qs = f.questions.iter().filter(|q| q.status == QuestionStatus::Open).count();
+            let total_tasks = f.tasks.len();
+            let done_tasks = f.tasks.iter().filter(|t| t.status == TaskStatus::Done || t.status == TaskStatus::Verified).count();
+            serde_json::json!({
+                "id": f.id,
+                "title": f.title,
+                "description": f.description,
+                "status": f.status,
+                "questions": {
+                    "total": f.questions.len(),
+                    "open": open_qs,
+                    "items": f.questions,
+                },
+                "decisions": f.decisions,
+                "tasks": {
+                    "total": total_tasks,
+                    "done": done_tasks,
+                    "items": f.tasks,
+                },
+                "acceptance_criteria": f.acceptance_criteria,
+                "sub_vision": f.sub_vision,
+                "progress": if total_tasks > 0 { (done_tasks as f64 / total_tasks as f64 * 100.0) as u8 } else { 0 },
+            })
+        })
+        .collect();
+
+    serde_json::json!({
+        "goal": {
+            "id": goal.id,
+            "title": goal.title,
+            "description": goal.description,
+            "status": goal.status,
+            "priority": goal.priority,
+        },
+        "features": features,
+        "feature_count": features.len(),
+    }).to_string()
+}
+
+/// Create a sub-vision file for a feature (recursive vision).
+pub fn create_sub_vision(
+    project_path: &str, feature_id: &str, mission: &str,
+) -> String {
+    let mut vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
+        Some(f) => f,
+        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+    };
+
+    if feature.sub_vision.is_some() {
+        return serde_json::json!({"error": "sub_vision_exists", "feature": feature_id}).to_string();
+    }
+
+    // Create the sub-vision file
+    let dir = features_dir(project_path);
+    let _ = std::fs::create_dir_all(&dir);
+    let filename = format!("{}.json", feature.goal_id);
+    let sub_path = dir.join(&filename);
+    let relative_path = format!(".vision/features/{}", filename);
+
+    let sub_vision = Vision {
+        project: format!("{} — {}", vision.project, feature.title),
+        mission: mission.to_string(),
+        principles: vec![],
+        goals: vec![],
+        milestones: vec![],
+        architecture: vec![],
+        changes: vec![],
+        features: vec![],
+        github: vision.github.clone(),
+        updated_at: now(),
+    };
+
+    let json = match serde_json::to_string_pretty(&sub_vision) {
+        Ok(j) => j,
+        Err(e) => return serde_json::json!({"error": format!("serialize: {}", e)}).to_string(),
+    };
+
+    if let Err(e) = std::fs::write(&sub_path, json) {
+        return serde_json::json!({"error": format!("write: {}", e)}).to_string();
+    }
+
+    // Link it
+    feature.sub_vision = Some(relative_path.clone());
+    feature.updated_at = now();
+    vision.updated_at = now();
+
+    match save_vision(project_path, &vision) {
+        Ok(()) => serde_json::json!({
+            "status": "created",
+            "sub_vision": relative_path,
+            "feature": feature_id,
+        }).to_string(),
+        Err(e) => serde_json::json!({"error": e}).to_string(),
+    }
+}
+
+/// Get full vision tree: vision → goals → features → tasks with progress rollup.
+pub fn vision_tree(project_path: &str) -> String {
+    let vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    let goals: Vec<_> = vision.goals.iter().map(|g| {
+        let features: Vec<_> = vision.features.iter()
+            .filter(|f| f.goal_id == g.id)
+            .map(|f| {
+                let total_tasks = f.tasks.len();
+                let done_tasks = f.tasks.iter()
+                    .filter(|t| t.status == TaskStatus::Done || t.status == TaskStatus::Verified)
+                    .count();
+                let open_questions = f.questions.iter()
+                    .filter(|q| q.status == QuestionStatus::Open)
+                    .count();
+
+                serde_json::json!({
+                    "id": f.id,
+                    "title": f.title,
+                    "status": f.status,
+                    "open_questions": open_questions,
+                    "tasks_done": done_tasks,
+                    "tasks_total": total_tasks,
+                    "progress": if total_tasks > 0 { (done_tasks as f64 / total_tasks as f64 * 100.0) as u8 } else { 0 },
+                    "has_sub_vision": f.sub_vision.is_some(),
+                    "tasks": f.tasks.iter().map(|t| serde_json::json!({
+                        "id": t.id,
+                        "title": t.title,
+                        "status": t.status,
+                        "branch": t.branch,
+                        "pr": t.pr,
+                    })).collect::<Vec<_>>(),
+                })
+            })
+            .collect();
+
+        let total_features = features.len();
+        let done_features = vision.features.iter()
+            .filter(|f| f.goal_id == g.id && f.status == FeatureStatus::Done)
+            .count();
+
+        serde_json::json!({
+            "id": g.id,
+            "title": g.title,
+            "status": g.status,
+            "priority": g.priority,
+            "features": features,
+            "features_done": done_features,
+            "features_total": total_features,
+            "progress": if total_features > 0 { (done_features as f64 / total_features as f64 * 100.0) as u8 } else { 0 },
+        })
+    }).collect();
+
+    let total_features = vision.features.len();
+    let done_features = vision.features.iter().filter(|f| f.status == FeatureStatus::Done).count();
+    let total_tasks: usize = vision.features.iter().map(|f| f.tasks.len()).sum();
+    let done_tasks: usize = vision.features.iter()
+        .flat_map(|f| f.tasks.iter())
+        .filter(|t| t.status == TaskStatus::Done || t.status == TaskStatus::Verified)
+        .count();
+
+    serde_json::json!({
+        "project": vision.project,
+        "mission": vision.mission,
+        "goals": goals,
+        "summary": {
+            "goals_total": vision.goals.len(),
+            "goals_achieved": vision.goals.iter().filter(|g| g.status == GoalStatus::Achieved).count(),
+            "features_total": total_features,
+            "features_done": done_features,
+            "tasks_total": total_tasks,
+            "tasks_done": done_tasks,
+            "overall_progress": if total_tasks > 0 { (done_tasks as f64 / total_tasks as f64 * 100.0) as u8 } else { 0 },
+        },
+        "github": {
+            "repo": vision.github.repo,
+            "sync": vision.github.sync_enabled,
+        },
+        "updated_at": vision.updated_at,
+    }).to_string()
+}
+
+// ─── VDD: Work Assessment ───────────────────────────────────────────────────
+
+/// Assess a work description against the vision — find matching goal, suggest feature.
+pub fn assess_work(project_path: &str, description: &str) -> String {
+    let vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    let desc_lower = description.to_lowercase();
+    let words: Vec<&str> = desc_lower.split_whitespace().collect();
+
+    // Score each goal by keyword overlap
+    let mut scored: Vec<(&Goal, usize)> = vision.goals.iter().map(|g| {
+        let goal_text = format!("{} {} {:?}", g.title, g.description, g.metrics).to_lowercase();
+        let score = words.iter().filter(|w| goal_text.contains(*w)).count();
+        (g, score)
+    }).collect();
+
+    scored.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let best = scored.first();
+
+    if let Some((goal, score)) = best {
+        if *score > 0 {
+            // Find existing features for this goal
+            let existing_features: Vec<_> = vision.features.iter()
+                .filter(|f| f.goal_id == goal.id)
+                .map(|f| serde_json::json!({
+                    "id": f.id, "title": f.title, "status": f.status,
+                }))
+                .collect();
+
+            // Check if any existing feature matches
+            let matching_feature = vision.features.iter().find(|f| {
+                f.goal_id == goal.id && {
+                    let ft = format!("{} {}", f.title, f.description).to_lowercase();
+                    words.iter().filter(|w| ft.contains(*w)).count() > words.len() / 3
+                }
+            });
+
+            return serde_json::json!({
+                "matched": true,
+                "goal": {
+                    "id": goal.id,
+                    "title": goal.title,
+                    "status": goal.status,
+                    "confidence": score,
+                },
+                "existing_features": existing_features,
+                "matching_feature": matching_feature.map(|f| serde_json::json!({
+                    "id": f.id, "title": f.title, "status": f.status,
+                })),
+                "suggested_action": if matching_feature.is_some() {
+                    "Continue existing feature"
+                } else {
+                    "Create new feature under this goal"
+                },
+                "description": description,
+            }).to_string();
+        }
+    }
+
+    serde_json::json!({
+        "matched": false,
+        "suggestion": "No matching goal found. Consider creating a new goal first.",
+        "goals": vision.goals.iter().map(|g| serde_json::json!({
+            "id": g.id, "title": g.title, "status": g.status,
+        })).collect::<Vec<_>>(),
+        "description": description,
+    }).to_string()
+}
+
+/// Sync task statuses from Git — check branch/PR status via gh CLI.
+pub fn sync_git_status(project_path: &str) -> String {
+    let mut vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    if vision.github.repo.is_empty() {
+        return serde_json::json!({"error": "no_github_repo"}).to_string();
+    }
+
+    let repo = vision.github.repo.clone();
+    let mut updates = vec![];
+
+    for feature in &mut vision.features {
+        for task in &mut feature.tasks {
+            let mut changed = false;
+
+            // Check branch existence
+            if let Some(ref branch) = task.branch {
+                let branch_check = run_gh(&format!(
+                    "gh api repos/{}/branches/{} --jq '.name' 2>/dev/null", repo, branch
+                ));
+                let branch_exists = !branch_check.trim().is_empty() && !branch_check.contains("error");
+
+                // Check for open PR
+                let pr_check = run_gh(&format!(
+                    "gh pr list -R {} --head {} --json number,state --jq '.[0]' 2>/dev/null", repo, branch
+                ));
+
+                if pr_check.contains("\"state\":\"MERGED\"") || pr_check.contains("\"state\":\"merged\"") {
+                    if task.status != TaskStatus::Done && task.status != TaskStatus::Verified {
+                        task.status = TaskStatus::Done;
+                        changed = true;
+                    }
+                } else if !pr_check.trim().is_empty() && !pr_check.contains("error") && pr_check.contains("number") {
+                    // PR exists and is open — in progress
+                    if task.status == TaskStatus::Planned {
+                        task.status = TaskStatus::InProgress;
+                        changed = true;
+                    }
+                    // Extract PR number
+                    if task.pr.is_none() {
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&pr_check) {
+                            if let Some(num) = v.get("number").and_then(|n| n.as_u64()) {
+                                task.pr = Some(format!("#{}", num));
+                                changed = true;
+                            }
+                        }
+                    }
+                } else if branch_exists && task.status == TaskStatus::Planned {
+                    task.status = TaskStatus::InProgress;
+                    changed = true;
+                }
+            }
+
+            if changed {
+                task.updated_at = now();
+                updates.push(serde_json::json!({
+                    "task": task.id,
+                    "feature": task.feature_id,
+                    "new_status": task.status,
+                    "branch": task.branch,
+                    "pr": task.pr,
+                }));
+            }
+        }
+
+        // Cascade: update feature status
+        if !feature.tasks.is_empty() {
+            let all_done = feature.tasks.iter().all(|t| t.status == TaskStatus::Done || t.status == TaskStatus::Verified);
+            let any_in_progress = feature.tasks.iter().any(|t| t.status == TaskStatus::InProgress);
+            if all_done {
+                feature.status = FeatureStatus::Testing;
+            } else if any_in_progress {
+                feature.status = FeatureStatus::Building;
+            }
+        }
+    }
+
+    vision.updated_at = now();
+    let update_count = updates.len();
+
+    match save_vision(project_path, &vision) {
+        Ok(()) => serde_json::json!({
+            "status": "synced",
+            "updates": update_count,
+            "details": updates,
+        }).to_string(),
+        Err(e) => serde_json::json!({"error": e}).to_string(),
+    }
+}
+
+/// Update feature status directly.
+pub fn update_feature_status(project_path: &str, feature_id: &str, new_status: &str) -> String {
+    let mut vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
+        Some(f) => f,
+        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+    };
+
+    let parsed: FeatureStatus = match new_status {
+        "planned" => FeatureStatus::Planned,
+        "specifying" => FeatureStatus::Specifying,
+        "building" => FeatureStatus::Building,
+        "testing" => FeatureStatus::Testing,
+        "done" => FeatureStatus::Done,
+        _ => return serde_json::json!({"error": "invalid_status", "options": ["planned","specifying","building","testing","done"]}).to_string(),
+    };
+
+    let old_status = serde_json::to_string(&feature.status).unwrap_or_default();
+    feature.status = parsed;
+    feature.updated_at = now();
+    vision.updated_at = now();
+
+    let change = VisionChange {
+        timestamp: now(),
+        change_type: ChangeType::StatusChange,
+        field: format!("feature:{}", feature_id),
+        old_value: old_status,
+        new_value: new_status.to_string(),
+        reason: "Feature status updated".to_string(),
+        triggered_by: "user".to_string(),
+        github_issue: None,
+    };
+    vision.changes.push(change.clone());
+    append_history(project_path, &change);
+
+    match save_vision(project_path, &vision) {
+        Ok(()) => serde_json::json!({
+            "status": "updated",
+            "feature": feature_id,
+            "new_status": new_status,
+        }).to_string(),
+        Err(e) => serde_json::json!({"error": e}).to_string(),
+    }
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

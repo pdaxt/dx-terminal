@@ -1847,6 +1847,104 @@ impl DxTerminalService {
         let result = tools::ui_audit_tools::contrast_check(&req.fg, &req.bg);
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
+
+    // === VISION-DRIVEN DEVELOPMENT (10 tools) ===
+
+    #[tool(description = "Get full vision tree: goals → features → tasks with progress rollup and Git status. The central view of all project work.")]
+    async fn vision_tree(
+        &self,
+        Parameters(req): Parameters<types::VisionTreeRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_tree(req.project.as_deref());
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Drill down into a goal — returns all features with questions, decisions, tasks, and progress.")]
+    async fn vision_drill(
+        &self,
+        Parameters(req): Parameters<types::VisionDrillRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_drill(req.project.as_deref(), &req.goal_id);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Assess work against the vision — find matching goal, suggest feature, check for existing work. PRIMARY entry point for vision-driven development.")]
+    async fn vision_work(
+        &self,
+        Parameters(req): Parameters<types::VisionWorkRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_work(req.project.as_deref(), &req.description);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Add a feature under a goal with acceptance criteria.")]
+    async fn vision_add_feature(
+        &self,
+        Parameters(req): Parameters<types::VisionFeatureRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_add_feature(
+            req.project.as_deref(), &req.goal_id, &req.title, &req.description,
+            req.acceptance_criteria,
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Ask a question about a feature — moves feature to 'specifying' status.")]
+    async fn vision_add_question(
+        &self,
+        Parameters(req): Parameters<types::VisionQuestionRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_add_question(
+            req.project.as_deref(), &req.feature_id, &req.question,
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Answer a question and record a decision with rationale and alternatives considered.")]
+    async fn vision_answer(
+        &self,
+        Parameters(req): Parameters<types::VisionAnswerRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_answer(
+            req.project.as_deref(), &req.feature_id, &req.question_id,
+            &req.answer, &req.rationale, req.alternatives,
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Add a task to a feature, optionally linking a Git branch.")]
+    async fn vision_add_task(
+        &self,
+        Parameters(req): Parameters<types::VisionTaskRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_add_task(
+            req.project.as_deref(), &req.feature_id, &req.title,
+            req.description.as_deref().unwrap_or(""),
+            req.branch.as_deref(),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Update task status with optional branch/PR/commit linking. Auto-cascades feature status.")]
+    async fn vision_update_task(
+        &self,
+        Parameters(req): Parameters<types::VisionTaskStatusRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_update_task(
+            req.project.as_deref(), &req.feature_id, &req.task_id,
+            &req.status, req.branch.as_deref(), req.pr.as_deref(), req.commit.as_deref(),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Sync task statuses from Git — checks branch/PR status via GitHub API and cascades changes up the tree.")]
+    async fn vision_sync(
+        &self,
+        Parameters(req): Parameters<types::VisionSyncRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_sync(req.project.as_deref());
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
 }
 
 #[tool_handler]

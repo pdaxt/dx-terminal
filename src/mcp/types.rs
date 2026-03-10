@@ -1824,6 +1824,111 @@ pub struct ContrastCheckRequest {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DesignTokensRequest {}
 
+// ── Vision-Driven Development ──
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VisionTreeRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VisionDrillRequest {
+    #[schemars(description = "Project path")]
+    pub project: Option<String>,
+    #[schemars(description = "Goal ID to drill into (e.g. 'G1')")]
+    pub goal_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VisionWorkRequest {
+    #[schemars(description = "Project path")]
+    pub project: Option<String>,
+    #[schemars(description = "Work description — matched against vision goals")]
+    pub description: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VisionFeatureRequest {
+    #[schemars(description = "Project path")]
+    pub project: Option<String>,
+    #[schemars(description = "Goal ID to add feature under")]
+    pub goal_id: String,
+    #[schemars(description = "Feature title")]
+    pub title: String,
+    #[schemars(description = "Feature description")]
+    pub description: String,
+    #[schemars(description = "Acceptance criteria")]
+    #[serde(default)]
+    pub acceptance_criteria: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VisionQuestionRequest {
+    #[schemars(description = "Project path")]
+    pub project: Option<String>,
+    #[schemars(description = "Feature ID (e.g. 'F1.1')")]
+    pub feature_id: String,
+    #[schemars(description = "Question text")]
+    pub question: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VisionAnswerRequest {
+    #[schemars(description = "Project path")]
+    pub project: Option<String>,
+    #[schemars(description = "Feature ID")]
+    pub feature_id: String,
+    #[schemars(description = "Question ID to answer")]
+    pub question_id: String,
+    #[schemars(description = "Answer text")]
+    pub answer: String,
+    #[schemars(description = "Rationale for the decision")]
+    pub rationale: String,
+    #[schemars(description = "Alternatives considered")]
+    #[serde(default)]
+    pub alternatives: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VisionTaskRequest {
+    #[schemars(description = "Project path")]
+    pub project: Option<String>,
+    #[schemars(description = "Feature ID")]
+    pub feature_id: String,
+    #[schemars(description = "Task title")]
+    pub title: String,
+    #[schemars(description = "Task description")]
+    #[serde(default)]
+    pub description: Option<String>,
+    #[schemars(description = "Git branch name")]
+    pub branch: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VisionTaskStatusRequest {
+    #[schemars(description = "Project path")]
+    pub project: Option<String>,
+    #[schemars(description = "Feature ID")]
+    pub feature_id: String,
+    #[schemars(description = "Task ID")]
+    pub task_id: String,
+    #[schemars(description = "New status: planned/in_progress/done/verified/blocked")]
+    pub status: String,
+    #[schemars(description = "Git branch name")]
+    pub branch: Option<String>,
+    #[schemars(description = "PR number or URL")]
+    pub pr: Option<String>,
+    #[schemars(description = "Merge commit hash")]
+    pub commit: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VisionSyncRequest {
+    #[schemars(description = "Project path")]
+    pub project: Option<String>,
+}
+
 // ── Screen Management ──
 
 #[derive(Debug, Deserialize, JsonSchema)]
