@@ -1992,6 +1992,39 @@ impl DxTerminalService {
         let result = tools::vision_tools::vision_sync(req.project.as_deref());
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
+
+    #[tool(description = "Initialize a new vision for a project. Creates .vision/vision.json with mission, goals tracking, and GitHub integration.")]
+    async fn vision_init(
+        &self,
+        Parameters(req): Parameters<types::VisionInitRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_init(
+            &req.project, &req.name, &req.mission, req.repo.as_deref().unwrap_or(""),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Add a goal to a project's vision. Goals are the top-level objectives that features and tasks roll up to.")]
+    async fn vision_add_goal(
+        &self,
+        Parameters(req): Parameters<types::VisionAddGoalRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_add_goal(
+            req.project.as_deref(), &req.id, &req.title, &req.description, req.priority,
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Update a goal's status: planned, in_progress, achieved, deferred, or dropped.")]
+    async fn vision_update_goal(
+        &self,
+        Parameters(req): Parameters<types::VisionUpdateGoalRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_update_goal(
+            req.project.as_deref(), &req.goal_id, &req.status,
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
 }
 
 #[tool_handler]
