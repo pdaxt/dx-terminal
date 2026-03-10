@@ -27,6 +27,9 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     let prompt = req.prompt.unwrap_or_default();
     let theme = config::theme_name(pane_num);
 
+    // Pre-spawn cleanup: kill any stale processes owned by this pane
+    cleanup_pane_resources(pane_num);
+
     // Micro-helpers: workspace setup + MCP selection
     let ws = prepare_workspace(&req.project, pane_num, &task);
     let _mcps = select_mcps(app, &ws.project_name, &ws.project_path, &task, &role).await;

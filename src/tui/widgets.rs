@@ -120,6 +120,14 @@ pub fn gauge_bar(value: f64, max: f64, width: usize) -> (String, Color) {
     (format!("{}{}", "█".repeat(filled), "░".repeat(empty)), color)
 }
 
+/// Compact inline bar as a styled Span (for dashboard gauges)
+pub fn mini_bar(pct: u16, width: usize, color: Color) -> Span<'static> {
+    let filled = (pct as usize * width / 100).min(width);
+    let empty = width.saturating_sub(filled);
+    let bar = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
+    Span::styled(bar, Style::default().fg(color))
+}
+
 /// Priority color
 pub fn priority_color(priority: &str) -> Color {
     match priority {

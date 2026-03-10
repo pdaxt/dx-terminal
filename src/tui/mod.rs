@@ -27,6 +27,7 @@ const RESULT_DISMISS_SECS: u64 = 4;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ViewMode {
     Normal,
+    Dashboard,
     Features,
     Board,
     Coord,
@@ -583,6 +584,9 @@ fn handle_navigate(
         }
         KeyCode::Char('y') => {
             *view_mode = if *view_mode == ViewMode::Pipeline { ViewMode::Normal } else { ViewMode::Pipeline };
+        }
+        KeyCode::Char('0') => {
+            *view_mode = if *view_mode == ViewMode::Dashboard { ViewMode::Normal } else { ViewMode::Dashboard };
         }
 
         // Screen management

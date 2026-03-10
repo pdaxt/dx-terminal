@@ -166,6 +166,39 @@ pub fn prepare_workspace(project: &str, pane_num: u8, task: &str) -> WorkspaceSe
     WorkspaceSetup { spawn_cwd, ws_path, ws_branch, ws_base, project_path, project_name }
 }
 
+/// Pre-spawn cleanup: kill stale processes and clear locks for a pane
+pub fn cleanup_pane_resources(pane_num: u8) {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let profiles_dir = format!("{}/.playwright-profiles", home);
+
+    // Scan all profile dirs matching this pane
+    if let Ok(entries) = std::fs::read_dir(&profiles_dir) {
+        let prefix = format!("pane-{}-", pane_num);
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.starts_with(&prefix) {
+                continue;
+            }
+            let lock = entry.path().join("SingletonLock");
+            if !lock.exists() {
+                continue;
+            }
+            if let Ok(content) = std::fs::read_to_string(&lock) {
+                let pid_str: String = content.chars().take_while(|c| c.is_ascii_digit()).collect();
+                if let Ok(pid) = pid_str.parse::<i32>() {
+                    // Check if PID is alive using libc::kill(pid, 0)
+                    if unsafe { libc::kill(pid, 0) } != 0 {
+                        let _ = std::fs::remove_file(&lock);
+                        tracing::info!("Cleaned stale SingletonLock for pane {} (dead PID {})", pane_num, pid);
+                    }
+                }
+            }
+        }
+    }
+
+    tracing::debug!("Pre-spawn cleanup complete for pane {}", pane_num);
+}
+
 /// Select and configure MCPs for a project — auto-route if none explicitly set
 pub async fn select_mcps(app: &App, project_name: &str, project_path: &str, task: &str, role: &str) -> Vec<String> {
     let mut mcps = app.state.get_project_mcps(project_name).await;

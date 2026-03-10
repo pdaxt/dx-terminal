@@ -205,6 +205,7 @@ pub struct DashboardData {
     pub pane_signals: std::collections::HashMap<u8, Vec<(String, String)>>,
     pub screen_count: usize,
     pub screen_names: Vec<String>,
+    pub builds: Vec<crate::build::BuildInfo>,
 }
 
 /// Collect all data in one pass (lock once, release)
@@ -470,6 +471,11 @@ pub fn collect_data(app: &App, selected: u8, view_mode: ViewMode, feature_cursor
         screen_names: {
             let mgr = app.screens.read().unwrap();
             mgr.list_screens().iter().map(|s| s.name.clone()).collect()
+        },
+        builds: if view_mode == ViewMode::Dashboard {
+            crate::build::build_status()
+        } else {
+            Vec::new()
         },
     }
 }
@@ -1206,6 +1212,35 @@ pub fn render(f: &mut Frame, data: &DashboardData) {
             render_queue(f, chunks[3], data);
             render_help_bar(f, chunks[4], data);
         }
+        ViewMode::Dashboard => {
+            let build_height = if data.builds.is_empty() { 3 } else { (data.builds.len() as u16 * 3 + 3).min(18) };
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),                  // Header
+                    Constraint::Length(alert_height),       // Alerts
+                    Constraint::Length(5),                  // Gauges row
+                    Constraint::Length(pane_table_height),  // Pane table
+                    Constraint::Length(build_height),       // Build environments
+                    Constraint::Min(6),                    // Queue + Roles
+                    Constraint::Length(1),                  // Help
+                ])
+                .split(f.area());
+
+            let bottom = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+                .split(chunks[5]);
+
+            render_header(f, chunks[0], data);
+            if alert_height > 0 { render_alert_bar(f, chunks[1], data); }
+            render_gauges_row(f, chunks[2], data);
+            render_pane_table(f, chunks[3], data);
+            render_builds_panel(f, chunks[4], data);
+            render_queue(f, bottom[0], data);
+            render_activity_log(f, bottom[1], data);
+            render_help_bar(f, chunks[6], data);
+        }
         ViewMode::Normal => {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
@@ -1253,6 +1288,7 @@ fn render_header(f: &mut Frame, area: Rect, data: &DashboardData) {
 
     let view_label = match data.view_mode {
         ViewMode::Normal => Span::raw(""),
+        ViewMode::Dashboard => Span::styled(" DASH ", Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)),
         ViewMode::Features => Span::styled(" FEAT ", Style::default().fg(Color::Black).bg(Color::Magenta).add_modifier(Modifier::BOLD)),
         ViewMode::Board => Span::styled(" BOARD ", Style::default().fg(Color::Black).bg(Color::Magenta).add_modifier(Modifier::BOLD)),
         ViewMode::Coord => Span::styled(" COORD ", Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)),
@@ -2289,6 +2325,8 @@ fn render_help_bar(f: &mut Frame, area: Rect, data: &DashboardData) {
             Span::styled("ork ", Style::default().fg(Color::DarkGray)),
             Span::styled("[y]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             Span::styled("pipe ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[0]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled("dash ", Style::default().fg(Color::DarkGray)),
             Span::styled("│ ", Style::default().fg(Color::DarkGray)),
             Span::styled("[+]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
             Span::styled("scr ", Style::default().fg(Color::DarkGray)),
@@ -2465,5 +2503,176 @@ fn render_pipeline_view(f: &mut Frame, area: Rect, data: &DashboardData) {
         Span::styled(":go proj desc ", Style::default().fg(Color::White)),
     ]);
     f.render_widget(Paragraph::new(hint), hint_area);
+}
+
+// ==================== Dashboard View Components ====================
+
+fn render_gauges_row(f: &mut Frame, area: Rect, data: &DashboardData) {
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+        ])
+        .split(area);
+
+    // Agents gauge
+    let total = data.panes.len();
+    let active = data.active_count;
+    let agent_pct = if total > 0 { (active as f64 / total as f64 * 100.0) as u16 } else { 0 };
+    let agent_bar = widgets::mini_bar(agent_pct, 12, Color::Blue);
+    let agents = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled(" AGENTS ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled(format!(" {} ", active), Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("/ {} ", total), Style::default().fg(Color::DarkGray)),
+            agent_bar,
+        ]),
+        Line::from(vec![
+            Span::styled(format!(" {}pty {}err", data.pty_count, data.alerts.len()), Style::default().fg(Color::DarkGray)),
+        ]),
+    ]).block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Rgb(26, 38, 54))));
+    f.render_widget(agents, cols[0]);
+
+    // Queue gauge
+    let _q_total = data.queue_pending + data.queue_running + data.queue_done + data.queue_failed;
+    let queue = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled(" QUEUE ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled(format!(" {} ", data.queue_pending), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled("pend ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("{} ", data.queue_running), Style::default().fg(Color::Yellow)),
+            Span::styled("run", Style::default().fg(Color::DarkGray)),
+        ]),
+        Line::from(vec![
+            Span::styled(format!(" {} done {} fail", data.queue_done, data.queue_failed), Style::default().fg(Color::DarkGray)),
+        ]),
+    ]).block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Rgb(26, 38, 54))));
+    f.render_widget(queue, cols[1]);
+
+    // ACU gauge
+    let acu_pct = if data.acu_total > 0.0 { (data.acu_used / data.acu_total * 100.0).min(100.0) as u16 } else { 0 };
+    let acu_bar = widgets::mini_bar(acu_pct, 12, Color::Magenta);
+    let acu = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled(" ACU TODAY ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled(format!(" {:.0} ", data.acu_used), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("/ {:.0} ", data.acu_total), Style::default().fg(Color::DarkGray)),
+            acu_bar,
+        ]),
+        Line::from(vec![
+            Span::styled(format!(" {}%", acu_pct), Style::default().fg(Color::DarkGray)),
+        ]),
+    ]).block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Rgb(26, 38, 54))));
+    f.render_widget(acu, cols[2]);
+
+    // Reviews gauge
+    let rev_pct = if data.reviews_total > 0 { (data.reviews_used as f64 / data.reviews_total as f64 * 100.0).min(100.0) as u16 } else { 0 };
+    let rev_bar = widgets::mini_bar(rev_pct, 12, Color::Yellow);
+    let reviews = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled(" REVIEWS ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled(format!(" {} ", data.reviews_used), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("/ {} ", data.reviews_total), Style::default().fg(Color::DarkGray)),
+            rev_bar,
+        ]),
+        Line::from(vec![
+            Span::styled(format!(" {}%", rev_pct), Style::default().fg(Color::DarkGray)),
+        ]),
+    ]).block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Rgb(26, 38, 54))));
+    f.render_widget(reviews, cols[3]);
+}
+
+fn render_builds_panel(f: &mut Frame, area: Rect, data: &DashboardData) {
+    let block = Block::default()
+        .title(Span::styled(
+            format!(" Build Environments ({}/5) ", data.builds.len()),
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Rgb(26, 38, 54)));
+
+    if data.builds.is_empty() {
+        let p = Paragraph::new(Span::styled("  No build environments found", Style::default().fg(Color::DarkGray)))
+            .block(block);
+        f.render_widget(p, area);
+        return;
+    }
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let build_colors: [Color; 5] = [
+        Color::Rgb(232, 64, 64),   // Bloodstream - red
+        Color::Rgb(61, 220, 132),  // Matrix - green
+        Color::Rgb(92, 154, 255),  // Ghost Protocol - blue
+        Color::Rgb(167, 139, 250), // Neon Noir - purple
+        Color::Rgb(251, 191, 36),  // Molten - gold
+    ];
+
+    let mut lines: Vec<Line> = Vec::new();
+    for build in &data.builds {
+        let color = if build.number >= 1 && build.number <= 5 {
+            build_colors[(build.number - 1) as usize]
+        } else {
+            Color::DarkGray
+        };
+
+        // Build header line
+        let mut spans = vec![
+            Span::styled(format!(" B{} ", build.number), Style::default().fg(Color::Black).bg(color).add_modifier(Modifier::BOLD)),
+            Span::styled(format!(" {} ", build.theme), Style::default().fg(color).add_modifier(Modifier::BOLD)),
+            Span::styled("│ ", Style::default().fg(Color::Rgb(26, 38, 54))),
+        ];
+
+        // Pane dots
+        for pane in &build.panes {
+            let pane_fg = Color::Rgb(
+                u8::from_str_radix(&pane.colors.fg[1..3], 16).unwrap_or(128),
+                u8::from_str_radix(&pane.colors.fg[3..5], 16).unwrap_or(128),
+                u8::from_str_radix(&pane.colors.fg[5..7], 16).unwrap_or(128),
+            );
+            let pane_bg = Color::Rgb(
+                u8::from_str_radix(&pane.colors.bg[1..3], 16).unwrap_or(8),
+                u8::from_str_radix(&pane.colors.bg[3..5], 16).unwrap_or(8),
+                u8::from_str_radix(&pane.colors.bg[5..7], 16).unwrap_or(8),
+            );
+            spans.push(Span::styled(
+                format!(" {} ", pane.pane_index),
+                Style::default().fg(pane_fg).bg(pane_bg).add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::raw(" "));
+        }
+
+        spans.push(Span::styled("│ ", Style::default().fg(Color::Rgb(26, 38, 54))));
+        // Show what's running in first pane's cwd
+        let cwd_short = build.panes.first()
+            .map(|p| p.cwd.split('/').last().unwrap_or(&p.cwd).to_string())
+            .unwrap_or_default();
+        spans.push(Span::styled(cwd_short, Style::default().fg(Color::DarkGray)));
+
+        lines.push(Line::from(spans));
+
+        // Description line
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("     {} · {} panes", crate::build::theme_desc(build.number), build.pane_count),
+                Style::default().fg(Color::Rgb(61, 79, 99)),
+            ),
+        ]));
+    }
+
+    let paragraph = Paragraph::new(lines);
+    f.render_widget(paragraph, inner);
 }
 
