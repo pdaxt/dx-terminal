@@ -26,6 +26,9 @@ mod screen;
 mod tmux;
 mod session_stream;
 mod vision;
+mod design_tokens;
+mod ui_audit;
+mod ux_audit;
 
 use std::sync::Arc;
 use clap::{Parser, Subcommand};

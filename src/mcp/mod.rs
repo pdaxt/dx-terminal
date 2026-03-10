@@ -1809,6 +1809,44 @@ impl DxTerminalService {
         let result = tools::screen_tools::screen_summary(&self.app);
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
+
+    // === UI/UX AUDIT (4 tools) ===
+
+    #[tool(description = "UI design system audit: scan HTML/CSS for raw hex colors, off-scale font sizes, non-standard border-radius, hardcoded transitions, light-theme leaks, and WCAG contrast failures. Returns violations with line numbers, suggestions, and compliance score.")]
+    async fn audit_ui(
+        &self,
+        Parameters(req): Parameters<types::UiAuditRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::ui_audit_tools::audit_ui(req.file.as_deref());
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "UX heuristics audit: test keyboard navigation, responsive viewports (900/1100/1440px), heading hierarchy, ARIA labels, console errors, empty states, and reduced-motion support. Uses Playwright for live browser testing with static HTML fallback.")]
+    async fn audit_ux(
+        &self,
+        Parameters(req): Parameters<types::UxAuditRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::ui_audit_tools::audit_ux(&req.url);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Get design system tokens parsed from dashboard.html :root CSS variables. Returns structured colors (with RGB, category), typography, spacing scales, radii, transitions, and shadows. Single source of truth for the design system.")]
+    async fn design_tokens(
+        &self,
+        Parameters(_req): Parameters<types::DesignTokensRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::ui_audit_tools::design_tokens();
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Check WCAG contrast ratio between two hex colors. Returns ratio, AA/AAA pass status for normal and large text, and grade (AAA/AA/AA-large/fail). Uses WCAG 2.0 relative luminance formula.")]
+    async fn contrast_check(
+        &self,
+        Parameters(req): Parameters<types::ContrastCheckRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::ui_audit_tools::contrast_check(&req.fg, &req.bg);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
 }
 
 #[tool_handler]

@@ -1799,6 +1799,31 @@ pub struct AuditFullRequest {
     pub project: String,
 }
 
+// === UI/UX AUDIT TYPES ===
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UiAuditRequest {
+    #[schemars(description = "File path to audit (HTML/CSS). Defaults to embedded dashboard.")]
+    pub file: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UxAuditRequest {
+    #[schemars(description = "URL to audit for UX issues (e.g. http://localhost:3100)")]
+    pub url: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ContrastCheckRequest {
+    #[schemars(description = "Foreground color as hex (e.g. '#d4dce8')")]
+    pub fg: String,
+    #[schemars(description = "Background color as hex (e.g. '#0a0e14')")]
+    pub bg: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DesignTokensRequest {}
+
 // ── Screen Management ──
 
 #[derive(Debug, Deserialize, JsonSchema)]

@@ -660,3 +660,76 @@ pub async fn sync_vision(Json(body): Json<Value>) -> Json<Value> {
     let result = crate::vision::github_sync(&path);
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
+
+// ── UI/UX Audit ──
+
+#[derive(Deserialize, Default)]
+pub struct FileQuery {
+    pub file: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct UrlQuery {
+    pub url: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct ContrastQuery {
+    pub fg: Option<String>,
+    pub bg: Option<String>,
+}
+
+pub async fn get_audit_ui(Query(q): Query<FileQuery>) -> Json<Value> {
+    match q.file {
+        Some(path) => Json(crate::ui_audit::audit_ui_file(&path)),
+        None => {
+            let html = include_str!("../../assets/dashboard.html");
+            Json(crate::ui_audit::audit_ui_html(html, "dashboard.html"))
+        }
+    }
+}
+
+pub async fn get_audit_ux(Query(q): Query<UrlQuery>) -> Json<Value> {
+    let url = q.url.unwrap_or_else(|| "http://localhost:3100".into());
+    Json(crate::ux_audit::audit_ux(&url))
+}
+
+pub async fn get_audit_frontend(Query(q): Query<UrlQuery>) -> Json<Value> {
+    let html = include_str!("../../assets/dashboard.html");
+    let ui = crate::ui_audit::audit_ui_html(html, "dashboard.html");
+    let url = q.url.unwrap_or_else(|| "http://localhost:3100".into());
+    let ux = crate::ux_audit::audit_ux(&url);
+    let tokens = crate::design_tokens::design_tokens();
+    let contrasts = crate::design_tokens::check_all_contrasts();
+
+    let ui_score = ui["score"].as_f64().unwrap_or(0.0);
+    let ux_score = ux["score"].as_f64().unwrap_or(0.0);
+    let combined = (ui_score + ux_score) / 2.0;
+    let grade = match combined as u32 {
+        90..=100 => "A",
+        80..=89 => "B",
+        70..=79 => "C",
+        60..=69 => "D",
+        _ => "F",
+    };
+
+    Json(json!({
+        "ui_audit": ui,
+        "ux_audit": ux,
+        "design_tokens": tokens,
+        "contrast": contrasts,
+        "combined_score": (combined * 10.0).round() / 10.0,
+        "grade": grade,
+    }))
+}
+
+pub async fn get_design_tokens() -> Json<Value> {
+    Json(crate::design_tokens::design_tokens())
+}
+
+pub async fn get_contrast(Query(q): Query<ContrastQuery>) -> Json<Value> {
+    match (q.fg, q.bg) {
+        (Some(fg), Some(bg)) => Json(crate::design_tokens::check_contrast(&fg, &bg)),
+        _ => Json(crate::design_tokens::check_all_contrasts()),
+    }
+}
