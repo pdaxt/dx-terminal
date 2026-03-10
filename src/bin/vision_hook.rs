@@ -1,0 +1,952 @@
+//! Vision-Driven Development Hook (Rust)
+//!
+//! Replaces vision-driven.py. Every prompt goes through this binary.
+//! It classifies intent against all known visions and injects context.
+//!
+//! Events handled:
+//! - UserPromptSubmit: classify prompt → inject VDD context
+//! - PreToolUse (Edit/Write): flag untracked edits in vision projects
+//! - PostToolUse (Bash): after git commit → flag task status updates
+//! - Stop: session summary
+
+use regex::Regex;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::collections::HashSet;
+use std::fs;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+const SESSION_FILE: &str = "/tmp/vdd_session_edits.json";
+const VISIONS_CACHE: &str = "/tmp/vdd_visions_cache.json";
+const CACHE_TTL: u64 = 120;
+
+static NOISE_WORDS: &[&str] = &[
+    "the", "and", "for", "with", "that", "this", "from", "will", "have", "are", "was", "been",
+    "can", "system", "new", "add", "use", "all", "get", "set", "make", "our", "more", "also",
+    "into", "like", "well",
+];
+
+static WORK_INDICATORS: &[&str] = &[
+    "add", "build", "create", "implement", "fix", "update", "refactor", "change", "modify",
+    "improve", "make", "write", "design", "develop",
+];
+
+// ── Data types ──
+
+#[derive(Serialize, Deserialize, Default)]
+struct SessionEdits {
+    files: Vec<String>,
+    commits: Vec<CommitRecord>,
+    project: Option<String>,
+    has_vision: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct CommitRecord {
+    branch: Option<String>,
+    command: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct VisionCache {
+    ts: f64,
+    visions: Vec<Value>,
+}
+
+#[derive(Debug)]
+enum Classification {
+    NewVision {
+        prompt: String,
+        suggested_project: Option<String>,
+    },
+    ExistingGoal {
+        project: String,
+        project_path: String,
+        goal: Value,
+        features: Vec<Value>,
+        score: i32,
+        vision: Value,
+    },
+    ExistingFeature {
+        project: String,
+        project_path: String,
+        goal: Value,
+        feature: Value,
+        features: Vec<Value>,
+        score: i32,
+        vision: Value,
+    },
+    UnmatchedWork {
+        project: String,
+        project_path: String,
+        vision: Value,
+        prompt: String,
+    },
+}
+
+// ── Session persistence ──
+
+fn load_session() -> SessionEdits {
+    fs::read_to_string(SESSION_FILE)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_session(session: &SessionEdits) {
+    let _ = fs::write(SESSION_FILE, serde_json::to_string_pretty(session).unwrap_or_default());
+}
+
+// ── Vision scanning ──
+
+fn now_secs() -> f64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0)
+}
+
+fn scan_all_visions() -> Vec<Value> {
+    // Check cache
+    if let Ok(data) = fs::read_to_string(VISIONS_CACHE) {
+        if let Ok(cache) = serde_json::from_str::<VisionCache>(&data) {
+            if now_secs() - cache.ts < CACHE_TTL as f64 {
+                return cache.visions;
+            }
+        }
+    }
+
+    let home = dirs_home();
+    let projects_dir = home.join("Projects");
+    if !projects_dir.exists() {
+        return vec![];
+    }
+
+    let mut visions = Vec::new();
+    if let Ok(entries) = fs::read_dir(&projects_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let vf = path.join(".vision").join("vision.json");
+                if vf.exists() {
+                    if let Ok(content) = fs::read_to_string(&vf) {
+                        if let Ok(mut v) = serde_json::from_str::<Value>(&content) {
+                            v["_path"] = json!(path.to_string_lossy());
+                            visions.push(v);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Write cache
+    let cache = VisionCache {
+        ts: now_secs(),
+        visions: visions.clone(),
+    };
+    let _ = fs::write(VISIONS_CACHE, serde_json::to_string(&cache).unwrap_or_default());
+
+    visions
+}
+
+fn dirs_home() -> PathBuf {
+    PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".into()))
+}
+
+// ── Git helpers ──
+
+fn get_current_branch(cwd: Option<&str>) -> Option<String> {
+    Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(cwd.unwrap_or("."))
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+}
+
+fn get_current_project() -> Option<String> {
+    let cwd = std::env::current_dir().ok()?;
+    // Walk up to find .vision/
+    let mut p = Some(cwd.as_path());
+    while let Some(dir) = p {
+        if dir.join(".vision").join("vision.json").exists() {
+            return Some(dir.to_string_lossy().into());
+        }
+        p = dir.parent();
+    }
+    // Check if inside ~/Projects/X
+    let projects = dirs_home().join("Projects");
+    if let Ok(rel) = cwd.strip_prefix(&projects) {
+        if let Some(top) = rel.components().next() {
+            let top_path = projects.join(top.as_os_str());
+            if top_path.join(".vision").join("vision.json").exists() {
+                return Some(top_path.to_string_lossy().into());
+            }
+        }
+    }
+    None
+}
+
+fn find_vision_root(file_path: &str) -> Option<String> {
+    let p = PathBuf::from(file_path);
+    let resolved = fs::canonicalize(&p).unwrap_or(p);
+    let mut dir = Some(resolved.as_path());
+    while let Some(d) = dir {
+        if d.join(".vision").join("vision.json").exists() {
+            return Some(d.to_string_lossy().into());
+        }
+        dir = d.parent();
+    }
+    None
+}
+
+fn load_vision(project_path: &str) -> Option<Value> {
+    let vf = PathBuf::from(project_path)
+        .join(".vision")
+        .join("vision.json");
+    fs::read_to_string(vf)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+}
+
+fn find_task_by_branch<'a>(vision: &'a Value, branch: &str) -> Option<(&'a Value, &'a Value)> {
+    for feature in vision.get("features")?.as_array()? {
+        for task in feature.get("tasks")?.as_array()? {
+            if task.get("branch").and_then(|b| b.as_str()) == Some(branch) {
+                return Some((feature, task));
+            }
+        }
+    }
+    None
+}
+
+// ── Scoring ──
+
+fn split_words(text: &str) -> Vec<String> {
+    let re = Regex::new(r"\W+").unwrap();
+    re.split(&text.to_lowercase())
+        .filter(|w| w.len() > 2)
+        .map(|w| w.to_string())
+        .collect()
+}
+
+fn score_match(text: &str, keywords: &[String]) -> i32 {
+    let text_lower = text.to_lowercase();
+    let noise: HashSet<&str> = NOISE_WORDS.iter().copied().collect();
+    let mut score = 0i32;
+    for kw in keywords {
+        if noise.contains(kw.as_str()) {
+            continue;
+        }
+        // Word boundary match
+        let pattern = format!(r"\b{}\b", regex::escape(kw));
+        if let Ok(re) = Regex::new(&pattern) {
+            if re.is_match(&text_lower) {
+                score += 1;
+            }
+        }
+    }
+    score
+}
+
+// ── Prompt classification ──
+
+fn classify_prompt(prompt: &str, visions: &[Value]) -> Option<Classification> {
+    let prompt_lower = prompt.to_lowercase();
+    let prompt_trimmed = prompt_lower.trim();
+    let words = split_words(prompt_trimmed);
+
+    // Skip very short prompts
+    if words.len() < 2 {
+        return None;
+    }
+
+    // Skip tool/system commands
+    let skip_patterns = [
+        r"^/\w+",
+        r"^(yes|no|ok|sure|thanks|done|good|great|go ahead)$",
+        r"^(commit|push|deploy|show|list|status)$",
+        r"^(fix it|do it|make it)$",
+    ];
+    for pat in &skip_patterns {
+        if let Ok(re) = Regex::new(pat) {
+            if re.is_match(prompt_trimmed) {
+                return None;
+            }
+        }
+    }
+
+    // Check for explicit vision commands
+    if let Ok(re) = Regex::new(r"\b(create|new|init)\b.*\bvision\b") {
+        if re.is_match(prompt_trimmed) {
+            let proj = Regex::new(r"\bfor\s+(\w+)")
+                .ok()
+                .and_then(|r| r.captures(prompt_trimmed))
+                .map(|c| c[1].to_string());
+            return Some(Classification::NewVision {
+                prompt: prompt.to_string(),
+                suggested_project: proj,
+            });
+        }
+    }
+
+    // Score each vision's goals and features
+    let mut best_match: Option<Classification> = None;
+    let mut best_score = 0i32;
+
+    for vision in visions {
+        let project = vision
+            .get("project")
+            .and_then(|p| p.as_str())
+            .unwrap_or("");
+        let project_path = vision
+            .get("_path")
+            .and_then(|p| p.as_str())
+            .unwrap_or("");
+        let project_bonus = if !project.is_empty() && prompt_lower.contains(&project.to_lowercase())
+        {
+            2
+        } else {
+            0
+        };
+
+        let goals = match vision.get("goals").and_then(|g| g.as_array()) {
+            Some(g) => g,
+            None => continue,
+        };
+
+        let features_all = vision
+            .get("features")
+            .and_then(|f| f.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        for goal in goals {
+            let goal_id = goal.get("id").and_then(|i| i.as_str()).unwrap_or("");
+            let goal_title = goal.get("title").and_then(|t| t.as_str()).unwrap_or("");
+            let goal_desc = goal.get("description").and_then(|d| d.as_str()).unwrap_or("");
+            let goal_metrics = goal
+                .get("metrics")
+                .and_then(|m| m.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default();
+
+            let goal_text = format!("{} {} {}", goal_title, goal_desc, goal_metrics);
+            let mut total_score = score_match(&goal_text, &words) + project_bonus;
+
+            // Find features under this goal and add their scores
+            let goal_features: Vec<Value> = features_all
+                .iter()
+                .filter(|f| f.get("goal_id").and_then(|g| g.as_str()) == Some(goal_id))
+                .cloned()
+                .collect();
+
+            let mut matched_feature: Option<Value> = None;
+            for feat in &goal_features {
+                let feat_title = feat.get("title").and_then(|t| t.as_str()).unwrap_or("");
+                let feat_desc = feat.get("description").and_then(|d| d.as_str()).unwrap_or("");
+                let feat_text = format!("{} {}", feat_title, feat_desc);
+                let f_score = score_match(&feat_text, &words);
+                if f_score > 0 {
+                    matched_feature = Some(feat.clone());
+                    total_score += f_score;
+                }
+            }
+
+            if total_score > best_score {
+                best_score = total_score;
+                best_match = Some(if matched_feature.is_some() {
+                    Classification::ExistingFeature {
+                        project: project.to_string(),
+                        project_path: project_path.to_string(),
+                        goal: goal.clone(),
+                        feature: matched_feature.unwrap(),
+                        features: goal_features,
+                        score: total_score,
+                        vision: vision.clone(),
+                    }
+                } else {
+                    Classification::ExistingGoal {
+                        project: project.to_string(),
+                        project_path: project_path.to_string(),
+                        goal: goal.clone(),
+                        features: goal_features,
+                        score: total_score,
+                        vision: vision.clone(),
+                    }
+                });
+            }
+        }
+    }
+
+    // Threshold: project mentioned → 2, otherwise → 3
+    if let Some(ref m) = best_match {
+        if best_score >= 2 {
+            let proj = match m {
+                Classification::ExistingGoal { project, .. }
+                | Classification::ExistingFeature { project, .. } => project.to_lowercase(),
+                _ => String::new(),
+            };
+            let project_mentioned = !proj.is_empty() && prompt_lower.contains(&proj);
+            if project_mentioned || best_score >= 3 {
+                return best_match;
+            }
+        }
+    }
+
+    // No strong match — check if it's work-related
+    let is_work = WORK_INDICATORS
+        .iter()
+        .any(|w| words.iter().any(|word| word == *w));
+
+    if is_work && !visions.is_empty() {
+        if let Some(current) = get_current_project() {
+            for v in visions {
+                if v.get("_path").and_then(|p| p.as_str()) == Some(&current) {
+                    return Some(Classification::UnmatchedWork {
+                        project: v
+                            .get("project")
+                            .and_then(|p| p.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        project_path: current,
+                        vision: v.clone(),
+                        prompt: prompt.to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    None
+}
+
+// ── Context message building ──
+
+fn build_context(classification: &Classification) -> Option<String> {
+    match classification {
+        Classification::NewVision {
+            suggested_project, ..
+        } => {
+            let proj_hint = suggested_project
+                .as_ref()
+                .map(|p| format!(" for '{}'", p))
+                .unwrap_or_default();
+            Some(format!(
+                "VDD: User wants to create a new vision{}. Use `vision_init` or `/vision init` \
+                 to create it. Ask for: project name, mission statement, GitHub repo.",
+                proj_hint
+            ))
+        }
+
+        Classification::ExistingGoal {
+            project,
+            goal,
+            features,
+            ..
+        } => {
+            let goal_id = goal.get("id").and_then(|i| i.as_str()).unwrap_or("?");
+            let goal_title = goal.get("title").and_then(|t| t.as_str()).unwrap_or("?");
+            let goal_status = goal.get("status").and_then(|s| s.as_str()).unwrap_or("?");
+
+            let mut parts = vec![
+                format!("VDD CONTEXT \u{2014} Project: {}", project),
+                format!(
+                    "Matched Goal: {} \"{}\" [{}]",
+                    goal_id, goal_title, goal_status
+                ),
+            ];
+
+            if features.is_empty() {
+                parts.push(
+                    "No features yet under this goal. \
+                     Create one with vision_add_feature() before starting work."
+                        .into(),
+                );
+            } else {
+                let mut f_lines = Vec::new();
+                for f in features {
+                    let fid = f.get("id").and_then(|i| i.as_str()).unwrap_or("?");
+                    let ftitle = f.get("title").and_then(|t| t.as_str()).unwrap_or("?");
+                    let fstatus = f.get("status").and_then(|s| s.as_str()).unwrap_or("?");
+                    let open_q = f
+                        .get("questions")
+                        .and_then(|q| q.as_array())
+                        .map(|qs| {
+                            qs.iter()
+                                .filter(|q| {
+                                    q.get("status").and_then(|s| s.as_str()) == Some("open")
+                                })
+                                .count()
+                        })
+                        .unwrap_or(0);
+                    let tasks = f
+                        .get("tasks")
+                        .and_then(|t| t.as_array())
+                        .map(|ts| ts.len())
+                        .unwrap_or(0);
+                    let tasks_done = f
+                        .get("tasks")
+                        .and_then(|t| t.as_array())
+                        .map(|ts| {
+                            ts.iter()
+                                .filter(|t| {
+                                    matches!(
+                                        t.get("status").and_then(|s| s.as_str()),
+                                        Some("done") | Some("verified")
+                                    )
+                                })
+                                .count()
+                        })
+                        .unwrap_or(0);
+
+                    let mut line =
+                        format!("  {}: {} [{}] \u{2014} {}/{} tasks", fid, ftitle, fstatus, tasks_done, tasks);
+                    if open_q > 0 {
+                        line += &format!(" \u{2014} {} OPEN QUESTIONS", open_q);
+                    }
+                    f_lines.push(line);
+                }
+                parts.push(format!("Features:\n{}", f_lines.join("\n")));
+
+                // Open questions
+                let mut open_questions = Vec::new();
+                for f in features {
+                    let fid = f.get("id").and_then(|i| i.as_str()).unwrap_or("?");
+                    if let Some(qs) = f.get("questions").and_then(|q| q.as_array()) {
+                        for q in qs {
+                            if q.get("status").and_then(|s| s.as_str()) == Some("open") {
+                                let qid = q.get("id").and_then(|i| i.as_str()).unwrap_or("?");
+                                let qtext = q.get("text").and_then(|t| t.as_str()).unwrap_or("?");
+                                open_questions.push(format!("  {}/{}: {}", fid, qid, qtext));
+                            }
+                        }
+                    }
+                }
+                if !open_questions.is_empty() {
+                    parts.push(format!(
+                        "OPEN QUESTIONS (answer before building):\n{}",
+                        open_questions.join("\n")
+                    ));
+                }
+            }
+
+            parts.push(
+                "WORKFLOW: Check features \u{2192} answer open questions \u{2192} create/update tasks \u{2192} \
+                 link branch \u{2192} implement \u{2192} update task status"
+                    .into(),
+            );
+
+            Some(parts.join("\n"))
+        }
+
+        Classification::ExistingFeature {
+            project,
+            goal,
+            feature,
+            ..
+        } => {
+            let goal_id = goal.get("id").and_then(|i| i.as_str()).unwrap_or("?");
+            let goal_title = goal.get("title").and_then(|t| t.as_str()).unwrap_or("?");
+            let feat_id = feature.get("id").and_then(|i| i.as_str()).unwrap_or("?");
+            let feat_title = feature.get("title").and_then(|t| t.as_str()).unwrap_or("?");
+            let feat_status = feature
+                .get("status")
+                .and_then(|s| s.as_str())
+                .unwrap_or("?");
+
+            let mut parts = vec![
+                format!("VDD CONTEXT \u{2014} Project: {}", project),
+                format!("Goal: {} \"{}\"", goal_id, goal_title),
+                format!("Feature: {} \"{}\" [{}]", feat_id, feat_title, feat_status),
+            ];
+
+            // Open questions
+            let open_q: Vec<&Value> = feature
+                .get("questions")
+                .and_then(|q| q.as_array())
+                .map(|qs| {
+                    qs.iter()
+                        .filter(|q| q.get("status").and_then(|s| s.as_str()) == Some("open"))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            if !open_q.is_empty() {
+                parts.push("OPEN QUESTIONS (answer these first):".into());
+                for q in &open_q {
+                    let qid = q.get("id").and_then(|i| i.as_str()).unwrap_or("?");
+                    let qtext = q.get("text").and_then(|t| t.as_str()).unwrap_or("?");
+                    parts.push(format!("  {}: {}", qid, qtext));
+                }
+            }
+
+            // Tasks
+            if let Some(tasks) = feature.get("tasks").and_then(|t| t.as_array()) {
+                if !tasks.is_empty() {
+                    parts.push("Tasks:".into());
+                    for t in tasks {
+                        let tid = t.get("id").and_then(|i| i.as_str()).unwrap_or("?");
+                        let ttitle = t.get("title").and_then(|t| t.as_str()).unwrap_or("?");
+                        let tstatus = t.get("status").and_then(|s| s.as_str()).unwrap_or("?");
+                        let branch = t
+                            .get("branch")
+                            .and_then(|b| b.as_str())
+                            .map(|b| format!(" [{}]", b))
+                            .unwrap_or_default();
+                        let pr = t
+                            .get("pr")
+                            .and_then(|p| p.as_str())
+                            .map(|p| format!(" PR:{}", p))
+                            .unwrap_or_default();
+                        parts.push(format!(
+                            "  {}: {} [{}]{}{}",
+                            tid, ttitle, tstatus, branch, pr
+                        ));
+                    }
+                } else if open_q.is_empty() {
+                    parts.push("No tasks yet. Create tasks with vision_add_task().".into());
+                }
+            }
+
+            parts.push(format!(
+                "WORKFLOW: Continue work on {}. Update task status as you go.",
+                feat_id
+            ));
+
+            Some(parts.join("\n"))
+        }
+
+        Classification::UnmatchedWork {
+            project, vision, ..
+        } => {
+            let goals = vision
+                .get("goals")
+                .and_then(|g| g.as_array())
+                .cloned()
+                .unwrap_or_default();
+
+            let goal_lines: Vec<String> = goals
+                .iter()
+                .filter(|g| g.get("status").and_then(|s| s.as_str()) != Some("dropped"))
+                .map(|g| {
+                    let id = g.get("id").and_then(|i| i.as_str()).unwrap_or("?");
+                    let title = g.get("title").and_then(|t| t.as_str()).unwrap_or("?");
+                    let status = g.get("status").and_then(|s| s.as_str()).unwrap_or("?");
+                    format!("  {}: {} [{}]", id, title, status)
+                })
+                .collect();
+
+            Some(
+                [
+                    format!("VDD CONTEXT \u{2014} Project: {}", project),
+                    "This work doesn't match any existing goal/feature.".into(),
+                    format!("Existing goals:\n{}", goal_lines.join("\n")),
+                    "ACTION: Either link to an existing goal with vision_add_feature(), \
+                     or create a new goal with add_goal() if this is new scope."
+                        .into(),
+                ]
+                .join("\n"),
+            )
+        }
+    }
+}
+
+// ── Event handlers ──
+
+fn handle_user_prompt(event: &Value) -> Option<Value> {
+    let prompt = event
+        .get("user_prompt")
+        .or_else(|| event.get("prompt"))
+        .and_then(|p| p.as_str())
+        .unwrap_or("");
+    if prompt.trim().is_empty() {
+        return None;
+    }
+
+    let visions = scan_all_visions();
+    if visions.is_empty() {
+        return None;
+    }
+
+    let classification = classify_prompt(prompt, &visions)?;
+    let context = build_context(&classification)?;
+
+    Some(json!({ "decision": "approve", "reason": context }))
+}
+
+fn handle_pre_tool_use(event: &Value) -> Option<Value> {
+    let tool = event.get("tool_name").and_then(|t| t.as_str())?;
+    if tool != "Edit" && tool != "Write" {
+        return None;
+    }
+
+    let file_path = event
+        .get("tool_input")
+        .and_then(|i| i.get("file_path"))
+        .and_then(|f| f.as_str())?;
+
+    let project = find_vision_root(file_path)?;
+    let vision = load_vision(&project)?;
+
+    // Track the edit
+    let mut session = load_session();
+    if !session.files.contains(&file_path.to_string()) {
+        session.files.push(file_path.to_string());
+    }
+    session.project = Some(project.clone());
+    session.has_vision = true;
+    save_session(&session);
+
+    // Check if current branch has a tracked task
+    let branch = get_current_branch(Some(&project))?;
+    let has_task = find_task_by_branch(&vision, &branch).is_some();
+
+    if !has_task {
+        let features = vision.get("features").and_then(|f| f.as_array())?;
+        let active: Vec<&Value> = features
+            .iter()
+            .filter(|f| f.get("status").and_then(|s| s.as_str()) != Some("done"))
+            .collect();
+
+        if !active.is_empty() {
+            let feat_list: String = active
+                .iter()
+                .take(3)
+                .map(|a| {
+                    let id = a.get("id").and_then(|i| i.as_str()).unwrap_or("?");
+                    let title = a.get("title").and_then(|t| t.as_str()).unwrap_or("?");
+                    format!("{} ({})", id, title)
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            return Some(json!({
+                "decision": "approve",
+                "reason": format!(
+                    "VDD: Branch '{}' not linked to a vision task. Active features: {}. \
+                     Link with: vision_add_task(feature_id, title, branch='{}')",
+                    branch, feat_list, branch
+                )
+            }));
+        }
+    }
+
+    None
+}
+
+fn handle_post_tool_use(event: &Value) -> Option<Value> {
+    let tool = event.get("tool_name").and_then(|t| t.as_str())?;
+    if tool != "Bash" {
+        return None;
+    }
+
+    let command = event
+        .get("tool_input")
+        .and_then(|i| i.get("command"))
+        .and_then(|c| c.as_str())
+        .unwrap_or("");
+    if !command.contains("git commit") {
+        return None;
+    }
+
+    let project = find_vision_root(&std::env::current_dir().ok()?.to_string_lossy())
+        .or_else(|| load_session().project)?;
+
+    let vision = load_vision(&project)?;
+    let features = vision.get("features").and_then(|f| f.as_array())?;
+    if features.is_empty() {
+        return None;
+    }
+
+    let branch = get_current_branch(Some(&project))?;
+
+    if let Some((feature, task)) = find_task_by_branch(&vision, &branch) {
+        if task.get("status").and_then(|s| s.as_str()) == Some("planned") {
+            let tid = task.get("id").and_then(|i| i.as_str()).unwrap_or("?");
+            let ttitle = task.get("title").and_then(|t| t.as_str()).unwrap_or("?");
+            let fid = feature.get("id").and_then(|i| i.as_str()).unwrap_or("?");
+            return Some(json!({
+                "decision": "approve",
+                "reason": format!(
+                    "VDD: Commit on branch '{}' \u{2192} Task {} ({}) is still 'planned'. \
+                     Update to 'in_progress': vision_update_task('{}', '{}', 'in_progress')",
+                    branch, tid, ttitle, fid, tid
+                )
+            }));
+        }
+        return None;
+    }
+
+    // No task linked
+    let active: Vec<&Value> = features
+        .iter()
+        .filter(|f| f.get("status").and_then(|s| s.as_str()) != Some("done"))
+        .collect();
+
+    if !active.is_empty() {
+        let mut session = load_session();
+        session.commits.push(CommitRecord {
+            branch: Some(branch.clone()),
+            command: command.chars().take(100).collect(),
+        });
+        save_session(&session);
+
+        let feat_ids: String = active
+            .iter()
+            .take(3)
+            .filter_map(|a| a.get("id").and_then(|i| i.as_str()))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        return Some(json!({
+            "decision": "approve",
+            "reason": format!(
+                "VDD: Commit on untracked branch '{}'. Link to a feature: {}",
+                branch, feat_ids
+            )
+        }));
+    }
+
+    None
+}
+
+fn handle_stop(_event: &Value) -> Option<Value> {
+    let session = load_session();
+    if !session.has_vision {
+        return None;
+    }
+
+    let project = session.project.as_ref()?;
+    let vision = load_vision(project)?;
+    let features = vision
+        .get("features")
+        .and_then(|f| f.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let total_tasks: usize = features
+        .iter()
+        .map(|f| {
+            f.get("tasks")
+                .and_then(|t| t.as_array())
+                .map(|ts| ts.len())
+                .unwrap_or(0)
+        })
+        .sum();
+
+    let done_tasks: usize = features
+        .iter()
+        .map(|f| {
+            f.get("tasks")
+                .and_then(|t| t.as_array())
+                .map(|ts| {
+                    ts.iter()
+                        .filter(|t| {
+                            matches!(
+                                t.get("status").and_then(|s| s.as_str()),
+                                Some("done") | Some("verified")
+                            )
+                        })
+                        .count()
+                })
+                .unwrap_or(0)
+        })
+        .sum();
+
+    let open_questions: usize = features
+        .iter()
+        .map(|f| {
+            f.get("questions")
+                .and_then(|q| q.as_array())
+                .map(|qs| {
+                    qs.iter()
+                        .filter(|q| q.get("status").and_then(|s| s.as_str()) == Some("open"))
+                        .count()
+                })
+                .unwrap_or(0)
+        })
+        .sum();
+
+    let files_count = session.files.len();
+    let untracked = &session.commits;
+
+    if files_count == 0 && untracked.is_empty() {
+        return None;
+    }
+
+    let mut parts = vec![format!(
+        "Vision: {} features, {}/{} tasks done",
+        features.len(),
+        done_tasks,
+        total_tasks
+    )];
+
+    if open_questions > 0 {
+        parts.push(format!("{} open questions need answers", open_questions));
+    }
+
+    let branches: HashSet<String> = untracked
+        .iter()
+        .filter_map(|c| c.branch.clone())
+        .collect();
+    if !branches.is_empty() {
+        parts.push(format!(
+            "Untracked commits on: {}",
+            branches.into_iter().collect::<Vec<_>>().join(", ")
+        ));
+    }
+
+    // Reset session
+    save_session(&SessionEdits::default());
+
+    Some(json!({
+        "decision": "approve",
+        "reason": format!("VDD Session Summary:\n  {}", parts.join("\n  "))
+    }))
+}
+
+// ── Main ──
+
+fn main() {
+    let mut input = String::new();
+    if std::io::stdin().read_to_string(&mut input).is_err() {
+        return;
+    }
+    if input.trim().is_empty() {
+        return;
+    }
+
+    let event: Value = match serde_json::from_str(&input) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let hook_event = event
+        .get("hook_event")
+        .or_else(|| event.get("event"))
+        .and_then(|e| e.as_str())
+        .unwrap_or("");
+
+    let result = match hook_event {
+        "UserPromptSubmit" => handle_user_prompt(&event),
+        "PreToolUse" => handle_pre_tool_use(&event),
+        "PostToolUse" => handle_post_tool_use(&event),
+        "Stop" => handle_stop(&event),
+        _ => None,
+    };
+
+    if let Some(r) = result {
+        println!("{}", r);
+    }
+}
