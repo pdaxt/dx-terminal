@@ -1895,7 +1895,7 @@ impl DxTerminalService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    // === VISION-DRIVEN DEVELOPMENT (13 tools) ===
+    // === VISION-DRIVEN DEVELOPMENT ===
 
     #[tool(description = "Get full vision tree: goals → features → tasks with progress rollup and Git status. The central view of all project work.")]
     async fn vision_tree(
@@ -1936,13 +1936,13 @@ impl DxTerminalService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Ask a question about a feature — moves feature to 'specifying' status.")]
+    #[tool(description = "Ask a question about a feature. Questions are blocking by default unless `blocking=false` is provided.")]
     async fn vision_add_question(
         &self,
         Parameters(req): Parameters<types::VisionQuestionRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let result = tools::vision_tools::vision_add_question(
-            req.project.as_deref(), &req.feature_id, &req.question,
+            req.project.as_deref(), &req.feature_id, &req.question, req.blocking,
         );
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -2023,6 +2023,17 @@ impl DxTerminalService {
         Parameters(req): Parameters<types::VisionFeatureReadinessRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let result = tools::vision_tools::vision_feature_readiness(
+            req.project.as_deref(), &req.feature_id,
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Check whether discovery is complete for a feature. Returns doc presence, blocking question counts, acceptance coverage, and build blockers.")]
+    async fn vision_discovery_ready_check(
+        &self,
+        Parameters(req): Parameters<types::VisionFeatureReadinessRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_discovery_ready_check(
             req.project.as_deref(), &req.feature_id,
         );
         Ok(CallToolResult::success(vec![Content::text(result)]))

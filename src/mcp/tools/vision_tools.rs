@@ -26,8 +26,13 @@ pub fn vision_add_feature(
     vision::add_feature(&resolve_project(project), goal_id, title, description, acceptance_criteria)
 }
 
-pub fn vision_add_question(project: Option<&str>, feature_id: &str, question: &str) -> String {
-    vision::add_question(&resolve_project(project), feature_id, question)
+pub fn vision_add_question(project: Option<&str>, feature_id: &str, question: &str, blocking: Option<bool>) -> String {
+    vision::add_question_with_blocking(
+        &resolve_project(project),
+        feature_id,
+        question,
+        blocking.unwrap_or(true),
+    )
 }
 
 pub fn vision_research_doc_upsert(project: Option<&str>, feature_id: &str, content: &str) -> String {
@@ -65,6 +70,10 @@ pub fn vision_update_feature(project: Option<&str>, feature_id: &str, status: &s
 
 pub fn vision_feature_readiness(project: Option<&str>, feature_id: &str) -> String {
     vision::feature_readiness(&resolve_project(project), feature_id)
+}
+
+pub fn vision_discovery_ready_check(project: Option<&str>, feature_id: &str) -> String {
+    vision::discovery_ready_check(&resolve_project(project), feature_id)
 }
 
 pub fn vision_sync(project: Option<&str>) -> String {
