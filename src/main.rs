@@ -27,6 +27,7 @@ mod tmux;
 mod session_stream;
 mod build;
 mod vision;
+mod vision_events;
 mod design_tokens;
 mod ui_audit;
 mod ux_audit;
