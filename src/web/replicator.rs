@@ -22,6 +22,14 @@ use crate::state::events::StateEvent;
 use crate::state::types::DxTerminalState;
 use crate::tmux;
 
+#[derive(Clone, Debug, PartialEq)]
+struct FeatureSnapshot {
+    title: String,
+    phase: String,
+    state: String,
+    readiness: serde_json::Value,
+}
+
 /// Start the runtime replicator as a background tokio task.
 /// Call once at server startup. All clients receive events through the EventBus.
 pub fn start(app: Arc<App>) {
@@ -33,6 +41,7 @@ async fn run_replicator(app: Arc<App>) {
     let mut prev_outputs: HashMap<String, String> = HashMap::new();
     let mut session_tailer = SessionTailer::new();
     let mut vision_fingerprints: HashMap<String, u64> = HashMap::new();
+    let mut vision_features: HashMap<String, HashMap<String, FeatureSnapshot>> = HashMap::new();
 
     // Track pane→tmux_target mapping for stable identity
     let mut pane_targets: HashMap<u8, String> = HashMap::new();
@@ -61,23 +70,61 @@ async fn run_replicator(app: Arc<App>) {
             let Some(fingerprint) = vision_fingerprint(project_path) else {
                 continue;
             };
+            let current_features = vision_feature_snapshots(project_path);
 
             match vision_fingerprints.get(project_path) {
                 Some(previous) if *previous != fingerprint => {
                     vision_fingerprints.insert(project_path.clone(), fingerprint);
-                    app.state.event_bus.send(StateEvent::VisionChanged {
-                        project: vision_project_name(project_path),
-                        summary: vision_change_summary(project_path),
-                    });
+                    if let Some((project_name, current)) = current_features {
+                        let previous = vision_features.get(project_path);
+                        let events = diff_vision_features(&project_name, previous, &current);
+                        if events.is_empty() {
+                            app.state.event_bus.send(StateEvent::VisionChanged {
+                                project: project_name,
+                                summary: vision_change_summary(project_path),
+                                feature_id: None,
+                                feature_title: None,
+                                phase: None,
+                                state: None,
+                                readiness: None,
+                            });
+                        } else {
+                            for event in events {
+                                app.state.event_bus.send(event);
+                            }
+                        }
+                        vision_features.insert(project_path.clone(), current);
+                    } else {
+                        app.state.event_bus.send(StateEvent::VisionChanged {
+                            project: vision_project_name(project_path),
+                            summary: vision_change_summary(project_path),
+                            feature_id: None,
+                            feature_title: None,
+                            phase: None,
+                            state: None,
+                            readiness: None,
+                        });
+                        vision_features.remove(project_path);
+                    }
                 }
                 None => {
                     // Baseline the current file without emitting a startup event.
                     vision_fingerprints.insert(project_path.clone(), fingerprint);
+                    if let Some((_, current)) = current_features {
+                        vision_features.insert(project_path.clone(), current);
+                    }
                 }
-                _ => {}
+                _ => {
+                    if !vision_features.contains_key(project_path) {
+                        if let Some((_, current)) = current_features {
+                            vision_features.insert(project_path.clone(), current);
+                        }
+                    }
+                }
             }
         }
         vision_fingerprints.retain(|path, _| active_vision_paths.contains(path));
+        vision_features.retain(|path, _| active_vision_paths.contains(path));
 
         // Build authoritative target list: state panes first, then discovered
         let mut targets: Vec<(u8, String, Option<usize>)> = Vec::new(); // (pane_num, target, live_idx)
@@ -295,6 +342,104 @@ fn vision_change_summary(project_path: &str) -> String {
     "Vision updated".to_string()
 }
 
+fn vision_feature_snapshots(project_path: &str) -> Option<(String, HashMap<String, FeatureSnapshot>)> {
+    let tree = crate::vision::vision_tree(project_path);
+    let value: serde_json::Value = serde_json::from_str(&tree).ok()?;
+    if value.get("error").is_some() {
+        return None;
+    }
+
+    let project = value.get("project").and_then(|v| v.as_str()).unwrap_or("--").to_string();
+    let mut features = HashMap::new();
+
+    for goal in value.get("goals").and_then(|v| v.as_array()).into_iter().flatten() {
+        for feature in goal.get("features").and_then(|v| v.as_array()).into_iter().flatten() {
+            let feature_id = match feature.get("id").and_then(|v| v.as_str()) {
+                Some(id) => id.to_string(),
+                None => continue,
+            };
+            features.insert(feature_id, FeatureSnapshot {
+                title: feature.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                phase: feature.get("phase").or_else(|| feature.get("status")).and_then(|v| v.as_str()).unwrap_or("planned").to_string(),
+                state: feature.get("state").and_then(|v| v.as_str()).unwrap_or("planned").to_string(),
+                readiness: feature.get("readiness").cloned().unwrap_or_else(|| json!({})),
+            });
+        }
+    }
+
+    Some((project, features))
+}
+
+fn diff_vision_features(
+    project: &str,
+    previous: Option<&HashMap<String, FeatureSnapshot>>,
+    current: &HashMap<String, FeatureSnapshot>,
+) -> Vec<StateEvent> {
+    let mut feature_ids: Vec<String> = current.keys().cloned().collect();
+    if let Some(prev) = previous {
+        for feature_id in prev.keys() {
+            if !current.contains_key(feature_id) {
+                feature_ids.push(feature_id.clone());
+            }
+        }
+    }
+    feature_ids.sort();
+    feature_ids.dedup();
+
+    let mut events = Vec::new();
+    for feature_id in feature_ids {
+        let prev = previous.and_then(|features| features.get(&feature_id));
+        let next = current.get(&feature_id);
+        if prev == next {
+            continue;
+        }
+
+        let (feature_title, phase, state, readiness) = match next {
+            Some(snapshot) => (
+                Some(snapshot.title.clone()),
+                Some(snapshot.phase.clone()),
+                Some(snapshot.state.clone()),
+                Some(snapshot.readiness.clone()),
+            ),
+            None => (prev.map(|snapshot| snapshot.title.clone()), None, None, None),
+        };
+
+        events.push(StateEvent::VisionChanged {
+            project: project.to_string(),
+            summary: feature_change_summary(&feature_id, prev, next),
+            feature_id: Some(feature_id),
+            feature_title,
+            phase,
+            state,
+            readiness,
+        });
+    }
+
+    events
+}
+
+fn feature_change_summary(
+    feature_id: &str,
+    previous: Option<&FeatureSnapshot>,
+    current: Option<&FeatureSnapshot>,
+) -> String {
+    match (previous, current) {
+        (None, Some(snapshot)) => format!("{} added in {}", feature_id, snapshot.phase),
+        (Some(_), None) => format!("{} removed from vision", feature_id),
+        (Some(prev), Some(next)) if prev.phase != next.phase => {
+            format!("{} phase {} -> {}", feature_id, prev.phase, next.phase)
+        }
+        (Some(prev), Some(next)) if prev.state != next.state => {
+            format!("{} state {} -> {}", feature_id, prev.state, next.state)
+        }
+        (Some(prev), Some(next)) if prev.readiness != next.readiness => {
+            format!("{} readiness updated", feature_id)
+        }
+        (Some(_), Some(_)) => format!("{} updated", feature_id),
+        (None, None) => "Vision updated".to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -356,5 +501,40 @@ mod tests {
         let second = vision_fingerprint(project.to_string_lossy().as_ref()).unwrap();
 
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn diff_vision_features_emits_phase_and_readiness_deltas() {
+        let previous = HashMap::from([(
+            "F1.1".to_string(),
+            FeatureSnapshot {
+                title: "Ship login".into(),
+                phase: "discovery".into(),
+                state: "active".into(),
+                readiness: json!({"ready_for_build": false}),
+            },
+        )]);
+        let current = HashMap::from([(
+            "F1.1".to_string(),
+            FeatureSnapshot {
+                title: "Ship login".into(),
+                phase: "build".into(),
+                state: "active".into(),
+                readiness: json!({"ready_for_build": true}),
+            },
+        )]);
+
+        let events = diff_vision_features("demo", Some(&previous), &current);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            StateEvent::VisionChanged { project, summary, feature_id, phase, readiness, .. } => {
+                assert_eq!(project, "demo");
+                assert_eq!(feature_id.as_deref(), Some("F1.1"));
+                assert_eq!(phase.as_deref(), Some("build"));
+                assert_eq!(summary, "F1.1 phase discovery -> build");
+                assert_eq!(readiness.as_ref().and_then(|r| r.get("ready_for_build")).and_then(|v| v.as_bool()), Some(true));
+            }
+            other => panic!("unexpected event: {:?}", other),
+        }
     }
 }
