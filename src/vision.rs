@@ -1497,6 +1497,106 @@ fn now() -> String {
     chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
+fn append_history(_project_path: &str, _change: &VisionChange) {
+    // Future: write to .vision/history.jsonl
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn temp_project() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let vision_dir = dir.path().join(".vision");
+        std::fs::create_dir_all(&vision_dir).unwrap();
+        dir
+    }
+
+    fn init_test_vision(dir: &std::path::Path) {
+        let path = dir.to_str().unwrap();
+        init_vision(path, "test-proj", "Test mission", "user/repo");
+    }
+
+    #[test]
+    fn test_sub_vision_uses_feature_id_not_goal_id() {
+        let dir = temp_project();
+        let path = dir.path().to_str().unwrap();
+        init_test_vision(dir.path());
+        add_goal(path, "G1", "Goal one", "desc", 1);
+        add_feature(path, "G1", "Feature A", "desc", vec![]);
+        add_feature(path, "G1", "Feature B", "desc", vec![]);
+
+        let vision = load_vision(path).unwrap();
+        let f1_id = &vision.features[0].id;
+        let f2_id = &vision.features[1].id;
+
+        // Create sub-visions for both features under same goal
+        let r1 = create_sub_vision(path, f1_id, "Sub A mission");
+        let r2 = create_sub_vision(path, f2_id, "Sub B mission");
+
+        // Both should succeed (no overwrite)
+        assert!(!r1.contains("error"), "First sub-vision failed: {}", r1);
+        assert!(!r2.contains("error"), "Second sub-vision failed: {}", r2);
+
+        // Files should be named by feature_id, not goal_id
+        let features_dir = dir.path().join(".vision/features");
+        assert!(features_dir.join(format!("{}.json", f1_id)).exists(), "Missing {}.json", f1_id);
+        assert!(features_dir.join(format!("{}.json", f2_id)).exists(), "Missing {}.json", f2_id);
+    }
+
+    #[test]
+    fn test_update_feature_status_all_phases() {
+        let dir = temp_project();
+        let path = dir.path().to_str().unwrap();
+        init_test_vision(dir.path());
+        add_goal(path, "G1", "Goal", "desc", 1);
+        add_feature(path, "G1", "Feature", "desc", vec![]);
+
+        let vision = load_vision(path).unwrap();
+        let fid = &vision.features[0].id;
+
+        for status in &["specifying", "building", "testing", "done"] {
+            let result = update_feature_status(path, fid, status);
+            assert!(!result.contains("error"), "Failed setting {}: {}", status, result);
+            let v = load_vision(path).unwrap();
+            let f = v.features.iter().find(|f| f.id == *fid).unwrap();
+            let expected: FeatureStatus = match *status {
+                "specifying" => FeatureStatus::Specifying,
+                "building" => FeatureStatus::Building,
+                "testing" => FeatureStatus::Testing,
+                "done" => FeatureStatus::Done,
+                _ => unreachable!(),
+            };
+            assert_eq!(f.status, expected);
+        }
+    }
+
+    #[test]
+    fn test_update_feature_status_invalid() {
+        let dir = temp_project();
+        let path = dir.path().to_str().unwrap();
+        init_test_vision(dir.path());
+        add_goal(path, "G1", "Goal", "desc", 1);
+        add_feature(path, "G1", "Feature", "desc", vec![]);
+
+        let vision = load_vision(path).unwrap();
+        let fid = &vision.features[0].id;
+
+        let result = update_feature_status(path, fid, "banana");
+        assert!(result.contains("invalid_status"));
+    }
+
+    #[test]
+    fn test_milestone_in_progress_parses() {
+        // This was the root cause bug — InProgress missing from MilestoneStatus
+        let json = r#"{"status":"in_progress","id":"M1","title":"Test","description":"","target_date":"2026-01-01","goals":[]}"#;
+        let m: Result<Milestone, _> = serde_json::from_str(json);
+        assert!(m.is_ok(), "InProgress milestone should parse: {:?}", m.err());
+        assert!(matches!(m.unwrap().status, MilestoneStatus::InProgress));
+    }
+}
+
 fn run_gh(cmd: &str) -> String {
     std::process::Command::new("sh")
         .args(["-c", cmd])
