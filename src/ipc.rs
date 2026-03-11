@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -77,11 +77,6 @@ async fn handle_connection(mut stream: UnixStream, app: Arc<App>) -> anyhow::Res
     let _ = stream.write_all(b"{\"status\":\"ok\"}").await;
     Ok(())
 }
-
-pub fn remove_stale_socket(path: &Path) {
-    let _ = std::fs::remove_file(path);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
