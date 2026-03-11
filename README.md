@@ -2,17 +2,18 @@
 
 # DX Terminal
 
-**The AI-native terminal multiplexer. Monitor 16+ coding agents from one screen.**
+**The AI-native terminal multiplexer. Orchestrate teams of AI coding agents from one screen.**
 
 [![CI](https://github.com/pdaxt/dx-terminal/actions/workflows/ci.yml/badge.svg)](https://github.com/pdaxt/dx-terminal/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/Rust-10%2C489_lines-orange.svg)](https://github.com/pdaxt/dx-terminal)
+[![Rust](https://img.shields.io/badge/Rust-Pure_Rust-orange.svg)](https://github.com/pdaxt/dx-terminal)
+[![MCP](https://img.shields.io/badge/MCP-206_tools-purple.svg)](https://github.com/pdaxt/dx-terminal)
 
-Open source. No login. No telemetry.
+Single binary. No login. No telemetry. Open source.
 
-<img src="demo/demo-screenshot.png" alt="DX Terminal showing 16 AI agents with dashboard, queue, and real-time monitoring" width="800">
+<img src="demo/demo-screenshot.png" alt="DX Terminal showing 16 AI agents with real-time dashboard, task queue, vision tracking, and sync status" width="800">
 
-[Quick Start](#install) · [Features](#what-it-does) · [Comparison](#comparison) · [Architecture](#architecture) · [Contributing](#contributing)
+[Quick Start](#install) · [Features](#features) · [Web Dashboard](#web-dashboard) · [MCP Server](#mcp-server) · [Architecture](#architecture) · [Contributing](#contributing)
 
 </div>
 
@@ -20,152 +21,169 @@ Open source. No login. No telemetry.
 
 ## The Problem
 
-You're running 16 Claude Code agents across tmux panes. One needs approval. Another is stuck. A third is burning tokens on the wrong file. You're alt-tabbing between panes like a madman, losing context every time.
+You're running 16 Claude Code agents across tmux panes. One needs approval. Another is stuck. A third finished but nobody noticed. You're alt-tabbing like a madman, losing context every time, with no idea what's actually getting done.
 
 ## The Solution
 
-DX Terminal gives you **one screen to rule them all** — a real-time TUI dashboard that monitors every AI agent across your terminal sessions. See who's working, who's blocked, what they're doing, and how much they're costing you. Built in Rust, renders at 60fps, uses <5MB RAM.
+DX Terminal is a **complete AI agent orchestration platform** — a single Rust binary that monitors, coordinates, and tracks teams of AI coding agents. Real-time TUI dashboard, web dashboard with WebSocket streaming, 206-tool MCP server, vision-driven development tracking, file sync, and build environment management. Built in Rust, <5MB RAM.
 
 ## Install
 
-**Homebrew (macOS & Linux):**
 ```bash
+# Homebrew (macOS & Linux)
 brew install pdaxt/tap/dx-terminal
-```
 
-**Cargo:**
-```bash
+# Cargo
 cargo install dx-terminal
-```
 
-**Shell script:**
-```bash
+# Shell script
 curl -fsSL https://raw.githubusercontent.com/pdaxt/dx-terminal/main/install.sh | bash
-```
 
-**From source:**
-```bash
-git clone https://github.com/pdaxt/dx-terminal.git
-cd dx-terminal
-cargo install --path .
+# From source
+git clone https://github.com/pdaxt/dx-terminal.git && cd dx-terminal && cargo install --path .
 ```
 
 ## Usage
 
 ```bash
-dx                    # Launch (native PTY mode)
-dx --tmux             # Legacy tmux monitoring mode
-dx --debug            # Write debug logs
-dx --init-config      # Generate config file
+dx                          # TUI dashboard + web + MCP
+dx mcp                      # MCP server mode (stdio, all 206 tools)
+dx mcp core                 # Split MCP server (faster tools/list)
+dx web --port 3100          # Web dashboard only
 ```
 
-## What It Does
+## Features
 
-DX Terminal detects and monitors AI coding agents running in your terminal:
+### Agent Monitoring
 
-| Agent | Detected |
-|-------|----------|
-| Claude Code | Yes |
-| OpenCode | Yes |
-| Codex CLI | Yes |
-| Gemini CLI | Yes |
-
-For each agent it shows:
-
-| Feature | What You See |
+| Feature | Description |
 |---------|-------------|
-| **Agent Tree** | Hierarchical view across sessions/windows/panes |
-| **Live Status** | Idle, Working, Awaiting Approval, Error — real-time |
-| **Dashboard** | Capacity, sprint, milestones, board, MCPs, session metrics |
-| **Task Queue** | Running, pending, and blocked tasks with priorities |
-| **Token Tracking** | Per-session and daily input/output tokens + cost |
-| **Analytics** | CPU sparkline, memory usage, API status at a glance |
-| **Pane Preview** | Live output from any agent without switching |
-| **Git Status** | Branch, uncommitted changes per project |
-| **Subagents** | Tracks spawned sub-tasks with their lifecycle |
-| **Context** | Remaining context window percentage |
+| **16+ Agents** | Monitor Claude Code, OpenCode, Codex CLI, Gemini CLI simultaneously |
+| **Live Status** | Idle, Working, Awaiting Approval, Error — real-time detection |
+| **Task Queue** | Priority-based task routing with auto-cycle across agents |
+| **Build Environments** | Themed multi-pane build setups (Bloodstream, Matrix, Ghost Protocol) |
+| **Git Sync** | Rust-native file watcher + auto-commit + auto-push via WebSocket |
+| **Context Tracking** | Remaining context window percentage per agent |
+
+### Intelligence Layer
+
+| Feature | Description |
+|---------|-------------|
+| **206 MCP Tools** | Built-in MCP server — agents can query state, manage tasks, coordinate |
+| **Vision Tracking** | Vision-Driven Development with goals, features, tasks, acceptance criteria |
+| **Wiki** | Auto-generated Confluence-style documentation from vision files |
+| **Analytics** | Capacity planning, sprint tracking, burndown charts, role utilization |
+| **Quality Gates** | Multi-framework QA engine (build, test, review, verify, ship) |
+| **Multi-Agent Coord** | File locks, port allocation, knowledge sharing between agents |
+
+### Dashboards
+
+| Interface | Description |
+|-----------|-------------|
+| **TUI** | Ratatui terminal dashboard at 60fps — agent tree, queue, analytics |
+| **Web** | Real-time web dashboard with WebSocket streaming on any port |
+| **SSE** | Server-sent events for external integrations |
+| **REST API** | Full JSON API for all state (40+ endpoints) |
+
+## Web Dashboard
+
+The web dashboard runs alongside the MCP server and provides a real-time view of your entire agent fleet:
+
+- **Agent grid** with live terminal output, status, and session metadata
+- **Task queue** with priority management and one-click operations
+- **Vision cockpit** showing VDD goals, features, and progress
+- **Build environments** with themed pane management
+- **Sync status** with git branch, dirty files, ahead/behind indicators
+- **Capacity gauges**, role utilization, sprint board, and activity feed
+
+Access at `http://localhost:3100` (configurable).
+
+## MCP Server
+
+DX Terminal includes a built-in MCP server with 206 tools across 5 domains:
+
+| Server | Tools | Purpose |
+|--------|-------|---------|
+| `core` | Agent lifecycle, PTY management, pane control | Low-level operations |
+| `queue` | Task queue, auto-cycle, priority routing | Work management |
+| `tracker` | Issues, sprints, milestones, capacity | Project tracking |
+| `coord` | File locks, ports, knowledge base, messaging | Multi-agent coordination |
+| `intel` | Analytics, monitoring, quality gates, vision | Intelligence & reporting |
+
+Run as monolith (`dx mcp`) or split servers for faster `tools/list` response.
 
 ## Key Bindings
 
 | Key | Action |
 |-----|--------|
-| `j`/`k` or arrows | Navigate agents |
-| `y` | Approve pending request |
-| `n` | Reject pending request |
-| `a` | Approve ALL pending |
-| `1`-`9` | Answer numbered choices |
-| `Space` | Toggle selection |
-| `f` | Focus (jump to agent's pane) |
-| `i` | Input mode (type to agent) |
-| `D` | Toggle dashboard |
-| `X` | Toggle analytics |
-| `Q` | Toggle task queue |
-| `P` | Toggle factory view |
+| `j`/`k` | Navigate agents |
+| `y`/`n` | Approve/reject pending |
+| `a` | Approve ALL |
+| `f` | Focus (jump to pane) |
+| `i` | Input mode |
+| `D` | Dashboard |
+| `X` | Analytics |
+| `Q` | Task queue |
 | `?` | Help |
-| `q` | Quit |
-
-## Comparison
-
-| Feature | DX Terminal | claude-squad | tmux (raw) |
-|---------|:-----------:|:------------:|:----------:|
-| Language | Rust | Go | C |
-| Agent monitoring | 16+ simultaneous | Single-focus | Manual |
-| Dashboard views | 5 built-in panels | 1 | 0 |
-| Token/cost tracking | Built-in | No | No |
-| Task queue | Visual with priorities | No | No |
-| Memory usage | <5MB | ~20MB | ~3MB |
-| Agent types | 4 (Claude, OpenCode, Codex, Gemini) | Claude only | N/A |
-| Git integration | Per-project status | No | No |
-| MCP server | Built-in | No | No |
-| Native PTY | Yes | No | Yes |
 
 ## Architecture
 
-Built entirely in Rust. Native PTY management — no tmux dependency required.
+```
+┌────────────────────────────────────────────────────────────┐
+│                       DX Terminal                           │
+│                                                             │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐  │
+│  │ TUI      │ │ Web      │ │ MCP      │ │ Sync         │  │
+│  │ Ratatui  │ │ Axum+WS  │ │ Server   │ │ notify+git   │  │
+│  │ 60fps    │ │ REST+SSE │ │ 206 tools│ │ auto-push    │  │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └──────┬───────┘  │
+│       │             │            │               │          │
+│  ┌────┴─────────────┴────────────┴───────────────┴───────┐ │
+│  │                    App Core                            │ │
+│  │  StateManager · PTY Manager · Queue · Vision · Screen │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                                                             │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │  PTY (portable-pty) · Agent Detection · Analytics      │ │
+│  │  Knowledge Base · Build Environments · Quality Gates   │ │
+│  │  Capacity Planning · Multi-Agent Coordination          │ │
+│  └────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────┘
+```
 
-```
-┌─────────────────────────────────────────────────────┐
-│                    DX Terminal                        │
-│                                                       │
-│  ┌───────────┐  ┌───────────┐  ┌─────────────────┐  │
-│  │ Agent     │  │ Dashboard │  │ Queue           │  │
-│  │ Tree      │  │ Panels    │  │ Manager         │  │
-│  └─────┬─────┘  └─────┬─────┘  └────────┬────────┘  │
-│        │               │                 │            │
-│  ┌─────┴───────────────┴─────────────────┴─────────┐ │
-│  │            Ratatui TUI (60fps)                   │ │
-│  └──────────────────────┬──────────────────────────┘ │
-│                         │                             │
-│  ┌──────────────────────┴──────────────────────────┐ │
-│  │  PTY Manager (portable-pty) + VTE Parser        │ │
-│  │  Agent Detection (process tree + pattern match) │ │
-│  │  Analytics (SQLite token/cost tracking)         │ │
-│  │  MCP Server (built-in, controllable by agents)  │ │
-│  └─────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────┘
-```
+All Rust. Single binary. No external runtime dependencies.
+
+## Comparison
+
+| Feature | DX Terminal | claude-squad | tmux |
+|---------|:-----------:|:------------:|:----:|
+| Language | Rust | Go | C |
+| Agents monitored | 16+ | 1 | Manual |
+| Dashboard views | TUI + Web | 1 | 0 |
+| MCP tools | 206 | 0 | 0 |
+| Task queue | Priority-based | No | No |
+| Vision/VDD tracking | Built-in | No | No |
+| File sync | Rust-native | No | No |
+| Build environments | Themed multi-pane | No | No |
+| Wiki generation | Auto from vision | No | No |
+| Memory usage | <5MB | ~20MB | ~3MB |
+| Agent types | 4+ | Claude only | N/A |
 
 ## Configuration
 
 ```bash
-dx --init-config      # Creates default config
-dx --show-config-path # Shows path
+dx --init-config          # Generate default config
 ```
 
-Config file (TOML):
-```toml
-poll_interval_ms = 500
-capture_lines = 100
-
-[[agent_patterns]]
-pattern = "my-custom-agent"
-agent_type = "CustomAgent"
+Config at `~/.config/dx-terminal/config.json`:
+```json
+{
+  "web_port": 3100,
+  "poll_interval_ms": 500,
+  "capture_lines": 100,
+  "auto_cycle_interval": 60
+}
 ```
-
-| OS | Config Path |
-|----|-------------|
-| macOS | `~/Library/Application Support/dx-terminal/config.toml` |
-| Linux | `~/.config/dx-terminal/config.toml` |
 
 ## Contributing
 
@@ -177,16 +195,16 @@ cargo clippy -- -D warnings
 cargo fmt
 ```
 
-PRs welcome. Run the checks above before submitting.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](LICENSE).
 
 ---
 
 <div align="center">
 
-**Built for developers who run AI agents at scale.**
+**Built for developers who orchestrate AI agents at scale.**
 
 </div>
