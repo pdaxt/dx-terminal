@@ -2605,8 +2605,11 @@ mod tests {
         assert_eq!(blocked["status"], "blocked");
 
         upsert_feature_doc(path, "F1.1", "discovery", "# Discovery");
+        let auto: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        assert_eq!(auto["phase"], "build");
+
         let advanced: serde_json::Value = serde_json::from_str(&complete_discovery(path, "F1.1")).unwrap();
-        assert_eq!(advanced["status"], "advanced");
+        assert_eq!(advanced["status"], "noop");
         assert_eq!(advanced["phase"], "build");
 
         let vision = load_vision(path).unwrap();
