@@ -459,6 +459,30 @@ canvas{width:100%;display:block}
 
 /* === No Data + Loading === */
 .no-data{color:var(--dim);font-size:11px;text-align:center;padding:24px;font-style:italic;opacity:.6}
+
+/* VDD Confluence-like Doc Viewer */
+.vdd-doc-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer;transition:var(--transition)}
+.vdd-doc-item:hover{background:var(--surface2)}
+.vdd-doc-badge{font-size:8px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px}
+.vdd-doc-badge.research{background:rgba(176,122,255,.12);color:var(--purple)}
+.vdd-doc-badge.discovery{background:rgba(61,214,208,.12);color:var(--teal)}
+.vdd-phase-badge{font-size:8px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px}
+.vdd-phase-badge.discovery{background:rgba(240,192,64,.12);color:var(--yellow)}
+.vdd-phase-badge.build{background:rgba(77,166,255,.12);color:var(--blue)}
+.vdd-phase-badge.test{background:rgba(61,214,208,.12);color:var(--teal)}
+.vdd-phase-badge.done{background:rgba(68,217,140,.12);color:var(--green)}
+.vdd-viewer{padding:12px 0;font-size:12px;line-height:1.7;color:var(--text)}
+.vdd-viewer h1{font-size:18px;font-weight:700;color:var(--text);border-bottom:2px solid var(--border);padding-bottom:8px;margin:16px 0 10px}
+.vdd-viewer h2{font-size:14px;font-weight:700;color:var(--blue);border-bottom:1px solid var(--border);padding-bottom:6px;margin:14px 0 8px}
+.vdd-viewer h3{font-size:12px;font-weight:700;color:var(--teal);margin:10px 0 6px}
+.vdd-viewer p{margin:6px 0;color:var(--muted)}
+.vdd-viewer strong{color:var(--text);font-weight:700}
+.vdd-viewer code{font-family:var(--mono);font-size:11px;background:var(--surface2);padding:1px 5px;border-radius:3px;color:var(--purple)}
+.vdd-viewer pre{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;margin:8px 0;overflow-x:auto}
+.vdd-viewer pre code{background:none;padding:0;color:var(--text)}
+.vdd-viewer ul,.vdd-viewer ol{margin:6px 0;padding-left:20px}
+.vdd-viewer li{margin:3px 0;color:var(--muted)}
+.vdd-viewer hr{border:none;border-top:1px solid var(--border);margin:12px 0}
 .loading{color:var(--dim);font-size:11px;text-align:center;padding:20px;opacity:.5}
 .loading::after{content:'';display:inline-block;width:12px;height:12px;border:2px solid var(--dim);border-top-color:var(--blue);border-radius:50%;animation:spin .6s linear infinite;margin-left:8px;vertical-align:middle}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -623,6 +647,20 @@ canvas{width:100%;display:block}
       <div class="card">
         <h3>Recent Changes</h3>
         <div id="vision-changes"></div>
+      </div>
+    </div>
+
+    <!-- VDD Research & Discovery Docs (Confluence-like) -->
+    <div class="col-2" id="vdd-docs-section" style="display:none">
+      <div class="card">
+        <h3>Research & Discovery
+          <span id="vdd-docs-count" style="font-size:9px;padding:2px 7px;border-radius:10px;background:var(--surface2);color:var(--dim);margin-left:6px;font-weight:600"></span>
+          <button class="btn btn-blue" onclick="closeVddDoc()" id="vdd-back-btn" style="font-size:9px;padding:2px 8px;margin-left:8px;display:none">Back</button>
+        </h3>
+        <!-- Doc list (index view) -->
+        <div id="vdd-doc-list"></div>
+        <!-- Doc viewer (Confluence-like rendered markdown) -->
+        <div id="vdd-doc-viewer" style="display:none"></div>
       </div>
     </div>
 
@@ -1515,6 +1553,78 @@ async function restyleBuilds(){
   }catch(e){console.error('restyle failed',e)}
 }
 
+// === VDD Research & Discovery Docs ===
+async function renderVddDocs(){
+  const ws=currentSpace||'all';
+  const section=document.getElementById('vdd-docs-section');
+  let project=ws;
+  if(ws==='all'){
+    const list=await fetchJSON('/api/vision/list');
+    if(!list||!list.visions||!list.visions.length){section.style.display='none';return;}
+    project=list.visions[0].project;
+  }
+  const docs=await fetchJSON(`/api/vision/docs?project=${encodeURIComponent(project)}`);
+  if(!docs||!docs.docs||!docs.docs.length){section.style.display='none';return;}
+  section.style.display='';
+  document.getElementById('vdd-docs-count').textContent=docs.docs.length+' docs';
+  const listEl=document.getElementById('vdd-doc-list');
+  const viewerEl=document.getElementById('vdd-doc-viewer');
+  // If viewer is open, don't re-render list
+  if(viewerEl.style.display!=='none') return;
+  listEl.innerHTML=docs.docs.map(d=>{
+    const badgeClass=d.type==='research'?'research':'discovery';
+    return `<div class="vdd-doc-item" onclick="openVddDoc('${escHtml(project)}','${escHtml(d.feature_id)}')">
+      <span class="vdd-doc-badge ${badgeClass}">${d.type}</span>
+      <span style="font-size:11px;color:var(--text);font-weight:600;flex:1">${escHtml(d.feature_id)}</span>
+      <span style="font-size:10px;color:var(--dim)">${escHtml(d.preview.substring(0,80))}</span>
+      <span style="font-size:9px;color:var(--dim)">${(d.size/1024).toFixed(1)}KB</span>
+    </div>`;
+  }).join('');
+}
+async function openVddDoc(project,featureId){
+  const doc=await fetchJSON(`/api/vision/doc?project=${encodeURIComponent(project)}&feature_id=${encodeURIComponent(featureId)}`);
+  if(!doc) return;
+  const listEl=document.getElementById('vdd-doc-list');
+  const viewerEl=document.getElementById('vdd-doc-viewer');
+  const backBtn=document.getElementById('vdd-back-btn');
+  listEl.style.display='none';
+  viewerEl.style.display='';
+  backBtn.style.display='';
+  // Build Confluence-like page
+  let html='<div class="vdd-viewer">';
+  // Header with phase badge
+  const phase=doc.phase||'discovery';
+  html+=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+    <span style="font-size:16px;font-weight:700;color:var(--text)">${escHtml(featureId)}</span>
+    <span class="vdd-phase-badge ${phase}">${phase}</span>
+    ${doc.title?`<span style="font-size:12px;color:var(--muted)">${escHtml(doc.title)}</span>`:''}
+  </div>`;
+  // Research doc
+  if(doc.research&&doc.research.html){
+    html+=`<div style="border-left:3px solid var(--purple);padding-left:12px;margin-bottom:16px">
+      <div style="font-size:9px;font-weight:700;color:var(--purple);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Research</div>
+      ${doc.research.html}
+    </div>`;
+  }
+  // Discovery doc
+  if(doc.discovery&&doc.discovery.html){
+    html+=`<div style="border-left:3px solid var(--teal);padding-left:12px;margin-bottom:16px">
+      <div style="font-size:9px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Discovery</div>
+      ${doc.discovery.html}
+    </div>`;
+  }
+  if(!doc.research&&!doc.discovery){
+    html+='<div class="no-data">No research or discovery docs found for this feature</div>';
+  }
+  html+='</div>';
+  viewerEl.innerHTML=html;
+}
+function closeVddDoc(){
+  document.getElementById('vdd-doc-list').style.display='';
+  document.getElementById('vdd-doc-viewer').style.display='none';
+  document.getElementById('vdd-back-btn').style.display='none';
+}
+
 // === Vision Cockpit ===
 const visionExpandState={};
 async function renderVision(){
@@ -1675,7 +1785,7 @@ async function refresh(){
   await loadCapacity();
   renderPanes();
   renderLogs();
-  await Promise.all([renderGauges(),renderRoles(),renderQueue(),renderBoard(),renderSprint(),renderDigest(),renderOverview(),renderInfra(),renderBuilds(),renderVision()]);
+  await Promise.all([renderGauges(),renderRoles(),renderQueue(),renderBoard(),renderSprint(),renderDigest(),renderOverview(),renderInfra(),renderBuilds(),renderVision(),renderVddDocs()]);
 }
 
 async function init(){

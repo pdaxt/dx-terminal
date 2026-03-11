@@ -849,6 +849,209 @@ pub async fn assess_vision_work(Json(body): Json<Value>) -> Json<Value> {
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
+// ── VDD Research & Discovery Docs ──
+
+#[derive(Deserialize, Default)]
+pub struct VisionDocQuery {
+    pub project: Option<String>,
+    pub feature_id: Option<String>,
+}
+
+/// GET /api/vision/docs?project=NAME — List all research/discovery docs
+pub async fn list_vision_docs(Query(q): Query<VisionQuery>) -> Json<Value> {
+    let path = resolve_project_path(&q);
+    let base = std::path::Path::new(&path).join(".vision");
+
+    let mut docs = vec![];
+    for subdir in &["research", "discovery"] {
+        let dir = base.join(subdir);
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let fname = entry.file_name().to_string_lossy().to_string();
+                if fname.ends_with(".md") {
+                    let feature_id = fname.trim_end_matches(".md").to_string();
+                    let content = std::fs::read_to_string(entry.path()).unwrap_or_default();
+                    let lines: Vec<&str> = content.lines().take(3).collect();
+                    let preview = lines.join(" ").chars().take(150).collect::<String>();
+                    docs.push(json!({
+                        "type": *subdir,
+                        "feature_id": feature_id,
+                        "file": fname,
+                        "preview": preview,
+                        "size": content.len(),
+                    }));
+                }
+            }
+        }
+    }
+
+    Json(json!({ "project": q.project, "docs": docs }))
+}
+
+/// GET /api/vision/doc?project=NAME&feature_id=F-XXX — Get a specific research or discovery doc
+pub async fn get_vision_doc(Query(q): Query<VisionDocQuery>) -> Json<Value> {
+    let vq = VisionQuery { project: q.project.clone(), path: None };
+    let path = resolve_project_path(&vq);
+    let feature_id = q.feature_id.as_deref().unwrap_or("");
+    if feature_id.is_empty() {
+        return Json(json!({"error": "feature_id required"}));
+    }
+
+    let base = std::path::Path::new(&path).join(".vision");
+    let mut result = json!({ "feature_id": feature_id });
+
+    // Read research doc
+    let research_path = base.join(format!("research/{}.md", feature_id));
+    if research_path.exists() {
+        let content = std::fs::read_to_string(&research_path).unwrap_or_default();
+        result["research"] = json!({
+            "content": content,
+            "html": markdown_to_html(&content),
+        });
+    }
+
+    // Read discovery doc
+    let discovery_path = base.join(format!("discovery/{}.md", feature_id));
+    if discovery_path.exists() {
+        let content = std::fs::read_to_string(&discovery_path).unwrap_or_default();
+        result["discovery"] = json!({
+            "content": content,
+            "html": markdown_to_html(&content),
+        });
+    }
+
+    // Read feature phase from vision.json
+    let vision_path = base.join("vision.json");
+    if vision_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&vision_path) {
+            if let Ok(v) = serde_json::from_str::<Value>(&content) {
+                if let Some(features) = v["features"].as_array() {
+                    if let Some(f) = features.iter().find(|f| f["id"].as_str() == Some(feature_id)) {
+                        result["phase"] = f.get("phase").cloned().unwrap_or(json!("discovery"));
+                        result["status"] = f.get("status").cloned().unwrap_or(json!("planned"));
+                        result["title"] = f.get("title").cloned().unwrap_or(json!(""));
+                    }
+                }
+            }
+        }
+    }
+
+    Json(result)
+}
+
+/// Simple markdown to HTML converter (no external deps)
+fn markdown_to_html(md: &str) -> String {
+    let mut html = String::new();
+    let mut in_list = false;
+    let mut in_code = false;
+
+    for line in md.lines() {
+        // Code blocks
+        if line.starts_with("```") {
+            if in_code {
+                html.push_str("</code></pre>");
+                in_code = false;
+            } else {
+                if in_list { html.push_str("</ul>"); in_list = false; }
+                html.push_str("<pre><code>");
+                in_code = true;
+            }
+            continue;
+        }
+        if in_code {
+            html.push_str(&line.replace('<', "&lt;").replace('>', "&gt;"));
+            html.push('\n');
+            continue;
+        }
+
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            if in_list { html.push_str("</ul>"); in_list = false; }
+            continue;
+        }
+
+        // Headers
+        if trimmed.starts_with("### ") {
+            if in_list { html.push_str("</ul>"); in_list = false; }
+            html.push_str(&format!("<h3>{}</h3>", escape_html(&trimmed[4..])));
+        } else if trimmed.starts_with("## ") {
+            if in_list { html.push_str("</ul>"); in_list = false; }
+            html.push_str(&format!("<h2>{}</h2>", escape_html(&trimmed[3..])));
+        } else if trimmed.starts_with("# ") {
+            if in_list { html.push_str("</ul>"); in_list = false; }
+            html.push_str(&format!("<h1>{}</h1>", escape_html(&trimmed[2..])));
+        }
+        // Horizontal rules
+        else if trimmed == "---" || trimmed == "***" {
+            if in_list { html.push_str("</ul>"); in_list = false; }
+            html.push_str("<hr>");
+        }
+        // List items
+        else if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
+            if !in_list { html.push_str("<ul>"); in_list = true; }
+            html.push_str(&format!("<li>{}</li>", inline_md(&trimmed[2..])));
+        }
+        // Numbered lists
+        else if trimmed.len() > 2 && trimmed.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) && trimmed.contains(". ") {
+            if let Some(pos) = trimmed.find(". ") {
+                if !in_list { html.push_str("<ol>"); in_list = true; }
+                html.push_str(&format!("<li>{}</li>", inline_md(&trimmed[pos+2..])));
+            }
+        }
+        // Regular paragraph
+        else {
+            if in_list { html.push_str("</ul>"); in_list = false; }
+            html.push_str(&format!("<p>{}</p>", inline_md(trimmed)));
+        }
+    }
+    if in_list { html.push_str("</ul>"); }
+    if in_code { html.push_str("</code></pre>"); }
+    html
+}
+
+/// Inline markdown: **bold**, `code`, *italic*
+fn inline_md(text: &str) -> String {
+    let escaped = escape_html(text);
+    // Bold
+    let mut result = String::new();
+    let mut rest = escaped.as_str();
+    while let Some(start) = rest.find("**") {
+        result.push_str(&rest[..start]);
+        rest = &rest[start+2..];
+        if let Some(end) = rest.find("**") {
+            result.push_str("<strong>");
+            result.push_str(&rest[..end]);
+            result.push_str("</strong>");
+            rest = &rest[end+2..];
+        } else {
+            result.push_str("**");
+        }
+    }
+    result.push_str(rest);
+
+    // Inline code
+    let mut final_result = String::new();
+    rest = result.as_str();
+    while let Some(start) = rest.find('`') {
+        final_result.push_str(&rest[..start]);
+        rest = &rest[start+1..];
+        if let Some(end) = rest.find('`') {
+            final_result.push_str("<code>");
+            final_result.push_str(&rest[..end]);
+            final_result.push_str("</code>");
+            rest = &rest[end+1..];
+        } else {
+            final_result.push('`');
+        }
+    }
+    final_result.push_str(rest);
+    final_result
+}
+
+fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
 // ── UI/UX Audit ──
 
 #[derive(Deserialize, Default)]
