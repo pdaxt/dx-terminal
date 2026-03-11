@@ -363,6 +363,7 @@ mod tests {
 
     #[test]
     fn socket_path_lives_under_dx_root() {
+        let _guard = TEST_LOCK.lock().unwrap();
         let path = vision_socket_path();
         assert!(path.starts_with(vision_socket_dir()));
         assert!(is_vision_socket_path(&path));
@@ -371,6 +372,7 @@ mod tests {
 
     #[test]
     fn socket_path_is_namespaced_by_pid() {
+        let _guard = TEST_LOCK.lock().unwrap();
         let path = vision_socket_path_for_pid(4242);
         assert!(path.ends_with("vision-events-4242.sock"));
         assert!(is_vision_socket_path(&path));
@@ -378,6 +380,7 @@ mod tests {
 
     #[test]
     fn retain_recent_entries_filters_old_and_caps_count() {
+        let _guard = TEST_LOCK.lock().unwrap();
         let now = 10_000;
         let mut entries = vec![
             ReplayEnvelope {
@@ -410,6 +413,7 @@ mod tests {
 
     #[test]
     fn cursor_path_is_sanitized() {
+        let _guard = TEST_LOCK.lock().unwrap();
         let path = runtime_cursor_path("web:3100/demo");
         assert!(path.ends_with("vision-cursor-web-3100-demo.json"));
     }
