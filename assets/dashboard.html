@@ -1557,6 +1557,7 @@ function handleWSMessage(msg){
     case 'vision_changed':
       // Vision doc changed — refresh vision panel
       renderVision();renderVddDocs();
+      if(activePaneNum)renderPaneContext(activePaneNum);
       break;
 
     case 'sync_status':
