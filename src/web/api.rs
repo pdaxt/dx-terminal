@@ -764,6 +764,12 @@ pub struct VisionDrillQuery {
     pub goal_id: Option<String>,
 }
 
+#[derive(Deserialize, Default)]
+pub struct VisionFeatureQuery {
+    pub project: Option<String>,
+    pub feature_id: Option<String>,
+}
+
 /// GET /api/vision/tree?project=NAME — Full vision tree with progress rollup
 pub async fn get_vision_tree(Query(q): Query<VisionQuery>) -> Json<Value> {
     let path = resolve_project_path(&q);
@@ -777,6 +783,18 @@ pub async fn get_vision_drill(Query(q): Query<VisionDrillQuery>) -> Json<Value> 
     let path = resolve_project_path(&vq);
     let goal_id = q.goal_id.as_deref().unwrap_or("G1");
     let result = crate::vision::drill_down(&path, goal_id);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// GET /api/vision/feature/readiness?project=NAME&feature_id=F1.1 — Get phase/state/readiness for a feature
+pub async fn get_vision_feature_readiness(Query(q): Query<VisionFeatureQuery>) -> Json<Value> {
+    let vq = VisionQuery { project: q.project.clone(), path: None };
+    let path = resolve_project_path(&vq);
+    let feature_id = q.feature_id.as_deref().unwrap_or("");
+    if feature_id.is_empty() {
+        return Json(json!({"error": "feature_id required"}));
+    }
+    let result = crate::vision::feature_readiness(&path, feature_id);
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
@@ -943,20 +961,13 @@ pub async fn get_vision_doc(Query(q): Query<VisionDocQuery>) -> Json<Value> {
         });
     }
 
-    // Read feature phase from vision.json
-    let vision_path = base.join("vision.json");
-    if vision_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&vision_path) {
-            if let Ok(v) = serde_json::from_str::<Value>(&content) {
-                if let Some(features) = v["features"].as_array() {
-                    if let Some(f) = features.iter().find(|f| f["id"].as_str() == Some(feature_id)) {
-                        result["phase"] = f.get("phase").cloned().unwrap_or(json!("discovery"));
-                        result["status"] = f.get("status").cloned().unwrap_or(json!("planned"));
-                        result["title"] = f.get("title").cloned().unwrap_or(json!(""));
-                    }
-                }
-            }
-        }
+    let readiness = crate::vision::feature_readiness(&path, feature_id);
+    if let Ok(readiness) = serde_json::from_str::<Value>(&readiness) {
+        result["phase"] = readiness.get("phase").cloned().unwrap_or(json!("planned"));
+        result["state"] = readiness.get("state").cloned().unwrap_or(json!("planned"));
+        result["status"] = readiness.get("status").cloned().unwrap_or(json!("planned"));
+        result["title"] = readiness.get("title").cloned().unwrap_or(json!(""));
+        result["readiness"] = readiness.get("readiness").cloned().unwrap_or(json!({}));
     }
 
     Json(result)
