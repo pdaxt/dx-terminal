@@ -77,6 +77,16 @@ pub enum StateEvent {
     VisionChanged {
         project: String,
         summary: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        feature_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        feature_title: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        phase: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        state: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        readiness: Option<Value>,
     },
 
     // --- Sync ---
