@@ -810,6 +810,18 @@ pub async fn get_vision_discovery_readiness(Query(q): Query<VisionFeatureQuery>)
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
+/// POST /api/vision/discovery/complete — Advance a feature to build if discovery is complete
+pub async fn complete_vision_discovery(Json(body): Json<Value>) -> Json<Value> {
+    let project = body["project"].as_str().unwrap_or("").to_string();
+    let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
+    let feature_id = body["feature_id"].as_str().unwrap_or("");
+    if feature_id.is_empty() {
+        return Json(json!({"error": "feature_id required"}));
+    }
+    let result = crate::vision::complete_discovery(&path, feature_id);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
 /// POST /api/vision/feature — Add feature under a goal
 pub async fn add_vision_feature(Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();

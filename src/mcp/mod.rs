@@ -2039,6 +2039,17 @@ impl DxTerminalService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
+    #[tool(description = "Advance a feature from discovery to build if discovery readiness checks pass. Returns blockers instead of advancing when discovery is incomplete.")]
+    async fn vision_discovery_complete(
+        &self,
+        Parameters(req): Parameters<types::VisionFeatureReadinessRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_discovery_complete(
+            req.project.as_deref(), &req.feature_id,
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
     #[tool(description = "Sync task statuses from Git — checks branch/PR status via GitHub API and cascades changes up the tree.")]
     async fn vision_sync(
         &self,

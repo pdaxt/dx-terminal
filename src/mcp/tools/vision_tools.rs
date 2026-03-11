@@ -76,6 +76,10 @@ pub fn vision_discovery_ready_check(project: Option<&str>, feature_id: &str) -> 
     vision::discovery_ready_check(&resolve_project(project), feature_id)
 }
 
+pub fn vision_discovery_complete(project: Option<&str>, feature_id: &str) -> String {
+    vision::complete_discovery(&resolve_project(project), feature_id)
+}
+
 pub fn vision_sync(project: Option<&str>) -> String {
     vision::sync_git_status(&resolve_project(project))
 }
