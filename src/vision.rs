@@ -1212,6 +1212,9 @@ pub fn add_acceptance_criterion(project_path: &str, feature_id: &str, criterion:
     feature.acceptance_criteria.push(criterion.to_string());
     feature.updated_at = now();
     vision.updated_at = now();
+    let acceptance_count = feature.acceptance_criteria.len();
+    let feature_phase = feature.phase.clone();
+    let feature_state = feature.state.clone();
 
     let change = VisionChange {
         timestamp: now(),
@@ -1231,9 +1234,9 @@ pub fn add_acceptance_criterion(project_path: &str, feature_id: &str, criterion:
             "status": "added",
             "feature": feature_id,
             "criterion": criterion,
-            "count": feature.acceptance_criteria.len(),
-            "phase": feature.phase,
-            "state": feature.state,
+            "count": acceptance_count,
+            "phase": feature_phase,
+            "state": feature_state,
         }).to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
@@ -2268,6 +2271,53 @@ mod tests {
         let feature = vision.features.iter().find(|f| f.id == "F1.1").unwrap();
         assert_eq!(feature.phase, FeaturePhase::Build);
         assert_eq!(feature.status, FeatureStatus::Building);
+    }
+
+    #[test]
+    fn test_start_discovery_moves_planned_feature_once() {
+        let dir = temp_project();
+        let path = dir.path().to_str().unwrap();
+        init_test_vision(dir.path());
+        add_goal(path, "G1", "Goal", "desc", 1);
+        add_feature(path, "G1", "Feature", "desc", vec![]);
+
+        let started: serde_json::Value = serde_json::from_str(&start_discovery(path, "F1.1")).unwrap();
+        assert_eq!(started["status"], "started");
+        assert_eq!(started["phase"], "discovery");
+
+        let again: serde_json::Value = serde_json::from_str(&start_discovery(path, "F1.1")).unwrap();
+        assert_eq!(again["status"], "noop");
+
+        let vision = load_vision(path).unwrap();
+        let feature = vision.features.iter().find(|f| f.id == "F1.1").unwrap();
+        assert_eq!(feature.phase, FeaturePhase::Discovery);
+        assert_eq!(feature.state, FeatureState::Active);
+    }
+
+    #[test]
+    fn test_add_acceptance_criterion_starts_discovery_and_dedupes() {
+        let dir = temp_project();
+        let path = dir.path().to_str().unwrap();
+        init_test_vision(dir.path());
+        add_goal(path, "G1", "Goal", "desc", 1);
+        add_feature(path, "G1", "Feature", "desc", vec![]);
+
+        let added: serde_json::Value = serde_json::from_str(
+            &add_acceptance_criterion(path, "F1.1", "Sub-second updates"),
+        ).unwrap();
+        assert_eq!(added["status"], "added");
+        assert_eq!(added["phase"], "discovery");
+        assert_eq!(added["count"], 1);
+
+        let duplicate: serde_json::Value = serde_json::from_str(
+            &add_acceptance_criterion(path, "F1.1", "Sub-second updates"),
+        ).unwrap();
+        assert_eq!(duplicate["status"], "noop");
+
+        let vision = load_vision(path).unwrap();
+        let feature = vision.features.iter().find(|f| f.id == "F1.1").unwrap();
+        assert_eq!(feature.acceptance_criteria.len(), 1);
+        assert_eq!(feature.phase, FeaturePhase::Discovery);
     }
 
     #[test]
