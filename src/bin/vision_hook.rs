@@ -654,7 +654,7 @@ fn build_context(classification: &Classification) -> Option<String> {
                 for f in features {
                     let fid = f.get("id").and_then(|i| i.as_str()).unwrap_or("?");
                     let ftitle = f.get("title").and_then(|t| t.as_str()).unwrap_or("?");
-                    let fstatus = f.get("status").and_then(|s| s.as_str()).unwrap_or("?");
+                    let fstatus = feature_phase(f);
                     let open_q = f
                         .get("questions")
                         .and_then(|q| q.as_array())
@@ -690,6 +690,15 @@ fn build_context(classification: &Classification) -> Option<String> {
                         format!("  {}: {} [{}] \u{2014} {}/{} tasks", fid, ftitle, fstatus, tasks_done, tasks);
                     if open_q > 0 {
                         line += &format!(" \u{2014} {} OPEN QUESTIONS", open_q);
+                    }
+                    let blockers = match fstatus {
+                        "discovery" => feature_readiness_blockers(f, "build"),
+                        "build" => feature_readiness_blockers(f, "test"),
+                        "test" => feature_readiness_blockers(f, "done"),
+                        _ => Vec::new(),
+                    };
+                    if !blockers.is_empty() {
+                        line += &format!(" \u{2014} blockers: {}", blockers.join(", "));
                     }
                     f_lines.push(line);
                 }
@@ -736,10 +745,7 @@ fn build_context(classification: &Classification) -> Option<String> {
             let goal_title = goal.get("title").and_then(|t| t.as_str()).unwrap_or("?");
             let feat_id = feature.get("id").and_then(|i| i.as_str()).unwrap_or("?");
             let feat_title = feature.get("title").and_then(|t| t.as_str()).unwrap_or("?");
-            let feat_status = feature
-                .get("status")
-                .and_then(|s| s.as_str())
-                .unwrap_or("?");
+            let feat_status = feature_phase(feature);
 
             let mut parts = vec![
                 format!("VDD CONTEXT \u{2014} Project: {}", project),
@@ -795,10 +801,39 @@ fn build_context(classification: &Classification) -> Option<String> {
                 }
             }
 
-            parts.push(format!(
-                "WORKFLOW: Continue work on {}. Update task status as you go.",
-                feat_id
-            ));
+            let blockers = match feat_status {
+                "discovery" => feature_readiness_blockers(feature, "build"),
+                "build" => feature_readiness_blockers(feature, "test"),
+                "test" => feature_readiness_blockers(feature, "done"),
+                _ => Vec::new(),
+            };
+            if !blockers.is_empty() {
+                parts.push(format!("Current blockers: {}", blockers.join(", ")));
+            }
+
+            let workflow = match feat_status {
+                "discovery" => format!(
+                    "WORKFLOW: Stay in discovery for {}. Answer blocking questions, add discovery docs, and define acceptance until build readiness is clear.",
+                    feat_id
+                ),
+                "build" => format!(
+                    "WORKFLOW: Continue implementation on {}. Keep task/branch status current; successful evidence will auto-connect to test.",
+                    feat_id
+                ),
+                "test" => format!(
+                    "WORKFLOW: Run verification for {}. Successful tests and verified acceptance criteria will auto-connect to done.",
+                    feat_id
+                ),
+                "done" => format!(
+                    "WORKFLOW: {} is done. Only reopen if regression or scope change is intentional.",
+                    feat_id
+                ),
+                _ => format!(
+                    "WORKFLOW: Continue work on {}. Update task status as you go.",
+                    feat_id
+                ),
+            };
+            parts.push(workflow);
 
             Some(parts.join("\n"))
         }
@@ -886,7 +921,29 @@ fn handle_pre_tool_use(event: &Value) -> Option<Value> {
 
     // Check if current branch has a tracked task
     let branch = get_current_branch(Some(&project))?;
-    let has_task = find_task_by_branch(&vision, &branch).is_some();
+    let linked = find_task_by_branch(&vision, &branch);
+    let has_task = linked.is_some();
+
+    if let Some((feature, task)) = linked {
+        let phase = feature_phase(feature);
+        if phase == "discovery" && !is_doc_like_edit(file_path) {
+            let fid = feature.get("id").and_then(|i| i.as_str()).unwrap_or("?");
+            let tid = task.get("id").and_then(|i| i.as_str()).unwrap_or("?");
+            let blockers = feature_readiness_blockers(feature, "build");
+            let suffix = if blockers.is_empty() {
+                String::new()
+            } else {
+                format!(" Discovery blockers: {}.", blockers.join(", "))
+            };
+            return Some(json!({
+                "decision": "approve",
+                "reason": format!(
+                    "VDD: {} is still in discovery on task {}. You're editing an implementation file before discovery is closed.{}",
+                    fid, tid, suffix
+                )
+            }));
+        }
+    }
 
     if !has_task {
         let features = vision.get("features").and_then(|f| f.as_array())?;
