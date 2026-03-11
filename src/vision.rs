@@ -1619,6 +1619,69 @@ pub fn discovery_ready_check(project_path: &str, feature_id: &str) -> String {
     }).to_string()
 }
 
+pub fn complete_discovery(project_path: &str, feature_id: &str) -> String {
+    let mut vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    let feature_idx = match vision.features.iter().position(|f| f.id == feature_id) {
+        Some(idx) => idx,
+        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+    };
+
+    let readiness = feature_readiness_value(project_path, &vision.features[feature_idx]);
+    let blockers = readiness["blockers"]["build"].clone();
+    let ready = readiness["ready_for_build"].as_bool().unwrap_or(false);
+    if !ready {
+        return serde_json::json!({
+            "status": "blocked",
+            "feature": feature_id,
+            "phase": vision.features[feature_idx].phase,
+            "blockers": blockers,
+            "checks": readiness["discovery"].clone(),
+        }).to_string();
+    }
+
+    let feature = &mut vision.features[feature_idx];
+    if feature.phase == FeaturePhase::Build || feature.phase == FeaturePhase::Test || feature.phase == FeaturePhase::Done {
+        return serde_json::json!({
+            "status": "noop",
+            "feature": feature_id,
+            "phase": feature.phase,
+            "state": feature.state,
+        }).to_string();
+    }
+
+    let old_phase = serde_json::to_string(&feature.phase).unwrap_or_default();
+    set_feature_lifecycle(feature, FeaturePhase::Build, FeatureState::Active);
+    feature.updated_at = now();
+    vision.updated_at = now();
+
+    let change = VisionChange {
+        timestamp: now(),
+        change_type: ChangeType::StatusChange,
+        field: format!("feature_phase:{}", feature_id),
+        old_value: old_phase,
+        new_value: "build".to_string(),
+        reason: "Discovery completed".to_string(),
+        triggered_by: "user".to_string(),
+        github_issue: None,
+    };
+    vision.changes.push(change.clone());
+    append_history(project_path, &change);
+
+    match save_vision(project_path, &vision) {
+        Ok(()) => serde_json::json!({
+            "status": "advanced",
+            "feature": feature_id,
+            "phase": "build",
+            "state": "active",
+        }).to_string(),
+        Err(e) => serde_json::json!({"error": e}).to_string(),
+    }
+}
+
 // ─── VDD: Work Assessment ───────────────────────────────────────────────────
 
 /// Assess a work description against the vision — find matching goal, suggest feature.
