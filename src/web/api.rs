@@ -836,6 +836,25 @@ pub async fn add_vision_feature(Json(body): Json<Value>) -> Json<Value> {
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
+/// POST /api/vision/discovery/start — Explicitly move a planned feature into discovery
+pub async fn start_vision_discovery(Json(body): Json<Value>) -> Json<Value> {
+    let project = body["project"].as_str().unwrap_or("").to_string();
+    let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
+    let feature_id = body["feature_id"].as_str().unwrap_or("");
+    let result = crate::vision::start_discovery(&path, feature_id);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/vision/acceptance — Add one acceptance criterion to a feature
+pub async fn add_vision_acceptance(Json(body): Json<Value>) -> Json<Value> {
+    let project = body["project"].as_str().unwrap_or("").to_string();
+    let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
+    let feature_id = body["feature_id"].as_str().unwrap_or("");
+    let criterion = body["criterion"].as_str().unwrap_or("");
+    let result = crate::vision::add_acceptance_criterion(&path, feature_id, criterion);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
 /// POST /api/vision/question — Add question to a feature
 pub async fn add_vision_question(Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
