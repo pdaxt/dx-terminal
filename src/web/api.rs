@@ -22,6 +22,10 @@ fn parse_mcp(result: &str) -> Value {
     })
 }
 
+fn maybe_emit_vision_change(app: &AppState, project_path: &str, result: &str, feature_id: Option<&str>) {
+    crate::vision_events::emit_from_result(app.as_ref(), project_path, result, feature_id);
+}
+
 /// GET / — Serve dashboard HTML
 pub async fn index() -> Html<&'static str> {
     Html(include_str!("../../assets/dashboard.html"))
