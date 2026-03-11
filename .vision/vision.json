@@ -554,7 +554,7 @@
       "goal_id": "G8",
       "title": "Rust-Native File Sync Protocol",
       "description": "File watcher + git auto-sync + WebSocket broadcast built into DX Terminal binary. Watches project files, auto-commits to GitHub, broadcasts changes to dashboard in real-time.",
-      "status": "test",
+      "status": "done",
       "questions": [],
       "decisions": [
         {
