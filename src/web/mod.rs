@@ -1,4 +1,5 @@
 pub mod api;
+pub mod replicator;
 pub mod sse;
 pub mod ws;
 
@@ -95,6 +96,9 @@ pub fn build_router(app: Arc<App>) -> Router {
 
 /// Start the web server
 pub async fn run_web_server(app: Arc<App>, port: u16) -> anyhow::Result<()> {
+    // Start the RuntimeReplicator — single server-side polling task
+    replicator::start(Arc::clone(&app));
+
     let router = build_router(app);
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
     tracing::info!("DX Terminal web dashboard: http://localhost:{}", port);
