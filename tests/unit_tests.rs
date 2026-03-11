@@ -509,10 +509,10 @@ fn test_vdd_recursive_sub_vision() {
     // Create sub-vision
     let result = create_sub_vision(path, "F1.1", "Sub-vision mission");
     assert!(result.contains("created"));
-    assert!(result.contains(".vision/features/G1.json"));
+    assert!(result.contains(".vision/features/F1.1.json"));
 
-    // Verify the sub-vision file exists and is valid
-    let sub_path = dir.join(".vision/features/G1.json");
+    // Verify the sub-vision file exists and is valid (named by feature_id, not goal_id)
+    let sub_path = dir.join(".vision/features/F1.1.json");
     assert!(sub_path.exists());
     let content = std::fs::read_to_string(&sub_path).unwrap();
     let sub: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -520,7 +520,7 @@ fn test_vdd_recursive_sub_vision() {
 
     // Verify parent feature has sub_vision link
     let vision = load_vision(path).unwrap();
-    assert_eq!(vision.features[0].sub_vision.as_deref(), Some(".vision/features/G1.json"));
+    assert_eq!(vision.features[0].sub_vision.as_deref(), Some(".vision/features/F1.1.json"));
 
     // Cleanup
     let _ = std::fs::remove_dir_all(&dir);
