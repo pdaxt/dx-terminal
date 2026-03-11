@@ -10,13 +10,16 @@
 //! - Lossy session streaming (re-reads last N events each cycle instead of cursor-based)
 //! - Missing events from mutation paths (set_pane without broadcast)
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use serde_json::json;
 
 use crate::app::App;
 use crate::session_stream::SessionTailer;
 use crate::state::events::StateEvent;
+use crate::state::types::DxTerminalState;
 use crate::tmux;
 
 /// Start the runtime replicator as a background tokio task.
@@ -29,6 +32,7 @@ async fn run_replicator(app: Arc<App>) {
     let interval = tokio::time::Duration::from_secs(1);
     let mut prev_outputs: HashMap<String, String> = HashMap::new();
     let mut session_tailer = SessionTailer::new();
+    let mut vision_fingerprints: HashMap<String, u64> = HashMap::new();
 
     // Track pane→tmux_target mapping for stable identity
     let mut pane_targets: HashMap<u8, String> = HashMap::new();
@@ -48,6 +52,32 @@ async fn run_replicator(app: Arc<App>) {
             Ok(panes) => panes,
             Err(_) => continue,
         };
+
+        // --- Phase 0: Watch VDD state files for active projects ---
+        // This covers hook-driven or external vision mutations, not just in-process API calls.
+        let watched_visions = collect_watched_visions(&state, &live_panes);
+        let active_vision_paths: HashSet<String> = watched_visions.iter().cloned().collect();
+        for project_path in &watched_visions {
+            let Some(fingerprint) = vision_fingerprint(project_path) else {
+                continue;
+            };
+
+            match vision_fingerprints.get(project_path) {
+                Some(previous) if *previous != fingerprint => {
+                    vision_fingerprints.insert(project_path.clone(), fingerprint);
+                    app.state.event_bus.send(StateEvent::VisionChanged {
+                        project: vision_project_name(project_path),
+                        summary: vision_change_summary(project_path),
+                    });
+                }
+                None => {
+                    // Baseline the current file without emitting a startup event.
+                    vision_fingerprints.insert(project_path.clone(), fingerprint);
+                }
+                _ => {}
+            }
+        }
+        vision_fingerprints.retain(|path, _| active_vision_paths.contains(path));
 
         // Build authoritative target list: state panes first, then discovered
         let mut targets: Vec<(u8, String, Option<usize>)> = Vec::new(); // (pane_num, target, live_idx)
@@ -174,5 +204,157 @@ async fn run_replicator(app: Arc<App>) {
         // --- Phase 4: Forward sync status periodically ---
         // (SyncManager already broadcasts SyncEvents — we just ensure they're in the bus)
         // This is handled by forward_sync_events in ws.rs, but we could consolidate later.
+    }
+}
+
+fn collect_watched_visions(state: &DxTerminalState, live_panes: &[tmux::LivePane]) -> Vec<String> {
+    let mut project_paths = HashSet::new();
+
+    for pane in state.panes.values() {
+        if let Some(project_path) = resolve_vision_project_path(&pane.project_path) {
+            project_paths.insert(project_path);
+        }
+        if let Some(workspace_path) = pane.workspace_path.as_deref() {
+            if let Some(project_path) = resolve_vision_project_path(workspace_path) {
+                project_paths.insert(project_path);
+            }
+        }
+    }
+
+    for pane in live_panes {
+        if let Some(project_path) = resolve_vision_project_path(&pane.cwd) {
+            project_paths.insert(project_path);
+        }
+    }
+
+    let mut paths: Vec<String> = project_paths.into_iter().collect();
+    paths.sort();
+    paths
+}
+
+fn resolve_vision_project_path(candidate: &str) -> Option<String> {
+    if candidate.trim().is_empty() || candidate == "--" {
+        return None;
+    }
+
+    let candidate_path = Path::new(candidate);
+    let start = if candidate_path.is_file() {
+        candidate_path.parent()?
+    } else {
+        candidate_path
+    };
+
+    find_vision_root(start).map(|path| path.to_string_lossy().to_string())
+}
+
+fn find_vision_root(start: &Path) -> Option<PathBuf> {
+    for dir in start.ancestors() {
+        if dir.join(".vision/vision.json").exists() {
+            return Some(dir.to_path_buf());
+        }
+    }
+    None
+}
+
+fn vision_fingerprint(project_path: &str) -> Option<u64> {
+    let vision_path = Path::new(project_path).join(".vision/vision.json");
+    let content = std::fs::read_to_string(vision_path).ok()?;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    content.hash(&mut hasher);
+    Some(hasher.finish())
+}
+
+fn vision_project_name(project_path: &str) -> String {
+    let summary = crate::vision::vision_summary(project_path);
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&summary) {
+        if let Some(project) = value.get("project").and_then(|v| v.as_str()) {
+            return project.to_string();
+        }
+    }
+
+    Path::new(project_path)
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "--".to_string())
+}
+
+fn vision_change_summary(project_path: &str) -> String {
+    let summary = crate::vision::vision_summary(project_path);
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&summary) {
+        if let Some(change) = value.get("recent_changes").and_then(|v| v.as_array()).and_then(|changes| changes.first()) {
+            let field = change.get("field").and_then(|v| v.as_str()).unwrap_or("");
+            let reason = change.get("reason").and_then(|v| v.as_str()).unwrap_or("Vision updated");
+            return if field.is_empty() {
+                reason.to_string()
+            } else {
+                format!("{}: {}", field, reason)
+            };
+        }
+    }
+
+    "Vision updated".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::types::{DxTerminalState, PaneState};
+
+    #[test]
+    fn resolves_vision_root_from_nested_workspace_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("demo");
+        std::fs::create_dir_all(project.join(".vision")).unwrap();
+        std::fs::create_dir_all(project.join("src/nested")).unwrap();
+        std::fs::write(project.join(".vision/vision.json"), r#"{"project":"demo"}"#).unwrap();
+
+        let resolved = resolve_vision_project_path(&project.join("src/nested").to_string_lossy());
+        assert_eq!(resolved.as_deref(), Some(project.to_string_lossy().as_ref()));
+    }
+
+    #[test]
+    fn collects_and_dedupes_project_paths_from_state_and_live_panes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("demo");
+        std::fs::create_dir_all(project.join(".vision")).unwrap();
+        std::fs::create_dir_all(project.join("app")).unwrap();
+        std::fs::write(project.join(".vision/vision.json"), r#"{"project":"demo"}"#).unwrap();
+
+        let mut state = DxTerminalState::default();
+        let mut pane = PaneState::default();
+        pane.project_path = project.to_string_lossy().to_string();
+        pane.workspace_path = Some(project.join("app").to_string_lossy().to_string());
+        state.panes.insert("1".into(), pane);
+
+        let live = vec![tmux::LivePane {
+            target: "dx:1.1".into(),
+            session: "dx".into(),
+            window: 1,
+            pane_idx: 1,
+            window_name: "build".into(),
+            command: "claude".into(),
+            cwd: project.join("app").to_string_lossy().to_string(),
+            pid: 1,
+            jsonl_path: None,
+            session_id: None,
+        }];
+
+        let watched = collect_watched_visions(&state, &live);
+        assert_eq!(watched, vec![project.to_string_lossy().to_string()]);
+    }
+
+    #[test]
+    fn vision_fingerprint_changes_when_file_changes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("demo");
+        std::fs::create_dir_all(project.join(".vision")).unwrap();
+        let vision_file = project.join(".vision/vision.json");
+        std::fs::write(&vision_file, r#"{"project":"demo","updated_at":"1"}"#).unwrap();
+        let first = vision_fingerprint(project.to_string_lossy().as_ref()).unwrap();
+
+        std::fs::write(&vision_file, r#"{"project":"demo","updated_at":"2"}"#).unwrap();
+        let second = vision_fingerprint(project.to_string_lossy().as_ref()).unwrap();
+
+        assert_ne!(first, second);
     }
 }
