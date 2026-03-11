@@ -424,7 +424,12 @@ pub fn load_vision(project_path: &str) -> Option<Vision> {
         }
     };
     match serde_json::from_str::<Vision>(&content) {
-        Ok(v) => Some(v),
+        Ok(mut v) => {
+            for feature in &mut v.features {
+                normalize_feature(feature);
+            }
+            Some(v)
+        }
         Err(e) => {
             tracing::warn!("vision: parse error for {}: {}", path.display(), e);
             None
@@ -436,7 +441,12 @@ pub fn save_vision(project_path: &str, vision: &Vision) -> Result<(), String> {
     let dir = vision_dir(project_path);
     std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir: {}", e))?;
 
-    let json = serde_json::to_string_pretty(vision)
+    let mut normalized = vision.clone();
+    for feature in &mut normalized.features {
+        normalize_feature(feature);
+    }
+
+    let json = serde_json::to_string_pretty(&normalized)
         .map_err(|e| format!("serialize: {}", e))?;
     std::fs::write(vision_file(project_path), json)
         .map_err(|e| format!("write: {}", e))?;
@@ -968,6 +978,8 @@ pub fn add_feature(
         title: title.to_string(),
         description: description.to_string(),
         status: FeatureStatus::Planned,
+        phase: FeaturePhase::Planned,
+        state: FeatureState::Planned,
         questions: vec![],
         decisions: vec![],
         tasks: vec![],
@@ -1033,7 +1045,7 @@ pub fn add_question(project_path: &str, feature_id: &str, text: &str) -> String 
 
     // Move to specifying if it was planned
     if feature.status == FeatureStatus::Planned {
-        feature.status = FeatureStatus::Specifying;
+        set_feature_lifecycle(feature, FeaturePhase::Discovery, FeatureState::Active);
     }
     feature.updated_at = now();
     vision.updated_at = now();
@@ -1152,7 +1164,7 @@ pub fn add_task(
     // Move to building if it was specifying and all questions answered
     let all_answered = feature.questions.iter().all(|q| q.status == QuestionStatus::Answered);
     if (feature.status == FeatureStatus::Specifying || feature.status == FeatureStatus::Planned) && all_answered {
-        feature.status = FeatureStatus::Building;
+        set_feature_lifecycle(feature, FeaturePhase::Build, FeatureState::Active);
     }
     feature.updated_at = now();
     vision.updated_at = now();
@@ -1207,9 +1219,9 @@ pub fn update_task_status(
     let all_done = feature.tasks.iter().all(|t| t.status == TaskStatus::Done || t.status == TaskStatus::Verified);
     let any_in_progress = feature.tasks.iter().any(|t| t.status == TaskStatus::InProgress);
     if all_done && !feature.tasks.is_empty() {
-        feature.status = FeatureStatus::Testing;
+        set_feature_lifecycle(feature, FeaturePhase::Test, FeatureState::Active);
     } else if any_in_progress && feature.status != FeatureStatus::Building {
-        feature.status = FeatureStatus::Building;
+        set_feature_lifecycle(feature, FeaturePhase::Build, FeatureState::Active);
     }
     feature.updated_at = now();
     vision.updated_at = now();
@@ -1264,6 +1276,8 @@ pub fn drill_down(project_path: &str, goal_id: &str) -> String {
                 "title": f.title,
                 "description": f.description,
                 "status": f.status,
+                "phase": f.phase,
+                "state": f.state,
                 "questions": {
                     "total": f.questions.len(),
                     "open": open_qs,
@@ -1277,6 +1291,7 @@ pub fn drill_down(project_path: &str, goal_id: &str) -> String {
                 },
                 "acceptance_criteria": f.acceptance_criteria,
                 "sub_vision": f.sub_vision,
+                "readiness": feature_readiness_value(f),
                 "progress": if total_tasks > 0 { (done_tasks as f64 / total_tasks as f64 * 100.0) as u8 } else { 0 },
             })
         })
