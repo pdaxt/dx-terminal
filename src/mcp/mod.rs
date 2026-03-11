@@ -1895,7 +1895,7 @@ impl DxTerminalService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    // === VISION-DRIVEN DEVELOPMENT (10 tools) ===
+    // === VISION-DRIVEN DEVELOPMENT (11 tools) ===
 
     #[tool(description = "Get full vision tree: goals → features → tasks with progress rollup and Git status. The central view of all project work.")]
     async fn vision_tree(
@@ -1991,6 +1991,17 @@ impl DxTerminalService {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let result = tools::vision_tools::vision_update_feature(
             req.project.as_deref(), &req.feature_id, &req.status,
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Get VDD 2.0 readiness for a feature: phase, state, blockers, and readiness for build/test/done.")]
+    async fn vision_feature_readiness(
+        &self,
+        Parameters(req): Parameters<types::VisionFeatureReadinessRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_feature_readiness(
+            req.project.as_deref(), &req.feature_id,
         );
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }

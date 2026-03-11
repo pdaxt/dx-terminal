@@ -1775,6 +1775,14 @@ mod tests {
                 _ => unreachable!(),
             };
             assert_eq!(f.status, expected);
+            let expected_phase = match *status {
+                "specifying" => FeaturePhase::Discovery,
+                "building" => FeaturePhase::Build,
+                "testing" => FeaturePhase::Test,
+                "done" => FeaturePhase::Done,
+                _ => unreachable!(),
+            };
+            assert_eq!(f.phase, expected_phase);
         }
     }
 
@@ -1791,6 +1799,92 @@ mod tests {
 
         let result = update_feature_status(path, fid, "banana");
         assert!(result.contains("invalid_status"));
+    }
+
+    #[test]
+    fn test_legacy_feature_status_backfills_phase_and_state() {
+        let dir = temp_project();
+        let path = dir.path().to_str().unwrap();
+
+        let legacy = serde_json::json!({
+            "project": "legacy-proj",
+            "mission": "Legacy mission",
+            "principles": [],
+            "goals": [{
+                "id": "G1",
+                "title": "Goal",
+                "description": "desc",
+                "status": "planned",
+                "priority": 1,
+                "linked_issues": [],
+                "metrics": []
+            }],
+            "milestones": [],
+            "architecture": [],
+            "changes": [],
+            "features": [{
+                "id": "F1.1",
+                "goal_id": "G1",
+                "title": "Legacy feature",
+                "description": "desc",
+                "status": "building",
+                "questions": [],
+                "decisions": [],
+                "tasks": [],
+                "acceptance_criteria": [],
+                "sub_vision": null,
+                "parent_vision": null,
+                "created_at": "2026-03-12T00:00:00Z",
+                "updated_at": "2026-03-12T00:00:00Z"
+            }],
+            "github": {
+                "repo": "",
+                "sync_enabled": false,
+                "wiki_page": null,
+                "project_board": null,
+                "labels": []
+            },
+            "updated_at": "2026-03-12T00:00:00Z"
+        });
+
+        std::fs::write(vision_file(path), serde_json::to_string_pretty(&legacy).unwrap()).unwrap();
+
+        let vision = load_vision(path).unwrap();
+        let feature = &vision.features[0];
+        assert_eq!(feature.status, FeatureStatus::Building);
+        assert_eq!(feature.phase, FeaturePhase::Build);
+        assert_eq!(feature.state, FeatureState::Active);
+    }
+
+    #[test]
+    fn test_feature_readiness_tracks_phase_and_blockers() {
+        let dir = temp_project();
+        let path = dir.path().to_str().unwrap();
+        init_test_vision(dir.path());
+        add_goal(path, "G1", "Goal", "desc", 1);
+        add_feature(path, "G1", "Feature", "desc", vec!["criterion".to_string()]);
+
+        add_question(path, "F1.1", "What protocol?");
+
+        let discovery: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        assert_eq!(discovery["phase"], "discovery");
+        assert_eq!(discovery["state"], "active");
+        assert_eq!(discovery["readiness"]["ready_for_build"], false);
+
+        answer_question(path, "F1.1", "Q1.1.1", "WebSocket", "Need bidirectional", vec![]);
+        add_task(path, "F1.1", "Build it", "Implement feature", None);
+
+        let build: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        assert_eq!(build["phase"], "build");
+        assert_eq!(build["readiness"]["ready_for_build"], true);
+        assert_eq!(build["readiness"]["ready_for_test"], false);
+
+        update_task_status(path, "F1.1", "T1.1.1", "verified", None, None, None);
+
+        let test_ready: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        assert_eq!(test_ready["phase"], "test");
+        assert_eq!(test_ready["readiness"]["ready_for_test"], true);
+        assert_eq!(test_ready["readiness"]["ready_for_done"], true);
     }
 
     #[test]
