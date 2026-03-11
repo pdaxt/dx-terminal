@@ -1646,18 +1646,47 @@ pub async fn get_pane_context(
     State(app): State<Arc<crate::app::App>>,
     Path(pane_ref): Path<String>,
 ) -> Json<Value> {
-    // Get pane data to find its project
+    // Get state data (may be stale)
     let config_result = tools::config_show(&app, types::ConfigShowRequest {
         pane: Some(pane_ref.clone()),
     }).await;
     let pane_data = parse_mcp(&config_result);
 
-    let project = pane_data["project"].as_str().unwrap_or("--");
-    let task = pane_data["task"].as_str().unwrap_or("");
-    let cwd = pane_data["cwd"].as_str().unwrap_or("");
+    let state_project = pane_data["project"].as_str().unwrap_or("--").to_string();
+    let task = pane_data["task"].as_str().unwrap_or("").to_string();
+    let state_cwd = pane_data["cwd"].as_str().unwrap_or("").to_string();
+
+    // Discover live tmux panes for accurate cwd
+    let pane_num: usize = pane_ref.parse().unwrap_or(0);
+    let live_panes = tokio::task::spawn_blocking(|| {
+        crate::tmux::discover_live_panes()
+    }).await.unwrap_or_default();
+
+    // Get live cwd from the matching pane (0-indexed)
+    let live_cwd = if pane_num > 0 && pane_num <= live_panes.len() {
+        live_panes[pane_num - 1].cwd.clone()
+    } else {
+        String::new()
+    };
+
+    // Use live cwd if available, otherwise state cwd
+    let cwd = if !live_cwd.is_empty() { &live_cwd } else { &state_cwd };
+
+    // Derive project name from cwd
+    let project = if !cwd.is_empty() {
+        let p = std::path::Path::new(cwd);
+        p.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| state_project.clone())
+    } else {
+        state_project.clone()
+    };
 
     // Try to find vision.json for this project
-    let vision = find_vision_for_project(project, cwd);
+    let vision = find_vision_for_project(&project, cwd);
+
+    // Also look for CLAUDE.md as project documentation
+    let claude_md = find_claude_md(cwd, &project);
 
     // Build context response
     let mut ctx = json!({
@@ -1665,7 +1694,14 @@ pub async fn get_pane_context(
         "project": project,
         "task": task,
         "cwd": cwd,
+        "has_claude_md": claude_md.is_some(),
     });
+
+    if let Some(ref md) = claude_md {
+        // Return first 2000 chars of CLAUDE.md as summary
+        let preview: String = md.chars().take(2000).collect();
+        ctx["claude_md_preview"] = json!(preview);
+    }
 
     if let Some(v) = vision {
         let mission = v["mission"].as_str().unwrap_or("");
@@ -1708,6 +1744,26 @@ pub async fn get_pane_context(
     }
 
     Json(ctx)
+}
+
+/// Find CLAUDE.md for a project
+fn find_claude_md(cwd: &str, project: &str) -> Option<String> {
+    // Try cwd first
+    if !cwd.is_empty() {
+        let p = std::path::Path::new(cwd).join("CLAUDE.md");
+        if p.exists() {
+            return std::fs::read_to_string(&p).ok();
+        }
+    }
+    // Try common project locations
+    let home = std::env::var("HOME").unwrap_or_default();
+    for base in &[format!("{}/Projects", home), format!("{}", home)] {
+        let p = std::path::Path::new(base).join(project).join("CLAUDE.md");
+        if p.exists() {
+            return std::fs::read_to_string(&p).ok();
+        }
+    }
+    None
 }
 
 /// Find vision.json for a project by name or cwd

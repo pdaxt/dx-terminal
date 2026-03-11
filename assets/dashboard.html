@@ -978,6 +978,9 @@ function openPanel(paneNum){
   // Render session events (structured JSONL)
   renderSessionLog(paneNum);
 
+  // Render VDD context for this pane
+  renderPaneContext(paneNum);
+
   // Render chat history for this pane
   renderChatLog(paneNum);
 
@@ -1046,6 +1049,83 @@ function addChatMsg(pane,type,text){
   chatHistories[pane].push({type,text,ts});
   if(chatHistories[pane].length>100)chatHistories[pane].shift();
   if(activePaneNum===pane)renderChatLog(pane);
+}
+
+async function renderPaneContext(paneNum){
+  const el=document.getElementById('context-panel');
+  if(!el)return;
+  el.innerHTML='<div style="color:var(--dim)">Loading context...</div>';
+  const ctx=await fetchJSON(`/api/pane/${paneNum}/context`);
+  if(!ctx){el.innerHTML='<div style="color:var(--dim)">No context available</div>';return;}
+  let html='';
+  // Project header
+  html+=`<div style="margin-bottom:12px">`;
+  html+=`<div style="font-size:14px;font-weight:700;color:var(--text)">${ctx.project||'Unknown Project'}</div>`;
+  if(ctx.cwd)html+=`<div style="font-size:9px;color:var(--dim);font-family:var(--mono);margin-top:2px">${ctx.cwd}</div>`;
+  if(ctx.task)html+=`<div style="margin-top:6px;padding:6px 8px;background:var(--surface2);border-radius:4px;font-size:10px;color:var(--text);border-left:2px solid var(--blue)"><b>Current Task:</b> ${ctx.task}</div>`;
+  html+=`</div>`;
+  // Vision
+  if(ctx.vision){
+    const v=ctx.vision;
+    html+=`<div style="margin-bottom:12px;padding:8px;background:rgba(59,130,246,.05);border:1px solid rgba(59,130,246,.15);border-radius:6px">`;
+    html+=`<div style="font-size:11px;font-weight:600;color:var(--blue);margin-bottom:4px">Vision: ${v.project||ctx.project}</div>`;
+    html+=`<div style="font-size:10px;color:var(--text);margin-bottom:8px">${v.mission||''}</div>`;
+    // Goals
+    if(v.goals&&v.goals.length){
+      html+=`<div style="font-size:10px;font-weight:600;color:var(--dim);margin-bottom:4px">Goals</div>`;
+      v.goals.forEach(g=>{
+        const col=g.status==='achieved'?'var(--green)':g.status==='in_progress'?'var(--blue)':'var(--dim)';
+        const icon=g.status==='achieved'?'&#10003;':'&#9679;';
+        html+=`<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px;font-size:10px">`;
+        html+=`<span style="color:${col};font-size:8px">${icon}</span>`;
+        html+=`<span style="color:var(--dim);min-width:22px">${g.id}</span>`;
+        html+=`<span style="color:var(--text);flex:1">${g.title}</span>`;
+        html+=`<span style="font-size:8px;padding:1px 5px;border-radius:8px;background:${col}15;color:${col}">${g.status}</span>`;
+        html+=`</div>`;
+      });
+    }
+    html+=`</div>`;
+    // Features
+    if(v.features&&v.features.length){
+      html+=`<div style="font-size:10px;font-weight:600;color:var(--dim);margin-bottom:4px">Features</div>`;
+      v.features.forEach(f=>{
+        const col=f.status==='done'?'var(--green)':f.status==='build'?'var(--yellow)':f.status==='test'?'var(--purple)':'var(--dim)';
+        html+=`<div style="margin-bottom:8px;padding:6px 8px;background:var(--surface2);border-radius:4px;border-left:2px solid ${col}">`;
+        html+=`<div style="display:flex;justify-content:space-between;align-items:center">`;
+        html+=`<span style="font-size:10px;font-weight:600;color:var(--text)">${f.id}: ${f.title}</span>`;
+        html+=`<span style="font-size:8px;padding:1px 5px;border-radius:8px;background:${col}15;color:${col}">${f.status}</span>`;
+        html+=`</div>`;
+        // Tasks
+        if(f.tasks&&f.tasks.length){
+          html+=`<div style="margin-top:4px">`;
+          f.tasks.forEach(t=>{
+            const tc=t.status==='done'?'var(--green)':'var(--dim)';
+            const check=t.status==='done'?'&#10003;':'&#9675;';
+            html+=`<div style="font-size:9px;color:var(--text);margin:2px 0;display:flex;gap:4px"><span style="color:${tc}">${check}</span> ${t.title}</div>`;
+          });
+          html+=`</div>`;
+        }
+        // Acceptance criteria
+        if(f.acceptance_criteria&&f.acceptance_criteria.length){
+          html+=`<div style="margin-top:4px;font-size:9px;color:var(--dim)"><b>Acceptance:</b></div>`;
+          f.acceptance_criteria.forEach(c=>{
+            html+=`<div style="font-size:9px;color:var(--dim);margin:1px 0 1px 8px">&#8226; ${c}</div>`;
+          });
+        }
+        html+=`</div>`;
+      });
+    }
+    // Wiki link
+    html+=`<div style="margin-top:8px;text-align:center">`;
+    html+=`<a href="${v.wiki_url||'/wiki'}" target="_blank" style="font-size:10px;padding:4px 12px;color:var(--blue);border:1px solid var(--blue);border-radius:4px;text-decoration:none">Open Full Wiki &#8599;</a>`;
+    html+=`</div>`;
+  } else {
+    html+=`<div style="padding:12px;background:var(--surface2);border-radius:6px;text-align:center">`;
+    html+=`<div style="font-size:11px;color:var(--dim)">No VDD vision found for this project</div>`;
+    html+=`<div style="font-size:9px;color:var(--dim);margin-top:4px">Run <code>/vision init</code> to set up Vision-Driven Development</div>`;
+    html+=`</div>`;
+  }
+  el.innerHTML=html;
 }
 
 function renderChatLog(pane){
