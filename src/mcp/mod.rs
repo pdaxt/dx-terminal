@@ -1936,6 +1936,28 @@ impl DxTerminalService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
+    #[tool(description = "Explicitly start discovery for a planned feature. Moves the feature into the discovery phase without needing a side-effect like a question or doc write.")]
+    async fn vision_discovery_start(
+        &self,
+        Parameters(req): Parameters<types::VisionFeatureReadinessRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_discovery_start(
+            req.project.as_deref(), &req.feature_id,
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Add a single acceptance criterion to a feature. Acceptance criteria are first-class discovery artifacts and can move planned work into discovery.")]
+    async fn vision_acceptance_add(
+        &self,
+        Parameters(req): Parameters<types::VisionAcceptanceRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_acceptance_add(
+            req.project.as_deref(), &req.feature_id, &req.criterion,
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
     #[tool(description = "Ask a question about a feature. Questions are blocking by default unless `blocking=false` is provided.")]
     async fn vision_add_question(
         &self,

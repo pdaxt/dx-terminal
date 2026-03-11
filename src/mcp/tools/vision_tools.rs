@@ -26,6 +26,14 @@ pub fn vision_add_feature(
     vision::add_feature(&resolve_project(project), goal_id, title, description, acceptance_criteria)
 }
 
+pub fn vision_discovery_start(project: Option<&str>, feature_id: &str) -> String {
+    vision::start_discovery(&resolve_project(project), feature_id)
+}
+
+pub fn vision_acceptance_add(project: Option<&str>, feature_id: &str, criterion: &str) -> String {
+    vision::add_acceptance_criterion(&resolve_project(project), feature_id, criterion)
+}
+
 pub fn vision_add_question(project: Option<&str>, feature_id: &str, question: &str, blocking: Option<bool>) -> String {
     vision::add_question_with_blocking(
         &resolve_project(project),
