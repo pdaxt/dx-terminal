@@ -1112,15 +1112,16 @@ pub fn add_feature(
     let existing = vision.features.iter().filter(|f| f.goal_id == goal_id).count();
     let feature_num = existing + 1;
     let id = format!("F{}.{}", goal_id.trim_start_matches('G'), feature_num);
+    let has_acceptance = !acceptance_criteria.is_empty();
 
     let feature = Feature {
         id: id.clone(),
         goal_id: goal_id.to_string(),
         title: title.to_string(),
         description: description.to_string(),
-        status: FeatureStatus::Planned,
-        phase: FeaturePhase::Planned,
-        state: FeatureState::Planned,
+        status: if has_acceptance { FeatureStatus::Specifying } else { FeatureStatus::Planned },
+        phase: if has_acceptance { FeaturePhase::Discovery } else { FeaturePhase::Planned },
+        state: if has_acceptance { FeatureState::Active } else { FeatureState::Planned },
         questions: vec![],
         decisions: vec![],
         tasks: vec![],
@@ -1261,6 +1262,7 @@ pub fn start_discovery(project_path: &str, feature_id: &str) -> String {
 
     let old_phase = serde_json::to_string(&feature.phase).unwrap_or_default();
     set_feature_lifecycle(feature, FeaturePhase::Discovery, FeatureState::Active);
+    reconcile_feature_lifecycle(project_path, feature);
     feature.updated_at = now();
     vision.updated_at = now();
 
