@@ -1281,7 +1281,7 @@ pub fn add_acceptance_criterion(project_path: &str, feature_id: &str, criterion:
         None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
     };
 
-    if feature.acceptance_criteria.iter().any(|c| c == criterion) {
+    if feature.acceptance_items.iter().any(|c| c.text == criterion) {
         return serde_json::json!({
             "status": "noop",
             "feature": feature_id,
@@ -1294,7 +1294,18 @@ pub fn add_acceptance_criterion(project_path: &str, feature_id: &str, criterion:
         set_feature_lifecycle(feature, FeaturePhase::Discovery, FeatureState::Active);
     }
 
-    feature.acceptance_criteria.push(criterion.to_string());
+    let criterion_id = acceptance_id(feature_id, feature.acceptance_items.len());
+    feature.acceptance_items.push(AcceptanceCriterion {
+        id: criterion_id.clone(),
+        text: criterion.to_string(),
+        status: AcceptanceStatus::Draft,
+        verification_method: None,
+        evidence: vec![],
+        verified_at: None,
+        verified_by: None,
+        verification_source: None,
+    });
+    sync_acceptance_items(feature);
     feature.updated_at = now();
     vision.updated_at = now();
     let acceptance_count = feature.acceptance_criteria.len();
@@ -1318,10 +1329,163 @@ pub fn add_acceptance_criterion(project_path: &str, feature_id: &str, criterion:
         Ok(()) => serde_json::json!({
             "status": "added",
             "feature": feature_id,
+            "criterion_id": criterion_id,
             "criterion": criterion,
             "count": acceptance_count,
             "phase": feature_phase,
             "state": feature_state,
+        }).to_string(),
+        Err(e) => serde_json::json!({"error": e}).to_string(),
+    }
+}
+
+pub fn update_acceptance_criterion(
+    project_path: &str,
+    feature_id: &str,
+    criterion_id: &str,
+    text: Option<&str>,
+    verification_method: Option<&str>,
+) -> String {
+    let mut vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
+        Some(f) => f,
+        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+    };
+
+    let item = match feature.acceptance_items.iter_mut().find(|item| item.id == criterion_id) {
+        Some(item) => item,
+        None => return serde_json::json!({"error": "criterion_not_found", "id": criterion_id}).to_string(),
+    };
+
+    if let Some(next_text) = text.map(str::trim).filter(|text| !text.is_empty()) {
+        item.text = next_text.to_string();
+    }
+    if let Some(method) = verification_method.map(str::trim) {
+        item.verification_method = if method.is_empty() {
+            None
+        } else {
+            Some(method.to_string())
+        };
+        if item.status == AcceptanceStatus::Draft && item.verification_method.is_some() {
+            item.status = AcceptanceStatus::Mapped;
+        }
+    }
+
+    sync_acceptance_items(feature);
+    feature.updated_at = now();
+    vision.updated_at = now();
+    let item_text = item.text.clone();
+    let item_status = item.status.clone();
+    let item_method = item.verification_method.clone();
+
+    let change = VisionChange {
+        timestamp: now(),
+        change_type: ChangeType::Modified,
+        field: format!("acceptance:{}", criterion_id),
+        old_value: String::new(),
+        new_value: item_text.clone(),
+        reason: "Acceptance criterion updated".to_string(),
+        triggered_by: "user".to_string(),
+        github_issue: None,
+    };
+    vision.changes.push(change.clone());
+    append_history(project_path, &change);
+
+    match save_vision(project_path, &vision) {
+        Ok(()) => serde_json::json!({
+            "status": "updated",
+            "feature": feature_id,
+            "criterion_id": criterion_id,
+            "criterion": item_text,
+            "criterion_status": item_status,
+            "verification_method": item_method,
+        }).to_string(),
+        Err(e) => serde_json::json!({"error": e}).to_string(),
+    }
+}
+
+pub fn verify_acceptance_criterion(
+    project_path: &str,
+    feature_id: &str,
+    criterion_id: &str,
+    status: &str,
+    evidence: Vec<String>,
+    verified_by: Option<&str>,
+    verification_source: Option<&str>,
+) -> String {
+    let mut vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
+        Some(f) => f,
+        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+    };
+
+    let item = match feature.acceptance_items.iter_mut().find(|item| item.id == criterion_id) {
+        Some(item) => item,
+        None => return serde_json::json!({"error": "criterion_not_found", "id": criterion_id}).to_string(),
+    };
+
+    let parsed_status = match status {
+        "mapped" => AcceptanceStatus::Mapped,
+        "verified" => AcceptanceStatus::Verified,
+        "failed" => AcceptanceStatus::Failed,
+        "draft" => AcceptanceStatus::Draft,
+        _ => return serde_json::json!({
+            "error": "invalid_status",
+            "options": ["draft", "mapped", "verified", "failed"]
+        }).to_string(),
+    };
+
+    item.status = parsed_status.clone();
+    item.evidence = evidence;
+    item.verified_at = if parsed_status == AcceptanceStatus::Verified || parsed_status == AcceptanceStatus::Failed {
+        Some(now())
+    } else {
+        None
+    };
+    item.verified_by = verified_by.map(|s| s.to_string()).filter(|s| !s.trim().is_empty());
+    item.verification_source = verification_source.map(|s| s.to_string()).filter(|s| !s.trim().is_empty());
+
+    sync_acceptance_items(feature);
+    feature.updated_at = now();
+    vision.updated_at = now();
+    let item_text = item.text.clone();
+    let item_evidence = item.evidence.clone();
+    let item_verified_at = item.verified_at.clone();
+    let item_verified_by = item.verified_by.clone();
+    let item_verification_source = item.verification_source.clone();
+
+    let change = VisionChange {
+        timestamp: now(),
+        change_type: ChangeType::StatusChange,
+        field: format!("acceptance:{}", criterion_id),
+        old_value: String::new(),
+        new_value: status.to_string(),
+        reason: "Acceptance criterion verification updated".to_string(),
+        triggered_by: "user".to_string(),
+        github_issue: None,
+    };
+    vision.changes.push(change.clone());
+    append_history(project_path, &change);
+
+    match save_vision(project_path, &vision) {
+        Ok(()) => serde_json::json!({
+            "status": "updated",
+            "feature": feature_id,
+            "criterion_id": criterion_id,
+            "criterion": item_text,
+            "criterion_status": parsed_status,
+            "evidence": item_evidence,
+            "verified_at": item_verified_at,
+            "verified_by": item_verified_by,
+            "verification_source": item_verification_source,
         }).to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
@@ -1607,6 +1771,7 @@ pub fn drill_down(project_path: &str, goal_id: &str) -> String {
                     "items": f.tasks,
                 },
                 "acceptance_criteria": f.acceptance_criteria,
+                "acceptance_items": f.acceptance_items,
                 "sub_vision": f.sub_vision,
                 "readiness": feature_readiness_value(project_path, f),
                 "progress": if total_tasks > 0 { (done_tasks as f64 / total_tasks as f64 * 100.0) as u8 } else { 0 },
@@ -1719,6 +1884,7 @@ pub fn vision_tree(project_path: &str) -> String {
                     "tasks_total": total_tasks,
                     "progress": if total_tasks > 0 { (done_tasks as f64 / total_tasks as f64 * 100.0) as u8 } else { 0 },
                     "has_sub_vision": f.sub_vision.is_some(),
+                    "acceptance_items": f.acceptance_items,
                     "readiness": feature_readiness_value(project_path, f),
                     "tasks": f.tasks.iter().map(|t| serde_json::json!({
                         "id": t.id,
@@ -1795,6 +1961,7 @@ pub fn feature_readiness(project_path: &str, feature_id: &str) -> String {
         "status": feature.status,
         "phase": feature.phase,
         "state": feature.state,
+        "acceptance_items": feature.acceptance_items,
         "readiness": feature_readiness_value(project_path, feature),
     }).to_string()
 }
