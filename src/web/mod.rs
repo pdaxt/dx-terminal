@@ -81,6 +81,8 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/audit/frontend", get(api::get_audit_frontend))
         .route("/api/design-tokens", get(api::get_design_tokens))
         .route("/api/contrast", get(api::get_contrast))
+        // Sync status
+        .route("/api/sync", get(api::get_sync_status))
         // SSE events
         .route("/api/events", get(sse::event_stream))
         // WebSocket — real-time bidirectional

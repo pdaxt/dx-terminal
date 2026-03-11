@@ -554,7 +554,7 @@
       "goal_id": "G8",
       "title": "Rust-Native File Sync Protocol",
       "description": "File watcher + git auto-sync + WebSocket broadcast built into DX Terminal binary. Watches project files, auto-commits to GitHub, broadcasts changes to dashboard in real-time.",
-      "status": "build",
+      "status": "test",
       "questions": [],
       "decisions": [
         {
@@ -572,36 +572,36 @@
           "feature_id": "F8.1",
           "title": "Add file watcher module (src/sync/watcher.rs)",
           "description": "Watch .vision/, src/, assets/ for changes using notify crate. Debounce events (500ms). Emit SyncEvent to channel.",
-          "status": "planned",
+          "status": "done",
           "branch": null, "pr": null, "commit": null, "assignee": null,
-          "created_at": "2026-03-11T00:00:00Z", "updated_at": "2026-03-11T00:00:00Z"
+          "created_at": "2026-03-11T00:00:00Z", "updated_at": "2026-03-11T04:00:00Z"
         },
         {
           "id": "T8.1.2",
           "feature_id": "F8.1",
           "title": "Add git sync module (src/sync/git.rs)",
           "description": "Auto git add+commit+push on file changes. Smart commit messages. Conflict detection. Push in background.",
-          "status": "planned",
+          "status": "done",
           "branch": null, "pr": null, "commit": null, "assignee": null,
-          "created_at": "2026-03-11T00:00:00Z", "updated_at": "2026-03-11T00:00:00Z"
+          "created_at": "2026-03-11T00:00:00Z", "updated_at": "2026-03-11T04:00:00Z"
         },
         {
           "id": "T8.1.3",
           "feature_id": "F8.1",
           "title": "WebSocket broadcast for sync events",
           "description": "Broadcast file change + git status events via existing WS to dashboard. Dashboard shows sync status indicator.",
-          "status": "planned",
+          "status": "done",
           "branch": null, "pr": null, "commit": null, "assignee": null,
-          "created_at": "2026-03-11T00:00:00Z", "updated_at": "2026-03-11T00:00:00Z"
+          "created_at": "2026-03-11T00:00:00Z", "updated_at": "2026-03-11T04:00:00Z"
         },
         {
           "id": "T8.1.4",
           "feature_id": "F8.1",
           "title": "Dashboard sync status widget",
           "description": "Show git sync status in dashboard: last commit, push status, dirty files count, sync indicator (green=synced, yellow=pending, red=conflict).",
-          "status": "planned",
+          "status": "done",
           "branch": null, "pr": null, "commit": null, "assignee": null,
-          "created_at": "2026-03-11T00:00:00Z", "updated_at": "2026-03-11T00:00:00Z"
+          "created_at": "2026-03-11T00:00:00Z", "updated_at": "2026-03-11T04:00:00Z"
         }
       ],
       "acceptance_criteria": [

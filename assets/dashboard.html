@@ -627,6 +627,12 @@ canvas{width:100%;display:block}
       <div class="build-grid" id="builds"></div>
     </div>
 
+    <!-- Git Sync Status -->
+    <div class="card" id="sync-card">
+      <h3>Sync <span id="sync-indicator" style="font-size:9px;padding:2px 7px;border-radius:10px;margin-left:6px"></span></h3>
+      <div id="sync-status" style="font-size:11px;color:var(--dim)">Loading...</div>
+    </div>
+
     <!-- Vision Cockpit -->
     <div class="col-2" id="vision-section" style="display:none">
       <div class="card">
@@ -1788,7 +1794,34 @@ async function refresh(){
   await loadCapacity();
   renderPanes();
   renderLogs();
-  await Promise.all([renderGauges(),renderRoles(),renderQueue(),renderBoard(),renderSprint(),renderDigest(),renderOverview(),renderInfra(),renderBuilds(),renderVision(),renderVddDocs()]);
+  await Promise.all([renderGauges(),renderRoles(),renderQueue(),renderBoard(),renderSprint(),renderDigest(),renderOverview(),renderInfra(),renderBuilds(),renderVision(),renderVddDocs(),renderSync()]);
+}
+
+async function renderSync(){
+  const d=await fetchJSON('/api/sync');
+  const card=document.getElementById('sync-card');
+  const ind=document.getElementById('sync-indicator');
+  const el=document.getElementById('sync-status');
+  if(!d||!d.active){
+    ind.textContent='OFF';ind.style.background='rgba(128,128,128,.15)';ind.style.color='var(--dim)';
+    el.innerHTML='<span style="color:var(--dim)">No git repo detected</span>';
+    return;
+  }
+  const g=d.git;
+  if(!g){el.innerHTML='<span style="color:var(--dim)">Waiting for git status...</span>';return;}
+  const clean=g.dirty_files===0;
+  ind.textContent=clean?'CLEAN':'DIRTY';
+  ind.style.background=clean?'rgba(80,250,123,.15)':'rgba(240,192,64,.15)';
+  ind.style.color=clean?'var(--green)':'var(--yellow)';
+  let html=`<div style="display:flex;gap:12px;flex-wrap:wrap">`;
+  html+=`<span>Branch: <b style="color:var(--blue)">${g.branch}</b></span>`;
+  if(g.dirty_files>0) html+=`<span style="color:var(--yellow)">${g.dirty_files} dirty</span>`;
+  if(g.ahead>0) html+=`<span style="color:var(--green)">↑${g.ahead}</span>`;
+  if(g.behind>0) html+=`<span style="color:var(--red)">↓${g.behind}</span>`;
+  if(clean&&g.ahead===0) html+=`<span style="color:var(--green)">All synced</span>`;
+  html+=`</div>`;
+  html+=`<div style="margin-top:4px;font-size:10px;color:var(--dim)">Auto-commit: ${d.auto_commit?'ON':'OFF'} | Auto-push: ${d.auto_push?'ON':'OFF'} | ${d.subscribers} WS client${d.subscribers!==1?'s':''}</div>`;
+  el.innerHTML=html;
 }
 
 async function init(){
