@@ -1793,6 +1793,18 @@ function visionProgressBar(pct,w){
   return `<div style="height:3px;background:var(--surface2);border-radius:2px;margin-top:3px;width:${w||'100%'}">
     <div style="height:100%;width:${pct}%;background:${c};border-radius:2px;transition:width .3s"></div></div>`;
 }
+function vddPipelineBar(status){
+  const phases=['planned','specifying','building','testing','done'];
+  const labels=['Plan','Specify','Build','Test','Done'];
+  const idx=phases.indexOf(status);
+  return `<div class="vdd-pipeline">${phases.map((p,i)=>{
+    const cls=i<idx?'phase complete':i===idx?'phase active':'phase';
+    return (i>0?'<span class="phase-arrow">→</span>':'')+`<span class="${cls}">${labels[i]}</span>`;
+  }).join('')}</div>`;
+}
+function featureDocLink(featureId,project){
+  return `<a class="vdd-doc-link" onclick="event.stopPropagation();openVddDoc('${escHtml(project||'')}','${escHtml(featureId)}')" title="Open research doc">📄</a>`;
+}
 async function renderVisionCockpit(project){
   const section=document.getElementById('vision-section');
   const [tree,summary]=await Promise.all([
@@ -1859,8 +1871,10 @@ async function renderVisionCockpit(project){
             <span style="font-size:10px;color:var(--muted);flex:1">${escHtml(f.title)}</span>
             ${visionStatusPill(f.status)}
             <span style="font-size:8px;color:var(--dim)">${f.tasks_done||0}/${f.tasks_total||0}</span>
+            ${featureDocLink(f.id,tree.project||project)}
             ${f.has_sub_vision?'<span style="font-size:8px;color:var(--purple)" title="Has sub-vision">◆</span>':''}
-          </div>`;
+          </div>
+          ${vddPipelineBar(f.status)}`;
         if(fExpanded){
           // Progress bar
           if(tasks.length) treeHtml+=`<div style="margin-left:22px;margin-bottom:4px">${visionProgressBar(fPct,'200px')}</div>`;
