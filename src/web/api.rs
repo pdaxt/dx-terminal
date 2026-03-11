@@ -1053,6 +1053,7 @@ pub async fn get_vision_doc(Query(q): Query<VisionDocQuery>) -> Json<Value> {
         result["state"] = readiness.get("state").cloned().unwrap_or(json!("planned"));
         result["status"] = readiness.get("status").cloned().unwrap_or(json!("planned"));
         result["title"] = readiness.get("title").cloned().unwrap_or(json!(""));
+        result["acceptance_items"] = readiness.get("acceptance_items").cloned().unwrap_or(json!([]));
         result["readiness"] = readiness.get("readiness").cloned().unwrap_or(json!({}));
     }
 
@@ -1834,40 +1835,20 @@ pub async fn get_pane_context(
 
     if let Some(v) = vision {
         let mission = v["mission"].as_str().unwrap_or("");
-        let goals = v["goals"].as_array().map(|gs| {
-            gs.iter().map(|g| json!({
-                "id": g["id"],
-                "title": g["title"],
-                "status": g["status"],
-                "priority": g["priority"],
-            })).collect::<Vec<_>>()
-        }).unwrap_or_default();
-
-        let features = v["features"].as_array().map(|fs| {
-            fs.iter().map(|f| {
-                let tasks = f["tasks"].as_array().map(|ts| {
-                    ts.iter().map(|t| json!({
-                        "id": t["id"],
-                        "title": t["title"],
-                        "status": t["status"],
-                    })).collect::<Vec<_>>()
-                }).unwrap_or_default();
-                json!({
-                    "id": f["id"],
-                    "title": f["title"],
-                    "status": f["status"],
-                    "goal_id": f["goal_id"],
-                    "acceptance_criteria": f["acceptance_criteria"],
-                    "tasks": tasks,
-                })
-            }).collect::<Vec<_>>()
-        }).unwrap_or_default();
+        let goals = v["goals"].as_array().cloned().unwrap_or_default();
+        let mut features = Vec::new();
+        for goal in &goals {
+            if let Some(goal_features) = goal.get("features").and_then(|value| value.as_array()) {
+                features.extend(goal_features.iter().cloned());
+            }
+        }
 
         ctx["vision"] = json!({
             "project": v["project"],
             "mission": mission,
             "goals": goals,
             "features": features,
+            "summary": v["summary"].clone(),
             "wiki_url": format!("/wiki?project={}", project),
         });
     }
@@ -1897,30 +1878,19 @@ fn find_claude_md(cwd: &str, project: &str) -> Option<String> {
 
 /// Find vision.json for a project by name or cwd
 fn find_vision_for_project(project: &str, cwd: &str) -> Option<Value> {
-    // Try cwd first
-    if !cwd.is_empty() {
-        let p = std::path::Path::new(cwd).join(".vision/vision.json");
-        if p.exists() {
-            if let Ok(content) = std::fs::read_to_string(&p) {
-                if let Ok(v) = serde_json::from_str::<Value>(&content) {
-                    return Some(v);
-                }
-            }
-        }
-    }
+    let path = if !cwd.is_empty() && std::path::Path::new(cwd).join(".vision/vision.json").exists() {
+        cwd.to_string()
+    } else {
+        resolve_project_path(&VisionQuery {
+            project: if project == "--" || project.is_empty() {
+                None
+            } else {
+                Some(project.to_string())
+            },
+            path: None,
+        })
+    };
 
-    // Try common project locations
-    let home = std::env::var("HOME").unwrap_or_default();
-    for base in &[format!("{}/Projects", home), format!("{}", home)] {
-        let p = std::path::Path::new(base).join(project).join(".vision/vision.json");
-        if p.exists() {
-            if let Ok(content) = std::fs::read_to_string(&p) {
-                if let Ok(v) = serde_json::from_str::<Value>(&content) {
-                    return Some(v);
-                }
-            }
-        }
-    }
-
-    None
+    let tree = crate::vision::vision_tree(&path);
+    serde_json::from_str::<Value>(&tree).ok().filter(|value| value.get("error").is_none())
 }
