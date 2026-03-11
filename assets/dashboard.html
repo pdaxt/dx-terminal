@@ -471,6 +471,13 @@ canvas{width:100%;display:block}
 .vdd-phase-badge.build{background:rgba(77,166,255,.12);color:var(--blue)}
 .vdd-phase-badge.test{background:rgba(61,214,208,.12);color:var(--teal)}
 .vdd-phase-badge.done{background:rgba(68,217,140,.12);color:var(--green)}
+.vdd-pipeline{display:flex;gap:2px;align-items:center;margin:3px 0 2px 22px}
+.vdd-pipeline .phase{font-size:7px;font-weight:700;padding:1px 5px;border-radius:3px;text-transform:uppercase;letter-spacing:.2px;background:var(--surface2);color:var(--dim);transition:all .2s}
+.vdd-pipeline .phase.active{background:var(--blue);color:#fff}
+.vdd-pipeline .phase.complete{background:rgba(68,217,140,.2);color:var(--green)}
+.vdd-pipeline .phase-arrow{font-size:7px;color:var(--dim)}
+.vdd-doc-link{font-size:8px;color:var(--teal);text-decoration:none;cursor:pointer;opacity:.7;transition:opacity .2s}
+.vdd-doc-link:hover{opacity:1;text-decoration:underline}
 .vdd-viewer{padding:12px 0;font-size:12px;line-height:1.7;color:var(--text)}
 .vdd-viewer h1{font-size:18px;font-weight:700;color:var(--text);border-bottom:2px solid var(--border);padding-bottom:8px;margin:16px 0 10px}
 .vdd-viewer h2{font-size:14px;font-weight:700;color:var(--blue);border-bottom:1px solid var(--border);padding-bottom:6px;margin:14px 0 8px}
