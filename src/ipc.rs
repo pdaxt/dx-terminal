@@ -13,11 +13,14 @@ use crate::config;
 const VISION_SOCKET_PREFIX: &str = "vision-events-";
 const VISION_SOCKET_SUFFIX: &str = ".sock";
 const VISION_REPLAY_FILE: &str = "vision-events.jsonl";
+const VISION_CURSOR_PREFIX: &str = "vision-cursor-";
+const VISION_CURSOR_SUFFIX: &str = ".json";
 const VISION_REPLAY_MAX_AGE_MS: u64 = 30_000;
 const VISION_REPLAY_MAX_COUNT: usize = 256;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ReplayEnvelope {
+    seq: u64,
     ts_ms: u64,
     payload: Value,
 }
@@ -52,25 +55,26 @@ pub fn vision_replay_log_path() -> PathBuf {
     vision_socket_dir().join(VISION_REPLAY_FILE)
 }
 
-pub fn append_replay_event(raw_payload: &str) {
-    let Ok(payload) = serde_json::from_str::<Value>(raw_payload) else {
-        return;
-    };
-
+pub fn prepare_outbound_event(payload: Value) -> Option<String> {
     let path = vision_replay_log_path();
     if let Some(parent) = path.parent() {
-        if std::fs::create_dir_all(parent).is_err() {
-            return;
-        }
+        std::fs::create_dir_all(parent).ok()?;
     }
 
+    let now = now_ms();
     let mut entries = load_replay_entries(&path);
+    let next_seq = entries.last().map(|entry| entry.seq + 1).unwrap_or(1);
+    let mut payload = payload;
+    payload["replay_seq"] = Value::from(next_seq);
+    payload["replay_ts_ms"] = Value::from(now);
     entries.push(ReplayEnvelope {
-        ts_ms: now_ms(),
-        payload,
+        seq: next_seq,
+        ts_ms: now,
+        payload: payload.clone(),
     });
-    retain_recent_entries(&mut entries, now_ms(), VISION_REPLAY_MAX_AGE_MS, VISION_REPLAY_MAX_COUNT);
-    let _ = write_replay_entries(&path, &entries);
+    retain_recent_entries(&mut entries, now, VISION_REPLAY_MAX_AGE_MS, VISION_REPLAY_MAX_COUNT);
+    write_replay_entries(&path, &entries).ok()?;
+    serde_json::to_string(&payload).ok()
 }
 
 fn is_vision_socket_path(path: &std::path::Path) -> bool {
@@ -86,15 +90,15 @@ fn is_vision_socket_path(path: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
-pub fn start_local_ipc(app: Arc<App>) {
+pub fn start_local_ipc(app: Arc<App>, runtime_id: String) {
     tokio::spawn(async move {
-        if let Err(err) = run_local_ipc(app).await {
+        if let Err(err) = run_local_ipc(app, runtime_id).await {
             tracing::warn!("local IPC listener unavailable: {}", err);
         }
     });
 }
 
-async fn run_local_ipc(app: Arc<App>) -> anyhow::Result<()> {
+async fn run_local_ipc(app: Arc<App>, runtime_id: String) -> anyhow::Result<()> {
     let socket_path = vision_socket_path();
     if let Some(parent) = socket_path.parent() {
         std::fs::create_dir_all(parent).context("create ipc parent dir")?;
@@ -107,20 +111,21 @@ async fn run_local_ipc(app: Arc<App>) -> anyhow::Result<()> {
     let listener = UnixListener::bind(&socket_path)
         .with_context(|| format!("bind ipc socket {}", socket_path.display()))?;
     tracing::info!("local IPC listener active at {}", socket_path.display());
-    replay_recent_events(app.as_ref());
+    replay_recent_events(app.as_ref(), &runtime_id);
 
     loop {
         let (stream, _) = listener.accept().await?;
         let app = Arc::clone(&app);
+        let runtime_id = runtime_id.clone();
         tokio::spawn(async move {
-            if let Err(err) = handle_connection(stream, app).await {
+            if let Err(err) = handle_connection(stream, app, runtime_id).await {
                 tracing::debug!("ipc connection failed: {}", err);
             }
         });
     }
 }
 
-async fn handle_connection(mut stream: UnixStream, app: Arc<App>) -> anyhow::Result<()> {
+async fn handle_connection(mut stream: UnixStream, app: Arc<App>, runtime_id: String) -> anyhow::Result<()> {
     let mut buf = Vec::new();
     stream.read_to_end(&mut buf).await?;
     if buf.is_empty() {
@@ -135,16 +140,20 @@ async fn handle_connection(mut stream: UnixStream, app: Arc<App>) -> anyhow::Res
         .unwrap_or("");
     let result = payload.get("result").and_then(|v| v.as_str()).unwrap_or("");
     let feature_id = payload.get("feature_id").and_then(|v| v.as_str());
+    let replay_seq = payload.get("replay_seq").and_then(|v| v.as_u64());
 
     if !project_path.is_empty() && !result.is_empty() {
         crate::vision_events::emit_from_result(app.as_ref(), project_path, result, feature_id);
+        if let Some(seq) = replay_seq {
+            advance_cursor(&runtime_id, seq);
+        }
     }
 
     let _ = stream.write_all(b"{\"status\":\"ok\"}").await;
     Ok(())
 }
 
-fn replay_recent_events(app: &App) {
+fn replay_recent_events(app: &App, runtime_id: &str) {
     let path = vision_replay_log_path();
     let mut entries = load_replay_entries(&path);
     if entries.is_empty() {
@@ -153,8 +162,13 @@ fn replay_recent_events(app: &App) {
 
     retain_recent_entries(&mut entries, now_ms(), VISION_REPLAY_MAX_AGE_MS, VISION_REPLAY_MAX_COUNT);
     let _ = write_replay_entries(&path, &entries);
+    let last_seq = read_cursor(runtime_id);
+    let mut max_seq = last_seq;
 
     for entry in entries {
+        if entry.seq <= last_seq {
+            continue;
+        }
         let project_path = entry
             .payload
             .get("project_path")
@@ -165,7 +179,11 @@ fn replay_recent_events(app: &App) {
         let feature_id = entry.payload.get("feature_id").and_then(|v| v.as_str());
         if !project_path.is_empty() && !result.is_empty() {
             crate::vision_events::emit_from_result(app, project_path, result, feature_id);
+            max_seq = max_seq.max(entry.seq);
         }
+    }
+    if max_seq > last_seq {
+        advance_cursor(runtime_id, max_seq);
     }
 }
 
@@ -206,6 +224,30 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+fn runtime_cursor_path(runtime_id: &str) -> PathBuf {
+    let safe: String = runtime_id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .collect();
+    vision_socket_dir().join(format!("{}{}{}", VISION_CURSOR_PREFIX, safe, VISION_CURSOR_SUFFIX))
+}
+
+fn read_cursor(runtime_id: &str) -> u64 {
+    std::fs::read_to_string(runtime_cursor_path(runtime_id))
+        .ok()
+        .and_then(|content| serde_json::from_str::<Value>(&content).ok())
+        .and_then(|value| value.get("last_seq").and_then(|v| v.as_u64()))
+        .unwrap_or(0)
+}
+
+fn advance_cursor(runtime_id: &str, seq: u64) {
+    let path = runtime_cursor_path(runtime_id);
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(path, serde_json::json!({ "last_seq": seq }).to_string());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,15 +271,21 @@ mod tests {
     fn retain_recent_entries_filters_old_and_caps_count() {
         let now = 10_000;
         let mut entries = vec![
-            ReplayEnvelope { ts_ms: 1_000, payload: serde_json::json!({"i":1}) },
-            ReplayEnvelope { ts_ms: 8_000, payload: serde_json::json!({"i":2}) },
-            ReplayEnvelope { ts_ms: 9_000, payload: serde_json::json!({"i":3}) },
-            ReplayEnvelope { ts_ms: 9_500, payload: serde_json::json!({"i":4}) },
+            ReplayEnvelope { seq: 1, ts_ms: 1_000, payload: serde_json::json!({"i":1}) },
+            ReplayEnvelope { seq: 2, ts_ms: 8_000, payload: serde_json::json!({"i":2}) },
+            ReplayEnvelope { seq: 3, ts_ms: 9_000, payload: serde_json::json!({"i":3}) },
+            ReplayEnvelope { seq: 4, ts_ms: 9_500, payload: serde_json::json!({"i":4}) },
         ];
 
         retain_recent_entries(&mut entries, now, 2_500, 2);
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].payload["i"], 3);
         assert_eq!(entries[1].payload["i"], 4);
+    }
+
+    #[test]
+    fn cursor_path_is_sanitized() {
+        let path = runtime_cursor_path("web:3100/demo");
+        assert!(path.ends_with("vision-cursor-web-3100-demo.json"));
     }
 }
