@@ -10,6 +10,7 @@
 //! - Stop: session summary
 
 use regex::Regex;
+use dx_terminal::vision;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -223,6 +224,181 @@ fn find_task_by_branch<'a>(vision: &'a Value, branch: &str) -> Option<(&'a Value
         }
     }
     None
+}
+
+fn feature_phase(feature: &Value) -> &str {
+    feature
+        .get("phase")
+        .or_else(|| feature.get("status"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("planned")
+}
+
+fn feature_readiness_blockers<'a>(feature: &'a Value, phase: &str) -> Vec<&'a str> {
+    feature
+        .get("readiness")
+        .and_then(|r| r.get("blockers"))
+        .and_then(|b| b.get(phase))
+        .and_then(|v| v.as_array())
+        .map(|items| items.iter().filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default()
+}
+
+fn is_doc_like_edit(file_path: &str) -> bool {
+    file_path.contains("/.vision/")
+        || file_path.ends_with(".md")
+        || file_path.contains("/docs/")
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum CommandKind {
+    Build,
+    Test,
+    Lint,
+    Commit,
+    Other,
+}
+
+fn classify_command(command: &str) -> CommandKind {
+    let cmd = command.trim().to_lowercase();
+    let test_patterns = [
+        "cargo test",
+        "pytest",
+        "npm test",
+        "pnpm test",
+        "yarn test",
+        "bun test",
+        "vitest",
+        "jest",
+        "playwright test",
+        "cypress run",
+    ];
+    let lint_patterns = [
+        "cargo clippy",
+        "cargo fmt",
+        "ruff",
+        "eslint",
+        "tsc --noemit",
+        "biome",
+    ];
+    let build_patterns = [
+        "cargo build",
+        "cargo check",
+        "npm run build",
+        "pnpm build",
+        "yarn build",
+        "next build",
+        "vite build",
+        "turbo build",
+    ];
+
+    if cmd.contains("git commit") {
+        return CommandKind::Commit;
+    }
+    if test_patterns.iter().any(|pat| cmd.contains(pat)) {
+        return CommandKind::Test;
+    }
+    if lint_patterns.iter().any(|pat| cmd.contains(pat)) {
+        return CommandKind::Lint;
+    }
+    if build_patterns.iter().any(|pat| cmd.contains(pat)) {
+        return CommandKind::Build;
+    }
+    CommandKind::Other
+}
+
+fn extract_command_success(event: &Value) -> Option<bool> {
+    let exit_code = event
+        .get("tool_response")
+        .and_then(|v| v.get("exit_code"))
+        .or_else(|| event.get("tool_output").and_then(|v| v.get("exit_code")))
+        .or_else(|| event.get("tool_result").and_then(|v| v.get("exit_code")))
+        .or_else(|| event.get("exit_code"))
+        .and_then(|v| v.as_i64());
+
+    if let Some(code) = exit_code {
+        return Some(code == 0);
+    }
+
+    event
+        .get("tool_response")
+        .and_then(|v| v.get("success"))
+        .or_else(|| event.get("tool_result").and_then(|v| v.get("success")))
+        .or_else(|| event.get("success"))
+        .and_then(|v| v.as_bool())
+}
+
+fn extract_actor(event: &Value) -> String {
+    event
+        .get("agent")
+        .or_else(|| event.get("actor"))
+        .or_else(|| event.get("session_id"))
+        .or_else(|| event.get("user"))
+        .and_then(|v| {
+            v.as_str()
+                .map(|s| s.to_string())
+                .or_else(|| v.as_i64().map(|n| n.to_string()))
+        })
+        .unwrap_or_else(|| "vision-hook".to_string())
+}
+
+fn auto_verify_acceptance_items(
+    project: &str,
+    feature: &Value,
+    command: &str,
+    actor: &str,
+) -> Vec<String> {
+    let feature_id = match feature.get("id").and_then(|v| v.as_str()) {
+        Some(id) => id,
+        None => return vec![],
+    };
+
+    let items = match feature.get("acceptance_items").and_then(|v| v.as_array()) {
+        Some(items) => items,
+        None => return vec![],
+    };
+
+    let mut verified = Vec::new();
+    for item in items {
+        let criterion_id = match item.get("id").and_then(|v| v.as_str()) {
+            Some(id) => id,
+            None => continue,
+        };
+        let status = item.get("status").and_then(|v| v.as_str()).unwrap_or("draft");
+        if status == "verified" || status == "failed" {
+            continue;
+        }
+
+        let method = item
+            .get("verification_method")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let method_lower = method.to_lowercase();
+        let method_is_test = !method_lower.is_empty()
+            && (method_lower.contains("test")
+                || method_lower.contains("integration")
+                || method_lower.contains("unit")
+                || method_lower.contains("e2e"));
+        if !method_is_test {
+            continue;
+        }
+
+        let evidence = vec![format!("command: {}", command.chars().take(240).collect::<String>())];
+        let result = vision::verify_acceptance_criterion(
+            project,
+            feature_id,
+            criterion_id,
+            "verified",
+            evidence,
+            Some(actor),
+            Some("hook:test_command"),
+        );
+        if !result.contains("\"error\"") {
+            verified.push(criterion_id.to_string());
+        }
+    }
+
+    verified
 }
 
 // ── Scoring ──
