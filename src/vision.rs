@@ -2007,8 +2007,10 @@ mod tests {
         assert_eq!(discovery["phase"], "discovery");
         assert_eq!(discovery["state"], "active");
         assert_eq!(discovery["readiness"]["ready_for_build"], false);
+        assert_eq!(discovery["readiness"]["counts"]["has_discovery_artifact"], false);
 
         answer_question(path, "F1.1", "Q1.1.1", "WebSocket", "Need bidirectional", vec![]);
+        upsert_feature_doc(path, "F1.1", "discovery", "# Discovery");
         add_task(path, "F1.1", "Build it", "Implement feature", None);
 
         let build: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
@@ -2022,6 +2024,47 @@ mod tests {
         assert_eq!(test_ready["phase"], "test");
         assert_eq!(test_ready["readiness"]["ready_for_test"], true);
         assert_eq!(test_ready["readiness"]["ready_for_done"], true);
+    }
+
+    #[test]
+    fn test_discovery_ready_check_ignores_non_blocking_open_questions() {
+        let dir = temp_project();
+        let path = dir.path().to_str().unwrap();
+        init_test_vision(dir.path());
+        add_goal(path, "G1", "Goal", "desc", 1);
+        add_feature(path, "G1", "Feature", "desc", vec!["criterion".to_string()]);
+
+        upsert_feature_doc(path, "F1.1", "research", "# Research");
+        add_question_with_blocking(path, "F1.1", "Optional follow-up?", false);
+
+        let check: serde_json::Value = serde_json::from_str(&discovery_ready_check(path, "F1.1")).unwrap();
+        assert_eq!(check["ready"], true);
+        assert_eq!(check["checks"]["blocking_open_questions"], 0);
+        assert_eq!(check["checks"]["non_blocking_open_questions"], 1);
+        assert_eq!(check["blockers"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_discovery_ready_check_requires_artifact_and_blocking_resolution() {
+        let dir = temp_project();
+        let path = dir.path().to_str().unwrap();
+        init_test_vision(dir.path());
+        add_goal(path, "G1", "Goal", "desc", 1);
+        add_feature(path, "G1", "Feature", "desc", vec!["criterion".to_string()]);
+
+        add_question(path, "F1.1", "Blocking question?");
+        let initial: serde_json::Value = serde_json::from_str(&discovery_ready_check(path, "F1.1")).unwrap();
+        assert_eq!(initial["ready"], false);
+        assert!(initial["blockers"].as_array().unwrap().iter().any(|b| b.as_str() == Some("discovery artifact missing")));
+
+        upsert_feature_doc(path, "F1.1", "discovery", "# Discovery");
+        let with_doc: serde_json::Value = serde_json::from_str(&discovery_ready_check(path, "F1.1")).unwrap();
+        assert_eq!(with_doc["ready"], false);
+        assert_eq!(with_doc["checks"]["blocking_open_questions"], 1);
+
+        answer_question(path, "F1.1", "Q1.1.1", "Answer", "Resolved", vec![]);
+        let resolved: serde_json::Value = serde_json::from_str(&discovery_ready_check(path, "F1.1")).unwrap();
+        assert_eq!(resolved["ready"], true);
     }
 
     #[test]
