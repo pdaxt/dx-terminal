@@ -509,6 +509,28 @@ fn feature_readiness_value(project_path: &str, feature: &Feature) -> serde_json:
     })
 }
 
+fn reconcile_feature_lifecycle(project_path: &str, feature: &mut Feature) {
+    sync_acceptance_items(feature);
+    let readiness = feature_readiness_value(project_path, feature);
+    let ready_for_build = readiness["ready_for_build"].as_bool().unwrap_or(false);
+    let ready_for_test = readiness["ready_for_test"].as_bool().unwrap_or(false);
+    let ready_for_done = readiness["ready_for_done"].as_bool().unwrap_or(false);
+
+    if ready_for_done && feature.phase != FeaturePhase::Done {
+        set_feature_lifecycle(feature, FeaturePhase::Done, FeatureState::Complete);
+        return;
+    }
+
+    if ready_for_test && matches!(feature.phase, FeaturePhase::Build | FeaturePhase::Test) {
+        set_feature_lifecycle(feature, FeaturePhase::Test, FeatureState::Active);
+        return;
+    }
+
+    if ready_for_build && matches!(feature.phase, FeaturePhase::Planned | FeaturePhase::Discovery) {
+        set_feature_lifecycle(feature, FeaturePhase::Build, FeatureState::Active);
+    }
+}
+
 // ─── Storage ────────────────────────────────────────────────────────────────
 
 fn vision_dir(project_path: &str) -> PathBuf {
