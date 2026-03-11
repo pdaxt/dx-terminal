@@ -38,7 +38,7 @@
       "id": "G3",
       "title": "Vision framework with GitHub sync",
       "description": "Living product vision per project with change tracking, dashboard widget, and GitHub issue/milestone sync",
-      "status": "in_progress",
+      "status": "achieved",
       "priority": 1,
       "linked_issues": [],
       "metrics": [
@@ -105,14 +105,14 @@
       "id": "M2",
       "title": "Intelligence Layer",
       "description": "Vision framework, build verification, smart project detection, JSONL analytics",
-      "status": "active",
+      "status": "complete",
       "target_date": "2026-03-15",
       "goals": [
         "G3",
         "G5"
       ],
       "github_milestone": null,
-      "progress_pct": 75
+      "progress_pct": 100
     },
     {
       "id": "M3",
@@ -259,7 +259,7 @@
       "goal_id": "G3",
       "title": "Vision-Driven Development",
       "description": "Recursive vision tree with features, questions, decisions, tasks",
-      "status": "testing",
+      "status": "done",
       "questions": [
         {
           "id": "Q3.1.1",

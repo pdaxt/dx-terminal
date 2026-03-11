@@ -672,7 +672,28 @@ fn resolve_project_path(q: &VisionQuery) -> String {
     }
     let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".to_string());
     if let Some(ref name) = q.project {
-        format!("{}/Projects/{}", home, name)
+        let direct = format!("{}/Projects/{}", home, name);
+        // If direct path has a .vision, use it
+        if std::path::Path::new(&direct).join(".vision/vision.json").exists() {
+            return direct;
+        }
+        // Otherwise scan ~/Projects/* for a vision.json with matching project name
+        let projects_dir = format!("{}/Projects", home);
+        if let Ok(entries) = std::fs::read_dir(&projects_dir) {
+            for entry in entries.flatten() {
+                let vision_file = entry.path().join(".vision/vision.json");
+                if vision_file.exists() {
+                    if let Ok(content) = std::fs::read_to_string(&vision_file) {
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+                            if v.get("project").and_then(|p| p.as_str()) == Some(name) {
+                                return entry.path().to_string_lossy().to_string();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        direct
     } else {
         format!("{}/Projects", home)
     }
