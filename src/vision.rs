@@ -1197,6 +1197,7 @@ pub fn upsert_feature_doc(project_path: &str, feature_id: &str, doc_type: &str, 
     if feature.phase == FeaturePhase::Planned {
         set_feature_lifecycle(feature, FeaturePhase::Discovery, FeatureState::Active);
     }
+    reconcile_feature_lifecycle(project_path, feature);
     feature.updated_at = now();
     vision.updated_at = now();
     let feature_phase = feature.phase.clone();
@@ -1328,6 +1329,7 @@ pub fn add_acceptance_criterion(project_path: &str, feature_id: &str, criterion:
         verification_source: None,
     });
     sync_acceptance_items(feature);
+    reconcile_feature_lifecycle(project_path, feature);
     feature.updated_at = now();
     vision.updated_at = now();
     let acceptance_count = feature.acceptance_criteria.len();
@@ -1400,6 +1402,7 @@ pub fn update_acceptance_criterion(
     }
 
     sync_acceptance_items(feature);
+    reconcile_feature_lifecycle(project_path, feature);
     feature.updated_at = now();
     vision.updated_at = now();
     let item_text = feature.acceptance_items[item_idx].text.clone();
@@ -1480,6 +1483,7 @@ pub fn verify_acceptance_criterion(
         verification_source.map(|s| s.to_string()).filter(|s| !s.trim().is_empty());
 
     sync_acceptance_items(feature);
+    reconcile_feature_lifecycle(project_path, feature);
     feature.updated_at = now();
     vision.updated_at = now();
     let item_text = feature.acceptance_items[item_idx].text.clone();
