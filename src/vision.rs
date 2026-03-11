@@ -1123,6 +1123,10 @@ pub fn upsert_feature_doc(project_path: &str, feature_id: &str, doc_type: &str, 
 
 /// Add a question to a feature.
 pub fn add_question(project_path: &str, feature_id: &str, text: &str) -> String {
+    add_question_with_blocking(project_path, feature_id, text, true)
+}
+
+pub fn add_question_with_blocking(project_path: &str, feature_id: &str, text: &str, blocking: bool) -> String {
     let mut vision = match load_vision(project_path) {
         Some(v) => v,
         None => return serde_json::json!({"error": "no_vision"}).to_string(),
@@ -1140,6 +1144,7 @@ pub fn add_question(project_path: &str, feature_id: &str, text: &str) -> String 
         id: id.clone(),
         text: text.to_string(),
         status: QuestionStatus::Open,
+        blocking,
         answer: None,
         asked_at: now(),
         answered_at: None,
@@ -1160,6 +1165,7 @@ pub fn add_question(project_path: &str, feature_id: &str, text: &str) -> String 
             "status": "added",
             "question": id,
             "feature": feature_id,
+            "blocking": blocking,
         }).to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
@@ -1396,7 +1402,7 @@ pub fn drill_down(project_path: &str, goal_id: &str) -> String {
                 },
                 "acceptance_criteria": f.acceptance_criteria,
                 "sub_vision": f.sub_vision,
-                "readiness": feature_readiness_value(f),
+                "readiness": feature_readiness_value(project_path, f),
                 "progress": if total_tasks > 0 { (done_tasks as f64 / total_tasks as f64 * 100.0) as u8 } else { 0 },
             })
         })
@@ -1507,7 +1513,7 @@ pub fn vision_tree(project_path: &str) -> String {
                     "tasks_total": total_tasks,
                     "progress": if total_tasks > 0 { (done_tasks as f64 / total_tasks as f64 * 100.0) as u8 } else { 0 },
                     "has_sub_vision": f.sub_vision.is_some(),
-                    "readiness": feature_readiness_value(f),
+                    "readiness": feature_readiness_value(project_path, f),
                     "tasks": f.tasks.iter().map(|t| serde_json::json!({
                         "id": t.id,
                         "title": t.title,
@@ -1583,7 +1589,33 @@ pub fn feature_readiness(project_path: &str, feature_id: &str) -> String {
         "status": feature.status,
         "phase": feature.phase,
         "state": feature.state,
-        "readiness": feature_readiness_value(feature),
+        "readiness": feature_readiness_value(project_path, feature),
+    }).to_string()
+}
+
+pub fn discovery_ready_check(project_path: &str, feature_id: &str) -> String {
+    let vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    let feature = match vision.features.iter().find(|f| f.id == feature_id) {
+        Some(f) => f,
+        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+    };
+
+    let readiness = feature_readiness_value(project_path, feature);
+    let ready = readiness["ready_for_build"].as_bool().unwrap_or(false);
+
+    serde_json::json!({
+        "feature_id": feature.id,
+        "goal_id": feature.goal_id,
+        "title": feature.title,
+        "phase": feature.phase,
+        "state": feature.state,
+        "ready": ready,
+        "checks": readiness["discovery"].clone(),
+        "blockers": readiness["blockers"]["build"].clone(),
     }).to_string()
 }
 
