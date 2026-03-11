@@ -1461,13 +1461,23 @@ function drawBurndown(bd){
 }
 
 // === WebSocket ===
+let lastSeq=0; // Monotonic sequence tracker for gap detection
+let resyncPending=false;
+
 function connectWS(){
   const proto=location.protocol==='https:'?'wss:':'ws:';
   ws=new WebSocket(`${proto}//${location.host}/ws`);
-  ws.onopen=()=>{renderGauges()};
+  ws.onopen=()=>{lastSeq=0;resyncPending=false;renderGauges()};
   ws.onmessage=(e)=>{try{handleWSMessage(JSON.parse(e.data))}catch{}};
   ws.onclose=()=>{setTimeout(connectWS,2000)};
   ws.onerror=()=>{ws.close()};
+}
+
+function requestResync(){
+  if(resyncPending)return;
+  resyncPending=true;
+  wsSend({cmd:'resync'});
+  console.log('[ws] requesting resync after seq gap');
 }
 
 function handleWSMessage(msg){
