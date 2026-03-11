@@ -1874,6 +1874,16 @@ pub struct VisionQuestionRequest {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct VisionDocUpsertRequest {
+    #[schemars(description = "Project path")]
+    pub project: Option<String>,
+    #[schemars(description = "Feature ID (e.g. 'F1.1')")]
+    pub feature_id: String,
+    #[schemars(description = "Markdown document content")]
+    pub content: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct VisionAnswerRequest {
     #[schemars(description = "Project path")]
     pub project: Option<String>,

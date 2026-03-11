@@ -30,6 +30,14 @@ pub fn vision_add_question(project: Option<&str>, feature_id: &str, question: &s
     vision::add_question(&resolve_project(project), feature_id, question)
 }
 
+pub fn vision_research_doc_upsert(project: Option<&str>, feature_id: &str, content: &str) -> String {
+    vision::upsert_feature_doc(&resolve_project(project), feature_id, "research", content)
+}
+
+pub fn vision_discovery_doc_upsert(project: Option<&str>, feature_id: &str, content: &str) -> String {
+    vision::upsert_feature_doc(&resolve_project(project), feature_id, "discovery", content)
+}
+
 pub fn vision_answer(
     project: Option<&str>, feature_id: &str, question_id: &str,
     answer: &str, rationale: &str, alternatives: Vec<String>,

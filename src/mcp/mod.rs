@@ -1895,7 +1895,7 @@ impl DxTerminalService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    // === VISION-DRIVEN DEVELOPMENT (11 tools) ===
+    // === VISION-DRIVEN DEVELOPMENT (13 tools) ===
 
     #[tool(description = "Get full vision tree: goals → features → tasks with progress rollup and Git status. The central view of all project work.")]
     async fn vision_tree(
@@ -1943,6 +1943,28 @@ impl DxTerminalService {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let result = tools::vision_tools::vision_add_question(
             req.project.as_deref(), &req.feature_id, &req.question,
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Create or update a research markdown doc for a feature. This is a first-class discovery artifact and moves planned work into discovery.")]
+    async fn vision_research_doc_upsert(
+        &self,
+        Parameters(req): Parameters<types::VisionDocUpsertRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_research_doc_upsert(
+            req.project.as_deref(), &req.feature_id, &req.content,
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Create or update a discovery markdown doc for a feature. This is a first-class discovery artifact and moves planned work into discovery.")]
+    async fn vision_discovery_doc_upsert(
+        &self,
+        Parameters(req): Parameters<types::VisionDocUpsertRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_discovery_doc_upsert(
+            req.project.as_deref(), &req.feature_id, &req.content,
         );
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
