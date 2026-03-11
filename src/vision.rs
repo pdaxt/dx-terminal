@@ -1376,7 +1376,7 @@ pub fn sync_git_status(project_path: &str) -> String {
 
                 // Check for open PR
                 let pr_check = run_gh(&format!(
-                    "gh pr list -R {} --head {} --json number,state --jq '.[0]' 2>/dev/null", repo, branch
+                    "gh pr list -R {} --head {} --state all --json number,state --jq '.[0]' 2>/dev/null", repo, branch
                 ));
 
                 if pr_check.contains("\"state\":\"MERGED\"") || pr_check.contains("\"state\":\"merged\"") {

@@ -784,8 +784,7 @@ pub async fn get_vision_drill(Query(q): Query<VisionDrillQuery>) -> Json<Value> 
 /// POST /api/vision/feature — Add feature under a goal
 pub async fn add_vision_feature(Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".to_string());
-    let path = if project.is_empty() { ".".to_string() } else { format!("{}/Projects/{}", home, project) };
+    let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let goal_id = body["goal_id"].as_str().unwrap_or("");
     let title = body["title"].as_str().unwrap_or("");
     let description = body["description"].as_str().unwrap_or("");
@@ -799,8 +798,7 @@ pub async fn add_vision_feature(Json(body): Json<Value>) -> Json<Value> {
 /// POST /api/vision/question — Add question to a feature
 pub async fn add_vision_question(Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".to_string());
-    let path = if project.is_empty() { ".".to_string() } else { format!("{}/Projects/{}", home, project) };
+    let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let feature_id = body["feature_id"].as_str().unwrap_or("");
     let question = body["question"].as_str().unwrap_or("");
     let result = crate::vision::add_question(&path, feature_id, question);

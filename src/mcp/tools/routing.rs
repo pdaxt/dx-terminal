@@ -58,10 +58,18 @@ pub async fn mcp_route(app: &App, req: McpRouteRequest) -> String {
         })
     }).collect();
 
+    let mut applied = false;
+    let mut apply_error: Option<String> = None;
     if req.apply.unwrap_or(false) && !suggested.is_empty() {
         app.state.set_project_mcps(&req.project, suggested.clone()).await;
         let project_path = config::resolve_project_path(&req.project);
-        let _ = claude::set_project_mcps(&project_path, &suggested);
+        match claude::set_project_mcps(&project_path, &suggested) {
+            Ok(()) => { applied = true; }
+            Err(e) => {
+                tracing::warn!("mcp_route: failed to persist MCPs to claude.json: {}", e);
+                apply_error = Some(e.to_string());
+            }
+        }
     }
 
     serde_json::json!({
@@ -69,7 +77,8 @@ pub async fn mcp_route(app: &App, req: McpRouteRequest) -> String {
         "task": req.task,
         "role": role,
         "suggested_mcps": suggested,
-        "applied": req.apply.unwrap_or(false),
+        "applied": applied,
+        "apply_error": apply_error,
         "details": details,
     }).to_string()
 }
