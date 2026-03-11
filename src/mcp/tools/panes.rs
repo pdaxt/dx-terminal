@@ -111,6 +111,11 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         tmux_target: tmux_target.clone(),
     };
     app.state.set_pane(pane_num, pane_state).await;
+    app.state.event_bus.send(crate::state::events::StateEvent::PaneSpawned {
+        pane: pane_num,
+        project: project_name.clone(),
+        role: role.clone(),
+    });
     app.state.log_activity(
         pane_num,
         "spawn",
@@ -216,6 +221,10 @@ pub async fn kill(app: &App, req: KillRequest) -> String {
     pane_state.machine_mac = None;
     pane_state.tmux_target = None;
     app.state.set_pane(pane_num, pane_state).await;
+    app.state.event_bus.send(crate::state::events::StateEvent::PaneKilled {
+        pane: pane_num,
+        reason: reason.clone(),
+    });
     app.state.log_activity(pane_num, "kill", &format!("Killed: {}", reason)).await;
 
     remove_from_agents_json(pane_num);

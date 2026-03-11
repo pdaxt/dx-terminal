@@ -71,9 +71,13 @@ pub async fn reconcile_active_panes(state: &Arc<StateManager>) {
 
         // Verify the tmux pane still exists
         if !tmux::pane_exists(&target) {
-            tracing::warn!("Reconciler: pane {} tmux target {} no longer exists", i, target);
-            state.update_pane_status(i, "done").await;
-            state.log_activity(i, "auto_done", &format!("Tmux pane disappeared: {}", &pd.task)).await;
+            tracing::warn!("Reconciler: pane {} tmux target {} no longer exists — marking lost", i, target);
+            state.update_pane_status(i, "lost").await;
+            state.event_bus.send(crate::state::events::StateEvent::PaneRemoved {
+                pane: i,
+                reason: format!("tmux pane {} disappeared without clean completion", target),
+            });
+            state.log_activity(i, "auto_lost", &format!("Tmux pane disappeared (no clean exit): {}", &pd.task)).await;
             continue;
         }
 

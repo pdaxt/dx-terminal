@@ -36,8 +36,13 @@ impl StateManager {
 
     pub async fn set_pane(&self, pane: u8, pane_state: PaneState) {
         let mut state = self.state.write().await;
-        state.panes.insert(pane.to_string(), pane_state);
+        state.panes.insert(pane.to_string(), pane_state.clone());
         let _ = save_state(&self.state_file, &state);
+        // Authoritative pane upsert — clients replace their view of this pane
+        self.event_bus.send(StateEvent::PaneUpsert {
+            pane,
+            data: serde_json::to_value(&pane_state).unwrap_or_default(),
+        });
     }
 
     pub async fn update_pane_status(&self, pane: u8, status: &str) {
