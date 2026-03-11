@@ -116,7 +116,7 @@
       "id": "G9",
       "title": "Dashboard UX \u2014 Zero-Latency Document Connection",
       "description": "Every dashboard section connected to live backend data. Vision/VDD visible and navigable. Documentation links work. Git sync reflected in real-time. No dead sections, no placeholders.",
-      "status": "in_progress",
+      "status": "achieved",
       "priority": 1,
       "linked_issues": [],
       "metrics": [
@@ -751,7 +751,7 @@
       "goal_id": "G9",
       "title": "Dashboard Frontend-Backend Connectivity",
       "description": "Connect every dashboard section to live API data. Fix vision API resolution. Wire VDD docs, wiki, sync, and pane context into navigable UI with zero dead sections.",
-      "status": "building",
+      "status": "done",
       "questions": [
         {
           "id": "Q9.1.1",
@@ -808,13 +808,13 @@
           "feature_id": "F9.1",
           "title": "Create VDD research docs for existing features",
           "description": "Write research/*.md files for F3.1, F7.1, F7.2, F8.1 so docs section populates",
-          "status": "in_progress",
+          "status": "done",
           "branch": "master",
           "pr": null,
           "commit": null,
           "assignee": null,
           "created_at": "2026-03-12T06:00:00Z",
-          "updated_at": "2026-03-12T06:00:00Z"
+          "updated_at": "2026-03-12T07:44:00Z"
         },
         {
           "id": "T9.1.4",
@@ -834,13 +834,13 @@
           "feature_id": "F9.1",
           "title": "Verify all dashboard sections connected to APIs",
           "description": "Audit every section in dashboard.html against API endpoints",
-          "status": "in_progress",
+          "status": "done",
           "branch": "master",
           "pr": null,
           "commit": null,
           "assignee": null,
           "created_at": "2026-03-12T06:00:00Z",
-          "updated_at": "2026-03-12T06:00:00Z"
+          "updated_at": "2026-03-12T07:44:00Z"
         }
       ],
       "acceptance_criteria": [
@@ -854,7 +854,7 @@
       "sub_vision": null,
       "parent_vision": null,
       "created_at": "2026-03-12T06:00:00Z",
-      "updated_at": "2026-03-12T06:00:00Z"
+      "updated_at": "2026-03-12T07:44:00Z"
     }
   ],
   "github": {
