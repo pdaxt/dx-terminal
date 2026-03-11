@@ -17,7 +17,8 @@ use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::fs;
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpStream};
+use std::net::{Shutdown, SocketAddr, TcpStream};
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -997,16 +998,27 @@ fn build_dashboard_notify_request(port: u16, body: &str) -> String {
     )
 }
 
+fn try_notify_via_socket(body: &str) -> bool {
+    let socket_path = dx_terminal::ipc::vision_socket_path();
+    let mut stream = match UnixStream::connect(&socket_path) {
+        Ok(stream) => stream,
+        Err(_) => return false,
+    };
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(150)));
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(150)));
+    if stream.write_all(body.as_bytes()).is_err() {
+        return false;
+    }
+    let _ = stream.shutdown(Shutdown::Write);
+    let mut response = [0u8; 64];
+    let _ = stream.read(&mut response);
+    true
+}
+
 fn notify_dashboard_vision_change(project_path: &str, result: &str, feature_id: Option<&str>) {
     if project_path.trim().is_empty() || result.trim().is_empty() {
         return;
     }
-
-    let port = dashboard_port();
-    let addr: SocketAddr = match format!("127.0.0.1:{}", port).parse() {
-        Ok(addr) => addr,
-        Err(_) => return,
-    };
 
     let body = json!({
         "project_path": project_path,
@@ -1015,6 +1027,15 @@ fn notify_dashboard_vision_change(project_path: &str, result: &str, feature_id: 
     })
     .to_string();
 
+    if try_notify_via_socket(&body) {
+        return;
+    }
+
+    let port = dashboard_port();
+    let addr: SocketAddr = match format!("127.0.0.1:{}", port).parse() {
+        Ok(addr) => addr,
+        Err(_) => return,
+    };
     let request = build_dashboard_notify_request(port, &body);
 
     let mut stream = match TcpStream::connect_timeout(&addr, Duration::from_millis(150)) {
