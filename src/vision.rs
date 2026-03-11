@@ -70,6 +70,7 @@ pub struct Milestone {
 pub enum MilestoneStatus {
     Upcoming,
     Active,
+    InProgress,
     Complete,
     Missed,
 }
