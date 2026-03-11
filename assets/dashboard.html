@@ -467,6 +467,7 @@ canvas{width:100%;display:block}
 .vdd-doc-badge.research{background:rgba(176,122,255,.12);color:var(--purple)}
 .vdd-doc-badge.discovery{background:rgba(61,214,208,.12);color:var(--teal)}
 .vdd-phase-badge{font-size:8px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px}
+.vdd-phase-badge.planned{background:rgba(148,163,184,.12);color:var(--dim)}
 .vdd-phase-badge.discovery{background:rgba(240,192,64,.12);color:var(--yellow)}
 .vdd-phase-badge.build{background:rgba(77,166,255,.12);color:var(--blue)}
 .vdd-phase-badge.test{background:rgba(61,214,208,.12);color:var(--teal)}
@@ -1865,8 +1866,8 @@ async function renderVision(){
 let selectedVisionProject=null;
 function visionStatusPill(status){
   const colors={achieved:'var(--green)',done:'var(--green)',verified:'var(--green)',
-    in_progress:'var(--blue)',building:'var(--blue)',
-    planned:'var(--dim)',specifying:'var(--yellow)',testing:'var(--teal)',
+    in_progress:'var(--blue)',building:'var(--blue)',build:'var(--blue)',
+    planned:'var(--dim)',specifying:'var(--yellow)',discovery:'var(--yellow)',testing:'var(--teal)',test:'var(--teal)',
     blocked:'var(--red)',deferred:'var(--orange)',dropped:'var(--red)'};
   const c=colors[status]||'var(--dim)';
   const label=(status||'').replace(/_/g,' ');
@@ -1877,10 +1878,104 @@ function visionProgressBar(pct,w){
   return `<div style="height:3px;background:var(--surface2);border-radius:2px;margin-top:3px;width:${w||'100%'}">
     <div style="height:100%;width:${pct}%;background:${c};border-radius:2px;transition:width .3s"></div></div>`;
 }
-function vddPipelineBar(status){
-  const phases=['planned','specifying','building','testing','done'];
-  const labels=['Plan','Specify','Build','Test','Done'];
-  const idx=phases.indexOf(status);
+function normalizeVddPhase(value){
+  const phase=(value||'planned').toString().toLowerCase();
+  const aliases={specifying:'discovery',building:'build',testing:'test'};
+  return aliases[phase]||phase;
+}
+function vddPhaseBadge(phase){
+  const normalized=normalizeVddPhase(phase);
+  return `<span class="vdd-phase-badge ${normalized}">${normalized}</span>`;
+}
+function vddStatePill(state){
+  if(!state) return '';
+  const colors={planned:'var(--dim)',active:'var(--blue)',blocked:'var(--red)',complete:'var(--green)'};
+  const c=colors[state]||'var(--dim)';
+  return `<span style="font-size:8px;font-weight:700;padding:2px 6px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px;background:${c}18;color:${c}">${escHtml(String(state).replace(/_/g,' '))}</span>`;
+}
+function acceptanceCounts(items){
+  const list=Array.isArray(items)?items:[];
+  const count=status=>list.filter(item=>(item&&item.status||'draft')===status).length;
+  return {total:list.length,verified:count('verified'),failed:count('failed'),mapped:count('mapped'),draft:count('draft')};
+}
+function nextVddGate(phase){
+  const normalized=normalizeVddPhase(phase);
+  if(normalized==='planned'||normalized==='discovery') return 'build';
+  if(normalized==='build') return 'test';
+  if(normalized==='test') return 'done';
+  return null;
+}
+function renderReadinessSummary(feature){
+  const readiness=feature&&feature.readiness?feature.readiness:{};
+  const counts=readiness.counts||{};
+  const phase=normalizeVddPhase(feature&& (feature.phase||feature.status));
+  const gate=nextVddGate(phase);
+  const blockers=gate&&readiness.blockers&&Array.isArray(readiness.blockers[gate])?readiness.blockers[gate]:[];
+  const acc=acceptanceCounts(feature&&feature.acceptance_items);
+  const facts=[];
+  if(typeof counts.blocking_open_questions==='number'&&counts.blocking_open_questions>0){
+    facts.push(`${counts.blocking_open_questions} blocking question${counts.blocking_open_questions===1?'':'s'}`);
+  }
+  if(typeof counts.non_blocking_open_questions==='number'&&counts.non_blocking_open_questions>0){
+    facts.push(`${counts.non_blocking_open_questions} non-blocking question${counts.non_blocking_open_questions===1?'':'s'}`);
+  }
+  if(typeof counts.tasks_verified==='number'&&typeof counts.tasks_total==='number'&&counts.tasks_total>0){
+    facts.push(`tasks ${counts.tasks_verified}/${counts.tasks_total} verified`);
+  }
+  if(acc.total>0){
+    let acceptanceFact=`acceptance ${acc.verified}/${acc.total} verified`;
+    if(acc.failed>0) acceptanceFact+=` · ${acc.failed} failed`;
+    facts.push(acceptanceFact);
+  }
+  if(typeof counts.has_discovery_artifact==='boolean'){
+    facts.push(counts.has_discovery_artifact?'discovery docs present':'discovery docs missing');
+  }
+  let html=`<div style="margin:5px 0 0 22px;padding:6px 8px;background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:6px">`;
+  if(gate){
+    const readyKey=`ready_for_${gate}`;
+    const ready=!!readiness[readyKey];
+    const gateColor=ready?'var(--green)':'var(--orange)';
+    html+=`<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">`;
+    html+=`<span style="font-size:9px;font-weight:700;color:${gateColor};text-transform:uppercase;letter-spacing:.4px">Next gate: ${gate} ${ready?'ready':'blocked'}</span>`;
+    if(facts.length) html+=`<span style="font-size:9px;color:var(--dim)">${facts.slice(0,3).map(escHtml).join(' · ')}</span>`;
+    html+=`</div>`;
+  } else {
+    html+=`<div style="font-size:9px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.4px">Lifecycle complete</div>`;
+    if(facts.length) html+=`<div style="font-size:9px;color:var(--dim);margin-top:2px">${facts.slice(0,3).map(escHtml).join(' · ')}</div>`;
+  }
+  if(blockers.length){
+    html+=`<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">`;
+    blockers.slice(0,4).forEach(blocker=>{
+      html+=`<span style="font-size:8px;padding:2px 6px;border-radius:999px;background:rgba(255,107,107,.12);color:var(--red)">${escHtml(blocker)}</span>`;
+    });
+    html+=`</div>`;
+  }
+  html+=`</div>`;
+  return html;
+}
+function renderAcceptanceList(items){
+  const list=Array.isArray(items)?items:[];
+  if(!list.length) return '';
+  const counts=acceptanceCounts(list);
+  return `<details style="margin-top:6px"><summary style="font-size:9px;color:var(--dim);cursor:pointer">Acceptance (${counts.verified}/${counts.total} verified)</summary>
+    ${list.slice(0,6).map(item=>{
+      const status=(item&&item.status)||'draft';
+      const colors={draft:'var(--dim)',mapped:'var(--blue)',verified:'var(--green)',failed:'var(--red)'};
+      const icons={draft:'○',mapped:'◔',verified:'✓',failed:'✕'};
+      const meta=[item.verification_method,item.verification_source,item.verified_by].filter(Boolean).map(escHtml).join(' · ');
+      return `<div style="margin:4px 0 0 8px;padding-left:8px;border-left:2px solid ${colors[status]||'var(--dim)'}">
+        <div style="font-size:9px;color:var(--text)"><span style="color:${colors[status]||'var(--dim)'};margin-right:4px">${icons[status]||'○'}</span>${escHtml(item.text||'')}</div>
+        ${meta?`<div style="font-size:8px;color:var(--dim);margin-top:1px">${meta}</div>`:''}
+      </div>`;
+    }).join('')}
+    ${list.length>6?`<div style="font-size:8px;color:var(--dim);margin:4px 0 0 8px">+${list.length-6} more criteria</div>`:''}
+  </details>`;
+}
+function vddPipelineBar(phase){
+  const phases=['planned','discovery','build','test','done'];
+  const labels=['Plan','Discovery','Build','Test','Done'];
+  const normalized=normalizeVddPhase(phase);
+  const idx=phases.indexOf(normalized);
   return `<div class="vdd-pipeline">${phases.map((p,i)=>{
     const cls=i<idx?'phase complete':i===idx?'phase active':'phase';
     return (i>0?'<span class="phase-arrow">→</span>':'')+`<span class="${cls}">${labels[i]}</span>`;
