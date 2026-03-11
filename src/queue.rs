@@ -435,7 +435,9 @@ pub mod tests {
     /// Acquire the env-var lock. Other modules should call this before
     /// setting DX_ROOT to avoid races.
     pub fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        TEST_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Set DX_ROOT to a fresh tempdir and reset the queue.

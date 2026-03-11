@@ -341,29 +341,48 @@ fn advance_cursor(runtime_id: &str, seq: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
+    struct TempDxRoot {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        _tmp: tempfile::TempDir,
+        original: Option<String>,
+    }
 
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
+    impl TempDxRoot {
+        fn new() -> Self {
+            let guard = crate::queue::tests::env_lock();
+            let tmp = tempfile::tempdir().unwrap();
+            let original = std::env::var("DX_ROOT").ok();
+            std::env::set_var("DX_ROOT", tmp.path());
+            std::fs::create_dir_all(vision_socket_dir()).unwrap();
+            Self {
+                _guard: guard,
+                _tmp: tmp,
+                original,
+            }
+        }
+    }
+
+    impl Drop for TempDxRoot {
+        fn drop(&mut self) {
+            match self.original.as_ref() {
+                Some(value) => std::env::set_var("DX_ROOT", value),
+                None => std::env::remove_var("DX_ROOT"),
+            }
+        }
+    }
+
+    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+        crate::queue::tests::env_lock()
+    }
 
     fn with_temp_dx_root<T>(f: impl FnOnce() -> T) -> T {
-        let _guard = TEST_LOCK.lock().unwrap();
-        let tmp = tempfile::tempdir().unwrap();
-        let original = std::env::var("DX_ROOT").ok();
-        std::env::set_var("DX_ROOT", tmp.path());
-        std::fs::create_dir_all(vision_socket_dir()).unwrap();
-
-        let result = f();
-
-        match original {
-            Some(value) => std::env::set_var("DX_ROOT", value),
-            None => std::env::remove_var("DX_ROOT"),
-        }
-        result
+        let _env = TempDxRoot::new();
+        f()
     }
 
     #[test]
     fn socket_path_lives_under_dx_root() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = env_guard();
         let path = vision_socket_path();
         assert!(path.starts_with(vision_socket_dir()));
         assert!(is_vision_socket_path(&path));
@@ -372,7 +391,7 @@ mod tests {
 
     #[test]
     fn socket_path_is_namespaced_by_pid() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = env_guard();
         let path = vision_socket_path_for_pid(4242);
         assert!(path.ends_with("vision-events-4242.sock"));
         assert!(is_vision_socket_path(&path));
@@ -380,7 +399,7 @@ mod tests {
 
     #[test]
     fn retain_recent_entries_filters_old_and_caps_count() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = env_guard();
         let now = 10_000;
         let mut entries = vec![
             ReplayEnvelope {
@@ -413,7 +432,7 @@ mod tests {
 
     #[test]
     fn cursor_path_is_sanitized() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = env_guard();
         let path = runtime_cursor_path("web:3100/demo");
         assert!(path.ends_with("vision-cursor-web-3100-demo.json"));
     }
