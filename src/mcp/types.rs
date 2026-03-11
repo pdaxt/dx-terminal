@@ -1906,6 +1906,16 @@ pub struct VisionTaskRequest {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct VisionFeatureStatusRequest {
+    #[schemars(description = "Project path")]
+    pub project: Option<String>,
+    #[schemars(description = "Feature ID (e.g. F3.1)")]
+    pub feature_id: String,
+    #[schemars(description = "New status: planned/specifying/building/testing/done")]
+    pub status: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct VisionTaskStatusRequest {
     #[schemars(description = "Project path")]
     pub project: Option<String>,
