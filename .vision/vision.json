@@ -76,7 +76,7 @@
       "id": "G6",
       "title": "GitHub Stardom — open source launch",
       "description": "Prepare DX Terminal for public GitHub release with documentation, CI/CD, and community features",
-      "status": "in_progress",
+      "status": "achieved",
       "priority": 2,
       "linked_issues": [],
       "metrics": [
