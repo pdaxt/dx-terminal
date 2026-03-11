@@ -1114,30 +1114,27 @@ async function renderPaneContext(paneNum){
     if(v.features&&v.features.length){
       html+=`<div style="font-size:9px;font-weight:600;color:var(--dim);margin:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">Features</div>`;
       v.features.forEach(f=>{
-        const col=f.status==='done'?'var(--green)':f.status==='build'?'var(--yellow)':f.status==='test'?'var(--purple)':f.status==='review'?'var(--orange)':'var(--dim)';
+        const phase=normalizeVddPhase(f.phase||f.status);
+        const state=f.state||'planned';
+        const col=phase==='done'?'var(--green)':phase==='build'?'var(--blue)':phase==='test'?'var(--teal)':phase==='discovery'?'var(--yellow)':'var(--dim)';
         html+=`<div style="margin-bottom:8px;padding:6px 8px;background:var(--surface2);border-radius:4px;border-left:2px solid ${col}">`;
-        html+=`<div style="display:flex;justify-content:space-between;align-items:center">`;
+        html+=`<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap">`;
         html+=`<span style="font-size:10px;font-weight:600;color:var(--text)">${escHtml(f.id+': '+(f.title||''))}</span>`;
-        html+=`<span style="font-size:8px;padding:1px 5px;border-radius:8px;background:${col}15;color:${col};text-transform:uppercase">${f.status}</span>`;
+        html+=`<span style="display:flex;gap:4px;align-items:center">${vddPhaseBadge(phase)}${vddStatePill(state)}</span>`;
         html+=`</div>`;
-        // VDD Pipeline phases
-        html+=vddPipelineBar(f.status);
+        html+=vddPipelineBar(phase);
+        html+=renderReadinessSummary(f);
         if(f.tasks&&f.tasks.length){
           html+=`<div style="margin-top:4px">`;
           f.tasks.forEach(t=>{
-            const tc=t.status==='done'?'var(--green)':'var(--dim)';
-            const check=t.status==='done'?'&#10003;':'&#9675;';
+            const done=t.status==='done'||t.status==='verified';
+            const tc=done?'var(--green)':t.status==='in_progress'?'var(--blue)':t.status==='blocked'?'var(--red)':'var(--dim)';
+            const check=done?'&#10003;':t.status==='in_progress'?'&#9654;':t.status==='blocked'?'&#10005;':'&#9675;';
             html+=`<div style="font-size:9px;color:var(--text);margin:2px 0;display:flex;gap:4px"><span style="color:${tc}">${check}</span> ${escHtml(t.title||'')}</div>`;
           });
           html+=`</div>`;
         }
-        if(f.acceptance_criteria&&f.acceptance_criteria.length){
-          html+=`<details style="margin-top:4px"><summary style="font-size:9px;color:var(--dim);cursor:pointer">Acceptance Criteria (${f.acceptance_criteria.length})</summary>`;
-          f.acceptance_criteria.forEach(c=>{
-            html+=`<div style="font-size:9px;color:var(--dim);margin:1px 0 1px 8px">&#8226; ${escHtml(c)}</div>`;
-          });
-          html+=`</details>`;
-        }
+        html+=renderAcceptanceList(f.acceptance_items||[]);
         html+=`</div>`;
       });
     }
@@ -1806,12 +1803,19 @@ async function openVddDoc(project,featureId){
   // Build Confluence-like page
   let html='<div class="vdd-viewer">';
   // Header with phase badge
-  const phase=doc.phase||'discovery';
+  const phase=normalizeVddPhase(doc.phase||doc.status||'planned');
   html+=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
     <span style="font-size:16px;font-weight:700;color:var(--text)">${escHtml(featureId)}</span>
-    <span class="vdd-phase-badge ${phase}">${phase}</span>
+    ${vddPhaseBadge(phase)}
+    ${vddStatePill(doc.state)}
     ${doc.title?`<span style="font-size:12px;color:var(--muted)">${escHtml(doc.title)}</span>`:''}
   </div>`;
+  html+=renderReadinessSummary({
+    phase,
+    readiness: doc.readiness||{},
+    acceptance_items: doc.acceptance_items||[],
+  });
+  html+=renderAcceptanceList(doc.acceptance_items||[]);
   // Research doc
   if(doc.research&&doc.research.html){
     html+=`<div style="border-left:3px solid var(--purple);padding-left:12px;margin-bottom:16px">
