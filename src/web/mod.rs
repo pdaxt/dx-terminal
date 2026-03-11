@@ -69,6 +69,7 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/vision/answer", post(api::answer_vision_question))
         .route("/api/vision/task", post(api::add_vision_task))
         .route("/api/vision/task/status", post(api::update_vision_task))
+        .route("/api/vision/feature/status", post(api::update_vision_feature_status))
         .route("/api/vision/git-sync", post(api::git_sync_vision))
         .route("/api/vision/work", post(api::assess_vision_work))
         // VDD Research & Discovery Docs

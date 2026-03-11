@@ -751,8 +751,7 @@ pub async fn init_vision(Json(body): Json<Value>) -> Json<Value> {
 /// POST /api/vision/sync — Sync vision to GitHub
 pub async fn sync_vision(Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".to_string());
-    let path = format!("{}/Projects/{}", home, project);
+    let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let result = crate::vision::github_sync(&path);
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
@@ -854,11 +853,20 @@ pub async fn git_sync_vision(Json(body): Json<Value>) -> Json<Value> {
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
+/// POST /api/vision/feature/status — Update feature status (planned→specifying→building→testing→done)
+pub async fn update_vision_feature_status(Json(body): Json<Value>) -> Json<Value> {
+    let project = body["project"].as_str().unwrap_or("").to_string();
+    let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
+    let feature_id = body["feature_id"].as_str().unwrap_or("");
+    let status = body["status"].as_str().unwrap_or("");
+    let result = crate::vision::update_feature_status(&path, feature_id, status);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
 /// POST /api/vision/work — Assess work against vision
 pub async fn assess_vision_work(Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".to_string());
-    let path = if project.is_empty() { ".".to_string() } else { format!("{}/Projects/{}", home, project) };
+    let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let description = body["description"].as_str().unwrap_or("");
     let result = crate::vision::assess_work(&path, description);
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
