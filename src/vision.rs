@@ -2131,6 +2131,28 @@ mod tests {
     }
 
     #[test]
+    fn test_complete_discovery_advances_only_when_ready() {
+        let dir = temp_project();
+        let path = dir.path().to_str().unwrap();
+        init_test_vision(dir.path());
+        add_goal(path, "G1", "Goal", "desc", 1);
+        add_feature(path, "G1", "Feature", "desc", vec!["criterion".to_string()]);
+
+        let blocked: serde_json::Value = serde_json::from_str(&complete_discovery(path, "F1.1")).unwrap();
+        assert_eq!(blocked["status"], "blocked");
+
+        upsert_feature_doc(path, "F1.1", "discovery", "# Discovery");
+        let advanced: serde_json::Value = serde_json::from_str(&complete_discovery(path, "F1.1")).unwrap();
+        assert_eq!(advanced["status"], "advanced");
+        assert_eq!(advanced["phase"], "build");
+
+        let vision = load_vision(path).unwrap();
+        let feature = vision.features.iter().find(|f| f.id == "F1.1").unwrap();
+        assert_eq!(feature.phase, FeaturePhase::Build);
+        assert_eq!(feature.status, FeatureStatus::Building);
+    }
+
+    #[test]
     fn test_upsert_feature_doc_creates_file_and_starts_discovery() {
         let dir = temp_project();
         let path = dir.path().to_str().unwrap();
