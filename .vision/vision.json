@@ -89,7 +89,7 @@
       "id": "G7",
       "title": "Enterprise Documentation & QA",
       "description": "Confluence-style wiki auto-generated from VDD vision files, plus integrated multi-framework test pipeline",
-      "status": "in_progress",
+      "status": "achieved",
       "priority": 1,
       "linked_issues": [],
       "metrics": [
@@ -102,7 +102,7 @@
       "id": "G8",
       "title": "Real-Time Sync Protocol",
       "description": "Rust-native streaming sync that keeps local files, GitHub, and DX Terminal dashboard always in perfect sync via WebSocket + file watcher + git auto-push",
-      "status": "in_progress",
+      "status": "achieved",
       "priority": 1,
       "linked_issues": [],
       "metrics": [
