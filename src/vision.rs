@@ -1058,6 +1058,8 @@ pub fn upsert_feature_doc(project_path: &str, feature_id: &str, doc_type: &str, 
     }
     feature.updated_at = now();
     vision.updated_at = now();
+    let feature_phase = feature.phase.clone();
+    let feature_state = feature.state.clone();
 
     let change = VisionChange {
         timestamp: now(),
@@ -1078,8 +1080,8 @@ pub fn upsert_feature_doc(project_path: &str, feature_id: &str, doc_type: &str, 
             "feature": feature_id,
             "doc_type": doc_type,
             "path": relative_path,
-            "phase": feature.phase,
-            "state": feature.state,
+            "phase": feature_phase,
+            "state": feature_state,
         }).to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
