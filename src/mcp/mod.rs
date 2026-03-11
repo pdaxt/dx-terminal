@@ -1984,6 +1984,17 @@ impl DxTerminalService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
+    #[tool(description = "Update feature status — advance through pipeline: planned → specifying → building → testing → done.")]
+    async fn vision_update_feature(
+        &self,
+        Parameters(req): Parameters<types::VisionFeatureStatusRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_update_feature(
+            req.project.as_deref(), &req.feature_id, &req.status,
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
     #[tool(description = "Sync task statuses from Git — checks branch/PR status via GitHub API and cascades changes up the tree.")]
     async fn vision_sync(
         &self,
