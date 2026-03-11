@@ -989,7 +989,8 @@ fn handle_post_tool_use(event: &Value) -> Option<Value> {
         .and_then(|i| i.get("command"))
         .and_then(|c| c.as_str())
         .unwrap_or("");
-    if !command.contains("git commit") {
+    let command_kind = classify_command(command);
+    if command_kind == CommandKind::Other {
         return None;
     }
 
@@ -1003,18 +1004,72 @@ fn handle_post_tool_use(event: &Value) -> Option<Value> {
     }
 
     let branch = get_current_branch(Some(&project))?;
+    let actor = extract_actor(event);
+    let command_success = extract_command_success(event);
 
     if let Some((feature, task)) = find_task_by_branch(&vision, &branch) {
-        if task.get("status").and_then(|s| s.as_str()) == Some("planned") {
-            let tid = task.get("id").and_then(|i| i.as_str()).unwrap_or("?");
-            let ttitle = task.get("title").and_then(|t| t.as_str()).unwrap_or("?");
-            let fid = feature.get("id").and_then(|i| i.as_str()).unwrap_or("?");
+        let tid = task.get("id").and_then(|i| i.as_str()).unwrap_or("?");
+        let ttitle = task.get("title").and_then(|t| t.as_str()).unwrap_or("?");
+        let fid = feature.get("id").and_then(|i| i.as_str()).unwrap_or("?");
+        let task_status = task.get("status").and_then(|s| s.as_str()).unwrap_or("planned");
+
+        let mut notes = Vec::new();
+
+        if matches!(command_kind, CommandKind::Build | CommandKind::Test | CommandKind::Lint | CommandKind::Commit)
+            && task_status == "planned"
+        {
+            let _ = vision::update_task_status(
+                &project,
+                fid,
+                tid,
+                "in_progress",
+                Some(&branch),
+                None,
+                None,
+            );
+            notes.push(format!("task {} auto-moved to in_progress", tid));
+        }
+
+        if command_kind == CommandKind::Test && command_success == Some(true) {
+            let current_status = load_vision(&project)
+                .and_then(|v| find_task_by_branch(&v, &branch).map(|(_, t)| t.get("status").and_then(|s| s.as_str()).unwrap_or("planned").to_string()))
+                .unwrap_or_else(|| task_status.to_string());
+
+            if current_status == "done" || current_status == "in_progress" {
+                let _ = vision::update_task_status(
+                    &project,
+                    fid,
+                    tid,
+                    "verified",
+                    Some(&branch),
+                    None,
+                    None,
+                );
+                notes.push(format!("task {} auto-marked verified after successful test command", tid));
+            }
+
+            let refreshed = load_vision(&project).unwrap_or_else(|| vision.clone());
+            if let Some((refreshed_feature, _)) = find_task_by_branch(&refreshed, &branch) {
+                let verified = auto_verify_acceptance_items(&project, refreshed_feature, command, &actor);
+                if !verified.is_empty() {
+                    notes.push(format!(
+                        "acceptance auto-verified: {}",
+                        verified.join(", ")
+                    ));
+                }
+            }
+        }
+
+        if command_kind == CommandKind::Commit && notes.is_empty() {
+            return None;
+        }
+
+        if !notes.is_empty() {
             return Some(json!({
                 "decision": "approve",
                 "reason": format!(
-                    "VDD: Commit on branch '{}' \u{2192} Task {} ({}) is still 'planned'. \
-                     Update to 'in_progress': vision_update_task('{}', '{}', 'in_progress')",
-                    branch, tid, ttitle, fid, tid
+                    "VDD: Branch '{}' linked to {} / {}. {}",
+                    branch, fid, ttitle, notes.join("; ")
                 )
             }));
         }
@@ -1042,13 +1097,15 @@ fn handle_post_tool_use(event: &Value) -> Option<Value> {
             .collect::<Vec<_>>()
             .join(", ");
 
-        return Some(json!({
-            "decision": "approve",
-            "reason": format!(
-                "VDD: Commit on untracked branch '{}'. Link to a feature: {}",
-                branch, feat_ids
-            )
-        }));
+        if command_kind == CommandKind::Commit {
+            return Some(json!({
+                "decision": "approve",
+                "reason": format!(
+                    "VDD: Commit on untracked branch '{}'. Link to a feature: {}",
+                    branch, feat_ids
+                )
+            }));
+        }
     }
 
     None
