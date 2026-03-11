@@ -2427,6 +2427,7 @@ mod tests {
         assert_eq!(feature.status, FeatureStatus::Building);
         assert_eq!(feature.phase, FeaturePhase::Build);
         assert_eq!(feature.state, FeatureState::Active);
+        assert_eq!(feature.acceptance_items.len(), 0);
     }
 
     #[test]
@@ -2459,7 +2460,21 @@ mod tests {
         let test_ready: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
         assert_eq!(test_ready["phase"], "test");
         assert_eq!(test_ready["readiness"]["ready_for_test"], true);
-        assert_eq!(test_ready["readiness"]["ready_for_done"], true);
+        assert_eq!(test_ready["readiness"]["ready_for_done"], false);
+
+        let criterion_id = test_ready["acceptance_items"][0]["id"].as_str().unwrap().to_string();
+        verify_acceptance_criterion(
+            path,
+            "F1.1",
+            &criterion_id,
+            "verified",
+            vec!["cargo test".to_string()],
+            Some("qa-pane"),
+            Some("agent"),
+        );
+
+        let done_ready: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        assert_eq!(done_ready["readiness"]["ready_for_done"], true);
     }
 
     #[test]
@@ -2569,7 +2584,103 @@ mod tests {
         let vision = load_vision(path).unwrap();
         let feature = vision.features.iter().find(|f| f.id == "F1.1").unwrap();
         assert_eq!(feature.acceptance_criteria.len(), 1);
+        assert_eq!(feature.acceptance_items.len(), 1);
         assert_eq!(feature.phase, FeaturePhase::Discovery);
+    }
+
+    #[test]
+    fn test_legacy_acceptance_strings_backfill_acceptance_items() {
+        let dir = temp_project();
+        let path = dir.path().to_str().unwrap();
+
+        let legacy = serde_json::json!({
+            "project": "legacy-proj",
+            "mission": "Legacy mission",
+            "principles": [],
+            "goals": [{
+                "id": "G1",
+                "title": "Goal",
+                "description": "desc",
+                "status": "planned",
+                "priority": 1,
+                "linked_issues": [],
+                "metrics": []
+            }],
+            "milestones": [],
+            "architecture": [],
+            "changes": [],
+            "features": [{
+                "id": "F1.1",
+                "goal_id": "G1",
+                "title": "Legacy feature",
+                "description": "desc",
+                "status": "planned",
+                "questions": [],
+                "decisions": [],
+                "tasks": [],
+                "acceptance_criteria": ["Criterion A", "Criterion B"],
+                "sub_vision": null,
+                "parent_vision": null,
+                "created_at": "2026-03-12T00:00:00Z",
+                "updated_at": "2026-03-12T00:00:00Z"
+            }],
+            "github": {
+                "repo": "",
+                "sync_enabled": false,
+                "wiki_page": null,
+                "project_board": null,
+                "labels": []
+            },
+            "updated_at": "2026-03-12T00:00:00Z"
+        });
+
+        std::fs::write(vision_file(path), serde_json::to_string_pretty(&legacy).unwrap()).unwrap();
+
+        let vision = load_vision(path).unwrap();
+        let feature = vision.features.iter().find(|f| f.id == "F1.1").unwrap();
+        assert_eq!(feature.acceptance_items.len(), 2);
+        assert_eq!(feature.acceptance_items[0].id, "AC1.1.1");
+        assert_eq!(feature.acceptance_items[0].text, "Criterion A");
+    }
+
+    #[test]
+    fn test_acceptance_update_and_verify_are_provider_neutral() {
+        let dir = temp_project();
+        let path = dir.path().to_str().unwrap();
+        init_test_vision(dir.path());
+        add_goal(path, "G1", "Goal", "desc", 1);
+        add_feature(path, "G1", "Feature", "desc", vec!["Initial criterion".to_string()]);
+
+        let updated: serde_json::Value = serde_json::from_str(
+            &update_acceptance_criterion(
+                path,
+                "F1.1",
+                "AC1.1.1",
+                Some("Updated criterion"),
+                Some("integration_test"),
+            ),
+        ).unwrap();
+        assert_eq!(updated["status"], "updated");
+        assert_eq!(updated["criterion_status"], "mapped");
+
+        let verified: serde_json::Value = serde_json::from_str(
+            &verify_acceptance_criterion(
+                path,
+                "F1.1",
+                "AC1.1.1",
+                "verified",
+                vec!["tests::integration::ws_streaming".to_string()],
+                Some("gemini-worker"),
+                Some("agent"),
+            ),
+        ).unwrap();
+        assert_eq!(verified["criterion_status"], "verified");
+        assert_eq!(verified["verified_by"], "gemini-worker");
+        assert_eq!(verified["verification_source"], "agent");
+
+        let feature: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        assert_eq!(feature["acceptance_items"][0]["text"], "Updated criterion");
+        assert_eq!(feature["acceptance_items"][0]["status"], "verified");
     }
 
     #[test]
