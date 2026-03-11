@@ -1098,6 +1098,23 @@ pub async fn upsert_vision_doc(State(app): State<AppState>, Json(body): Json<Val
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
+/// POST /api/vision/notify — Best-effort local IPC for hook/external vision mutations
+pub async fn notify_vision_change(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
+    let project_path = body["project_path"]
+        .as_str()
+        .or_else(|| body["path"].as_str())
+        .unwrap_or("");
+    let result = body["result"].as_str().unwrap_or("");
+    let feature_id = body["feature_id"].as_str();
+
+    if project_path.is_empty() || result.is_empty() {
+        return Json(json!({"error": "project_path and result required"}));
+    }
+
+    maybe_emit_vision_change(&app, project_path, result, feature_id);
+    Json(json!({"status": "emitted"}))
+}
+
 /// Simple markdown to HTML converter (no external deps)
 fn markdown_to_html(md: &str) -> String {
     let mut html = String::new();
