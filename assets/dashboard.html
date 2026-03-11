@@ -1524,6 +1524,18 @@ function handleWSMessage(msg){
       }
       renderPanes(); // Update pane cards with latest activity
       break;
+    case 'sync_event':
+      // File changed / git commit / push — update sync card and vision in real-time
+      renderSync();
+      const ev=msg.event||{};
+      const changedPath=(ev.FileChanged&&ev.FileChanged.path)||'';
+      if(changedPath.includes('.vision/')||changedPath.includes('CLAUDE.md')){
+        renderVision();renderVddDocs();
+      }
+      if(ev.GitCommit||ev.GitPush){
+        renderSync(); // Refresh git status after commit/push
+      }
+      break;
     case 'refresh':refresh();break;
   }
 }
