@@ -55,6 +55,10 @@ pub fn vision_update_feature(project: Option<&str>, feature_id: &str, status: &s
     vision::update_feature_status(&resolve_project(project), feature_id, status)
 }
 
+pub fn vision_feature_readiness(project: Option<&str>, feature_id: &str) -> String {
+    vision::feature_readiness(&resolve_project(project), feature_id)
+}
+
 pub fn vision_sync(project: Option<&str>) -> String {
     vision::sync_git_status(&resolve_project(project))
 }
