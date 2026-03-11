@@ -808,8 +808,7 @@ pub async fn add_vision_question(Json(body): Json<Value>) -> Json<Value> {
 /// POST /api/vision/answer — Answer a question with decision
 pub async fn answer_vision_question(Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".to_string());
-    let path = if project.is_empty() { ".".to_string() } else { format!("{}/Projects/{}", home, project) };
+    let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let feature_id = body["feature_id"].as_str().unwrap_or("");
     let question_id = body["question_id"].as_str().unwrap_or("");
     let answer = body["answer"].as_str().unwrap_or("");
@@ -824,8 +823,7 @@ pub async fn answer_vision_question(Json(body): Json<Value>) -> Json<Value> {
 /// POST /api/vision/task — Add task to a feature
 pub async fn add_vision_task(Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".to_string());
-    let path = if project.is_empty() { ".".to_string() } else { format!("{}/Projects/{}", home, project) };
+    let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let feature_id = body["feature_id"].as_str().unwrap_or("");
     let title = body["title"].as_str().unwrap_or("");
     let description = body["description"].as_str().unwrap_or("");
@@ -837,8 +835,7 @@ pub async fn add_vision_task(Json(body): Json<Value>) -> Json<Value> {
 /// POST /api/vision/task/status — Update task status with Git linking
 pub async fn update_vision_task(Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".to_string());
-    let path = if project.is_empty() { ".".to_string() } else { format!("{}/Projects/{}", home, project) };
+    let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let feature_id = body["feature_id"].as_str().unwrap_or("");
     let task_id = body["task_id"].as_str().unwrap_or("");
     let status = body["status"].as_str().unwrap_or("");
@@ -852,8 +849,7 @@ pub async fn update_vision_task(Json(body): Json<Value>) -> Json<Value> {
 /// POST /api/vision/git-sync — Sync task statuses from Git
 pub async fn git_sync_vision(Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/pran".to_string());
-    let path = if project.is_empty() { ".".to_string() } else { format!("{}/Projects/{}", home, project) };
+    let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let result = crate::vision::sync_git_status(&path);
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
