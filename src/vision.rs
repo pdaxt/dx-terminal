@@ -1121,6 +1121,124 @@ pub fn upsert_feature_doc(project_path: &str, feature_id: &str, doc_type: &str, 
     }
 }
 
+pub fn start_discovery(project_path: &str, feature_id: &str) -> String {
+    let mut vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
+        Some(f) => f,
+        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+    };
+
+    if feature.phase == FeaturePhase::Discovery {
+        return serde_json::json!({
+            "status": "noop",
+            "feature": feature_id,
+            "phase": feature.phase,
+            "state": feature.state,
+        }).to_string();
+    }
+
+    if feature.phase != FeaturePhase::Planned {
+        return serde_json::json!({
+            "status": "blocked",
+            "feature": feature_id,
+            "phase": feature.phase,
+            "state": feature.state,
+            "reason": "feature_not_in_planned_phase",
+        }).to_string();
+    }
+
+    let old_phase = serde_json::to_string(&feature.phase).unwrap_or_default();
+    set_feature_lifecycle(feature, FeaturePhase::Discovery, FeatureState::Active);
+    feature.updated_at = now();
+    vision.updated_at = now();
+
+    let change = VisionChange {
+        timestamp: now(),
+        change_type: ChangeType::StatusChange,
+        field: format!("feature_phase:{}", feature_id),
+        old_value: old_phase,
+        new_value: "discovery".to_string(),
+        reason: "Discovery started".to_string(),
+        triggered_by: "user".to_string(),
+        github_issue: None,
+    };
+    vision.changes.push(change.clone());
+    append_history(project_path, &change);
+
+    match save_vision(project_path, &vision) {
+        Ok(()) => serde_json::json!({
+            "status": "started",
+            "feature": feature_id,
+            "phase": "discovery",
+            "state": "active",
+        }).to_string(),
+        Err(e) => serde_json::json!({"error": e}).to_string(),
+    }
+}
+
+pub fn add_acceptance_criterion(project_path: &str, feature_id: &str, criterion: &str) -> String {
+    let criterion = criterion.trim();
+    if criterion.is_empty() {
+        return serde_json::json!({"error": "criterion_required"}).to_string();
+    }
+
+    let mut vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
+        Some(f) => f,
+        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+    };
+
+    if feature.acceptance_criteria.iter().any(|c| c == criterion) {
+        return serde_json::json!({
+            "status": "noop",
+            "feature": feature_id,
+            "criterion": criterion,
+            "reason": "criterion_exists",
+        }).to_string();
+    }
+
+    if feature.phase == FeaturePhase::Planned {
+        set_feature_lifecycle(feature, FeaturePhase::Discovery, FeatureState::Active);
+    }
+
+    feature.acceptance_criteria.push(criterion.to_string());
+    feature.updated_at = now();
+    vision.updated_at = now();
+
+    let change = VisionChange {
+        timestamp: now(),
+        change_type: ChangeType::Added,
+        field: format!("acceptance:{}", feature_id),
+        old_value: String::new(),
+        new_value: criterion.to_string(),
+        reason: "Acceptance criterion added".to_string(),
+        triggered_by: "user".to_string(),
+        github_issue: None,
+    };
+    vision.changes.push(change.clone());
+    append_history(project_path, &change);
+
+    match save_vision(project_path, &vision) {
+        Ok(()) => serde_json::json!({
+            "status": "added",
+            "feature": feature_id,
+            "criterion": criterion,
+            "count": feature.acceptance_criteria.len(),
+            "phase": feature.phase,
+            "state": feature.state,
+        }).to_string(),
+        Err(e) => serde_json::json!({"error": e}).to_string(),
+    }
+}
+
 /// Add a question to a feature.
 pub fn add_question(project_path: &str, feature_id: &str, text: &str) -> String {
     add_question_with_blocking(project_path, feature_id, text, true)
