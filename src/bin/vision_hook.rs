@@ -1036,6 +1036,8 @@ fn notify_dashboard_vision_change(project_path: &str, result: &str, feature_id: 
     })
     .to_string();
 
+    dx_terminal::ipc::append_replay_event(&body);
+
     if try_notify_via_socket(&body) {
         return;
     }
