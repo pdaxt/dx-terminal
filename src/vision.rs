@@ -207,6 +207,8 @@ pub struct Question {
     pub id: String,                        // "Q1.1.1"
     pub text: String,
     pub status: QuestionStatus,
+    #[serde(default = "default_true")]
+    pub blocking: bool,
     #[serde(default)]
     pub answer: Option<String>,
     pub asked_at: String,
@@ -267,6 +269,10 @@ pub enum TaskStatus {
     Done,
     Verified,
     Blocked,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn feature_phase_from_status(status: &FeatureStatus) -> FeaturePhase {
@@ -338,16 +344,32 @@ fn task_counts(feature: &Feature) -> (usize, usize, usize) {
     (total, complete, verified)
 }
 
-fn feature_readiness_value(feature: &Feature) -> serde_json::Value {
+fn feature_doc_exists(project_path: &str, feature_id: &str, doc_type: &str) -> bool {
+    feature_doc_path(project_path, doc_type, feature_id)
+        .map(|(path, _)| path.exists())
+        .unwrap_or(false)
+}
+
+fn feature_readiness_value(project_path: &str, feature: &Feature) -> serde_json::Value {
     let open_questions = feature.questions.iter()
         .filter(|q| q.status == QuestionStatus::Open)
         .count();
+    let blocking_open_questions = feature.questions.iter()
+        .filter(|q| q.status == QuestionStatus::Open && q.blocking)
+        .count();
+    let non_blocking_open_questions = open_questions.saturating_sub(blocking_open_questions);
+    let has_research_doc = feature_doc_exists(project_path, &feature.id, "research");
+    let has_discovery_doc = feature_doc_exists(project_path, &feature.id, "discovery");
+    let has_discovery_artifact = has_research_doc || has_discovery_doc;
     let acceptance_count = feature.acceptance_criteria.len();
     let (task_total, task_complete, task_verified) = task_counts(feature);
 
     let mut build_blockers = Vec::new();
-    if open_questions > 0 {
-        build_blockers.push(format!("{} open discovery question(s)", open_questions));
+    if !has_discovery_artifact {
+        build_blockers.push("discovery artifact missing".to_string());
+    }
+    if blocking_open_questions > 0 {
+        build_blockers.push(format!("{} blocking discovery question(s)", blocking_open_questions));
     }
     if acceptance_count == 0 {
         build_blockers.push("acceptance criteria missing".to_string());
@@ -392,10 +414,22 @@ fn feature_readiness_value(feature: &Feature) -> serde_json::Value {
         },
         "counts": {
             "open_questions": open_questions,
+            "blocking_open_questions": blocking_open_questions,
+            "non_blocking_open_questions": non_blocking_open_questions,
             "acceptance_criteria": acceptance_count,
             "tasks_total": task_total,
             "tasks_complete": task_complete,
             "tasks_verified": task_verified,
+            "has_research_doc": has_research_doc,
+            "has_discovery_doc": has_discovery_doc,
+            "has_discovery_artifact": has_discovery_artifact,
+        },
+        "discovery": {
+            "has_research_doc": has_research_doc,
+            "has_discovery_doc": has_discovery_doc,
+            "blocking_open_questions": blocking_open_questions,
+            "non_blocking_open_questions": non_blocking_open_questions,
+            "acceptance_criteria": acceptance_count,
         }
     })
 }
