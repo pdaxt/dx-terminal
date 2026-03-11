@@ -1395,11 +1395,14 @@ pub fn vision_tree(project_path: &str) -> String {
                     "id": f.id,
                     "title": f.title,
                     "status": f.status,
+                    "phase": f.phase,
+                    "state": f.state,
                     "open_questions": open_questions,
                     "tasks_done": done_tasks,
                     "tasks_total": total_tasks,
                     "progress": if total_tasks > 0 { (done_tasks as f64 / total_tasks as f64 * 100.0) as u8 } else { 0 },
                     "has_sub_vision": f.sub_vision.is_some(),
+                    "readiness": feature_readiness_value(f),
                     "tasks": f.tasks.iter().map(|t| serde_json::json!({
                         "id": t.id,
                         "title": t.title,
@@ -1454,6 +1457,28 @@ pub fn vision_tree(project_path: &str) -> String {
             "sync": vision.github.sync_enabled,
         },
         "updated_at": vision.updated_at,
+    }).to_string()
+}
+
+pub fn feature_readiness(project_path: &str, feature_id: &str) -> String {
+    let vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    let feature = match vision.features.iter().find(|f| f.id == feature_id) {
+        Some(f) => f,
+        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+    };
+
+    serde_json::json!({
+        "feature_id": feature.id,
+        "goal_id": feature.goal_id,
+        "title": feature.title,
+        "status": feature.status,
+        "phase": feature.phase,
+        "state": feature.state,
+        "readiness": feature_readiness_value(feature),
     }).to_string()
 }
 
@@ -1603,9 +1628,9 @@ pub fn sync_git_status(project_path: &str) -> String {
             let all_done = feature.tasks.iter().all(|t| t.status == TaskStatus::Done || t.status == TaskStatus::Verified);
             let any_in_progress = feature.tasks.iter().any(|t| t.status == TaskStatus::InProgress);
             if all_done {
-                feature.status = FeatureStatus::Testing;
+                set_feature_lifecycle(feature, FeaturePhase::Test, FeatureState::Active);
             } else if any_in_progress {
-                feature.status = FeatureStatus::Building;
+                set_feature_lifecycle(feature, FeaturePhase::Build, FeatureState::Active);
             }
         }
     }
@@ -1645,7 +1670,12 @@ pub fn update_feature_status(project_path: &str, feature_id: &str, new_status: &
     };
 
     let old_status = serde_json::to_string(&feature.status).unwrap_or_default();
-    feature.status = parsed;
+    let next_state = match parsed {
+        FeatureStatus::Planned => FeatureState::Planned,
+        FeatureStatus::Done => FeatureState::Complete,
+        FeatureStatus::Specifying | FeatureStatus::Building | FeatureStatus::Testing => FeatureState::Active,
+    };
+    set_feature_lifecycle(feature, feature_phase_from_status(&parsed), next_state);
     feature.updated_at = now();
     vision.updated_at = now();
 
