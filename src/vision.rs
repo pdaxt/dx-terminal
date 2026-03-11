@@ -1557,6 +1557,7 @@ pub fn add_question_with_blocking(project_path: &str, feature_id: &str, text: &s
     if feature.status == FeatureStatus::Planned {
         set_feature_lifecycle(feature, FeaturePhase::Discovery, FeatureState::Active);
     }
+    reconcile_feature_lifecycle(project_path, feature);
     feature.updated_at = now();
     vision.updated_at = now();
 
@@ -1611,6 +1612,7 @@ pub fn answer_question(
     question.decision_id = Some(decision_id.clone());
 
     feature.decisions.push(decision);
+    reconcile_feature_lifecycle(project_path, feature);
     feature.updated_at = now();
     vision.updated_at = now();
 
@@ -1677,6 +1679,7 @@ pub fn add_task(
     if (feature.status == FeatureStatus::Specifying || feature.status == FeatureStatus::Planned) && all_answered {
         set_feature_lifecycle(feature, FeaturePhase::Build, FeatureState::Active);
     }
+    reconcile_feature_lifecycle(project_path, feature);
     feature.updated_at = now();
     vision.updated_at = now();
 
@@ -1734,6 +1737,7 @@ pub fn update_task_status(
     } else if any_in_progress && feature.status != FeatureStatus::Building {
         set_feature_lifecycle(feature, FeaturePhase::Build, FeatureState::Active);
     }
+    reconcile_feature_lifecycle(project_path, feature);
     feature.updated_at = now();
     vision.updated_at = now();
 
@@ -2236,6 +2240,7 @@ pub fn sync_git_status(project_path: &str) -> String {
                 set_feature_lifecycle(feature, FeaturePhase::Build, FeatureState::Active);
             }
         }
+        reconcile_feature_lifecycle(project_path, feature);
     }
 
     vision.updated_at = now();
