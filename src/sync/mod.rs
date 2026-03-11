@@ -1,9 +1,9 @@
-pub mod watcher;
 pub mod git;
+pub mod watcher;
 
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 /// Events emitted by the sync system
@@ -39,10 +39,7 @@ pub enum SyncEvent {
         behind: usize,
     },
     /// Sync conflict detected
-    SyncConflict {
-        project: String,
-        files: Vec<String>,
-    },
+    SyncConflict { project: String, files: Vec<String> },
 }
 
 /// Sync configuration per project
@@ -132,10 +129,8 @@ impl SyncManager {
 
             loop {
                 // Wait for file changes (with timeout for periodic commits)
-                let timeout = tokio::time::timeout(
-                    std::time::Duration::from_secs(5),
-                    file_rx.recv(),
-                );
+                let timeout =
+                    tokio::time::timeout(std::time::Duration::from_secs(5), file_rx.recv());
 
                 match timeout.await {
                     Ok(Some(changed_files)) => {
@@ -152,7 +147,7 @@ impl SyncManager {
                         pending_changes.extend(changed_files);
                     }
                     Ok(None) => break, // Channel closed
-                    Err(_) => {} // Timeout — check if we should commit
+                    Err(_) => {}       // Timeout — check if we should commit
                 }
 
                 // Auto-commit when:

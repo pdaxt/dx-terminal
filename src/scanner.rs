@@ -81,15 +81,23 @@ pub fn scan_all() -> ProjectRegistry {
     let mut projects = Vec::new();
 
     for dir in &dirs {
-        if !dir.exists() { continue; }
+        if !dir.exists() {
+            continue;
+        }
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let p = entry.path();
-                if !p.is_dir() { continue; }
+                if !p.is_dir() {
+                    continue;
+                }
                 // Skip hidden directories
-                if entry.file_name().to_string_lossy().starts_with('.') { continue; }
+                if entry.file_name().to_string_lossy().starts_with('.') {
+                    continue;
+                }
                 // Must be a git repo
-                if !p.join(".git").exists() { continue; }
+                if !p.join(".git").exists() {
+                    continue;
+                }
                 if let Some(info) = scan_single(&p) {
                     projects.push(info);
                 }
@@ -115,8 +123,8 @@ pub fn scan_single(path: &Path) -> Option<ProjectInfo> {
     let abs_path = path.to_string_lossy().to_string();
 
     let (tech, build_cmd, test_cmd, lint_cmd) = detect_tech(path);
-    let has_ci = path.join(".github").join("workflows").exists()
-        || path.join(".gitlab-ci.yml").exists();
+    let has_ci =
+        path.join(".github").join("workflows").exists() || path.join(".gitlab-ci.yml").exists();
 
     let git = git_info(path);
     let readme = readme_summary(path);
@@ -148,9 +156,9 @@ pub fn scan_single(path: &Path) -> Option<ProjectInfo> {
 pub fn project_by_name(name: &str) -> Option<ProjectInfo> {
     let reg = load_registry();
     let lower = name.to_lowercase();
-    reg.projects.into_iter().find(|p| {
-        p.name.to_lowercase() == lower || p.name.to_lowercase().contains(&lower)
-    })
+    reg.projects
+        .into_iter()
+        .find(|p| p.name.to_lowercase() == lower || p.name.to_lowercase().contains(&lower))
 }
 
 /// Full project detail with cross-references to quality, tracker, agents
@@ -165,10 +173,13 @@ pub fn project_detail(name: &str) -> Value {
 
     // Count open issues from tracker
     let issues = crate::tracker::load_issues(&info.name);
-    let open_issues = issues.iter().filter(|i| {
-        let status = i.get("status").and_then(|v| v.as_str()).unwrap_or("");
-        status != "done" && status != "closed"
-    }).count();
+    let open_issues = issues
+        .iter()
+        .filter(|i| {
+            let status = i.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            status != "done" && status != "closed"
+        })
+        .count();
     let total_issues = issues.len();
 
     // Count active agents
@@ -261,7 +272,9 @@ fn detect_tech(path: &Path) -> (Vec<String>, Option<String>, Option<String>, Opt
                     if let Some(b) = scripts.get("build").and_then(|v| v.as_str()) {
                         build_cmd = build_cmd.or(Some(format!("npm run build")));
                         // If it's next.js
-                        if b.contains("next") { tech.push("nextjs".to_string()); }
+                        if b.contains("next") {
+                            tech.push("nextjs".to_string());
+                        }
                     }
                     if let Some(t) = scripts.get("test").and_then(|v| v.as_str()) {
                         if t != "echo \"Error: no test specified\" && exit 1" {
@@ -277,7 +290,8 @@ fn detect_tech(path: &Path) -> (Vec<String>, Option<String>, Option<String>, Opt
     }
 
     // Python
-    if path.join("pyproject.toml").exists() || path.join("setup.py").exists()
+    if path.join("pyproject.toml").exists()
+        || path.join("setup.py").exists()
         || path.join("requirements.txt").exists()
     {
         tech.push("python".to_string());
@@ -351,7 +365,15 @@ fn git_info(path: &Path) -> GitStatus {
         })
         .unwrap_or((None, None));
 
-    GitStatus { remote, branch, dirty, ahead, behind, last_commit_ts, last_commit_msg }
+    GitStatus {
+        remote,
+        branch,
+        dirty,
+        ahead,
+        behind,
+        last_commit_ts,
+        last_commit_msg,
+    }
 }
 
 fn readme_summary(path: &Path) -> Option<String> {
@@ -359,14 +381,16 @@ fn readme_summary(path: &Path) -> Option<String> {
         let readme_path = path.join(name);
         if readme_path.exists() {
             if let Ok(content) = std::fs::read_to_string(&readme_path) {
-                let summary: String = content.lines()
+                let summary: String = content
+                    .lines()
                     .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
                     .take(3)
                     .collect::<Vec<_>>()
                     .join(" ");
                 if !summary.is_empty() {
                     return Some(if summary.len() > 200 {
-                        let end = summary.char_indices()
+                        let end = summary
+                            .char_indices()
                             .take_while(|&(i, _)| i <= 197)
                             .last()
                             .map(|(i, _)| i)
@@ -385,21 +409,37 @@ fn readme_summary(path: &Path) -> Option<String> {
 fn estimate_loc(path: &Path) -> u64 {
     // Quick estimate: count files in src/ or root, multiply by avg lines
     let mut count: u64 = 0;
-    let src_dir = if path.join("src").exists() { path.join("src") } else { path.to_path_buf() };
+    let src_dir = if path.join("src").exists() {
+        path.join("src")
+    } else {
+        path.to_path_buf()
+    };
 
     fn count_files(dir: &Path, count: &mut u64, depth: u8) {
-        if depth > 4 { return; } // limit depth
+        if depth > 4 {
+            return;
+        } // limit depth
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let p = entry.path();
                 let name = entry.file_name().to_string_lossy().to_string();
-                if name.starts_with('.') || name == "node_modules" || name == "target"
-                    || name == "__pycache__" || name == "dist" || name == "build" { continue; }
+                if name.starts_with('.')
+                    || name == "node_modules"
+                    || name == "target"
+                    || name == "__pycache__"
+                    || name == "dist"
+                    || name == "build"
+                {
+                    continue;
+                }
                 if p.is_dir() {
                     count_files(&p, count, depth + 1);
                 } else {
                     let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
-                    if matches!(ext, "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "java" | "rb" | "swift") {
+                    if matches!(
+                        ext,
+                        "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "java" | "rb" | "swift"
+                    ) {
                         // Estimate ~50 lines per file on average
                         *count += 50;
                     }
@@ -418,10 +458,13 @@ fn scan_dirs() -> Vec<PathBuf> {
     if cfg.scan_dirs.is_empty() {
         vec![config::projects_dir()]
     } else {
-        cfg.scan_dirs.iter().map(|d| {
-            let expanded = d.replace("~", &config::home_dir().to_string_lossy());
-            PathBuf::from(expanded)
-        }).collect()
+        cfg.scan_dirs
+            .iter()
+            .map(|d| {
+                let expanded = d.replace("~", &config::home_dir().to_string_lossy());
+                PathBuf::from(expanded)
+            })
+            .collect()
     }
 }
 
@@ -433,11 +476,23 @@ mod tests {
     fn test_registry_roundtrip() {
         let reg = ProjectRegistry {
             projects: vec![ProjectInfo {
-                name: "test".into(), path: "/tmp/test".into(), tech: vec!["rust".into()],
-                build_cmd: Some("cargo build".into()), test_cmd: Some("cargo test".into()),
-                lint_cmd: None, has_ci: false, git_remote: None, default_branch: None,
-                git_dirty: false, git_ahead: 0, git_behind: 0, last_commit_ts: None,
-                last_commit_msg: None, readme_summary: None, loc: 100, deps: vec![],
+                name: "test".into(),
+                path: "/tmp/test".into(),
+                tech: vec!["rust".into()],
+                build_cmd: Some("cargo build".into()),
+                test_cmd: Some("cargo test".into()),
+                lint_cmd: None,
+                has_ci: false,
+                git_remote: None,
+                default_branch: None,
+                git_dirty: false,
+                git_ahead: 0,
+                git_behind: 0,
+                last_commit_ts: None,
+                last_commit_msg: None,
+                readme_summary: None,
+                loc: 100,
+                deps: vec![],
                 last_scanned: "2026-01-01T00:00:00Z".into(),
             }],
             last_scan: "2026-01-01T00:00:00Z".into(),

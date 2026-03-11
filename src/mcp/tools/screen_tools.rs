@@ -31,18 +31,15 @@ pub fn add_screen(
                 },
                 "total_screens": mgr.list_screens().len(),
                 "total_panes": total,
-            }).to_string()
+            })
+            .to_string()
         }
         Err(e) => json!({"error": e}).to_string(),
     }
 }
 
 /// Remove a screen by ID or name
-pub fn remove_screen(
-    app: &App,
-    screen_ref: String,
-    force: bool,
-) -> String {
+pub fn remove_screen(app: &App, screen_ref: String, force: bool) -> String {
     let mgr = app.screens.read().unwrap();
 
     // Check if any agents are running on this screen's panes
@@ -51,35 +48,42 @@ pub fn remove_screen(
             s.id.to_string() == screen_ref || s.name.to_lowercase() == screen_ref.to_lowercase()
         }) {
             let state = app.state.blocking_read();
-            let active_panes: Vec<u8> = screen.panes.iter().filter(|p| {
-                state.panes.get(&p.to_string())
-                    .map(|ps| ps.status == "active")
-                    .unwrap_or(false)
-            }).copied().collect();
+            let active_panes: Vec<u8> = screen
+                .panes
+                .iter()
+                .filter(|p| {
+                    state
+                        .panes
+                        .get(&p.to_string())
+                        .map(|ps| ps.status == "active")
+                        .unwrap_or(false)
+                })
+                .copied()
+                .collect();
 
             if !active_panes.is_empty() {
                 return json!({
                     "error": "Screen has active agents",
                     "active_panes": active_panes,
                     "hint": "Kill agents first or use force=true",
-                }).to_string();
+                })
+                .to_string();
             }
         }
     }
 
     match mgr.remove_screen(&screen_ref) {
-        Ok(removed) => {
-            json!({
-                "status": "removed",
-                "screen": {
-                    "id": removed.id,
-                    "name": removed.name,
-                    "panes": removed.panes,
-                },
-                "remaining_screens": mgr.list_screens().len(),
-                "remaining_panes": mgr.total_panes(),
-            }).to_string()
-        }
+        Ok(removed) => json!({
+            "status": "removed",
+            "screen": {
+                "id": removed.id,
+                "name": removed.name,
+                "panes": removed.panes,
+            },
+            "remaining_screens": mgr.list_screens().len(),
+            "remaining_panes": mgr.total_panes(),
+        })
+        .to_string(),
         Err(e) => json!({"error": e}).to_string(),
     }
 }
@@ -90,8 +94,11 @@ pub fn list_screens(app: &App) -> String {
     let state = app.state.blocking_read();
     let screens = mgr.list_screens();
 
-    let screen_data: Vec<serde_json::Value> = screens.iter().map(|s| {
-        let pane_data: Vec<serde_json::Value> = s.panes.iter().map(|p: &u8| {
+    let screen_data: Vec<serde_json::Value> =
+        screens
+            .iter()
+            .map(|s| {
+                let pane_data: Vec<serde_json::Value> = s.panes.iter().map(|p: &u8| {
             let ps = state.panes.get(&p.to_string());
             json!({
                 "pane": p,
@@ -106,22 +113,24 @@ pub fn list_screens(app: &App) -> String {
             })
         }).collect();
 
-        let active = pane_data.iter().filter(|p| p["status"] == "active").count();
-        let idle = pane_data.len() - active;
+                let active = pane_data.iter().filter(|p| p["status"] == "active").count();
+                let idle = pane_data.len() - active;
 
-        json!({
-            "id": s.id,
-            "name": s.name,
-            "layout": s.layout,
-            "pane_count": s.panes.len(),
-            "active": active,
-            "idle": idle,
-            "panes": pane_data,
-            "tmux_window": s.tmux_window,
-        })
-    }).collect();
+                json!({
+                    "id": s.id,
+                    "name": s.name,
+                    "layout": s.layout,
+                    "pane_count": s.panes.len(),
+                    "active": active,
+                    "idle": idle,
+                    "panes": pane_data,
+                    "tmux_window": s.tmux_window,
+                })
+            })
+            .collect();
 
-    let total_active: usize = screen_data.iter()
+    let total_active: usize = screen_data
+        .iter()
         .map(|s| s["active"].as_u64().unwrap_or(0) as usize)
         .sum();
 
@@ -131,7 +140,8 @@ pub fn list_screens(app: &App) -> String {
         "total_panes": mgr.total_panes(),
         "total_active": total_active,
         "total_idle": mgr.total_panes() as usize - total_active,
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Get screen summary for the dashboard

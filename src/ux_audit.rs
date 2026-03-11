@@ -5,8 +5,8 @@
 //! JS console errors, focus indicators, ARIA labels.
 
 use serde_json::{json, Value};
-use std::process::Command;
 use std::io::Write;
+use std::process::Command;
 
 // ========== UX Check Types ==========
 
@@ -46,7 +46,10 @@ pub fn audit_ux(url: &str) -> Value {
                 name: "playwright_available".into(),
                 category: "setup".into(),
                 passed: false,
-                details: format!("Playwright not available: {}. Install with: npm i -g playwright", e),
+                details: format!(
+                    "Playwright not available: {}. Install with: npm i -g playwright",
+                    e
+                ),
                 severity: "warning".into(),
             });
         }
@@ -76,7 +79,11 @@ pub fn audit_ux(url: &str) -> Value {
     // Score
     let total = checks.len();
     let passed = checks.iter().filter(|c| c.passed).count();
-    let score = if total > 0 { (passed as f64 / total as f64) * 100.0 } else { 0.0 };
+    let score = if total > 0 {
+        (passed as f64 / total as f64) * 100.0
+    } else {
+        0.0
+    };
     let grade = match score as u32 {
         90..=100 => "A",
         80..=89 => "B",
@@ -100,16 +107,19 @@ pub fn audit_ux(url: &str) -> Value {
         cats
     };
 
-    let category_summary: Vec<Value> = categories.iter().map(|cat| {
-        let cat_checks: Vec<&UxCheck> = checks.iter().filter(|c| c.category == *cat).collect();
-        let cat_passed = cat_checks.iter().filter(|c| c.passed).count();
-        json!({
-            "category": cat,
-            "passed": cat_passed,
-            "total": cat_checks.len(),
-            "all_pass": cat_passed == cat_checks.len(),
+    let category_summary: Vec<Value> = categories
+        .iter()
+        .map(|cat| {
+            let cat_checks: Vec<&UxCheck> = checks.iter().filter(|c| c.category == *cat).collect();
+            let cat_passed = cat_checks.iter().filter(|c| c.passed).count();
+            json!({
+                "category": cat,
+                "passed": cat_passed,
+                "total": cat_checks.len(),
+                "all_pass": cat_passed == cat_checks.len(),
+            })
         })
-    }).collect();
+        .collect();
 
     json!({
         "url": url,
@@ -148,7 +158,10 @@ fn run_playwright_audit(url: &str) -> Result<Vec<UxCheck>, String> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Playwright script failed: {}", stderr.chars().take(500).collect::<String>()));
+        return Err(format!(
+            "Playwright script failed: {}",
+            stderr.chars().take(500).collect::<String>()
+        ));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -156,7 +169,8 @@ fn run_playwright_audit(url: &str) -> Result<Vec<UxCheck>, String> {
 }
 
 fn generate_playwright_script(url: &str) -> String {
-    format!(r#"
+    format!(
+        r#"
 import {{ chromium }} from 'playwright';
 
 const url = '{}';
@@ -234,25 +248,32 @@ try {{
 }}
 
 console.log(JSON.stringify(results));
-"#, url)
+"#,
+        url
+    )
 }
 
 fn parse_playwright_output(output: &str) -> Result<Vec<UxCheck>, String> {
     // Find the JSON array in output (last line usually)
-    let json_line = output.lines().rev()
+    let json_line = output
+        .lines()
+        .rev()
         .find(|line| line.trim().starts_with('['))
         .ok_or("No JSON output from Playwright script")?;
 
     let arr: Vec<Value> = serde_json::from_str(json_line)
         .map_err(|e| format!("Failed to parse Playwright output: {}", e))?;
 
-    Ok(arr.iter().map(|v| UxCheck {
-        name: v["name"].as_str().unwrap_or("unknown").to_string(),
-        category: v["category"].as_str().unwrap_or("other").to_string(),
-        passed: v["passed"].as_bool().unwrap_or(false),
-        details: v["details"].as_str().unwrap_or("").to_string(),
-        severity: v["severity"].as_str().unwrap_or("info").to_string(),
-    }).collect())
+    Ok(arr
+        .iter()
+        .map(|v| UxCheck {
+            name: v["name"].as_str().unwrap_or("unknown").to_string(),
+            category: v["category"].as_str().unwrap_or("other").to_string(),
+            passed: v["passed"].as_bool().unwrap_or(false),
+            details: v["details"].as_str().unwrap_or("").to_string(),
+            severity: v["severity"].as_str().unwrap_or("info").to_string(),
+        })
+        .collect())
 }
 
 // ========== HTML Fetch ==========
@@ -268,15 +289,15 @@ fn fetch_page_html(url: &str) -> Result<String, String> {
         return Err(format!("curl returned status {}", output.status));
     }
 
-    String::from_utf8(output.stdout)
-        .map_err(|e| format!("Invalid UTF-8: {}", e))
+    String::from_utf8(output.stdout).map_err(|e| format!("Invalid UTF-8: {}", e))
 }
 
 // ========== Static HTML Checks ==========
 
 fn check_heading_hierarchy(html: &str) -> Vec<UxCheck> {
     let re = regex::Regex::new(r"<(h[1-6])\b").unwrap();
-    let headings: Vec<u8> = re.captures_iter(html)
+    let headings: Vec<u8> = re
+        .captures_iter(html)
         .filter_map(|c| c[1].chars().last()?.to_digit(10).map(|d| d as u8))
         .collect();
 
@@ -341,7 +362,10 @@ fn check_aria_labels(html: &str) -> Vec<UxCheck> {
         details: if empty_buttons == 0 {
             format!("All {} buttons have text or aria-label", total_buttons)
         } else {
-            format!("{}/{} buttons missing accessible text", empty_buttons, total_buttons)
+            format!(
+                "{}/{} buttons missing accessible text",
+                empty_buttons, total_buttons
+            )
         },
         severity: if empty_buttons > 0 { "warning" } else { "info" }.into(),
     });
@@ -349,7 +373,8 @@ fn check_aria_labels(html: &str) -> Vec<UxCheck> {
     // Check inputs without labels
     let input_re = regex::Regex::new(r"<input[^>]*>").unwrap();
     let inputs: Vec<&str> = input_re.find_iter(html).map(|m| m.as_str()).collect();
-    let unlabeled: Vec<&&str> = inputs.iter()
+    let unlabeled: Vec<&&str> = inputs
+        .iter()
         .filter(|i| !i.contains("aria-label") && !i.contains("placeholder"))
         .collect();
 
@@ -362,7 +387,12 @@ fn check_aria_labels(html: &str) -> Vec<UxCheck> {
         } else {
             format!("{}/{} inputs missing labels", unlabeled.len(), inputs.len())
         },
-        severity: if unlabeled.is_empty() { "info" } else { "warning" }.into(),
+        severity: if unlabeled.is_empty() {
+            "info"
+        } else {
+            "warning"
+        }
+        .into(),
     });
 
     checks
@@ -381,13 +411,17 @@ fn check_interactive_elements(html: &str) -> Vec<UxCheck> {
         name: "keyboard_handlers".into(),
         category: "accessibility".into(),
         passed: true, // Info only — onclick on buttons is fine
-        details: format!("{} onclick handlers, {} onkeydown handlers", onclick_count, onkeydown_count),
+        details: format!(
+            "{} onclick handlers, {} onkeydown handlers",
+            onclick_count, onkeydown_count
+        ),
         severity: "info".into(),
     });
 
     // Check for tabindex
     let tabindex_re = regex::Regex::new(r#"tabindex="([^"]*)""#).unwrap();
-    let negative_tabindex: Vec<&str> = tabindex_re.captures_iter(html)
+    let negative_tabindex: Vec<&str> = tabindex_re
+        .captures_iter(html)
         .filter(|c| c[1].starts_with('-'))
         .map(|c| c.get(1).unwrap().as_str())
         .collect();
@@ -399,9 +433,17 @@ fn check_interactive_elements(html: &str) -> Vec<UxCheck> {
         details: if negative_tabindex.is_empty() {
             "No negative tabindex values".into()
         } else {
-            format!("{} elements with negative tabindex (keyboard inaccessible)", negative_tabindex.len())
+            format!(
+                "{} elements with negative tabindex (keyboard inaccessible)",
+                negative_tabindex.len()
+            )
         },
-        severity: if negative_tabindex.is_empty() { "info" } else { "warning" }.into(),
+        severity: if negative_tabindex.is_empty() {
+            "info"
+        } else {
+            "warning"
+        }
+        .into(),
     });
 
     checks
@@ -424,7 +466,8 @@ fn check_meta_viewport(html: &str) -> Vec<UxCheck> {
 
 fn check_empty_states(html: &str) -> Vec<UxCheck> {
     // Check for "No data" or empty state handling
-    let has_empty_states = html.contains("no-data") || html.contains("No data") || html.contains("empty-state");
+    let has_empty_states =
+        html.contains("no-data") || html.contains("No data") || html.contains("empty-state");
     vec![UxCheck {
         name: "empty_states".into(),
         category: "ux_heuristic".into(),
@@ -447,9 +490,15 @@ fn check_reduced_motion(html: &str) -> Vec<UxCheck> {
         details: if has_reduced_motion {
             "prefers-reduced-motion media query found".into()
         } else {
-            "No prefers-reduced-motion support — animations may cause issues for sensitive users".into()
+            "No prefers-reduced-motion support — animations may cause issues for sensitive users"
+                .into()
         },
-        severity: if has_reduced_motion { "info" } else { "warning" }.into(),
+        severity: if has_reduced_motion {
+            "info"
+        } else {
+            "warning"
+        }
+        .into(),
     }]
 }
 

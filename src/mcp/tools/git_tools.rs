@@ -1,10 +1,10 @@
 //! Git isolation tools: git_sync, git_status, git_push, git_pr, git_merge.
 
+use super::super::types::*;
+use super::helpers::{json_err, pane_id_str, truncate};
 use crate::app::App;
 use crate::config;
 use crate::workspace;
-use super::super::types::*;
-use super::helpers::{json_err, truncate, pane_id_str};
 
 /// Execute os_git_sync — pull latest from base branch into agent's worktree
 pub async fn git_sync(app: &App, req: GitSyncRequest) -> String {
@@ -43,7 +43,8 @@ pub async fn git_sync(app: &App, req: GitSyncRequest) -> String {
         "branch": branch,
         "base_branch": base,
         "result": result.unwrap_or_else(|e| e.to_string()),
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Execute os_git_status — show git status/diff for agent's worktree
@@ -76,7 +77,8 @@ pub async fn git_status_tool(app: &App, req: GitStatusRequest) -> String {
         "branch": pane_data.branch_name,
         "status": status,
         "diff": truncate(&diff, 5000),
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Execute os_git_push — commit and push agent's current work
@@ -92,9 +94,9 @@ pub async fn git_push(app: &App, req: GitPushRequest) -> String {
         _ => return json_err(&format!("Pane {} has no git workspace", pane_num)),
     };
 
-    let msg = req.message.unwrap_or_else(|| {
-        format!("Pane {}: {}", pane_num, truncate(&pane_data.task, 60))
-    });
+    let msg = req
+        .message
+        .unwrap_or_else(|| format!("Pane {}: {}", pane_num, truncate(&pane_data.task, 60)));
 
     let commit_result = workspace::commit_all(&ws, &msg);
     let push_result = workspace::push_branch(&ws, &branch);
@@ -104,7 +106,8 @@ pub async fn git_push(app: &App, req: GitPushRequest) -> String {
         "branch": branch,
         "commit": commit_result.unwrap_or_else(|e| e.to_string()),
         "push": push_result.unwrap_or_else(|e| e.to_string()),
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Execute os_git_pr — create a PR from agent's branch
@@ -123,11 +126,14 @@ pub async fn git_pr(app: &App, req: GitPrRequest) -> String {
     let _ = workspace::commit_all(&ws, &format!("Pane {}: pre-PR commit", pane_num));
     let push_result = workspace::push_branch(&ws, &branch);
 
-    let title = req.title.unwrap_or_else(|| {
-        format!("[Pane {}] {}", pane_num, truncate(&pane_data.task, 50))
-    });
+    let title = req
+        .title
+        .unwrap_or_else(|| format!("[Pane {}] {}", pane_num, truncate(&pane_data.task, 50)));
     let body = req.body.unwrap_or_else(|| {
-        format!("## Task\n{}\n\nAutomated PR from DX Terminal pane {}", pane_data.task, pane_num)
+        format!(
+            "## Task\n{}\n\nAutomated PR from DX Terminal pane {}",
+            pane_data.task, pane_num
+        )
     });
     let pr_result = workspace::create_pr(&ws, &title, &body);
 
@@ -136,7 +142,8 @@ pub async fn git_pr(app: &App, req: GitPrRequest) -> String {
         "branch": branch,
         "push": push_result.unwrap_or_else(|e| e.to_string()),
         "pr": pr_result.unwrap_or_else(|e| e.to_string()),
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Merge an agent's branch back into the base branch
@@ -152,18 +159,27 @@ pub async fn git_merge(app: &App, req: GitMergeRequest) -> String {
         return json_err(&format!("Pane {} has no project", pane_num));
     }
 
-    let branch = req.branch.or(pane_data.branch_name.clone())
+    let branch = req
+        .branch
+        .or(pane_data.branch_name.clone())
         .unwrap_or_default();
     if branch.is_empty() {
         return json_err(&format!("Pane {} has no branch to merge", pane_num));
     }
 
-    let base = pane_data.base_branch.clone().unwrap_or_else(|| "main".into());
+    let base = pane_data
+        .base_branch
+        .clone()
+        .unwrap_or_else(|| "main".into());
     let project_name = &pane_data.project;
 
     match workspace::merge_branch(project_path, &branch, &base) {
         Ok(result) => {
-            let _ = crate::multi_agent::git_release_branch(&pane_id_str(pane_num), &branch, project_name);
+            let _ = crate::multi_agent::git_release_branch(
+                &pane_id_str(pane_num),
+                &branch,
+                project_name,
+            );
 
             serde_json::json!({
                 "status": "merged",
@@ -171,7 +187,8 @@ pub async fn git_merge(app: &App, req: GitMergeRequest) -> String {
                 "branch": branch,
                 "base": base,
                 "result": result,
-            }).to_string()
+            })
+            .to_string()
         }
         Err(e) => serde_json::json!({
             "status": "failed",
@@ -179,6 +196,7 @@ pub async fn git_merge(app: &App, req: GitMergeRequest) -> String {
             "branch": branch,
             "base": base,
             "error": e.to_string(),
-        }).to_string(),
+        })
+        .to_string(),
     }
 }

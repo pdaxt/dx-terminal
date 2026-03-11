@@ -35,10 +35,17 @@ pub fn check_shell_prompt(output: &str) -> bool {
 /// Check output for error patterns
 pub fn check_errors(output: &str) -> Option<String> {
     let patterns = [
-        "Error:", "FATAL:", "panic:", "Traceback",
-        "rate limit", "hit your limit", "SIGTERM",
-        "Max tool use reached", "conversation too long",
-        "APIError:", "AuthenticationError",
+        "Error:",
+        "FATAL:",
+        "panic:",
+        "Traceback",
+        "rate limit",
+        "hit your limit",
+        "SIGTERM",
+        "Max tool use reached",
+        "conversation too long",
+        "APIError:",
+        "AuthenticationError",
     ];
     for pat in &patterns {
         if output.contains(pat) {

@@ -2,10 +2,10 @@
 //!
 //! Thin MCP wrappers over crate::factory pipeline API.
 
-use crate::app::App;
-use crate::factory;
 use super::super::types::*;
 use super::helpers::*;
+use crate::app::App;
+use crate::factory;
 
 /// Start a factory pipeline: detect project → create pipeline → trigger auto_cycle.
 pub async fn factory_run(app: &App, req: FactoryRequest) -> String {
@@ -18,11 +18,14 @@ pub async fn factory_run(app: &App, req: FactoryRequest) -> String {
             Some((name, confidence)) => {
                 return json_err(&format!(
                     "Low confidence match ({:.0}%) to '{}'. Use project= to override.",
-                    confidence * 100.0, name
+                    confidence * 100.0,
+                    name
                 ));
             }
             None => {
-                return json_err("Could not identify a project. Be more specific or add project= parameter.");
+                return json_err(
+                    "Could not identify a project. Be more specific or add project= parameter.",
+                );
             }
         }
     };
@@ -44,14 +47,22 @@ pub async fn factory_run(app: &App, req: FactoryRequest) -> String {
 
     // Step 4: Return pipeline info
     let pipeline = factory::get_pipeline(&pipeline_id);
-    let stages: Vec<serde_json::Value> = pipeline.as_ref()
-        .map(|p| p.stages.iter().map(|s| serde_json::json!({
-            "name": s.name,
-            "role": s.role,
-            "task_id": s.task_id,
-            "status": s.status,
-            "pane": s.pane,
-        })).collect())
+    let stages: Vec<serde_json::Value> = pipeline
+        .as_ref()
+        .map(|p| {
+            p.stages
+                .iter()
+                .map(|s| {
+                    serde_json::json!({
+                        "name": s.name,
+                        "role": s.role,
+                        "task_id": s.task_id,
+                        "status": s.status,
+                        "pane": s.pane,
+                    })
+                })
+                .collect()
+        })
         .unwrap_or_default();
 
     serde_json::json!({
@@ -69,7 +80,9 @@ pub async fn factory_run(app: &App, req: FactoryRequest) -> String {
 pub fn factory_status(req: &FactoryStatusRequest) -> String {
     match &req.pipeline_id {
         Some(pid) => match factory::get_pipeline(pid) {
-            Some(pipeline) => serde_json::to_string(&pipeline).unwrap_or_else(|e| json_err(&e.to_string())),
+            Some(pipeline) => {
+                serde_json::to_string(&pipeline).unwrap_or_else(|e| json_err(&e.to_string()))
+            }
             None => json_err(&format!("Pipeline '{}' not found", pid)),
         },
         None => factory_list(),
@@ -99,7 +112,8 @@ pub fn factory_gate(req: &FactoryStatusRequest) -> String {
                 "command": c.command, "success": c.success,
                 "duration_ms": c.duration_ms, "output": truncate(&c.output, 200),
             })),
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => json_err(&e.to_string()),
     }
 }
@@ -107,23 +121,27 @@ pub fn factory_gate(req: &FactoryStatusRequest) -> String {
 /// List all pipelines.
 pub fn factory_list() -> String {
     let pipelines = factory::list_pipelines();
-    let active: Vec<&factory::PipelineView> = pipelines.iter()
+    let active: Vec<&factory::PipelineView> = pipelines
+        .iter()
         .filter(|p| p.status != "done" && p.status != "failed")
         .collect();
     let done = pipelines.iter().filter(|p| p.status == "done").count();
     let failed = pipelines.iter().filter(|p| p.status == "failed").count();
 
-    let summaries: Vec<serde_json::Value> = pipelines.iter().map(|p| {
-        serde_json::json!({
-            "id": p.id,
-            "project": p.project,
-            "description": truncate(&p.description, 50),
-            "template": p.template,
-            "status": p.status,
-            "stages": p.stages.len(),
-            "created_at": p.created_at,
+    let summaries: Vec<serde_json::Value> = pipelines
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "id": p.id,
+                "project": p.project,
+                "description": truncate(&p.description, 50),
+                "template": p.template,
+                "status": p.status,
+                "stages": p.stages.len(),
+                "created_at": p.created_at,
+            })
         })
-    }).collect();
+        .collect();
 
     serde_json::json!({
         "pipelines": summaries,
@@ -134,7 +152,8 @@ pub fn factory_list() -> String {
         "templates": factory::template_info().iter().map(|(name, stages)| {
             serde_json::json!({"name": name, "stages": stages})
         }).collect::<Vec<_>>(),
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Cancel a running pipeline — kills pending stages and returns panes to kill.
@@ -148,10 +167,14 @@ pub async fn factory_cancel(app: &App, req: &FactoryStatusRequest) -> String {
         Ok(result) => {
             // Kill running agents on the returned panes
             for pane in &result.running_panes {
-                let _ = super::panes::kill(app, super::super::types::KillRequest {
-                    pane: pane.to_string(),
-                    reason: Some(format!("Pipeline {} cancelled", pid)),
-                }).await;
+                let _ = super::panes::kill(
+                    app,
+                    super::super::types::KillRequest {
+                        pane: pane.to_string(),
+                        reason: Some(format!("Pipeline {} cancelled", pid)),
+                    },
+                )
+                .await;
             }
 
             serde_json::json!({
@@ -159,7 +182,8 @@ pub async fn factory_cancel(app: &App, req: &FactoryStatusRequest) -> String {
                 "pipeline_id": result.pipeline_id,
                 "cancelled_tasks": result.cancelled_tasks,
                 "killed_panes": result.running_panes,
-            }).to_string()
+            })
+            .to_string()
         }
         Err(e) => json_err(&format!("Cancel failed: {}", e)),
     }
@@ -172,7 +196,8 @@ pub fn factory_detect(req: &FactoryDetectRequest) -> String {
             "project": name,
             "confidence": format!("{:.0}%", confidence * 100.0),
             "confidence_raw": confidence,
-        }).to_string(),
+        })
+        .to_string(),
         None => json_err("No project matched. Check ~/Projects for git repos or run project_scan."),
     }
 }
@@ -200,7 +225,8 @@ pub fn factory_gate_result(req: &FactoryStatusRequest) -> String {
                 "command": c.command, "success": c.success,
                 "duration_ms": c.duration_ms, "output": truncate(&c.output, 500),
             })),
-        }).to_string(),
+        })
+        .to_string(),
         None => json_err(&format!("No gate results found for pipeline '{}'", pid)),
     }
 }
@@ -217,7 +243,8 @@ pub fn factory_retry(req: &FactoryStatusRequest) -> String {
             "pipeline_id": result.pipeline_id,
             "retried_tasks": result.retried_tasks,
             "task_ids": result.task_ids,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => json_err(&format!("Retry failed: {}", e)),
     }
 }
@@ -233,7 +260,8 @@ pub fn factory_events(req: &FactoryStatusRequest) -> String {
         "pipeline_id": pid,
         "event_count": events.len(),
         "events": events,
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Pause a pipeline — blocked/pending stages won't spawn until resumed.
@@ -246,7 +274,8 @@ pub fn factory_pause(req: &FactoryStatusRequest) -> String {
         Ok(()) => serde_json::json!({
             "status": "paused",
             "pipeline_id": pid,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => json_err(&format!("Pause failed: {}", e)),
     }
 }
@@ -261,7 +290,8 @@ pub fn factory_resume(req: &FactoryStatusRequest) -> String {
         Ok(()) => serde_json::json!({
             "status": "resumed",
             "pipeline_id": pid,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => json_err(&format!("Resume failed: {}", e)),
     }
 }
@@ -274,7 +304,8 @@ pub fn factory_retry_stage(req: &FactoryRetryStageRequest) -> String {
             "pipeline_id": req.pipeline_id,
             "stage": req.stage,
             "message": msg,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => json_err(&format!("Retry stage failed: {}", e)),
     }
 }
@@ -282,23 +313,43 @@ pub fn factory_retry_stage(req: &FactoryRetryStageRequest) -> String {
 /// Get factory inbox status — shows TUI-submitted requests and their pipeline mappings.
 pub fn factory_inbox() -> String {
     let inbox = factory::load_inbox();
-    let summary: Vec<serde_json::Value> = inbox.requests.iter().map(|r| {
-        serde_json::json!({
-            "id": r.id,
-            "request": truncate(&r.request, 60),
-            "status": r.status,
-            "pipeline_id": r.pipeline_id,
-            "classification": r.classification,
-            "task_count": r.tasks.len(),
-            "created_at": r.created_at,
-            "error": r.error,
+    let summary: Vec<serde_json::Value> = inbox
+        .requests
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "id": r.id,
+                "request": truncate(&r.request, 60),
+                "status": r.status,
+                "pipeline_id": r.pipeline_id,
+                "classification": r.classification,
+                "task_count": r.tasks.len(),
+                "created_at": r.created_at,
+                "error": r.error,
+            })
         })
-    }).collect();
+        .collect();
 
-    let pending = inbox.requests.iter().filter(|r| r.status == "pending").count();
-    let running = inbox.requests.iter().filter(|r| r.status == "running").count();
-    let complete = inbox.requests.iter().filter(|r| r.status == "complete").count();
-    let failed = inbox.requests.iter().filter(|r| r.status == "failed").count();
+    let pending = inbox
+        .requests
+        .iter()
+        .filter(|r| r.status == "pending")
+        .count();
+    let running = inbox
+        .requests
+        .iter()
+        .filter(|r| r.status == "running")
+        .count();
+    let complete = inbox
+        .requests
+        .iter()
+        .filter(|r| r.status == "complete")
+        .count();
+    let failed = inbox
+        .requests
+        .iter()
+        .filter(|r| r.status == "failed")
+        .count();
 
     serde_json::json!({
         "requests": summary,
@@ -309,7 +360,8 @@ pub fn factory_inbox() -> String {
             "failed": failed,
             "total": inbox.requests.len(),
         },
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Scan for conflicts in a pipeline's project.

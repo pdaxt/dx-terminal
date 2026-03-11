@@ -1,6 +1,6 @@
-use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 use crate::config;
 
@@ -12,11 +12,11 @@ pub struct QueueTask {
     pub role: String,
     pub task: String,
     pub prompt: String,
-    pub priority: u8,           // 1=highest, 5=lowest
+    pub priority: u8, // 1=highest, 5=lowest
     #[serde(default)]
     pub status: QueueStatus,
     #[serde(default)]
-    pub pane: Option<u8>,       // assigned pane (when running)
+    pub pane: Option<u8>, // assigned pane (when running)
     #[serde(default)]
     pub added_at: String,
     #[serde(default)]
@@ -58,7 +58,9 @@ pub enum QueueStatus {
 }
 
 impl Default for QueueStatus {
-    fn default() -> Self { Self::Pending }
+    fn default() -> Self {
+        Self::Pending
+    }
 }
 
 /// The full queue file
@@ -85,8 +87,12 @@ pub struct AutoConfig {
     pub cycle_interval_secs: u64,
 }
 
-fn default_max_retries() -> u32 { 2 }
-fn default_cycle_secs() -> u64 { 30 }
+fn default_max_retries() -> u32 {
+    2
+}
+fn default_cycle_secs() -> u64 {
+    30
+}
 
 impl Default for AutoConfig {
     fn default() -> Self {
@@ -166,18 +172,36 @@ fn gen_id() -> String {
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
     static COUNTER: AtomicU32 = AtomicU32::new(0);
-    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
     let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
     format!("t{}_{:04x}", ts % 10_000_000, seq % 0xFFFF)
 }
 
 /// Add a task to the queue
-pub fn add_task(project: &str, role: &str, task: &str, prompt: &str, priority: u8, depends_on: Vec<String>) -> Result<QueueTask> {
+pub fn add_task(
+    project: &str,
+    role: &str,
+    task: &str,
+    prompt: &str,
+    priority: u8,
+    depends_on: Vec<String>,
+) -> Result<QueueTask> {
     add_task_with_pipeline(project, role, task, prompt, priority, depends_on, None)
 }
 
 /// Add a task with an optional pipeline_id set atomically on creation
-pub fn add_task_with_pipeline(project: &str, role: &str, task: &str, prompt: &str, priority: u8, depends_on: Vec<String>, pipeline_id: Option<String>) -> Result<QueueTask> {
+pub fn add_task_with_pipeline(
+    project: &str,
+    role: &str,
+    task: &str,
+    prompt: &str,
+    priority: u8,
+    depends_on: Vec<String>,
+    pipeline_id: Option<String>,
+) -> Result<QueueTask> {
     let mut queue = load_queue();
 
     let new_task = QueueTask {
@@ -221,14 +245,22 @@ pub fn set_tmux_target(task_id: &str, target: &str) -> Result<()> {
 /// Get the next task to execute (highest priority pending task with no unresolved deps)
 pub fn next_task() -> Option<QueueTask> {
     let queue = load_queue();
-    let done_ids: Vec<&str> = queue.tasks.iter()
+    let done_ids: Vec<&str> = queue
+        .tasks
+        .iter()
         .filter(|t| t.status == QueueStatus::Done)
         .map(|t| t.id.as_str())
         .collect();
 
-    let mut pending: Vec<&QueueTask> = queue.tasks.iter()
+    let mut pending: Vec<&QueueTask> = queue
+        .tasks
+        .iter()
         .filter(|t| t.status == QueueStatus::Pending)
-        .filter(|t| t.depends_on.iter().all(|dep| done_ids.contains(&dep.as_str())))
+        .filter(|t| {
+            t.depends_on
+                .iter()
+                .all(|dep| done_ids.contains(&dep.as_str()))
+        })
         .collect();
 
     pending.sort_by_key(|t| t.priority);
@@ -256,7 +288,9 @@ pub fn mark_done(task_id: &str, result: &str) -> Result<()> {
         task.pane = None;
     }
     // Unblock tasks that depend on this one
-    let done_ids: Vec<String> = queue.tasks.iter()
+    let done_ids: Vec<String> = queue
+        .tasks
+        .iter()
         .filter(|t| t.status == QueueStatus::Done)
         .map(|t| t.id.clone())
         .collect();
@@ -283,7 +317,9 @@ pub fn mark_failed(task_id: &str, reason: &str) -> Result<()> {
 
     // Cascade: fail tasks that depend on this failed task (multi-pass for transitive deps)
     loop {
-        let failed_ids: Vec<String> = queue.tasks.iter()
+        let failed_ids: Vec<String> = queue
+            .tasks
+            .iter()
             .filter(|t| t.status == QueueStatus::Failed)
             .map(|t| t.id.clone())
             .collect();
@@ -299,7 +335,9 @@ pub fn mark_failed(task_id: &str, reason: &str) -> Result<()> {
                 }
             }
         }
-        if !changed { break; }
+        if !changed {
+            break;
+        }
     }
 
     save_queue(&queue)
@@ -362,7 +400,10 @@ pub fn clear_tasks(status: &str) -> Result<u32> {
 /// Get running task for a pane
 pub fn task_for_pane(pane: u8) -> Option<QueueTask> {
     let queue = load_queue();
-    queue.tasks.into_iter().find(|t| t.pane == Some(pane) && t.status == QueueStatus::Running)
+    queue
+        .tasks
+        .into_iter()
+        .find(|t| t.pane == Some(pane) && t.status == QueueStatus::Running)
 }
 
 /// Look up a task by ID
@@ -422,8 +463,15 @@ pub mod tests {
     fn test_add_task_with_pipeline_id() {
         let (_g, _d) = setup();
         let task = add_task_with_pipeline(
-            "proj", "qa", "test it", "run tests", 2, vec![], Some("pipe_123".to_string()),
-        ).unwrap();
+            "proj",
+            "qa",
+            "test it",
+            "run tests",
+            2,
+            vec![],
+            Some("pipe_123".to_string()),
+        )
+        .unwrap();
         assert_eq!(task.pipeline_id.as_deref(), Some("pipe_123"));
     }
 
@@ -444,7 +492,10 @@ pub mod tests {
         let _mid = add_task("p", "dev", "mid", "p", 3, vec![]).unwrap();
 
         let next = next_task().unwrap();
-        assert_eq!(next.id, high.id, "Should pick highest priority (lowest number)");
+        assert_eq!(
+            next.id, high.id,
+            "Should pick highest priority (lowest number)"
+        );
     }
 
     #[test]
@@ -488,7 +539,11 @@ pub mod tests {
         let t1_final = q.tasks.iter().find(|t| t.id == t1.id).unwrap();
         let t2_final = q.tasks.iter().find(|t| t.id == t2.id).unwrap();
         assert_eq!(t1_final.status, QueueStatus::Done);
-        assert_eq!(t2_final.status, QueueStatus::Pending, "t2 should be unblocked");
+        assert_eq!(
+            t2_final.status,
+            QueueStatus::Pending,
+            "t2 should be unblocked"
+        );
     }
 
     #[test]
@@ -501,9 +556,18 @@ pub mod tests {
         mark_failed(&t1.id, "build error").unwrap();
 
         let q = load_queue();
-        assert_eq!(q.tasks.iter().find(|t| t.id == t1.id).unwrap().status, QueueStatus::Failed);
-        assert_eq!(q.tasks.iter().find(|t| t.id == t2.id).unwrap().status, QueueStatus::Failed);
-        assert_eq!(q.tasks.iter().find(|t| t.id == t3.id).unwrap().status, QueueStatus::Failed);
+        assert_eq!(
+            q.tasks.iter().find(|t| t.id == t1.id).unwrap().status,
+            QueueStatus::Failed
+        );
+        assert_eq!(
+            q.tasks.iter().find(|t| t.id == t2.id).unwrap().status,
+            QueueStatus::Failed
+        );
+        assert_eq!(
+            q.tasks.iter().find(|t| t.id == t3.id).unwrap().status,
+            QueueStatus::Failed
+        );
     }
 
     #[test]
@@ -589,7 +653,16 @@ pub mod tests {
     fn test_queue_serialization_roundtrip() {
         let (_g, _d) = setup();
         add_task("proj", "dev", "build", "prompt", 2, vec![]).unwrap();
-        add_task_with_pipeline("proj", "qa", "test", "go", 1, vec![], Some("pipe_abc".into())).unwrap();
+        add_task_with_pipeline(
+            "proj",
+            "qa",
+            "test",
+            "go",
+            1,
+            vec![],
+            Some("pipe_abc".into()),
+        )
+        .unwrap();
 
         let q = load_queue();
         assert_eq!(q.tasks.len(), 2);

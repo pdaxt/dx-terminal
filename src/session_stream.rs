@@ -56,7 +56,11 @@ pub fn tail_session_events(jsonl_path: &str, max_events: usize) -> Vec<SessionEv
 
     // Read from end of file for large files
     let file_size = path.metadata().map(|m| m.len()).unwrap_or(0);
-    let seek_pos = if file_size > 500_000 { file_size - 500_000 } else { 0 };
+    let seek_pos = if file_size > 500_000 {
+        file_size - 500_000
+    } else {
+        0
+    };
 
     let file2 = match std::fs::File::open(path) {
         Ok(f) => f,
@@ -76,7 +80,9 @@ pub fn tail_session_events(jsonl_path: &str, max_events: usize) -> Vec<SessionEv
             Ok(l) => l,
             Err(_) => continue,
         };
-        if line.trim().is_empty() { continue; }
+        if line.trim().is_empty() {
+            continue;
+        }
 
         let v: Value = match serde_json::from_str(&line) {
             Ok(v) => v,
@@ -85,45 +91,71 @@ pub fn tail_session_events(jsonl_path: &str, max_events: usize) -> Vec<SessionEv
 
         // Parse based on type
         let entry_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
-        let role = v.get("role").or_else(|| v.get("message").and_then(|m| m.get("role")))
-            .and_then(|r| r.as_str()).map(|s| s.to_string());
-        let timestamp = v.get("timestamp").and_then(|t| t.as_str()).map(|s| s.to_string());
+        let role = v
+            .get("role")
+            .or_else(|| v.get("message").and_then(|m| m.get("role")))
+            .and_then(|r| r.as_str())
+            .map(|s| s.to_string());
+        let timestamp = v
+            .get("timestamp")
+            .and_then(|t| t.as_str())
+            .map(|s| s.to_string());
 
         match entry_type {
             "progress" => {
                 let data = v.get("data").cloned().unwrap_or(Value::Null);
                 let data_type = data.get("type").and_then(|t| t.as_str()).unwrap_or("");
                 // Skip noisy hook_progress
-                if data_type == "hook_progress" { continue; }
+                if data_type == "hook_progress" {
+                    continue;
+                }
 
                 match data_type {
                     "bash_progress" => {
-                        let output = data.get("output").and_then(|o| o.as_str())
+                        let output = data
+                            .get("output")
+                            .and_then(|o| o.as_str())
                             .map(|s| truncate(s, 500));
                         raw_events.push(SessionEvent {
                             kind: "bash_output".into(),
-                            role: None, tool: None, input: None,
-                            text: output, timestamp, cost_usd: None,
-                            tokens_in: None, tokens_out: None,
+                            role: None,
+                            tool: None,
+                            input: None,
+                            text: output,
+                            timestamp,
+                            cost_usd: None,
+                            tokens_in: None,
+                            tokens_out: None,
                         });
                     }
                     "waiting_for_task" => {
-                        let desc = data.get("taskDescription").and_then(|d| d.as_str())
+                        let desc = data
+                            .get("taskDescription")
+                            .and_then(|d| d.as_str())
                             .map(|s| s.to_string());
                         raw_events.push(SessionEvent {
                             kind: "waiting".into(),
-                            role: None, tool: None, input: None,
-                            text: desc, timestamp, cost_usd: None,
-                            tokens_in: None, tokens_out: None,
+                            role: None,
+                            tool: None,
+                            input: None,
+                            text: desc,
+                            timestamp,
+                            cost_usd: None,
+                            tokens_in: None,
+                            tokens_out: None,
                         });
                     }
                     "agent_progress" => {
                         raw_events.push(SessionEvent {
                             kind: "agent_progress".into(),
-                            role: None, tool: None, input: None,
+                            role: None,
+                            tool: None,
+                            input: None,
                             text: Some(serde_json::to_string(&data).unwrap_or_default()),
-                            timestamp, cost_usd: None,
-                            tokens_in: None, tokens_out: None,
+                            timestamp,
+                            cost_usd: None,
+                            tokens_in: None,
+                            tokens_out: None,
                         });
                     }
                     _ => {} // skip other progress types
@@ -139,8 +171,11 @@ pub fn tail_session_events(jsonl_path: &str, max_events: usize) -> Vec<SessionEv
                         let ct = item.get("type").and_then(|t| t.as_str()).unwrap_or("");
                         match ct {
                             "tool_use" => {
-                                let name = item.get("name").and_then(|n| n.as_str())
-                                    .unwrap_or("unknown").to_string();
+                                let name = item
+                                    .get("name")
+                                    .and_then(|n| n.as_str())
+                                    .unwrap_or("unknown")
+                                    .to_string();
                                 let input = item.get("input").cloned();
                                 // Extract a summary for display
                                 let summary = tool_input_summary(&name, &input);
@@ -151,19 +186,25 @@ pub fn tail_session_events(jsonl_path: &str, max_events: usize) -> Vec<SessionEv
                                     input,
                                     text: Some(summary),
                                     timestamp: timestamp.clone(),
-                                    cost_usd: None, tokens_in: None, tokens_out: None,
+                                    cost_usd: None,
+                                    tokens_in: None,
+                                    tokens_out: None,
                                 });
                             }
                             "tool_result" => {
-                                let result_text = item.get("content")
+                                let result_text = item
+                                    .get("content")
                                     .and_then(|c| {
-                                        if let Value::String(s) = c { Some(s.clone()) }
-                                        else if let Value::Array(arr) = c {
+                                        if let Value::String(s) = c {
+                                            Some(s.clone())
+                                        } else if let Value::Array(arr) = c {
                                             arr.first()
                                                 .and_then(|a| a.get("text"))
                                                 .and_then(|t| t.as_str())
                                                 .map(|s| s.to_string())
-                                        } else { None }
+                                        } else {
+                                            None
+                                        }
                                     })
                                     .map(|s| truncate(&s, 1000));
                                 raw_events.push(SessionEvent {
@@ -173,34 +214,46 @@ pub fn tail_session_events(jsonl_path: &str, max_events: usize) -> Vec<SessionEv
                                     input: None,
                                     text: result_text,
                                     timestamp: timestamp.clone(),
-                                    cost_usd: None, tokens_in: None, tokens_out: None,
+                                    cost_usd: None,
+                                    tokens_in: None,
+                                    tokens_out: None,
                                 });
                             }
                             "text" => {
-                                let text = item.get("text").and_then(|t| t.as_str())
+                                let text = item
+                                    .get("text")
+                                    .and_then(|t| t.as_str())
                                     .map(|s| truncate(s, 2000));
                                 if text.as_ref().map(|t| !t.is_empty()).unwrap_or(false) {
                                     raw_events.push(SessionEvent {
                                         kind: "text".into(),
                                         role: role.clone(),
-                                        tool: None, input: None,
+                                        tool: None,
+                                        input: None,
                                         text,
                                         timestamp: timestamp.clone(),
-                                        cost_usd: None, tokens_in: None, tokens_out: None,
+                                        cost_usd: None,
+                                        tokens_in: None,
+                                        tokens_out: None,
                                     });
                                 }
                             }
                             "thinking" => {
-                                let thought = item.get("thinking").and_then(|t| t.as_str())
+                                let thought = item
+                                    .get("thinking")
+                                    .and_then(|t| t.as_str())
                                     .map(|s| truncate(s, 500));
                                 if thought.is_some() {
                                     raw_events.push(SessionEvent {
                                         kind: "thinking".into(),
                                         role: role.clone(),
-                                        tool: None, input: None,
+                                        tool: None,
+                                        input: None,
                                         text: thought,
                                         timestamp: timestamp.clone(),
-                                        cost_usd: None, tokens_in: None, tokens_out: None,
+                                        cost_usd: None,
+                                        tokens_in: None,
+                                        tokens_out: None,
                                     });
                                 }
                             }
@@ -212,8 +265,11 @@ pub fn tail_session_events(jsonl_path: &str, max_events: usize) -> Vec<SessionEv
             "result" => {
                 raw_events.push(SessionEvent {
                     kind: "result".into(),
-                    role: None, tool: None, input: None,
-                    text: None, timestamp,
+                    role: None,
+                    tool: None,
+                    input: None,
+                    text: None,
+                    timestamp,
                     cost_usd: v.get("costUSD").and_then(|c| c.as_f64()),
                     tokens_in: v.get("inputTokens").and_then(|t| t.as_u64()),
                     tokens_out: v.get("outputTokens").and_then(|t| t.as_u64()),
@@ -235,13 +291,17 @@ pub struct SessionTailer {
 
 impl SessionTailer {
     pub fn new() -> Self {
-        Self { positions: HashMap::new() }
+        Self {
+            positions: HashMap::new(),
+        }
     }
 
     /// Get new events since last call for a given JSONL file.
     pub fn poll_new_events(&mut self, jsonl_path: &str, max_events: usize) -> Vec<SessionEvent> {
         let path = Path::new(jsonl_path);
-        if !path.exists() { return vec![]; }
+        if !path.exists() {
+            return vec![];
+        }
 
         let file_size = path.metadata().map(|m| m.len()).unwrap_or(0);
         let prev_pos = self.positions.get(jsonl_path).copied().unwrap_or(0);
@@ -277,7 +337,9 @@ impl SessionTailer {
             };
             current_pos += line.len() as u64 + 1; // +1 for newline
 
-            if line.trim().is_empty() { continue; }
+            if line.trim().is_empty() {
+                continue;
+            }
             let v: Value = match serde_json::from_str(&line) {
                 Ok(v) => v,
                 Err(_) => continue,
@@ -286,14 +348,27 @@ impl SessionTailer {
             // Quick filter — skip hook_progress
             let entry_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
             if entry_type == "progress" {
-                let dt = v.get("data").and_then(|d| d.get("type")).and_then(|t| t.as_str()).unwrap_or("");
-                if dt == "hook_progress" { continue; }
+                let dt = v
+                    .get("data")
+                    .and_then(|d| d.get("type"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("");
+                if dt == "hook_progress" {
+                    continue;
+                }
             }
 
             // Reuse the full parser via tail_session_events would be redundant,
             // so we inline quick parsing here
-            let role = v.get("message").and_then(|m| m.get("role")).and_then(|r| r.as_str()).map(|s| s.to_string());
-            let timestamp = v.get("timestamp").and_then(|t| t.as_str()).map(|s| s.to_string());
+            let role = v
+                .get("message")
+                .and_then(|m| m.get("role"))
+                .and_then(|r| r.as_str())
+                .map(|s| s.to_string());
+            let timestamp = v
+                .get("timestamp")
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string());
 
             if let Some(evt) = parse_single_entry(&v, role, timestamp) {
                 events.push(evt);
@@ -309,7 +384,11 @@ impl SessionTailer {
 }
 
 /// Parse a single JSONL entry into a SessionEvent.
-fn parse_single_entry(v: &Value, role: Option<String>, timestamp: Option<String>) -> Option<SessionEvent> {
+fn parse_single_entry(
+    v: &Value,
+    role: Option<String>,
+    timestamp: Option<String>,
+) -> Option<SessionEvent> {
     let entry_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
     match entry_type {
@@ -318,14 +397,32 @@ fn parse_single_entry(v: &Value, role: Option<String>, timestamp: Option<String>
             let dt = data.get("type").and_then(|t| t.as_str()).unwrap_or("");
             match dt {
                 "bash_progress" => Some(SessionEvent {
-                    kind: "bash_output".into(), role: None, tool: None, input: None,
-                    text: data.get("output").and_then(|o| o.as_str()).map(|s| truncate(s, 500)),
-                    timestamp, cost_usd: None, tokens_in: None, tokens_out: None,
+                    kind: "bash_output".into(),
+                    role: None,
+                    tool: None,
+                    input: None,
+                    text: data
+                        .get("output")
+                        .and_then(|o| o.as_str())
+                        .map(|s| truncate(s, 500)),
+                    timestamp,
+                    cost_usd: None,
+                    tokens_in: None,
+                    tokens_out: None,
                 }),
                 "waiting_for_task" => Some(SessionEvent {
-                    kind: "waiting".into(), role: None, tool: None, input: None,
-                    text: data.get("taskDescription").and_then(|d| d.as_str()).map(|s| s.to_string()),
-                    timestamp, cost_usd: None, tokens_in: None, tokens_out: None,
+                    kind: "waiting".into(),
+                    role: None,
+                    tool: None,
+                    input: None,
+                    text: data
+                        .get("taskDescription")
+                        .and_then(|d| d.as_str())
+                        .map(|s| s.to_string()),
+                    timestamp,
+                    cost_usd: None,
+                    tokens_in: None,
+                    tokens_out: None,
                 }),
                 _ => None,
             }
@@ -337,30 +434,60 @@ fn parse_single_entry(v: &Value, role: Option<String>, timestamp: Option<String>
                 let ct = item.get("type").and_then(|t| t.as_str()).unwrap_or("");
                 match ct {
                     "tool_use" => {
-                        let name = item.get("name").and_then(|n| n.as_str()).unwrap_or("?").to_string();
+                        let name = item
+                            .get("name")
+                            .and_then(|n| n.as_str())
+                            .unwrap_or("?")
+                            .to_string();
                         let input = item.get("input").cloned();
                         let summary = tool_input_summary(&name, &input);
                         Some(SessionEvent {
-                            kind: "tool_use".into(), role, tool: Some(name), input,
-                            text: Some(summary), timestamp,
-                            cost_usd: None, tokens_in: None, tokens_out: None,
+                            kind: "tool_use".into(),
+                            role,
+                            tool: Some(name),
+                            input,
+                            text: Some(summary),
+                            timestamp,
+                            cost_usd: None,
+                            tokens_in: None,
+                            tokens_out: None,
                         })
                     }
                     "tool_result" => {
                         let text = item.get("content").and_then(|c| {
-                            if let Value::String(s) = c { Some(truncate(s, 500)) }
-                            else { None }
+                            if let Value::String(s) = c {
+                                Some(truncate(s, 500))
+                            } else {
+                                None
+                            }
                         });
                         Some(SessionEvent {
-                            kind: "tool_result".into(), role, tool: None, input: None,
-                            text, timestamp, cost_usd: None, tokens_in: None, tokens_out: None,
+                            kind: "tool_result".into(),
+                            role,
+                            tool: None,
+                            input: None,
+                            text,
+                            timestamp,
+                            cost_usd: None,
+                            tokens_in: None,
+                            tokens_out: None,
                         })
                     }
                     "text" => {
-                        let text = item.get("text").and_then(|t| t.as_str()).map(|s| truncate(s, 2000));
+                        let text = item
+                            .get("text")
+                            .and_then(|t| t.as_str())
+                            .map(|s| truncate(s, 2000));
                         Some(SessionEvent {
-                            kind: "text".into(), role, tool: None, input: None,
-                            text, timestamp, cost_usd: None, tokens_in: None, tokens_out: None,
+                            kind: "text".into(),
+                            role,
+                            tool: None,
+                            input: None,
+                            text,
+                            timestamp,
+                            cost_usd: None,
+                            tokens_in: None,
+                            tokens_out: None,
                         })
                     }
                     _ => None,
@@ -370,7 +497,11 @@ fn parse_single_entry(v: &Value, role: Option<String>, timestamp: Option<String>
             }
         }
         "result" => Some(SessionEvent {
-            kind: "result".into(), role: None, tool: None, input: None, text: None,
+            kind: "result".into(),
+            role: None,
+            tool: None,
+            input: None,
+            text: None,
             timestamp,
             cost_usd: v.get("costUSD").and_then(|c| c.as_f64()),
             tokens_in: v.get("inputTokens").and_then(|t| t.as_u64()),
@@ -389,22 +520,34 @@ fn tool_input_summary(name: &str, input: &Option<Value>) -> String {
 
     match name {
         "Bash" => {
-            let cmd = input.get("command").and_then(|c| c.as_str()).unwrap_or("...");
+            let cmd = input
+                .get("command")
+                .and_then(|c| c.as_str())
+                .unwrap_or("...");
             format!("$ {}", truncate(cmd, 120))
         }
         "Read" => {
-            let path = input.get("file_path").and_then(|p| p.as_str()).unwrap_or("?");
+            let path = input
+                .get("file_path")
+                .and_then(|p| p.as_str())
+                .unwrap_or("?");
             // Show just filename
             let short = path.rsplit('/').next().unwrap_or(path);
             format!("Read {}", short)
         }
         "Write" => {
-            let path = input.get("file_path").and_then(|p| p.as_str()).unwrap_or("?");
+            let path = input
+                .get("file_path")
+                .and_then(|p| p.as_str())
+                .unwrap_or("?");
             let short = path.rsplit('/').next().unwrap_or(path);
             format!("Write {}", short)
         }
         "Edit" => {
-            let path = input.get("file_path").and_then(|p| p.as_str()).unwrap_or("?");
+            let path = input
+                .get("file_path")
+                .and_then(|p| p.as_str())
+                .unwrap_or("?");
             let short = path.rsplit('/').next().unwrap_or(path);
             format!("Edit {}", short)
         }
@@ -417,7 +560,10 @@ fn tool_input_summary(name: &str, input: &Option<Value>) -> String {
             format!("Grep /{}/", truncate(pat, 40))
         }
         "Agent" => {
-            let desc = input.get("description").and_then(|d| d.as_str()).unwrap_or("...");
+            let desc = input
+                .get("description")
+                .and_then(|d| d.as_str())
+                .unwrap_or("...");
             format!("Agent: {}", truncate(desc, 80))
         }
         _ => {
@@ -437,9 +583,13 @@ fn tool_input_summary(name: &str, input: &Option<Value>) -> String {
 }
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max { return s.to_string(); }
+    if s.len() <= max {
+        return s.to_string();
+    }
     // Find a valid char boundary at or before max
     let mut end = max;
-    while end > 0 && !s.is_char_boundary(end) { end -= 1; }
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
     format!("{}...", &s[..end])
 }

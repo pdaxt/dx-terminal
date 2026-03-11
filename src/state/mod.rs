@@ -1,15 +1,15 @@
-pub mod types;
-pub mod persistence;
 pub mod events;
+pub mod persistence;
+pub mod types;
 
+use chrono::Local;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use chrono::Local;
 
-use self::types::{DxTerminalState, LogEntry, PaneState};
-use self::persistence::{load_state, save_state};
 use self::events::{EventBus, StateEvent};
+use self::persistence::{load_state, save_state};
+use self::types::{DxTerminalState, LogEntry, PaneState};
 use crate::config;
 
 pub struct StateManager {
@@ -31,7 +31,11 @@ impl StateManager {
 
     pub async fn get_pane(&self, pane: u8) -> PaneState {
         let state = self.state.read().await;
-        state.panes.get(&pane.to_string()).cloned().unwrap_or_default()
+        state
+            .panes
+            .get(&pane.to_string())
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub async fn set_pane(&self, pane: u8, pane_state: PaneState) {
@@ -101,7 +105,6 @@ impl StateManager {
         let state = self.state.read().await;
         state.space_project_map.get(space).cloned()
     }
-
 }
 
 pub fn now() -> String {

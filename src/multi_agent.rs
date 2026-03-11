@@ -1,8 +1,8 @@
+use chrono::Local;
+use rusqlite::{params, Connection};
+use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::process::Command;
-use chrono::Local;
-use rusqlite::{Connection, params};
-use serde_json::{json, Value};
 
 use crate::config;
 
@@ -247,9 +247,11 @@ pub(crate) fn coordination_db() -> Result<Connection, String> {
     let path = dir.join("coordination.db");
     let conn = Connection::open(&path).map_err(|e| format!("DB open: {}", e))?;
     conn.execute_batch(
-        "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;"
-    ).map_err(|e| format!("DB pragma: {}", e))?;
-    conn.execute_batch(COORDINATION_SCHEMA).map_err(|e| format!("DB schema: {}", e))?;
+        "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;",
+    )
+    .map_err(|e| format!("DB pragma: {}", e))?;
+    conn.execute_batch(COORDINATION_SCHEMA)
+        .map_err(|e| format!("DB schema: {}", e))?;
     maybe_migrate_json(&conn);
     maybe_migrate_schema(&conn);
     Ok(conn)
@@ -297,7 +299,12 @@ fn is_port_in_use(port: u16) -> (bool, Option<String>) {
 
 fn is_pane_active(pane_id: &str) -> bool {
     if let Ok(output) = Command::new("tmux")
-        .args(["list-panes", "-a", "-F", "#{session_name}:#{window_index}.#{pane_index}"])
+        .args([
+            "list-panes",
+            "-a",
+            "-F",
+            "#{session_name}:#{window_index}.#{pane_index}",
+        ])
         .output()
     {
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -318,7 +325,12 @@ fn gen_short_id(seed: &str) -> String {
 /// Collect all active tmux panes in one call (avoids N subprocess spawns)
 fn active_panes() -> Vec<String> {
     if let Ok(output) = Command::new("tmux")
-        .args(["list-panes", "-a", "-F", "#{session_name}:#{window_index}.#{pane_index}"])
+        .args([
+            "list-panes",
+            "-a",
+            "-F",
+            "#{session_name}:#{window_index}.#{pane_index}",
+        ])
         .output()
     {
         if output.status.success() {
@@ -336,10 +348,16 @@ fn active_panes() -> Vec<String> {
 // ============================================================================
 
 fn maybe_migrate_json(conn: &Connection) {
-    let version: i64 = conn.query_row(
-        "SELECT COALESCE(MAX(version), 0) FROM schema_version", [], |r| r.get(0)
-    ).unwrap_or(0);
-    if version >= 1 { return; }
+    let version: i64 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_version",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    if version >= 1 {
+        return;
+    }
 
     let dir = registry_dir();
     migrate_ports(conn, &dir);
@@ -352,13 +370,15 @@ fn maybe_migrate_json(conn: &Connection) {
 
     let _ = conn.execute(
         "INSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (1, ?1)",
-        params![now_iso()]
+        params![now_iso()],
     );
 }
 
 fn read_legacy_json(dir: &PathBuf, name: &str) -> Option<Value> {
     let path = dir.join(name);
-    if !path.exists() { return None; }
+    if !path.exists() {
+        return None;
+    }
     let content = std::fs::read_to_string(&path).ok()?;
     let v: Value = serde_json::from_str(&content).ok()?;
     // Rename to .migrated so we don't re-read
@@ -367,7 +387,9 @@ fn read_legacy_json(dir: &PathBuf, name: &str) -> Option<Value> {
 }
 
 fn migrate_ports(conn: &Connection, dir: &PathBuf) {
-    let Some(data) = read_legacy_json(dir, "ports.json") else { return };
+    let Some(data) = read_legacy_json(dir, "ports.json") else {
+        return;
+    };
     if let Some(allocs) = data["allocations"].as_object() {
         for (port_str, info) in allocs {
             let port: i64 = port_str.parse().unwrap_or(0);
@@ -383,7 +405,9 @@ fn migrate_ports(conn: &Connection, dir: &PathBuf) {
 }
 
 fn migrate_agents(conn: &Connection, dir: &PathBuf) {
-    let Some(data) = read_legacy_json(dir, "agents.json") else { return };
+    let Some(data) = read_legacy_json(dir, "agents.json") else {
+        return;
+    };
     if let Some(agents) = data["agents"].as_object() {
         for (pane_id, info) in agents {
             let files_str = info["files"].to_string();
@@ -410,7 +434,9 @@ fn migrate_agents(conn: &Connection, dir: &PathBuf) {
 }
 
 fn migrate_git(conn: &Connection, dir: &PathBuf) {
-    let Some(data) = read_legacy_json(dir, "git.json") else { return };
+    let Some(data) = read_legacy_json(dir, "git.json") else {
+        return;
+    };
     if let Some(branches) = data["branches"].as_object() {
         for (key, info) in branches {
             let _ = conn.execute(
@@ -424,7 +450,9 @@ fn migrate_git(conn: &Connection, dir: &PathBuf) {
 }
 
 fn migrate_builds(conn: &Connection, dir: &PathBuf) {
-    let Some(data) = read_legacy_json(dir, "builds.json") else { return };
+    let Some(data) = read_legacy_json(dir, "builds.json") else {
+        return;
+    };
     if let Some(active) = data["active"].as_object() {
         for (project, info) in active {
             let _ = conn.execute(
@@ -452,7 +480,9 @@ fn migrate_builds(conn: &Connection, dir: &PathBuf) {
 }
 
 fn migrate_tasks(conn: &Connection, dir: &PathBuf) {
-    let Some(data) = read_legacy_json(dir, "tasks.json") else { return };
+    let Some(data) = read_legacy_json(dir, "tasks.json") else {
+        return;
+    };
     if let Some(queue) = data["queue"].as_array() {
         for t in queue {
             let _ = conn.execute(
@@ -477,7 +507,9 @@ fn migrate_tasks(conn: &Connection, dir: &PathBuf) {
 }
 
 fn migrate_knowledge(conn: &Connection, dir: &PathBuf) {
-    let Some(data) = read_legacy_json(dir, "knowledge.json") else { return };
+    let Some(data) = read_legacy_json(dir, "knowledge.json") else {
+        return;
+    };
     if let Some(entries) = data["entries"].as_array() {
         for e in entries {
             let files_str = e["files"].to_string();
@@ -499,7 +531,9 @@ fn migrate_knowledge(conn: &Connection, dir: &PathBuf) {
 }
 
 fn migrate_messages(conn: &Connection, dir: &PathBuf) {
-    let Some(data) = read_legacy_json(dir, "messages.json") else { return };
+    let Some(data) = read_legacy_json(dir, "messages.json") else {
+        return;
+    };
     if let Some(msgs) = data["messages"].as_array() {
         for m in msgs {
             let read_by_str = m["read_by"].to_string();
@@ -524,8 +558,16 @@ fn migrate_messages(conn: &Connection, dir: &PathBuf) {
 
 /// Allocate a port for a service. Returns existing allocation if service already has one.
 /// Tries preferred port first, then scans 3001-3099 for a free one.
-pub fn port_allocate(service: &str, pane_id: &str, preferred: Option<u16>, description: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+pub fn port_allocate(
+    service: &str,
+    pane_id: &str,
+    preferred: Option<u16>,
+    description: &str,
+) -> Value {
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
 
     let tx = match conn.unchecked_transaction() {
         Ok(t) => t,
@@ -533,9 +575,13 @@ pub fn port_allocate(service: &str, pane_id: &str, preferred: Option<u16>, descr
     };
 
     // Check if service already has a port
-    let existing: Option<i64> = tx.query_row(
-        "SELECT port FROM ports WHERE service = ?1", params![service], |r| r.get(0)
-    ).ok();
+    let existing: Option<i64> = tx
+        .query_row(
+            "SELECT port FROM ports WHERE service = ?1",
+            params![service],
+            |r| r.get(0),
+        )
+        .ok();
 
     if let Some(port) = existing {
         let (in_use, pid) = is_port_in_use(port as u16);
@@ -545,7 +591,7 @@ pub fn port_allocate(service: &str, pane_id: &str, preferred: Option<u16>, descr
         // Port allocated but not in use — reclaim it, update pane_id
         let _ = tx.execute(
             "UPDATE ports SET pane_id = ?1, description = ?2, allocated_at = ?3 WHERE port = ?4",
-            params![pane_id, description, now_iso(), port]
+            params![pane_id, description, now_iso(), port],
         );
         let _ = tx.commit();
         return json!({"status": "allocated", "port": port, "service": service});
@@ -570,7 +616,9 @@ pub fn port_allocate(service: &str, pane_id: &str, preferred: Option<u16>, descr
     if let Some(pref) = preferred {
         if !allocated_ports.contains(&(pref as i64)) {
             let (in_use, _) = is_port_in_use(pref);
-            if !in_use { port = Some(pref); }
+            if !in_use {
+                port = Some(pref);
+            }
         }
     }
 
@@ -601,11 +649,20 @@ pub fn port_allocate(service: &str, pane_id: &str, preferred: Option<u16>, descr
 
 /// Release a port allocation, freeing it for reuse.
 pub fn port_release(port: u16) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
-    let service: Option<String> = conn.query_row(
-        "SELECT service FROM ports WHERE port = ?1", params![port as i64], |r| r.get(0)
-    ).ok();
-    let rows = conn.execute("DELETE FROM ports WHERE port = ?1", params![port as i64]).unwrap_or(0);
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
+    let service: Option<String> = conn
+        .query_row(
+            "SELECT service FROM ports WHERE port = ?1",
+            params![port as i64],
+            |r| r.get(0),
+        )
+        .ok();
+    let rows = conn
+        .execute("DELETE FROM ports WHERE port = ?1", params![port as i64])
+        .unwrap_or(0);
     if rows > 0 {
         json!({"status": "released", "port": port, "service": service})
     } else {
@@ -615,14 +672,21 @@ pub fn port_release(port: u16) -> Value {
 
 /// List all allocated ports with their services and active/pid status.
 pub fn port_list() -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let mut stmt = match conn.prepare("SELECT port, service, pane_id FROM ports") {
         Ok(s) => s,
         Err(e) => return json!({"error": format!("Query: {}", e)}),
     };
     let mut result = vec![];
     let rows = stmt.query_map([], |r| {
-        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+        ))
     });
     if let Ok(rows) = rows {
         for row in rows.flatten() {
@@ -639,9 +703,14 @@ pub fn port_list() -> Value {
 
 /// Look up the port allocated to a specific service.
 pub fn port_get(service: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let row: Result<i64, _> = conn.query_row(
-        "SELECT port FROM ports WHERE service = ?1", params![service], |r| r.get(0)
+        "SELECT port FROM ports WHERE service = ?1",
+        params![service],
+        |r| r.get(0),
     );
     match row {
         Ok(port) => {
@@ -659,7 +728,10 @@ pub fn port_get(service: &str) -> Value {
 /// Register an agent in the coordination DB. Upserts on pane_id.
 /// Returns list of other agents working on the same project.
 pub fn agent_register(pane_id: &str, project: &str, task: &str, files: &[String]) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let now = now_iso();
     let files_json = serde_json::to_string(files).unwrap_or_else(|_| "[]".into());
     let session_id = uuid::Uuid::new_v4().to_string();
@@ -674,7 +746,7 @@ pub fn agent_register(pane_id: &str, project: &str, task: &str, files: &[String]
     // Create session record
     let _ = conn.execute(
         "INSERT INTO sessions (session_id, pane_id, project, started_at) VALUES (?1, ?2, ?3, ?4)",
-        params![session_id, pane_id, project, now]
+        params![session_id, pane_id, project, now],
     );
 
     // Find other agents on same project
@@ -697,26 +769,38 @@ pub fn agent_register(pane_id: &str, project: &str, task: &str, files: &[String]
 
 /// Update an agent's task and optionally its file list.
 pub fn agent_update(pane_id: &str, task: &str, files: Option<&[String]>) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let rows = if let Some(f) = files {
         let files_json = serde_json::to_string(f).unwrap_or_else(|_| "[]".into());
         conn.execute(
             "UPDATE agents SET task = ?1, files = ?2, last_update = ?3 WHERE pane_id = ?4",
-            params![task, files_json, now_iso(), pane_id]
-        ).unwrap_or(0)
+            params![task, files_json, now_iso(), pane_id],
+        )
+        .unwrap_or(0)
     } else {
         conn.execute(
             "UPDATE agents SET task = ?1, last_update = ?2 WHERE pane_id = ?3",
-            params![task, now_iso(), pane_id]
-        ).unwrap_or(0)
+            params![task, now_iso(), pane_id],
+        )
+        .unwrap_or(0)
     };
-    if rows > 0 { json!({"status": "updated"}) } else { json!({"status": "not_found"}) }
+    if rows > 0 {
+        json!({"status": "updated"})
+    } else {
+        json!({"status": "not_found"})
+    }
 }
 
 /// List all registered agents, optionally filtered by project.
 /// Includes tmux pane active status for each agent.
 pub fn agent_list(project: Option<&str>) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let mut result = vec![];
 
     let query = if project.is_some() {
@@ -730,9 +814,10 @@ pub fn agent_list(project: Option<&str>) -> Value {
         Err(e) => return json!({"error": format!("Query: {}", e)}),
     };
 
-    let extract = |r: &rusqlite::Row| -> rusqlite::Result<(String, String, String, String, String)> {
-        Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
-    };
+    let extract =
+        |r: &rusqlite::Row| -> rusqlite::Result<(String, String, String, String, String)> {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        };
     let rows_result = if let Some(p) = project {
         stmt.query_map(params![p], extract)
     } else {
@@ -755,37 +840,56 @@ pub fn agent_list(project: Option<&str>) -> Value {
 
 /// Remove an agent from the coordination DB. CASCADE deletes its file locks.
 pub fn agent_deregister(pane_id: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let now = now_iso();
 
     // End any active session
-    let session_id: Option<String> = conn.query_row(
-        "SELECT session_id FROM agents WHERE pane_id = ?1", params![pane_id], |r| r.get(0)
-    ).ok();
+    let session_id: Option<String> = conn
+        .query_row(
+            "SELECT session_id FROM agents WHERE pane_id = ?1",
+            params![pane_id],
+            |r| r.get(0),
+        )
+        .ok();
 
     if let Some(ref sid) = session_id {
         let _ = conn.execute(
             "UPDATE sessions SET ended_at = ?1, status = 'ended', \
              duration_secs = CAST((julianday(?1) - julianday(started_at)) * 86400 AS INTEGER) \
              WHERE session_id = ?2 AND status = 'active'",
-            params![now, sid]
+            params![now, sid],
         );
     }
 
     // Mark as deregistered (keep for history) and release locks
-    let rows = conn.execute(
-        "UPDATE agents SET status = 'deregistered', deregistered_at = ?1 WHERE pane_id = ?2",
-        params![now, pane_id]
-    ).unwrap_or(0);
+    let rows = conn
+        .execute(
+            "UPDATE agents SET status = 'deregistered', deregistered_at = ?1 WHERE pane_id = ?2",
+            params![now, pane_id],
+        )
+        .unwrap_or(0);
 
     // Release locks held by this agent
-    let _ = conn.execute("DELETE FROM file_locks WHERE pane_id = ?1", params![pane_id]);
+    let _ = conn.execute(
+        "DELETE FROM file_locks WHERE pane_id = ?1",
+        params![pane_id],
+    );
     // Release ports
     let _ = conn.execute("DELETE FROM ports WHERE pane_id = ?1", params![pane_id]);
     // Release git branches
-    let _ = conn.execute("DELETE FROM git_branches WHERE pane_id = ?1", params![pane_id]);
+    let _ = conn.execute(
+        "DELETE FROM git_branches WHERE pane_id = ?1",
+        params![pane_id],
+    );
 
-    if rows > 0 { json!({"status": "deregistered"}) } else { json!({"status": "not_found"}) }
+    if rows > 0 {
+        json!({"status": "deregistered"})
+    } else {
+        json!({"status": "not_found"})
+    }
 }
 
 // ============================================================================
@@ -794,7 +898,10 @@ pub fn agent_deregister(pane_id: &str) -> Value {
 
 /// Update agent heartbeat and optionally its current task/status.
 pub fn heartbeat(pane_id: &str, task: Option<&str>, status: Option<&str>) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let now = now_iso();
 
     let rows = if let Some(t) = task {
@@ -812,28 +919,35 @@ pub fn heartbeat(pane_id: &str, task: Option<&str>, status: Option<&str>) -> Val
     if let Some(s) = status {
         let _ = conn.execute(
             "UPDATE agents SET status = ?1 WHERE pane_id = ?2",
-            params![s, pane_id]
+            params![s, pane_id],
         );
     }
 
-    if rows > 0 { json!({"status": "ok", "heartbeat": now}) } else { json!({"error": "agent not found or not active"}) }
+    if rows > 0 {
+        json!({"status": "ok", "heartbeat": now})
+    } else {
+        json!({"error": "agent not found or not active"})
+    }
 }
 
 /// Start a new tracking session for an agent.
 pub fn session_start(pane_id: &str, project: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let now = now_iso();
     let session_id = uuid::Uuid::new_v4().to_string();
 
     let _ = conn.execute(
         "INSERT INTO sessions (session_id, pane_id, project, started_at) VALUES (?1, ?2, ?3, ?4)",
-        params![session_id, pane_id, project, now]
+        params![session_id, pane_id, project, now],
     );
 
     // Link session to agent
     let _ = conn.execute(
         "UPDATE agents SET session_id = ?1, last_heartbeat = ?2 WHERE pane_id = ?3",
-        params![session_id, now, pane_id]
+        params![session_id, now, pane_id],
     );
 
     json!({"session_id": session_id, "started_at": now})
@@ -841,22 +955,34 @@ pub fn session_start(pane_id: &str, project: &str) -> Value {
 
 /// End a tracking session with summary.
 pub fn session_end(session_id: &str, summary: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let now = now_iso();
 
-    let rows = conn.execute(
-        "UPDATE sessions SET ended_at = ?1, status = 'ended', summary = ?2, \
+    let rows = conn
+        .execute(
+            "UPDATE sessions SET ended_at = ?1, status = 'ended', summary = ?2, \
          duration_secs = CAST((julianday(?1) - julianday(started_at)) * 86400 AS INTEGER) \
          WHERE session_id = ?3 AND status = 'active'",
-        params![now, summary, session_id]
-    ).unwrap_or(0);
+            params![now, summary, session_id],
+        )
+        .unwrap_or(0);
 
-    if rows > 0 { json!({"status": "ended", "ended_at": now}) } else { json!({"error": "session not found or already ended"}) }
+    if rows > 0 {
+        json!({"status": "ended", "ended_at": now})
+    } else {
+        json!({"error": "session not found or already ended"})
+    }
 }
 
 /// List all active agents (simple view).
 pub fn who() -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let mut agents = vec![];
     let mut stmt = match conn.prepare(
         "SELECT pane_id, project, task, status, last_heartbeat, session_id FROM agents WHERE status IN ('active', 'busy', 'idle')"
@@ -887,20 +1013,29 @@ pub fn who() -> Value {
 
 /// Force-steal a lock with justification. Releases existing lock holder.
 pub fn lock_steal(pane_id: &str, file_path: &str, reason: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let now = now_iso();
 
     // Check who currently holds the lock
-    let prev: Option<(String, String)> = conn.query_row(
-        "SELECT pane_id, reason FROM file_locks WHERE file_path = ?1",
-        params![file_path], |r| Ok((r.get(0)?, r.get(1)?))
-    ).ok();
+    let prev: Option<(String, String)> = conn
+        .query_row(
+            "SELECT pane_id, reason FROM file_locks WHERE file_path = ?1",
+            params![file_path],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok();
 
     // Delete existing and insert new
-    let _ = conn.execute("DELETE FROM file_locks WHERE file_path = ?1", params![file_path]);
+    let _ = conn.execute(
+        "DELETE FROM file_locks WHERE file_path = ?1",
+        params![file_path],
+    );
     let _ = conn.execute(
         "INSERT INTO file_locks (file_path, pane_id, reason, acquired_at) VALUES (?1, ?2, ?3, ?4)",
-        params![file_path, pane_id, reason, now]
+        params![file_path, pane_id, reason, now],
     );
 
     json!({
@@ -914,7 +1049,10 @@ pub fn lock_steal(pane_id: &str, file_path: &str, reason: &str) -> Value {
 
 /// Detect concurrent work on same files across agents.
 pub fn conflict_scan(project: Option<&str>) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let mut conflicts = vec![];
 
     // Find files locked by different agents working on the same project
@@ -929,9 +1067,10 @@ pub fn conflict_scan(project: Option<&str>) -> Value {
              WHERE a.status = 'active'"
         };
         if let Ok(mut stmt) = conn.prepare(query) {
-            let extract = |r: &rusqlite::Row| -> rusqlite::Result<(String, String, String, String)> {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
-            };
+            let extract =
+                |r: &rusqlite::Row| -> rusqlite::Result<(String, String, String, String)> {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+                };
             let rows = if let Some(p) = project {
                 stmt.query_map(params![p], extract)
             } else {
@@ -939,14 +1078,17 @@ pub fn conflict_scan(project: Option<&str>) -> Value {
             };
             if let Ok(rows) = rows {
                 for row in rows.flatten() {
-                    conflicts.push(json!({"file": row.0, "holder": row.1, "reason": row.2, "project": row.3}));
+                    conflicts.push(
+                        json!({"file": row.0, "holder": row.1, "reason": row.2, "project": row.3}),
+                    );
                 }
             }
         }
     }
 
     // Also check agent file lists for overlap (not just locks)
-    let mut file_agents: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    let mut file_agents: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
     {
         let query = if project.is_some() {
             "SELECT pane_id, files FROM agents WHERE status = 'active' AND project = ?1"
@@ -974,7 +1116,8 @@ pub fn conflict_scan(project: Option<&str>) -> Value {
         }
     }
 
-    let overlaps: Vec<Value> = file_agents.iter()
+    let overlaps: Vec<Value> = file_agents
+        .iter()
         .filter(|(_, agents)| agents.len() > 1)
         .map(|(f, agents)| json!({"file": f, "agents": agents}))
         .collect();
@@ -989,7 +1132,10 @@ pub fn conflict_scan(project: Option<&str>) -> Value {
 /// Acquire file locks atomically. Fails if any file is locked by another agent.
 /// Uses a transaction to prevent races between check and insert.
 pub fn lock_acquire(pane_id: &str, files: &[String], reason: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
 
     let tx = match conn.unchecked_transaction() {
         Ok(t) => t,
@@ -999,10 +1145,13 @@ pub fn lock_acquire(pane_id: &str, files: &[String], reason: &str) -> Value {
     // Check for conflicts
     let mut blocked = vec![];
     for f in files {
-        let conflict: Option<(String, String)> = tx.query_row(
-            "SELECT pane_id, reason FROM file_locks WHERE file_path = ?1 AND pane_id != ?2",
-            params![f, pane_id], |r| Ok((r.get(0)?, r.get(1)?))
-        ).ok();
+        let conflict: Option<(String, String)> = tx
+            .query_row(
+                "SELECT pane_id, reason FROM file_locks WHERE file_path = ?1 AND pane_id != ?2",
+                params![f, pane_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok();
         if let Some((owner, lock_reason)) = conflict {
             blocked.push(json!({"file": f, "locked_by": owner, "reason": lock_reason}));
         }
@@ -1018,7 +1167,7 @@ pub fn lock_acquire(pane_id: &str, files: &[String], reason: &str) -> Value {
             "INSERT INTO file_locks (file_path, pane_id, reason, acquired_at) \
              VALUES (?1, ?2, ?3, ?4) \
              ON CONFLICT(file_path) DO UPDATE SET pane_id=?2, reason=?3, acquired_at=?4",
-            params![f, pane_id, reason, now]
+            params![f, pane_id, reason, now],
         );
     }
     let _ = tx.commit();
@@ -1027,7 +1176,10 @@ pub fn lock_acquire(pane_id: &str, files: &[String], reason: &str) -> Value {
 
 /// Release file locks. If files is empty, releases all locks for this pane.
 pub fn lock_release(pane_id: &str, files: &[String]) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let mut released = vec![];
 
     if files.is_empty() {
@@ -1037,16 +1189,25 @@ pub fn lock_release(pane_id: &str, files: &[String]) -> Value {
             Err(e) => return json!({"error": format!("Query: {}", e)}),
         };
         if let Ok(rows) = stmt.query_map(params![pane_id], |r| r.get::<_, String>(0)) {
-            for row in rows.flatten() { released.push(row); }
+            for row in rows.flatten() {
+                released.push(row);
+            }
         }
-        let _ = conn.execute("DELETE FROM file_locks WHERE pane_id = ?1", params![pane_id]);
+        let _ = conn.execute(
+            "DELETE FROM file_locks WHERE pane_id = ?1",
+            params![pane_id],
+        );
     } else {
         for f in files {
-            let rows = conn.execute(
-                "DELETE FROM file_locks WHERE file_path = ?1 AND pane_id = ?2",
-                params![f, pane_id]
-            ).unwrap_or(0);
-            if rows > 0 { released.push(f.clone()); }
+            let rows = conn
+                .execute(
+                    "DELETE FROM file_locks WHERE file_path = ?1 AND pane_id = ?2",
+                    params![f, pane_id],
+                )
+                .unwrap_or(0);
+            if rows > 0 {
+                released.push(f.clone());
+            }
         }
     }
     json!({"status": "released", "files": released})
@@ -1054,13 +1215,19 @@ pub fn lock_release(pane_id: &str, files: &[String]) -> Value {
 
 /// Check which files are currently locked and by whom.
 pub fn lock_check(files: &[String]) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let mut locked = vec![];
     for f in files {
-        let row: Option<(String, String)> = conn.query_row(
-            "SELECT pane_id, reason FROM file_locks WHERE file_path = ?1",
-            params![f], |r| Ok((r.get(0)?, r.get(1)?))
-        ).ok();
+        let row: Option<(String, String)> = conn
+            .query_row(
+                "SELECT pane_id, reason FROM file_locks WHERE file_path = ?1",
+                params![f],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok();
         if let Some((owner, reason)) = row {
             locked.push(json!({"file": f, "locked_by": owner, "reason": reason}));
         }
@@ -1074,7 +1241,10 @@ pub fn lock_check(files: &[String]) -> Value {
 
 /// Claim a git branch for exclusive use. Allows reclaim if previous owner's pane is dead.
 pub fn git_claim_branch(pane_id: &str, branch: &str, repo: &str, purpose: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let key = format!("{}:{}", repo, branch);
 
     let tx = match conn.unchecked_transaction() {
@@ -1083,10 +1253,13 @@ pub fn git_claim_branch(pane_id: &str, branch: &str, repo: &str, purpose: &str) 
     };
 
     // Check existing claim
-    let existing: Option<(String, String)> = tx.query_row(
-        "SELECT pane_id, purpose FROM git_branches WHERE repo_branch = ?1",
-        params![key], |r| Ok((r.get(0)?, r.get(1)?))
-    ).ok();
+    let existing: Option<(String, String)> = tx
+        .query_row(
+            "SELECT pane_id, purpose FROM git_branches WHERE repo_branch = ?1",
+            params![key],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok();
 
     if let Some((owner, owner_purpose)) = existing {
         if owner != pane_id && is_pane_active(&owner) {
@@ -1098,7 +1271,7 @@ pub fn git_claim_branch(pane_id: &str, branch: &str, repo: &str, purpose: &str) 
         "INSERT INTO git_branches (repo_branch, pane_id, purpose, claimed_at) \
          VALUES (?1, ?2, ?3, ?4) \
          ON CONFLICT(repo_branch) DO UPDATE SET pane_id=?2, purpose=?3, claimed_at=?4",
-        params![key, pane_id, purpose, now_iso()]
+        params![key, pane_id, purpose, now_iso()],
     );
     let _ = tx.commit();
     json!({"status": "claimed", "branch": branch})
@@ -1106,18 +1279,27 @@ pub fn git_claim_branch(pane_id: &str, branch: &str, repo: &str, purpose: &str) 
 
 /// Release a git branch claim. Only the owning agent can release.
 pub fn git_release_branch(pane_id: &str, branch: &str, repo: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let key = format!("{}:{}", repo, branch);
 
     // Check ownership
-    let owner: Option<String> = conn.query_row(
-        "SELECT pane_id FROM git_branches WHERE repo_branch = ?1",
-        params![key], |r| r.get(0)
-    ).ok();
+    let owner: Option<String> = conn
+        .query_row(
+            "SELECT pane_id FROM git_branches WHERE repo_branch = ?1",
+            params![key],
+            |r| r.get(0),
+        )
+        .ok();
 
     match owner {
         Some(ref o) if o == pane_id => {
-            let _ = conn.execute("DELETE FROM git_branches WHERE repo_branch = ?1", params![key]);
+            let _ = conn.execute(
+                "DELETE FROM git_branches WHERE repo_branch = ?1",
+                params![key],
+            );
             json!({"status": "released"})
         }
         Some(_) => json!({"status": "not_owner"}),
@@ -1127,7 +1309,10 @@ pub fn git_release_branch(pane_id: &str, branch: &str, repo: &str) -> Value {
 
 /// List all claimed branches, optionally filtered by repo.
 pub fn git_list_branches(repo: Option<&str>) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let mut result = vec![];
 
     let mut stmt = match conn.prepare("SELECT repo_branch, pane_id, purpose FROM git_branches") {
@@ -1135,13 +1320,19 @@ pub fn git_list_branches(repo: Option<&str>) -> Value {
         Err(e) => return json!({"error": format!("Query: {}", e)}),
     };
     if let Ok(rows) = stmt.query_map([], |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+        ))
     }) {
         for row in rows.flatten() {
             let (key, owner, purpose) = row;
             if let Some((r, b)) = key.rsplit_once(':') {
                 if let Some(filter) = repo {
-                    if r != filter { continue; }
+                    if r != filter {
+                        continue;
+                    }
                 }
                 result.push(json!({
                     "repo": r, "branch": b,
@@ -1156,24 +1347,28 @@ pub fn git_list_branches(repo: Option<&str>) -> Value {
 
 /// Pre-commit safety check: reports file lock conflicts and concurrent edits.
 pub fn git_pre_commit_check(pane_id: &str, _repo: &str, files: &[String]) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let mut conflicts = vec![];
 
     // Check file locks held by others
     for f in files {
-        let row: Option<String> = conn.query_row(
-            "SELECT pane_id FROM file_locks WHERE file_path = ?1 AND pane_id != ?2",
-            params![f, pane_id], |r| r.get(0)
-        ).ok();
+        let row: Option<String> = conn
+            .query_row(
+                "SELECT pane_id FROM file_locks WHERE file_path = ?1 AND pane_id != ?2",
+                params![f, pane_id],
+                |r| r.get(0),
+            )
+            .ok();
         if let Some(owner) = row {
             conflicts.push(json!({"type": "file_lock", "file": f, "owner": owner}));
         }
     }
 
     // Check concurrent edits from other agents' file lists
-    let mut stmt = match conn.prepare(
-        "SELECT pane_id, files FROM agents WHERE pane_id != ?1"
-    ) {
+    let mut stmt = match conn.prepare("SELECT pane_id, files FROM agents WHERE pane_id != ?1") {
         Ok(s) => s,
         Err(_) => return json!({"safe": conflicts.is_empty(), "conflicts": conflicts}),
     };
@@ -1183,11 +1378,13 @@ pub fn git_pre_commit_check(pane_id: &str, _repo: &str, files: &[String]) -> Val
         for row in rows.flatten() {
             let (other_pane, files_str) = row;
             let agent_files: Vec<String> = serde_json::from_str(&files_str).unwrap_or_default();
-            let overlap: Vec<&String> = files.iter()
+            let overlap: Vec<&String> = files
+                .iter()
                 .filter(|f| agent_files.iter().any(|af| af == *f))
                 .collect();
             if !overlap.is_empty() {
-                conflicts.push(json!({"type": "concurrent_edit", "pane": other_pane, "files": overlap}));
+                conflicts
+                    .push(json!({"type": "concurrent_edit", "pane": other_pane, "files": overlap}));
             }
         }
     }
@@ -1201,24 +1398,33 @@ pub fn git_pre_commit_check(pane_id: &str, _repo: &str, files: &[String]) -> Val
 
 /// Claim exclusive build access for a project. Reclaims if previous owner is dead.
 pub fn build_claim(pane_id: &str, project: &str, build_type: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
 
     let tx = match conn.unchecked_transaction() {
         Ok(t) => t,
         Err(e) => return json!({"error": format!("Transaction: {}", e)}),
     };
 
-    let existing: Option<(String, String)> = tx.query_row(
-        "SELECT pane_id, started_at FROM builds_active WHERE project = ?1",
-        params![project], |r| Ok((r.get(0)?, r.get(1)?))
-    ).ok();
+    let existing: Option<(String, String)> = tx
+        .query_row(
+            "SELECT pane_id, started_at FROM builds_active WHERE project = ?1",
+            params![project],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok();
 
     if let Some((owner, started)) = existing {
         if is_pane_active(&owner) {
             return json!({"status": "busy", "owner": owner, "started": started});
         }
         // Stale build — remove it
-        let _ = tx.execute("DELETE FROM builds_active WHERE project = ?1", params![project]);
+        let _ = tx.execute(
+            "DELETE FROM builds_active WHERE project = ?1",
+            params![project],
+        );
     }
 
     let _ = tx.execute(
@@ -1231,17 +1437,23 @@ pub fn build_claim(pane_id: &str, project: &str, build_type: &str) -> Value {
 
 /// Release build claim, recording result in history. Trims history to 50 entries.
 pub fn build_release(pane_id: &str, project: &str, success: bool, output: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
 
     let tx = match conn.unchecked_transaction() {
         Ok(t) => t,
         Err(e) => return json!({"error": format!("Transaction: {}", e)}),
     };
 
-    let active: Option<(String, String, String)> = tx.query_row(
-        "SELECT pane_id, build_type, started_at FROM builds_active WHERE project = ?1",
-        params![project], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-    ).ok();
+    let active: Option<(String, String, String)> = tx
+        .query_row(
+            "SELECT pane_id, build_type, started_at FROM builds_active WHERE project = ?1",
+            params![project],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .ok();
 
     match active {
         Some((owner, bt, started)) if owner == pane_id => {
@@ -1256,10 +1468,13 @@ pub fn build_release(pane_id: &str, project: &str, success: bool, output: &str) 
                 "DELETE FROM builds_history WHERE id IN (\
                     SELECT id FROM builds_history ORDER BY id ASC \
                     LIMIT MAX(0, (SELECT COUNT(*) FROM builds_history) - ?1))",
-                params![MAX_BUILD_HISTORY]
+                params![MAX_BUILD_HISTORY],
             );
             // Remove active
-            let _ = tx.execute("DELETE FROM builds_active WHERE project = ?1", params![project]);
+            let _ = tx.execute(
+                "DELETE FROM builds_active WHERE project = ?1",
+                params![project],
+            );
             let _ = tx.commit();
             json!({"status": "released"})
         }
@@ -1270,11 +1485,17 @@ pub fn build_release(pane_id: &str, project: &str, success: bool, output: &str) 
 
 /// Check if a project currently has an active build.
 pub fn build_status(project: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
-    let row: Option<(String, String)> = conn.query_row(
-        "SELECT pane_id, started_at FROM builds_active WHERE project = ?1",
-        params![project], |r| Ok((r.get(0)?, r.get(1)?))
-    ).ok();
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
+    let row: Option<(String, String)> = conn
+        .query_row(
+            "SELECT pane_id, started_at FROM builds_active WHERE project = ?1",
+            params![project],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok();
     match row {
         Some((owner, started)) => json!({"building": true, "owner": owner, "started": started}),
         None => json!({"building": false}),
@@ -1283,20 +1504,25 @@ pub fn build_status(project: &str) -> Value {
 
 /// Get the most recent build history entry for a project.
 pub fn build_get_last(project: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let row = conn.query_row(
         "SELECT pane_id, build_type, started_at, completed_at, success, output \
          FROM builds_history WHERE project = ?1 ORDER BY id DESC LIMIT 1",
         params![project],
-        |r| Ok(json!({
-            "pane_id": r.get::<_, String>(0)?,
-            "build_type": r.get::<_, String>(1)?,
-            "started_at": r.get::<_, String>(2)?,
-            "completed_at": r.get::<_, String>(3)?,
-            "success": r.get::<_, i32>(4)? != 0,
-            "output": r.get::<_, String>(5)?,
-            "project": project
-        }))
+        |r| {
+            Ok(json!({
+                "pane_id": r.get::<_, String>(0)?,
+                "build_type": r.get::<_, String>(1)?,
+                "started_at": r.get::<_, String>(2)?,
+                "completed_at": r.get::<_, String>(3)?,
+                "success": r.get::<_, i32>(4)? != 0,
+                "output": r.get::<_, String>(5)?,
+                "project": project
+            }))
+        },
     );
     match row {
         Ok(build) => json!({"found": true, "build": build}),
@@ -1309,8 +1535,17 @@ pub fn build_get_last(project: &str) -> Value {
 // ============================================================================
 
 /// Add a task to the inter-agent task queue.
-pub fn task_add(project: &str, title: &str, description: &str, priority: &str, added_by: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+pub fn task_add(
+    project: &str,
+    title: &str,
+    description: &str,
+    priority: &str,
+    added_by: &str,
+) -> Value {
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let task_id = gen_short_id(title);
     let now = now_iso();
 
@@ -1327,7 +1562,10 @@ pub fn task_add(project: &str, title: &str, description: &str, priority: &str, a
 
 /// Claim the highest-priority pending task. Uses transaction to prevent double-claim.
 pub fn task_claim(pane_id: &str, project: Option<&str>) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
 
     let tx = match conn.unchecked_transaction() {
         Ok(t) => t,
@@ -1349,15 +1587,27 @@ pub fn task_claim(pane_id: &str, project: Option<&str>) -> Value {
 
     let task_row = if let Some(p) = project {
         tx.query_row(query, params![p], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?, r.get::<_, String>(4)?, r.get::<_, String>(5)?,
-                r.get::<_, String>(6)?))
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, String>(5)?,
+                r.get::<_, String>(6)?,
+            ))
         })
     } else {
         tx.query_row(query, [], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?, r.get::<_, String>(4)?, r.get::<_, String>(5)?,
-                r.get::<_, String>(6)?))
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, String>(5)?,
+                r.get::<_, String>(6)?,
+            ))
         })
     };
 
@@ -1385,13 +1635,20 @@ pub fn task_claim(pane_id: &str, project: Option<&str>) -> Value {
 
 /// Mark a claimed task as completed with a result summary.
 pub fn task_complete(task_id: &str, pane_id: &str, result: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
 
     // Check ownership
-    let owner: Option<String> = conn.query_row(
-        "SELECT claimed_by FROM tasks WHERE id = ?1",
-        params![task_id], |r| r.get(0)
-    ).ok().flatten();
+    let owner: Option<String> = conn
+        .query_row(
+            "SELECT claimed_by FROM tasks WHERE id = ?1",
+            params![task_id],
+            |r| r.get(0),
+        )
+        .ok()
+        .flatten();
 
     match owner {
         None => json!({"status": "not_found"}),
@@ -1408,7 +1665,10 @@ pub fn task_complete(task_id: &str, pane_id: &str, result: &str) -> Value {
 
 /// List tasks, optionally filtered by status and/or project.
 pub fn task_list(status: Option<&str>, project: Option<&str>) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let mut result = vec![];
 
     // Build query dynamically
@@ -1441,7 +1701,8 @@ pub fn task_list(status: Option<&str>, project: Option<&str>) -> Value {
         Err(e) => return json!({"error": format!("Query: {}", e)}),
     };
 
-    let params_refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter()
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> = param_values
+        .iter()
         .map(|v| v as &dyn rusqlite::types::ToSql)
         .collect();
 
@@ -1461,7 +1722,9 @@ pub fn task_list(status: Option<&str>, project: Option<&str>) -> Value {
             "result": r.get::<_, Option<String>>(11)?
         }))
     }) {
-        for row in rows.flatten() { result.push(row); }
+        for row in rows.flatten() {
+            result.push(row);
+        }
     }
     json!({"tasks": result})
 }
@@ -1471,8 +1734,18 @@ pub fn task_list(status: Option<&str>, project: Option<&str>) -> Value {
 // ============================================================================
 
 /// Add a knowledge base entry. Trims to 500 entries max (ring buffer).
-pub fn kb_add(pane_id: &str, project: &str, category: &str, title: &str, content: &str, files: &[String]) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+pub fn kb_add(
+    pane_id: &str,
+    project: &str,
+    category: &str,
+    title: &str,
+    content: &str,
+    files: &[String],
+) -> Value {
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let entry_id = gen_short_id(title);
     let files_json = serde_json::to_string(files).unwrap_or_else(|_| "[]".into());
     let now = now_iso();
@@ -1480,21 +1753,24 @@ pub fn kb_add(pane_id: &str, project: &str, category: &str, title: &str, content
     let _ = conn.execute(
         "INSERT INTO kb_entries (id, pane_id, project, category, title, content, files, added_at) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        params![entry_id, pane_id, project, category, title, content, files_json, now]
+        params![entry_id, pane_id, project, category, title, content, files_json, now],
     );
     // Trim ring buffer
     let _ = conn.execute(
         "DELETE FROM kb_entries WHERE id IN (\
             SELECT id FROM kb_entries ORDER BY added_at ASC \
             LIMIT MAX(0, (SELECT COUNT(*) FROM kb_entries) - ?1))",
-        params![MAX_KB_ENTRIES]
+        params![MAX_KB_ENTRIES],
     );
     json!({"status": "added", "entry_id": entry_id})
 }
 
 /// Search knowledge base by text match on title/content, optionally filtered.
 pub fn kb_search(query: &str, project: Option<&str>, category: Option<&str>) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let pattern = format!("%{}%", query);
     let mut results = vec![];
 
@@ -1519,7 +1795,8 @@ pub fn kb_search(query: &str, project: Option<&str>, category: Option<&str>) -> 
         Ok(s) => s,
         Err(e) => return json!({"error": format!("Query: {}", e)}),
     };
-    let params_refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter()
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> = param_values
+        .iter()
         .map(|v| v as &dyn rusqlite::types::ToSql)
         .collect();
 
@@ -1535,14 +1812,19 @@ pub fn kb_search(query: &str, project: Option<&str>, category: Option<&str>) -> 
             "added_at": r.get::<_, String>(7)?
         }))
     }) {
-        for row in rows.flatten() { results.push(row); }
+        for row in rows.flatten() {
+            results.push(row);
+        }
     }
     json!({"results": results})
 }
 
 /// List recent knowledge base entries, optionally filtered by project.
 pub fn kb_list(project: Option<&str>, limit: usize) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let mut entries = vec![];
 
     let (sql, project_param);
@@ -1575,7 +1857,9 @@ pub fn kb_list(project: Option<&str>, limit: usize) -> Value {
     };
 
     if let Ok(rows) = rows_result {
-        for row in rows.flatten() { entries.push(row); }
+        for row in rows.flatten() {
+            entries.push(row);
+        }
     }
     json!({"entries": entries})
 }
@@ -1584,7 +1868,13 @@ pub fn kb_list(project: Option<&str>, limit: usize) -> Value {
 // MESSAGING
 // ============================================================================
 
-fn insert_message(conn: &Connection, from_pane: &str, to_pane: &str, message: &str, priority: &str) {
+fn insert_message(
+    conn: &Connection,
+    from_pane: &str,
+    to_pane: &str,
+    message: &str,
+    priority: &str,
+) {
     let _ = conn.execute(
         "INSERT INTO messages (from_pane, to_pane, message, priority, timestamp, read_by) VALUES (?1, ?2, ?3, ?4, ?5, '[]')",
         params![from_pane, to_pane, message, priority, now_iso()]
@@ -1594,27 +1884,36 @@ fn insert_message(conn: &Connection, from_pane: &str, to_pane: &str, message: &s
         "DELETE FROM messages WHERE id IN (\
             SELECT id FROM messages ORDER BY id ASC \
             LIMIT MAX(0, (SELECT COUNT(*) FROM messages) - ?1))",
-        params![MAX_MESSAGES]
+        params![MAX_MESSAGES],
     );
 }
 
 /// Broadcast a message to all agents.
 pub fn msg_broadcast(from_pane: &str, message: &str, priority: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     insert_message(&conn, from_pane, "all", message, priority);
     json!({"status": "sent"})
 }
 
 /// Send a direct message to a specific agent.
 pub fn msg_send(from_pane: &str, to_pane: &str, message: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     insert_message(&conn, from_pane, to_pane, message, "info");
     json!({"status": "sent"})
 }
 
 /// Get unread messages for an agent. Optionally marks them as read.
 pub fn msg_get(pane_id: &str, mark_read: bool) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let mut unread = vec![];
 
     // Find messages addressed to this pane (or broadcast) that this pane hasn't read
@@ -1624,7 +1923,7 @@ pub fn msg_get(pane_id: &str, mark_read: bool) -> Value {
          FROM messages \
          WHERE from_pane != ?1 AND (to_pane = 'all' OR to_pane = ?1) \
          AND read_by NOT LIKE ?2 \
-         ORDER BY id ASC"
+         ORDER BY id ASC",
     ) {
         Ok(s) => s,
         Err(e) => return json!({"error": format!("Query: {}", e)}),
@@ -1651,13 +1950,15 @@ pub fn msg_get(pane_id: &str, mark_read: bool) -> Value {
 
             if mark_read {
                 // Add pane_id to read_by JSON array
-                let mut read_by: Vec<String> = serde_json::from_str(&read_by_str).unwrap_or_default();
+                let mut read_by: Vec<String> =
+                    serde_json::from_str(&read_by_str).unwrap_or_default();
                 if !read_by.contains(&pane_id.to_string()) {
                     read_by.push(pane_id.to_string());
-                    let new_read_by = serde_json::to_string(&read_by).unwrap_or_else(|_| "[]".into());
+                    let new_read_by =
+                        serde_json::to_string(&read_by).unwrap_or_else(|_| "[]".into());
                     let _ = conn.execute(
                         "UPDATE messages SET read_by = ?1 WHERE id = ?2",
-                        params![new_read_by, id]
+                        params![new_read_by, id],
                     );
                 }
             }
@@ -1671,8 +1972,16 @@ pub fn msg_get(pane_id: &str, mark_read: bool) -> Value {
 // ============================================================================
 
 /// Send a signal from an agent to the control pane (TUI).
-pub fn signal_send(pane_id: &str, signal_type: &str, message: &str, pipeline_id: Option<&str>) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+pub fn signal_send(
+    pane_id: &str,
+    signal_type: &str,
+    message: &str,
+    pipeline_id: Option<&str>,
+) -> Value {
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let ts = crate::state::now();
     match conn.execute(
         "INSERT INTO agent_signals (pane_id, signal_type, message, pipeline_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -1685,13 +1994,19 @@ pub fn signal_send(pane_id: &str, signal_type: &str, message: &str, pipeline_id:
 
 /// List signals, optionally filtering by acknowledged status.
 pub fn signal_list(unack_only: bool) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let sql = if unack_only {
         "SELECT id, pane_id, signal_type, message, pipeline_id, created_at FROM agent_signals WHERE acknowledged = 0 ORDER BY id DESC LIMIT 50"
     } else {
         "SELECT id, pane_id, signal_type, message, pipeline_id, created_at FROM agent_signals ORDER BY id DESC LIMIT 50"
     };
-    let mut stmt = match conn.prepare(sql) { Ok(s) => s, Err(e) => return json!({"error": format!("{}", e)}) };
+    let mut stmt = match conn.prepare(sql) {
+        Ok(s) => s,
+        Err(e) => return json!({"error": format!("{}", e)}),
+    };
     let mut signals = vec![];
     if let Ok(rows) = stmt.query_map([], |r| {
         Ok(json!({
@@ -1703,15 +2018,23 @@ pub fn signal_list(unack_only: bool) -> Value {
             "created_at": r.get::<_, String>(5)?,
         }))
     }) {
-        for row in rows.flatten() { signals.push(row); }
+        for row in rows.flatten() {
+            signals.push(row);
+        }
     }
     json!({"signals": signals, "count": signals.len()})
 }
 
 /// Acknowledge a signal (mark as read).
 pub fn signal_acknowledge(signal_id: i64) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
-    match conn.execute("UPDATE agent_signals SET acknowledged = 1 WHERE id = ?1", params![signal_id]) {
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
+    match conn.execute(
+        "UPDATE agent_signals SET acknowledged = 1 WHERE id = ?1",
+        params![signal_id],
+    ) {
         Ok(n) => json!({"status": "acknowledged", "id": signal_id, "updated": n}),
         Err(e) => json!({"error": format!("{}", e)}),
     }
@@ -1719,24 +2042,41 @@ pub fn signal_acknowledge(signal_id: i64) -> Value {
 
 /// Count unacknowledged signals.
 pub fn signal_count_unack() -> usize {
-    let conn = match coordination_db() { Ok(c) => c, Err(_) => return 0 };
-    conn.query_row("SELECT COUNT(*) FROM agent_signals WHERE acknowledged = 0", [], |r| r.get::<_, usize>(0)).unwrap_or(0)
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(_) => return 0,
+    };
+    conn.query_row(
+        "SELECT COUNT(*) FROM agent_signals WHERE acknowledged = 0",
+        [],
+        |r| r.get::<_, usize>(0),
+    )
+    .unwrap_or(0)
 }
 
 /// Get unacknowledged signals grouped by pane.
 pub fn signal_by_pane() -> std::collections::HashMap<u8, Vec<(String, String)>> {
     let mut map = std::collections::HashMap::new();
-    let conn = match coordination_db() { Ok(c) => c, Err(_) => return map };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(_) => return map,
+    };
     let mut stmt = match conn.prepare(
         "SELECT pane_id, signal_type, message FROM agent_signals WHERE acknowledged = 0 ORDER BY id DESC"
     ) { Ok(s) => s, Err(_) => return map };
     if let Ok(rows) = stmt.query_map([], |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+        ))
     }) {
         for row in rows.flatten() {
             let (pane_str, sig_type, msg) = row;
             if let Ok(pane_num) = pane_str.parse::<u8>() {
-                map.entry(pane_num).or_insert_with(Vec::new).push((sig_type, msg));
+                map.entry(pane_num)
+                    .or_insert_with(Vec::new)
+                    .push((sig_type, msg));
             }
         }
     }
@@ -1749,7 +2089,10 @@ pub fn signal_by_pane() -> std::collections::HashMap<u8, Vec<(String, String)>> 
 
 /// Remove stale entries across all tables where the owning tmux pane no longer exists.
 pub fn cleanup_all() -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let active = active_panes();
     let mut cleaned = json!({"ports": 0, "agents": 0, "locks": 0, "branches": 0, "builds": 0});
 
@@ -1762,8 +2105,11 @@ pub fn cleanup_all() -> Value {
     let mut stale_ports = vec![];
     {
         if let Ok(mut stmt) = tx.prepare("SELECT port, pane_id FROM ports") {
-            let collected: Vec<_> = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
-                .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
+            let collected: Vec<_> = stmt
+                .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
+                .into_iter()
+                .flat_map(|rows| rows.flatten().collect::<Vec<_>>())
+                .collect();
             for (port, pane_id) in collected {
                 let (in_use, _) = is_port_in_use(port as u16);
                 if !in_use && !active.contains(&pane_id) {
@@ -1781,19 +2127,28 @@ pub fn cleanup_all() -> Value {
     let mut stale_agents = vec![];
     {
         if let Ok(mut stmt) = tx.prepare("SELECT pane_id FROM agents") {
-            let collected: Vec<_> = stmt.query_map([], |r| r.get::<_, String>(0))
-                .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
+            let collected: Vec<_> = stmt
+                .query_map([], |r| r.get::<_, String>(0))
+                .into_iter()
+                .flat_map(|rows| rows.flatten().collect::<Vec<_>>())
+                .collect();
             for row in collected {
-                if !active.contains(&row) { stale_agents.push(row); }
+                if !active.contains(&row) {
+                    stale_agents.push(row);
+                }
             }
         }
     }
     // Count orphan locks before deleting agents (CASCADE handles them)
     let mut lock_count = 0i64;
     for pane_id in &stale_agents {
-        let n: i64 = tx.query_row(
-            "SELECT COUNT(*) FROM file_locks WHERE pane_id = ?1", params![pane_id], |r| r.get(0)
-        ).unwrap_or(0);
+        let n: i64 = tx
+            .query_row(
+                "SELECT COUNT(*) FROM file_locks WHERE pane_id = ?1",
+                params![pane_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
         lock_count += n;
     }
     for pane_id in &stale_agents {
@@ -1804,13 +2159,17 @@ pub fn cleanup_all() -> Value {
 
     // Also clean orphan locks where the pane_id no longer exists as an agent
     // (these can happen if someone inserted locks without registering)
-    let orphan_locks: i64 = tx.query_row(
-        "SELECT COUNT(*) FROM file_locks WHERE pane_id NOT IN (SELECT pane_id FROM agents)",
-        [], |r| r.get(0)
-    ).unwrap_or(0);
+    let orphan_locks: i64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM file_locks WHERE pane_id NOT IN (SELECT pane_id FROM agents)",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
     if orphan_locks > 0 {
         let _ = tx.execute(
-            "DELETE FROM file_locks WHERE pane_id NOT IN (SELECT pane_id FROM agents)", []
+            "DELETE FROM file_locks WHERE pane_id NOT IN (SELECT pane_id FROM agents)",
+            [],
         );
         cleaned["locks"] = json!(lock_count + orphan_locks);
     }
@@ -1819,15 +2178,23 @@ pub fn cleanup_all() -> Value {
     let mut stale_branches = vec![];
     {
         if let Ok(mut stmt) = tx.prepare("SELECT repo_branch, pane_id FROM git_branches") {
-            let collected: Vec<_> = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
-                .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
+            let collected: Vec<_> = stmt
+                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .into_iter()
+                .flat_map(|rows| rows.flatten().collect::<Vec<_>>())
+                .collect();
             for row in collected {
-                if !active.contains(&row.1) { stale_branches.push(row.0); }
+                if !active.contains(&row.1) {
+                    stale_branches.push(row.0);
+                }
             }
         }
     }
     for key in &stale_branches {
-        let _ = tx.execute("DELETE FROM git_branches WHERE repo_branch = ?1", params![key]);
+        let _ = tx.execute(
+            "DELETE FROM git_branches WHERE repo_branch = ?1",
+            params![key],
+        );
     }
     cleaned["branches"] = json!(stale_branches.len());
 
@@ -1835,15 +2202,23 @@ pub fn cleanup_all() -> Value {
     let mut stale_builds = vec![];
     {
         if let Ok(mut stmt) = tx.prepare("SELECT project, pane_id FROM builds_active") {
-            let collected: Vec<_> = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
-                .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
+            let collected: Vec<_> = stmt
+                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .into_iter()
+                .flat_map(|rows| rows.flatten().collect::<Vec<_>>())
+                .collect();
             for row in collected {
-                if !active.contains(&row.1) { stale_builds.push(row.0); }
+                if !active.contains(&row.1) {
+                    stale_builds.push(row.0);
+                }
             }
         }
     }
     for project in &stale_builds {
-        let _ = tx.execute("DELETE FROM builds_active WHERE project = ?1", params![project]);
+        let _ = tx.execute(
+            "DELETE FROM builds_active WHERE project = ?1",
+            params![project],
+        );
     }
     cleaned["builds"] = json!(stale_builds.len());
 
@@ -1857,14 +2232,20 @@ pub fn cleanup_all() -> Value {
 
 /// Dashboard view: ports, agents, locks, builds, and pending tasks.
 pub fn status_overview(project: Option<&str>) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
 
     // Ports
     let mut port_list = vec![];
     {
         if let Ok(mut stmt) = conn.prepare("SELECT port, service FROM ports") {
-            let collected: Vec<_> = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
-                .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
+            let collected: Vec<_> = stmt
+                .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
+                .into_iter()
+                .flat_map(|rows| rows.flatten().collect::<Vec<_>>())
+                .collect();
             for row in collected {
                 let (active, _) = is_port_in_use(row.0 as u16);
                 port_list.push(json!({"port": row.0, "service": row.1, "active": active}));
@@ -1904,20 +2285,31 @@ pub fn status_overview(project: Option<&str>) -> Value {
     }
 
     // Counts
-    let lock_count: i64 = conn.query_row("SELECT COUNT(*) FROM file_locks", [], |r| r.get(0)).unwrap_or(0);
+    let lock_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM file_locks", [], |r| r.get(0))
+        .unwrap_or(0);
 
     let mut active_builds = vec![];
     {
         if let Ok(mut stmt) = conn.prepare("SELECT project FROM builds_active") {
-            let collected: Vec<_> = stmt.query_map([], |r| r.get::<_, String>(0))
-                .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
-            for row in collected { active_builds.push(row); }
+            let collected: Vec<_> = stmt
+                .query_map([], |r| r.get::<_, String>(0))
+                .into_iter()
+                .flat_map(|rows| rows.flatten().collect::<Vec<_>>())
+                .collect();
+            for row in collected {
+                active_builds.push(row);
+            }
         }
     }
 
-    let pending_tasks: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM tasks WHERE status = 'pending'", [], |r| r.get(0)
-    ).unwrap_or(0);
+    let pending_tasks: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM tasks WHERE status = 'pending'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
 
     json!({
         "ports": port_list, "agents": agent_list,
@@ -1954,7 +2346,10 @@ mod tests {
             "INSERT INTO ports (port, service, pane_id, description, allocated_at) VALUES (3011, 'web', 'p2', '', '2025-01-01')",
             []
         );
-        assert!(result.is_err(), "UNIQUE on service should prevent duplicate");
+        assert!(
+            result.is_err(),
+            "UNIQUE on service should prevent duplicate"
+        );
     }
 
     #[test]
@@ -1969,12 +2364,17 @@ mod tests {
             []
         ).unwrap();
 
-        let lock_count: i64 = conn.query_row("SELECT COUNT(*) FROM file_locks", [], |r| r.get(0)).unwrap();
+        let lock_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM file_locks", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(lock_count, 1);
 
         // Delete agent — locks should cascade
-        conn.execute("DELETE FROM agents WHERE pane_id = 'p1'", []).unwrap();
-        let lock_count: i64 = conn.query_row("SELECT COUNT(*) FROM file_locks", [], |r| r.get(0)).unwrap();
+        conn.execute("DELETE FROM agents WHERE pane_id = 'p1'", [])
+            .unwrap();
+        let lock_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM file_locks", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(lock_count, 0);
     }
 
@@ -1982,17 +2382,32 @@ mod tests {
     fn test_lock_contention() {
         let conn = test_db();
         // Register two agents
-        conn.execute("INSERT INTO agents VALUES ('p1', 'proj', '', '[]', '2025-01-01', '2025-01-01')", []).unwrap();
-        conn.execute("INSERT INTO agents VALUES ('p2', 'proj', '', '[]', '2025-01-01', '2025-01-01')", []).unwrap();
+        conn.execute(
+            "INSERT INTO agents VALUES ('p1', 'proj', '', '[]', '2025-01-01', '2025-01-01')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO agents VALUES ('p2', 'proj', '', '[]', '2025-01-01', '2025-01-01')",
+            [],
+        )
+        .unwrap();
 
         // p1 locks a file
-        conn.execute("INSERT INTO file_locks VALUES ('src/lib.rs', 'p1', 'edit', '2025-01-01')", []).unwrap();
+        conn.execute(
+            "INSERT INTO file_locks VALUES ('src/lib.rs', 'p1', 'edit', '2025-01-01')",
+            [],
+        )
+        .unwrap();
 
         // p2 tries to lock the same file — should see conflict
-        let conflict: Option<String> = conn.query_row(
-            "SELECT pane_id FROM file_locks WHERE file_path = 'src/lib.rs' AND pane_id != 'p2'",
-            [], |r| r.get(0)
-        ).ok();
+        let conflict: Option<String> = conn
+            .query_row(
+                "SELECT pane_id FROM file_locks WHERE file_path = 'src/lib.rs' AND pane_id != 'p2'",
+                [],
+                |r| r.get(0),
+            )
+            .ok();
         assert_eq!(conflict, Some("p1".to_string()));
     }
 
@@ -2026,7 +2441,9 @@ mod tests {
             []
         ).unwrap();
 
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM kb_entries", [], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM kb_entries", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(count, 500);
     }
 
@@ -2045,7 +2462,9 @@ mod tests {
             []
         ).unwrap();
 
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(count, 200);
     }
 
@@ -2064,7 +2483,9 @@ mod tests {
             []
         ).unwrap();
 
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM builds_history", [], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM builds_history", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(count, 50);
     }
 
@@ -2076,9 +2497,13 @@ mod tests {
             "INSERT INTO builds_active (project, pane_id, build_type, started_at) VALUES ('myproj', 'p1', 'release', '2025-01-01')",
             []
         ).unwrap();
-        let building: bool = conn.query_row(
-            "SELECT COUNT(*) > 0 FROM builds_active WHERE project = 'myproj'", [], |r| r.get(0)
-        ).unwrap();
+        let building: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM builds_active WHERE project = 'myproj'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert!(building);
 
         // Release: move to history + delete active
@@ -2087,12 +2512,17 @@ mod tests {
             "INSERT INTO builds_history (project, pane_id, build_type, started_at, completed_at, success, output) VALUES ('myproj', 'p1', 'release', '2025-01-01', '2025-01-01', 1, 'ok')",
             []
         ).unwrap();
-        tx.execute("DELETE FROM builds_active WHERE project = 'myproj'", []).unwrap();
+        tx.execute("DELETE FROM builds_active WHERE project = 'myproj'", [])
+            .unwrap();
         tx.commit().unwrap();
 
-        let building: bool = conn.query_row(
-            "SELECT COUNT(*) > 0 FROM builds_active WHERE project = 'myproj'", [], |r| r.get(0)
-        ).unwrap();
+        let building: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM builds_active WHERE project = 'myproj'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert!(!building);
 
         let last: String = conn.query_row(
@@ -2120,9 +2550,8 @@ mod tests {
         assert_eq!(count, 1);
 
         // Mark read
-        conn.execute(
-            "UPDATE messages SET read_by = '[\"p2\"]' WHERE id = 1", []
-        ).unwrap();
+        conn.execute("UPDATE messages SET read_by = '[\"p2\"]' WHERE id = 1", [])
+            .unwrap();
 
         // p2 reads again — should find 0
         let count: i64 = conn.query_row(
@@ -2155,9 +2584,13 @@ mod tests {
             []
         ).unwrap();
 
-        let purpose: String = conn.query_row(
-            "SELECT purpose FROM git_branches WHERE repo_branch = 'repo:feat-1'", [], |r| r.get(0)
-        ).unwrap();
+        let purpose: String = conn
+            .query_row(
+                "SELECT purpose FROM git_branches WHERE repo_branch = 'repo:feat-1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(purpose, "updated purpose");
     }
 

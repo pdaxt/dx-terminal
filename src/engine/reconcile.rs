@@ -30,7 +30,9 @@ pub async fn reconcile_on_startup(state: &Arc<StateManager>) {
             if let Ok(pane_num) = key.parse::<u8>() {
                 tracing::info!(
                     "Reconcile: pane {} ({}) was '{}' but has no running agent — resetting to idle",
-                    pane_num, pane.project, pane.status
+                    pane_num,
+                    pane.project,
+                    pane.status
                 );
                 let mut reset = pane.clone();
                 reset.status = "idle".into();
@@ -44,7 +46,13 @@ pub async fn reconcile_on_startup(state: &Arc<StateManager>) {
                 reset.machine_hostname = None;
                 reset.machine_mac = None;
                 state.set_pane(pane_num, reset).await;
-                state.log_activity(pane_num, "reconcile", "Cleared stale active state on startup").await;
+                state
+                    .log_activity(
+                        pane_num,
+                        "reconcile",
+                        "Cleared stale active state on startup",
+                    )
+                    .await;
                 reconciled += 1;
             }
         }
@@ -71,13 +79,25 @@ pub async fn reconcile_active_panes(state: &Arc<StateManager>) {
 
         // Verify the tmux pane still exists
         if !tmux::pane_exists(&target) {
-            tracing::warn!("Reconciler: pane {} tmux target {} no longer exists — marking lost", i, target);
+            tracing::warn!(
+                "Reconciler: pane {} tmux target {} no longer exists — marking lost",
+                i,
+                target
+            );
             state.update_pane_status(i, "lost").await;
-            state.event_bus.send(crate::state::events::StateEvent::PaneRemoved {
-                pane: i,
-                reason: format!("tmux pane {} disappeared without clean completion", target),
-            });
-            state.log_activity(i, "auto_lost", &format!("Tmux pane disappeared (no clean exit): {}", &pd.task)).await;
+            state
+                .event_bus
+                .send(crate::state::events::StateEvent::PaneRemoved {
+                    pane: i,
+                    reason: format!("tmux pane {} disappeared without clean completion", target),
+                });
+            state
+                .log_activity(
+                    i,
+                    "auto_lost",
+                    &format!("Tmux pane disappeared (no clean exit): {}", &pd.task),
+                )
+                .await;
             continue;
         }
 
@@ -86,20 +106,33 @@ pub async fn reconcile_active_panes(state: &Arc<StateManager>) {
 
         // Check if agent finished (shell prompt visible = claude exited)
         if tmux::check_done(&target) {
-            tracing::info!("Reconciler: pane {} agent finished (shell prompt detected)", i);
+            tracing::info!(
+                "Reconciler: pane {} agent finished (shell prompt detected)",
+                i
+            );
             state.update_pane_status(i, "done").await;
-            state.log_activity(i, "auto_done", &format!("Agent finished: {}", &pd.task)).await;
+            state
+                .log_activity(i, "auto_done", &format!("Agent finished: {}", &pd.task))
+                .await;
             continue;
         }
 
         // Check for errors (but only if not done)
         if let Some(error) = tmux::check_error(&target) {
             // Only flag as error if it's a fatal pattern, not just output containing "Error:"
-            let fatal_patterns = ["rate limit", "hit your limit", "SIGTERM", "panic:", "FATAL:"];
+            let fatal_patterns = [
+                "rate limit",
+                "hit your limit",
+                "SIGTERM",
+                "panic:",
+                "FATAL:",
+            ];
             if fatal_patterns.iter().any(|p| output.contains(p)) {
                 tracing::warn!("Reconciler: pane {} has fatal error: {}", i, error);
                 state.update_pane_status(i, "error").await;
-                state.log_activity(i, "auto_error", &format!("Fatal error: {}", error)).await;
+                state
+                    .log_activity(i, "auto_error", &format!("Fatal error: {}", error))
+                    .await;
             }
         }
     }

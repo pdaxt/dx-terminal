@@ -1,13 +1,14 @@
-use anyhow::Result;
 use crate::config;
 use crate::state::persistence::{read_json, write_json};
+use anyhow::Result;
 
 /// Set project-level MCPs in ~/.claude.json
 pub fn set_project_mcps(project_path: &str, mcp_names: &[String]) -> Result<()> {
     let claude_json = config::claude_json_path();
     let mut config = read_json(&claude_json);
 
-    let all_servers = config.get("mcpServers")
+    let all_servers = config
+        .get("mcpServers")
         .cloned()
         .unwrap_or_else(|| serde_json::json!({}));
 
@@ -28,12 +29,19 @@ pub fn set_project_mcps(project_path: &str, mcp_names: &[String]) -> Result<()> 
         .or_insert_with(|| serde_json::json!({}));
 
     let project_entry = match projects.as_object_mut() {
-        Some(obj) => obj.entry(project_path).or_insert_with(|| serde_json::json!({})),
+        Some(obj) => obj
+            .entry(project_path)
+            .or_insert_with(|| serde_json::json!({})),
         None => anyhow::bail!("claude.json 'projects' is not an object"),
     };
 
     match project_entry.as_object_mut() {
-        Some(obj) => { obj.insert("mcpServers".to_string(), serde_json::Value::Object(proj_servers)); }
+        Some(obj) => {
+            obj.insert(
+                "mcpServers".to_string(),
+                serde_json::Value::Object(proj_servers),
+            );
+        }
         None => anyhow::bail!("claude.json project entry is not an object"),
     };
 
@@ -90,20 +98,29 @@ pub fn generate_preamble(
 
     let extra = {
         let trimmed = regular_prompt.trim();
-        if trimmed.is_empty() { String::new() }
-        else { format!("{}\n\n", trimmed) }
+        if trimmed.is_empty() {
+            String::new()
+        } else {
+            format!("{}\n\n", trimmed)
+        }
     };
 
     let handoff = {
         let trimmed = handoff_section.trim();
-        if trimmed.is_empty() { String::new() }
-        else { format!("## Predecessor Results\nThese tasks completed before yours. Use their output as context:\n{}\n\n", trimmed) }
+        if trimmed.is_empty() {
+            String::new()
+        } else {
+            format!("## Predecessor Results\nThese tasks completed before yours. Use their output as context:\n{}\n\n", trimmed)
+        }
     };
 
     let gate = {
         let trimmed = gate_section.trim();
-        if trimmed.is_empty() { String::new() }
-        else { format!("## Quality Gate Results\n{}\n\n", trimmed) }
+        if trimmed.is_empty() {
+            String::new()
+        } else {
+            format!("## Quality Gate Results\n{}\n\n", trimmed)
+        }
     };
 
     let coord = {
@@ -112,7 +129,8 @@ pub fn generate_preamble(
             "## Coordination\n\
              - Use multi_agent MCP to register and coordinate with other agents\n\
              - Lock files before editing shared code\n\
-             - When done: summarize what you accomplished\n".to_string()
+             - When done: summarize what you accomplished\n"
+                .to_string()
         } else {
             format!("{}\n", trimmed)
         }
@@ -162,20 +180,36 @@ fn gather_sibling_context(my_pane: u8, project: &str) -> String {
             Ok(n) => n,
             Err(_) => continue,
         };
-        if pane_num == my_pane { continue; }
+        if pane_num == my_pane {
+            continue;
+        }
 
-        let status = pane_data.get("status").and_then(|v| v.as_str()).unwrap_or("idle");
-        if status != "active" { continue; }
+        let status = pane_data
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("idle");
+        if status != "active" {
+            continue;
+        }
 
-        let p = pane_data.get("project").and_then(|v| v.as_str()).unwrap_or("");
+        let p = pane_data
+            .get("project")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let r = pane_data.get("role").and_then(|v| v.as_str()).unwrap_or("");
         let t = pane_data.get("task").and_then(|v| v.as_str()).unwrap_or("");
-        let b = pane_data.get("branch_name").and_then(|v| v.as_str()).unwrap_or("");
+        let b = pane_data
+            .get("branch_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let theme = config::theme_name(pane_num);
 
         if p.to_lowercase() == project.to_lowercase() {
-            siblings.push(format!("  - Pane {} ({}): {} — {} [branch: {}]",
-                pane_num, theme, config::role_short(r),
+            siblings.push(format!(
+                "  - Pane {} ({}): {} — {} [branch: {}]",
+                pane_num,
+                theme,
+                config::role_short(r),
                 if t.len() > 60 { &t[..60] } else { t },
                 if b.is_empty() { "none" } else { b }
             ));
@@ -185,7 +219,10 @@ fn gather_sibling_context(my_pane: u8, project: &str) -> String {
     if siblings.is_empty() {
         String::new()
     } else {
-        format!("## Active Sibling Agents (same project)\n{}\n\n", siblings.join("\n"))
+        format!(
+            "## Active Sibling Agents (same project)\n{}\n\n",
+            siblings.join("\n")
+        )
     }
 }
 
@@ -275,4 +312,3 @@ mod tests {
         assert!(preamble_dir.join("pane_99.md").exists());
     }
 }
-

@@ -23,7 +23,8 @@ pub fn doc_list(req: &DocListRequest) -> String {
     crate::collab::doc_list(
         &req.space.clone().unwrap_or_default(),
         &req.status.clone().unwrap_or_default(),
-    ).to_string()
+    )
+    .to_string()
 }
 
 /// Read a document with metadata
@@ -34,45 +35,67 @@ pub fn doc_read(req: &DocReadRequest) -> String {
 /// Create a new document
 pub fn doc_create(req: &DocCreateRequest) -> String {
     crate::collab::doc_create(
-        &req.space, &req.name, &req.content.clone().unwrap_or_default(),
-        &req.status.clone().unwrap_or_default(), &req.tags.clone().unwrap_or_default(),
-    ).to_string()
+        &req.space,
+        &req.name,
+        &req.content.clone().unwrap_or_default(),
+        &req.status.clone().unwrap_or_default(),
+        &req.tags.clone().unwrap_or_default(),
+    )
+    .to_string()
 }
 
 /// Edit a document
 pub fn doc_edit(req: &DocEditRequest) -> String {
     crate::collab::doc_edit(
-        &req.space, &req.name, &req.content, &req.agent_id.clone().unwrap_or_default(),
-    ).to_string()
+        &req.space,
+        &req.name,
+        &req.content,
+        &req.agent_id.clone().unwrap_or_default(),
+    )
+    .to_string()
 }
 
 /// Propose changes to a document
 pub fn doc_propose(req: &DocProposeRequest) -> String {
     crate::collab::doc_propose(
-        &req.space, &req.name, &req.content,
-        &req.summary.clone().unwrap_or_default(), &req.agent_id.clone().unwrap_or_default(),
-    ).to_string()
+        &req.space,
+        &req.name,
+        &req.content,
+        &req.summary.clone().unwrap_or_default(),
+        &req.agent_id.clone().unwrap_or_default(),
+    )
+    .to_string()
 }
 
 /// Approve a proposal
 pub fn doc_approve(req: &DocApproveRequest) -> String {
     crate::collab::doc_approve(
-        &req.space, &req.name, &req.proposal_id.clone().unwrap_or_else(|| "latest".into()),
-    ).to_string()
+        &req.space,
+        &req.name,
+        &req.proposal_id.clone().unwrap_or_else(|| "latest".into()),
+    )
+    .to_string()
 }
 
 /// Reject a proposal
 pub fn doc_reject(req: &DocRejectRequest) -> String {
     crate::collab::doc_reject(
-        &req.space, &req.name, &req.proposal_id, &req.reason.clone().unwrap_or_default(),
-    ).to_string()
+        &req.space,
+        &req.name,
+        &req.proposal_id,
+        &req.reason.clone().unwrap_or_default(),
+    )
+    .to_string()
 }
 
 /// Lock a document
 pub fn doc_lock(req: &DocLockRequest) -> String {
     crate::collab::doc_lock(
-        &req.space, &req.name, &req.locked_by.clone().unwrap_or_default(),
-    ).to_string()
+        &req.space,
+        &req.name,
+        &req.locked_by.clone().unwrap_or_default(),
+    )
+    .to_string()
 }
 
 /// Unlock a document
@@ -83,9 +106,13 @@ pub fn doc_unlock(space: &str, name: &str) -> String {
 /// Add a comment to a document
 pub fn doc_comment(req: &DocCommentRequest) -> String {
     crate::collab::doc_comment(
-        &req.space, &req.name, &req.text,
-        &req.author.clone().unwrap_or_default(), req.line.unwrap_or(0),
-    ).to_string()
+        &req.space,
+        &req.name,
+        &req.text,
+        &req.author.clone().unwrap_or_default(),
+        req.line.unwrap_or(0),
+    )
+    .to_string()
 }
 
 /// Read all comments on a document

@@ -1,7 +1,7 @@
-use serde_json::{json, Value};
-use std::path::{Path, PathBuf};
-use std::fs;
 use regex::Regex;
+use serde_json::{json, Value};
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use crate::config;
 use crate::scanner;
@@ -137,20 +137,46 @@ pub fn audit_full(project_path: &str) -> Value {
 
     let all_findings: Vec<Value> = [&code, &security, &intent, &deps]
         .iter()
-        .flat_map(|r| r.get("findings").and_then(|f| f.as_array()).cloned().unwrap_or_default())
+        .flat_map(|r| {
+            r.get("findings")
+                .and_then(|f| f.as_array())
+                .cloned()
+                .unwrap_or_default()
+        })
         .collect();
 
-    let critical = all_findings.iter().filter(|f| f.get("severity").and_then(|s| s.as_str()) == Some("critical")).count();
-    let high = all_findings.iter().filter(|f| f.get("severity").and_then(|s| s.as_str()) == Some("high")).count();
-    let medium = all_findings.iter().filter(|f| f.get("severity").and_then(|s| s.as_str()) == Some("medium")).count();
-    let low = all_findings.iter().filter(|f| f.get("severity").and_then(|s| s.as_str()) == Some("low")).count();
-    let info = all_findings.iter().filter(|f| f.get("severity").and_then(|s| s.as_str()) == Some("info")).count();
+    let critical = all_findings
+        .iter()
+        .filter(|f| f.get("severity").and_then(|s| s.as_str()) == Some("critical"))
+        .count();
+    let high = all_findings
+        .iter()
+        .filter(|f| f.get("severity").and_then(|s| s.as_str()) == Some("high"))
+        .count();
+    let medium = all_findings
+        .iter()
+        .filter(|f| f.get("severity").and_then(|s| s.as_str()) == Some("medium"))
+        .count();
+    let low = all_findings
+        .iter()
+        .filter(|f| f.get("severity").and_then(|s| s.as_str()) == Some("low"))
+        .count();
+    let info = all_findings
+        .iter()
+        .filter(|f| f.get("severity").and_then(|s| s.as_str()) == Some("info"))
+        .count();
 
-    let grade = if critical > 0 { "F" }
-        else if high > 2 { "D" }
-        else if high > 0 || medium > 5 { "C" }
-        else if medium > 0 || low > 5 { "B" }
-        else { "A" };
+    let grade = if critical > 0 {
+        "F"
+    } else if high > 2 {
+        "D"
+    } else if high > 0 || medium > 5 {
+        "C"
+    } else if medium > 0 || low > 5 {
+        "B"
+    } else {
+        "A"
+    };
 
     let result = json!({
         "project": project_path,
@@ -183,18 +209,48 @@ fn find_loose_ends(root: &Path) -> Vec<Finding> {
         (r"//.*\bHACK\b", "loose_end", "medium", "HACK found"),
         (r"//.*\bXXX\b", "loose_end", "medium", "XXX marker found"),
         (r"//.*\bTEMP\b", "loose_end", "low", "TEMP marker found"),
-        (r"\bunimplemented!\b", "incomplete", "high", "unimplemented!() macro — code path not finished"),
-        (r"\btodo!\b", "incomplete", "high", "todo!() macro — code path not finished"),
-        (r#"panic!\("not implemented"\)"#, "incomplete", "high", "panic with 'not implemented'"),
+        (
+            r"\bunimplemented!\b",
+            "incomplete",
+            "high",
+            "unimplemented!() macro — code path not finished",
+        ),
+        (
+            r"\btodo!\b",
+            "incomplete",
+            "high",
+            "todo!() macro — code path not finished",
+        ),
+        (
+            r#"panic!\("not implemented"\)"#,
+            "incomplete",
+            "high",
+            "panic with 'not implemented'",
+        ),
     ];
     scan_source_files(root, &patterns)
 }
 
 fn find_dead_code_markers(root: &Path) -> Vec<Finding> {
     let patterns = [
-        (r"#\[allow\(dead_code\)\]", "dead_code", "low", "Explicitly suppressed dead_code warning"),
-        (r"#\[allow\(unused\)\]", "dead_code", "low", "Explicitly suppressed unused warning"),
-        (r"//.*removed|//.*deprecated|//.*legacy", "dead_code", "info", "Comment suggesting removed/deprecated code"),
+        (
+            r"#\[allow\(dead_code\)\]",
+            "dead_code",
+            "low",
+            "Explicitly suppressed dead_code warning",
+        ),
+        (
+            r"#\[allow\(unused\)\]",
+            "dead_code",
+            "low",
+            "Explicitly suppressed unused warning",
+        ),
+        (
+            r"//.*removed|//.*deprecated|//.*legacy",
+            "dead_code",
+            "info",
+            "Comment suggesting removed/deprecated code",
+        ),
     ];
     scan_source_files(root, &patterns)
 }
@@ -203,10 +259,14 @@ fn find_fragmented_files(root: &Path) -> Vec<Finding> {
     let mut findings = Vec::new();
     for entry in walk_source_files(root) {
         if let Ok(content) = fs::read_to_string(&entry) {
-            let real_lines = content.lines()
+            let real_lines = content
+                .lines()
                 .filter(|l| {
                     let t = l.trim();
-                    !t.is_empty() && !t.starts_with("//") && !t.starts_with("/*") && !t.starts_with('*')
+                    !t.is_empty()
+                        && !t.starts_with("//")
+                        && !t.starts_with("/*")
+                        && !t.starts_with('*')
                 })
                 .count();
             if real_lines < 5 && real_lines > 0 {
@@ -216,7 +276,10 @@ fn find_fragmented_files(root: &Path) -> Vec<Finding> {
                     category: "fragmentation",
                     file: rel.display().to_string(),
                     line: 0,
-                    message: format!("File has only {} lines of code — consider merging", real_lines),
+                    message: format!(
+                        "File has only {} lines of code — consider merging",
+                        real_lines
+                    ),
                 });
             }
         }
@@ -226,8 +289,18 @@ fn find_fragmented_files(root: &Path) -> Vec<Finding> {
 
 fn find_empty_impls(root: &Path) -> Vec<Finding> {
     let patterns = [
-        (r"\{\s*\}", "incomplete", "info", "Empty block — possible stub"),
-        (r"_ =>\s*\{\s*\}", "incomplete", "low", "Catch-all match arm with empty body"),
+        (
+            r"\{\s*\}",
+            "incomplete",
+            "info",
+            "Empty block — possible stub",
+        ),
+        (
+            r"_ =>\s*\{\s*\}",
+            "incomplete",
+            "low",
+            "Catch-all match arm with empty body",
+        ),
     ];
     scan_source_files(root, &patterns)
 }
@@ -236,11 +309,36 @@ fn find_empty_impls(root: &Path) -> Vec<Finding> {
 
 fn find_hardcoded_secrets(root: &Path) -> Vec<Finding> {
     let patterns = [
-        (r#"(?i)(api[_-]?key|secret|password|token|auth_token)\s*[:=]\s*["'][^"']{8,}"#, "secret", "critical", "Possible hardcoded secret"),
-        (r"AKIA[A-Z0-9]{16}", "secret", "critical", "AWS access key ID pattern"),
-        (r"sk-[a-zA-Z0-9]{20,}", "secret", "critical", "API key pattern (OpenAI/Anthropic)"),
-        (r"ghp_[a-zA-Z0-9]{36}", "secret", "critical", "GitHub personal access token"),
-        (r"xox[bpors]-[a-zA-Z0-9-]+", "secret", "critical", "Slack token pattern"),
+        (
+            r#"(?i)(api[_-]?key|secret|password|token|auth_token)\s*[:=]\s*["'][^"']{8,}"#,
+            "secret",
+            "critical",
+            "Possible hardcoded secret",
+        ),
+        (
+            r"AKIA[A-Z0-9]{16}",
+            "secret",
+            "critical",
+            "AWS access key ID pattern",
+        ),
+        (
+            r"sk-[a-zA-Z0-9]{20,}",
+            "secret",
+            "critical",
+            "API key pattern (OpenAI/Anthropic)",
+        ),
+        (
+            r"ghp_[a-zA-Z0-9]{36}",
+            "secret",
+            "critical",
+            "GitHub personal access token",
+        ),
+        (
+            r"xox[bpors]-[a-zA-Z0-9-]+",
+            "secret",
+            "critical",
+            "Slack token pattern",
+        ),
     ];
     // Filter: skip test files, comments, and .lock files
     scan_source_files(root, &patterns)
@@ -248,7 +346,12 @@ fn find_hardcoded_secrets(root: &Path) -> Vec<Finding> {
 
 fn find_unsafe_code(root: &Path) -> Vec<Finding> {
     let patterns = [
-        (r"\bunsafe\s*\{", "unsafe", "medium", "Unsafe block — requires manual review"),
+        (
+            r"\bunsafe\s*\{",
+            "unsafe",
+            "medium",
+            "Unsafe block — requires manual review",
+        ),
         (r"\*mut\s+\w+", "unsafe", "medium", "Raw mutable pointer"),
         (r"\*const\s+\w+", "unsafe", "low", "Raw const pointer"),
     ];
@@ -257,17 +360,42 @@ fn find_unsafe_code(root: &Path) -> Vec<Finding> {
 
 fn find_command_injection(root: &Path) -> Vec<Finding> {
     let patterns = [
-        (r"Command::new\(.*format!", "injection", "high", "Command::new with format! — possible injection vector"),
-        (r"\.arg\(.*format!", "injection", "medium", "Command arg with format! — check input sanitization"),
-        (r#"shell\s*=\s*true|/bin/sh|/bin/bash"#, "injection", "high", "Shell execution — review for injection"),
+        (
+            r"Command::new\(.*format!",
+            "injection",
+            "high",
+            "Command::new with format! — possible injection vector",
+        ),
+        (
+            r"\.arg\(.*format!",
+            "injection",
+            "medium",
+            "Command arg with format! — check input sanitization",
+        ),
+        (
+            r#"shell\s*=\s*true|/bin/sh|/bin/bash"#,
+            "injection",
+            "high",
+            "Shell execution — review for injection",
+        ),
     ];
     scan_source_files(root, &patterns)
 }
 
 fn find_path_traversal(root: &Path) -> Vec<Finding> {
     let patterns = [
-        (r"\.join\(.*req\.", "path_traversal", "medium", "Path join with request data — check for traversal"),
-        (r#"\.\./|\.\.\\|%2e%2e"#, "path_traversal", "high", "Path traversal pattern in source"),
+        (
+            r"\.join\(.*req\.",
+            "path_traversal",
+            "medium",
+            "Path join with request data — check for traversal",
+        ),
+        (
+            r#"\.\./|\.\.\\|%2e%2e"#,
+            "path_traversal",
+            "high",
+            "Path traversal pattern in source",
+        ),
     ];
     scan_source_files(root, &patterns)
 }
@@ -284,13 +412,24 @@ fn run_cargo_audit(root: &Path) -> Vec<Finding> {
             let stdout = String::from_utf8_lossy(&out.stdout);
             if let Ok(v) = serde_json::from_str::<Value>(&stdout) {
                 let mut findings = Vec::new();
-                if let Some(vulns) = v.get("vulnerabilities").and_then(|v| v.get("list")).and_then(|l| l.as_array()) {
+                if let Some(vulns) = v
+                    .get("vulnerabilities")
+                    .and_then(|v| v.get("list"))
+                    .and_then(|l| l.as_array())
+                {
                     for vuln in vulns {
                         let empty = json!({});
                         let advisory = vuln.get("advisory").unwrap_or(&empty);
-                        let pkg = vuln.get("package").and_then(|p| p.get("name")).and_then(|n| n.as_str()).unwrap_or("?");
+                        let pkg = vuln
+                            .get("package")
+                            .and_then(|p| p.get("name"))
+                            .and_then(|n| n.as_str())
+                            .unwrap_or("?");
                         let id = advisory.get("id").and_then(|i| i.as_str()).unwrap_or("?");
-                        let title = advisory.get("title").and_then(|t| t.as_str()).unwrap_or("?");
+                        let title = advisory
+                            .get("title")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("?");
                         findings.push(Finding {
                             severity: "high",
                             category: "cve",
@@ -322,7 +461,11 @@ fn find_stub_functions(root: &Path) -> Vec<Finding> {
     let mut findings = Vec::new();
     for entry in walk_source_files(root) {
         if let Ok(content) = fs::read_to_string(&entry) {
-            let rel = entry.strip_prefix(root).unwrap_or(&entry).display().to_string();
+            let rel = entry
+                .strip_prefix(root)
+                .unwrap_or(&entry)
+                .display()
+                .to_string();
             for (i, line) in content.lines().enumerate() {
                 let trimmed = line.trim();
                 // Functions that just return default/empty/Ok(())
@@ -330,22 +473,30 @@ fn find_stub_functions(root: &Path) -> Vec<Finding> {
                     && !trimmed.contains("test")
                 {
                     // Check if next non-empty line is just a closing brace or trivial return
-                    let remaining: Vec<&str> = content.lines().skip(i + 1)
+                    let remaining: Vec<&str> = content
+                        .lines()
+                        .skip(i + 1)
                         .take(3)
                         .map(|l| l.trim())
                         .filter(|l| !l.is_empty())
                         .collect();
                     if remaining.len() <= 2 {
                         let body = remaining.join(" ");
-                        if body == "}" || body == "Ok(()) }" || body == "Default::default() }"
-                            || body == "String::new() }" || body == "Vec::new() }"
+                        if body == "}"
+                            || body == "Ok(()) }"
+                            || body == "Default::default() }"
+                            || body == "String::new() }"
+                            || body == "Vec::new() }"
                         {
                             findings.push(Finding {
                                 severity: "medium",
                                 category: "stub",
                                 file: rel.clone(),
                                 line: i + 1,
-                                message: format!("Stub function: {}", trimmed.chars().take(60).collect::<String>()),
+                                message: format!(
+                                    "Stub function: {}",
+                                    trimmed.chars().take(60).collect::<String>()
+                                ),
                             });
                         }
                     }
@@ -366,12 +517,16 @@ fn find_untested_modules(root: &Path) -> Vec<Finding> {
     if src_dir.exists() {
         for entry in walk_source_files(&src_dir) {
             if let Some(name) = entry.file_stem().and_then(|s| s.to_str()) {
-                if name == "mod" || name == "lib" || name == "main" { continue; }
+                if name == "mod" || name == "lib" || name == "main" {
+                    continue;
+                }
                 // Check for inline tests
                 let content = fs::read_to_string(&entry).unwrap_or_default();
-                let has_inline_tests = content.contains("#[cfg(test)]") || content.contains("#[test]");
+                let has_inline_tests =
+                    content.contains("#[cfg(test)]") || content.contains("#[test]");
                 // Check for integration test file
-                let has_integration = has_test_dir && test_dir.join(format!("{}.rs", name)).exists();
+                let has_integration =
+                    has_test_dir && test_dir.join(format!("{}.rs", name)).exists();
 
                 if !has_inline_tests && !has_integration {
                     let rel = entry.strip_prefix(root).unwrap_or(&entry);
@@ -394,11 +549,16 @@ fn check_module_declarations(root: &Path) -> Vec<Finding> {
     // Check lib.rs/main.rs for declared modules
     for entry_name in &["src/lib.rs", "src/main.rs"] {
         let entry = root.join(entry_name);
-        if !entry.exists() { continue; }
+        if !entry.exists() {
+            continue;
+        }
         if let Ok(content) = fs::read_to_string(&entry) {
             for (i, line) in content.lines().enumerate() {
                 let trimmed = line.trim();
-                if let Some(mod_name) = trimmed.strip_prefix("pub mod ").or_else(|| trimmed.strip_prefix("mod ")) {
+                if let Some(mod_name) = trimmed
+                    .strip_prefix("pub mod ")
+                    .or_else(|| trimmed.strip_prefix("mod "))
+                {
                     let mod_name = mod_name.trim_end_matches(';');
                     let mod_file = root.join("src").join(format!("{}.rs", mod_name));
                     let mod_dir = root.join("src").join(mod_name).join("mod.rs");
@@ -408,7 +568,10 @@ fn check_module_declarations(root: &Path) -> Vec<Finding> {
                             category: "missing_module",
                             file: entry_name.to_string(),
                             line: i + 1,
-                            message: format!("Declared module '{}' has no corresponding file", mod_name),
+                            message: format!(
+                                "Declared module '{}' has no corresponding file",
+                                mod_name
+                            ),
                         });
                     }
                 }
@@ -444,7 +607,8 @@ fn check_readme_claims(root: &Path, description: &str) -> Vec<Finding> {
     }
 
     // Check if description keywords map to actual source files
-    let keywords: Vec<&str> = description.split_whitespace()
+    let keywords: Vec<&str> = description
+        .split_whitespace()
         .filter(|w| w.len() > 4)
         .collect();
     let src = root.join("src");
@@ -475,17 +639,24 @@ fn check_readme_claims(root: &Path, description: &str) -> Vec<Finding> {
 
 fn analyze_cargo_deps(root: &Path) -> Vec<Finding> {
     let cargo_toml = root.join("Cargo.toml");
-    if !cargo_toml.exists() { return Vec::new(); }
+    if !cargo_toml.exists() {
+        return Vec::new();
+    }
 
     let mut findings = Vec::new();
     if let Ok(content) = fs::read_to_string(&cargo_toml) {
         // Count dependencies
-        let dep_count = content.lines()
+        let dep_count = content
+            .lines()
             .filter(|l| {
                 let t = l.trim();
-                !t.starts_with('#') && !t.starts_with('[') && t.contains('=')
-                    && !t.starts_with("name") && !t.starts_with("version")
-                    && !t.starts_with("edition") && !t.starts_with("authors")
+                !t.starts_with('#')
+                    && !t.starts_with('[')
+                    && t.contains('=')
+                    && !t.starts_with("name")
+                    && !t.starts_with("version")
+                    && !t.starts_with("edition")
+                    && !t.starts_with("authors")
             })
             .count();
 
@@ -495,7 +666,10 @@ fn analyze_cargo_deps(root: &Path) -> Vec<Finding> {
                 category: "deps",
                 file: "Cargo.toml".into(),
                 line: 0,
-                message: format!("{} dependencies — consider reducing to minimize attack surface", dep_count),
+                message: format!(
+                    "{} dependencies — consider reducing to minimize attack surface",
+                    dep_count
+                ),
             });
         }
 
@@ -517,20 +691,33 @@ fn analyze_cargo_deps(root: &Path) -> Vec<Finding> {
 
 fn analyze_node_deps(root: &Path) -> Vec<Finding> {
     let pkg_json = root.join("package.json");
-    if !pkg_json.exists() { return Vec::new(); }
+    if !pkg_json.exists() {
+        return Vec::new();
+    }
 
     let mut findings = Vec::new();
     if let Ok(content) = fs::read_to_string(&pkg_json) {
         if let Ok(v) = serde_json::from_str::<Value>(&content) {
-            let deps = v.get("dependencies").and_then(|d| d.as_object()).map(|d| d.len()).unwrap_or(0);
-            let dev_deps = v.get("devDependencies").and_then(|d| d.as_object()).map(|d| d.len()).unwrap_or(0);
+            let deps = v
+                .get("dependencies")
+                .and_then(|d| d.as_object())
+                .map(|d| d.len())
+                .unwrap_or(0);
+            let dev_deps = v
+                .get("devDependencies")
+                .and_then(|d| d.as_object())
+                .map(|d| d.len())
+                .unwrap_or(0);
             if deps + dev_deps > 50 {
                 findings.push(Finding {
                     severity: "medium",
                     category: "deps",
                     file: "package.json".into(),
                     line: 0,
-                    message: format!("{} total dependencies — review for unused packages", deps + dev_deps),
+                    message: format!(
+                        "{} total dependencies — review for unused packages",
+                        deps + dev_deps
+                    ),
                 });
             }
         }
@@ -540,7 +727,9 @@ fn analyze_node_deps(root: &Path) -> Vec<Finding> {
 
 fn find_duplicate_deps(root: &Path) -> Vec<Finding> {
     // Try cargo tree --duplicates
-    if !root.join("Cargo.lock").exists() { return Vec::new(); }
+    if !root.join("Cargo.lock").exists() {
+        return Vec::new();
+    }
 
     let output = std::process::Command::new("cargo")
         .args(["tree", "--duplicates", "--depth", "1"])
@@ -550,7 +739,8 @@ fn find_duplicate_deps(root: &Path) -> Vec<Finding> {
     match output {
         Ok(out) if out.status.success() => {
             let stdout = String::from_utf8_lossy(&out.stdout);
-            let dupes: Vec<&str> = stdout.lines()
+            let dupes: Vec<&str> = stdout
+                .lines()
                 .filter(|l| !l.starts_with(' ') && !l.is_empty())
                 .collect();
             if dupes.len() > 1 {
@@ -559,8 +749,11 @@ fn find_duplicate_deps(root: &Path) -> Vec<Finding> {
                     category: "deps",
                     file: "Cargo.lock".into(),
                     line: 0,
-                    message: format!("{} duplicate dependencies: {}", dupes.len(),
-                        dupes.iter().take(5).cloned().collect::<Vec<_>>().join(", ")),
+                    message: format!(
+                        "{} duplicate dependencies: {}",
+                        dupes.len(),
+                        dupes.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
+                    ),
                 }]
             } else {
                 Vec::new()
@@ -574,18 +767,25 @@ fn find_duplicate_deps(root: &Path) -> Vec<Finding> {
 
 fn store_audit(project: &str, result: &Value) {
     // Extract just the project name for storage (avoid absolute paths)
-    let name = Path::new(project).file_name()
+    let name = Path::new(project)
+        .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| project.replace('/', "_"));
     let dir = config::dx_root().join("audits").join(&name);
     let _ = fs::create_dir_all(&dir);
     let ts = chrono::Utc::now().format("%Y%m%dT%H%M%S").to_string();
     let path = dir.join(format!("{}.json", ts));
-    let _ = fs::write(&path, serde_json::to_string_pretty(result).unwrap_or_default());
+    let _ = fs::write(
+        &path,
+        serde_json::to_string_pretty(result).unwrap_or_default(),
+    );
 
     // Also write "latest.json" symlink-like file
     let latest = dir.join("latest.json");
-    let _ = fs::write(&latest, serde_json::to_string_pretty(result).unwrap_or_default());
+    let _ = fs::write(
+        &latest,
+        serde_json::to_string_pretty(result).unwrap_or_default(),
+    );
 }
 
 /// Load the latest audit result for a project by name.
@@ -621,32 +821,43 @@ pub fn list_audited_projects() -> Vec<String> {
 
 // ========== Core Scanning Engine ==========
 
-fn scan_source_files(root: &Path, patterns: &[(&str, &'static str, &'static str, &'static str)]) -> Vec<Finding> {
+fn scan_source_files(
+    root: &Path,
+    patterns: &[(&str, &'static str, &'static str, &'static str)],
+) -> Vec<Finding> {
     let mut findings = Vec::new();
-    let compiled: Vec<(Regex, &'static str, &'static str, &'static str)> = patterns.iter()
-        .filter_map(|(pat, cat, sev, msg)| {
-            Regex::new(pat).ok().map(|re| (re, *cat, *sev, *msg))
-        })
+    let compiled: Vec<(Regex, &'static str, &'static str, &'static str)> = patterns
+        .iter()
+        .filter_map(|(pat, cat, sev, msg)| Regex::new(pat).ok().map(|re| (re, *cat, *sev, *msg)))
         .collect();
 
     for entry in walk_source_files(root) {
         // Skip test files for secret scanning
         let rel = entry.strip_prefix(root).unwrap_or(&entry);
         let rel_str = rel.display().to_string();
-        if rel_str.contains("target/") || rel_str.contains("node_modules/") { continue; }
+        if rel_str.contains("target/") || rel_str.contains("node_modules/") {
+            continue;
+        }
         // Skip audit module itself to avoid self-matching regex patterns
-        if rel_str.contains("audit.rs") || rel_str.ends_with("audit/mod.rs") { continue; }
+        if rel_str.contains("audit.rs") || rel_str.ends_with("audit/mod.rs") {
+            continue;
+        }
 
         if let Ok(content) = fs::read_to_string(&entry) {
             for (i, line) in content.lines().enumerate() {
                 // Skip comment-only lines for some checks
                 let trimmed = line.trim();
-                if trimmed.starts_with("//") && !trimmed.contains("TODO") && !trimmed.contains("FIXME")
-                    && !trimmed.contains("HACK") && !trimmed.contains("XXX") {
+                if trimmed.starts_with("//")
+                    && !trimmed.contains("TODO")
+                    && !trimmed.contains("FIXME")
+                    && !trimmed.contains("HACK")
+                    && !trimmed.contains("XXX")
+                {
                     continue;
                 }
                 // Skip regex pattern definitions (avoid self-matching)
-                if trimmed.contains("r#\"") || trimmed.contains("r\"") && trimmed.contains("Regex") {
+                if trimmed.contains("r#\"") || trimmed.contains("r\"") && trimmed.contains("Regex")
+                {
                     continue;
                 }
                 // Skip compile-time includes (not runtime path traversal)
@@ -654,7 +865,9 @@ fn scan_source_files(root: &Path, patterns: &[(&str, &'static str, &'static str,
                     continue;
                 }
                 // Skip string literals / descriptions mentioning keywords
-                if trimmed.contains("description") && (trimmed.contains("\"") || trimmed.contains("'")) {
+                if trimmed.contains("description")
+                    && (trimmed.contains("\"") || trimmed.contains("'"))
+                {
                     continue;
                 }
                 for (re, cat, sev, msg) in &compiled {
@@ -664,7 +877,11 @@ fn scan_source_files(root: &Path, patterns: &[(&str, &'static str, &'static str,
                             category: cat,
                             file: rel_str.clone(),
                             line: i + 1,
-                            message: format!("{}: {}", msg, trimmed.chars().take(80).collect::<String>()),
+                            message: format!(
+                                "{}: {}",
+                                msg,
+                                trimmed.chars().take(80).collect::<String>()
+                            ),
                         });
                     }
                 }
@@ -677,21 +894,28 @@ fn scan_source_files(root: &Path, patterns: &[(&str, &'static str, &'static str,
 fn walk_source_files(root: &Path) -> Box<dyn Iterator<Item = PathBuf>> {
     let extensions = ["rs", "ts", "tsx", "js", "jsx", "py", "go", "java"];
     let root = root.to_path_buf();
-    Box::new(walkdir::WalkDir::new(&root)
-        .into_iter()
-        .filter_entry(|e| {
-            let name = e.file_name().to_string_lossy();
-            // Skip build/vendor directories
-            !matches!(name.as_ref(), "target" | "node_modules" | ".git" | "dist" | "build" | "__pycache__")
-        })
-        .filter_map(|e| e.ok())
-        .filter(move |e| {
-            e.file_type().is_file() && e.path().extension()
-                .and_then(|ext| ext.to_str())
-                .map(|ext| extensions.contains(&ext))
-                .unwrap_or(false)
-        })
-        .map(|e| e.into_path()))
+    Box::new(
+        walkdir::WalkDir::new(&root)
+            .into_iter()
+            .filter_entry(|e| {
+                let name = e.file_name().to_string_lossy();
+                // Skip build/vendor directories
+                !matches!(
+                    name.as_ref(),
+                    "target" | "node_modules" | ".git" | "dist" | "build" | "__pycache__"
+                )
+            })
+            .filter_map(|e| e.ok())
+            .filter(move |e| {
+                e.file_type().is_file()
+                    && e.path()
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .map(|ext| extensions.contains(&ext))
+                        .unwrap_or(false)
+            })
+            .map(|e| e.into_path()),
+    )
 }
 
 fn resolve_path(project: &str) -> PathBuf {
@@ -702,7 +926,11 @@ fn resolve_path(project: &str) -> PathBuf {
     }
     // Try scanner registry
     let reg = scanner::load_registry();
-    if let Some(proj) = reg.projects.iter().find(|pp| pp.name.to_lowercase() == project.to_lowercase()) {
+    if let Some(proj) = reg
+        .projects
+        .iter()
+        .find(|pp| pp.name.to_lowercase() == project.to_lowercase())
+    {
         return PathBuf::from(&proj.path);
     }
     // Fallback: ~/Projects/{name}
@@ -747,11 +975,13 @@ mod tests {
         let findings = result["findings"].as_array().unwrap();
         println!("Code audit: {} findings", findings.len());
         for f in findings.iter().take(10) {
-            println!("  [{:>8}] {} — {}:{}",
+            println!(
+                "  [{:>8}] {} — {}:{}",
                 f["severity"].as_str().unwrap_or("?"),
                 f["message"].as_str().unwrap_or("?"),
                 f["file"].as_str().unwrap_or("?"),
-                f["line"]);
+                f["line"]
+            );
         }
     }
 
@@ -762,11 +992,13 @@ mod tests {
         let findings = result["findings"].as_array().unwrap();
         println!("Security audit: {} findings", findings.len());
         for f in findings.iter().take(10) {
-            println!("  [{:>8}] {} — {}:{}",
+            println!(
+                "  [{:>8}] {} — {}:{}",
                 f["severity"].as_str().unwrap_or("?"),
                 f["message"].as_str().unwrap_or("?"),
                 f["file"].as_str().unwrap_or("?"),
-                f["line"]);
+                f["line"]
+            );
         }
     }
 

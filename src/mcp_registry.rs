@@ -15,7 +15,9 @@ pub struct McpInfo {
     pub category: String,
 }
 
-fn default_category() -> String { "general".into() }
+fn default_category() -> String {
+    "general".into()
+}
 
 /// Load MCP registry dynamically from ~/.claude.json + optional enrichment file
 pub fn load_registry() -> Vec<McpInfo> {
@@ -115,49 +117,52 @@ pub fn route_mcps(project: &str, task: &str, role: &str) -> Vec<McpMatch> {
     let query = format!("{} {} {}", project, task, role).to_lowercase();
     let project_lower = project.to_lowercase();
 
-    let mut matches: Vec<McpMatch> = registry.iter().filter_map(|mcp| {
-        let mut score: u32 = 0;
-        let mut reasons = Vec::new();
+    let mut matches: Vec<McpMatch> = registry
+        .iter()
+        .filter_map(|mcp| {
+            let mut score: u32 = 0;
+            let mut reasons = Vec::new();
 
-        // Direct project match (highest signal)
-        for p in &mcp.projects {
-            if p.to_lowercase() == project_lower || project_lower.contains(&p.to_lowercase()) {
-                score += 100;
-                reasons.push(format!("project:{}", p));
+            // Direct project match (highest signal)
+            for p in &mcp.projects {
+                if p.to_lowercase() == project_lower || project_lower.contains(&p.to_lowercase()) {
+                    score += 100;
+                    reasons.push(format!("project:{}", p));
+                }
             }
-        }
 
-        // Keyword match against task+project+role
-        for kw in &mcp.keywords {
-            if query.contains(&kw.to_lowercase()) {
-                score += 30;
-                reasons.push(format!("keyword:{}", kw));
+            // Keyword match against task+project+role
+            for kw in &mcp.keywords {
+                if query.contains(&kw.to_lowercase()) {
+                    score += 30;
+                    reasons.push(format!("keyword:{}", kw));
+                }
             }
-        }
 
-        // Category match against role
-        let role_categories = role_to_categories(role);
-        if role_categories.contains(&mcp.category.as_str()) {
-            score += 20;
-            reasons.push(format!("role:{}", mcp.category));
-        }
+            // Category match against role
+            let role_categories = role_to_categories(role);
+            if role_categories.contains(&mcp.category.as_str()) {
+                score += 20;
+                reasons.push(format!("role:{}", mcp.category));
+            }
 
-        // Infrastructure MCPs always get a baseline
-        if mcp.category == "infrastructure" || mcp.category == "general" {
-            score += 5;
-        }
+            // Infrastructure MCPs always get a baseline
+            if mcp.category == "infrastructure" || mcp.category == "general" {
+                score += 5;
+            }
 
-        if score > 0 {
-            Some(McpMatch {
-                name: mcp.name.clone(),
-                score,
-                reasons,
-                description: mcp.description.clone(),
-            })
-        } else {
-            None
-        }
-    }).collect();
+            if score > 0 {
+                Some(McpMatch {
+                    name: mcp.name.clone(),
+                    score,
+                    reasons,
+                    description: mcp.description.clone(),
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
 
     matches.sort_by(|a, b| b.score.cmp(&a.score));
     matches
@@ -166,13 +171,19 @@ pub fn route_mcps(project: &str, task: &str, role: &str) -> Vec<McpMatch> {
 /// Search MCPs by capability or keyword
 pub fn search(query: &str) -> Vec<McpInfo> {
     let q = query.to_lowercase();
-    load_registry().into_iter().filter(|mcp| {
-        mcp.name.to_lowercase().contains(&q)
-            || mcp.description.to_lowercase().contains(&q)
-            || mcp.capabilities.iter().any(|c| c.to_lowercase().contains(&q))
-            || mcp.keywords.iter().any(|k| k.to_lowercase().contains(&q))
-            || mcp.category.to_lowercase().contains(&q)
-    }).collect()
+    load_registry()
+        .into_iter()
+        .filter(|mcp| {
+            mcp.name.to_lowercase().contains(&q)
+                || mcp.description.to_lowercase().contains(&q)
+                || mcp
+                    .capabilities
+                    .iter()
+                    .any(|c| c.to_lowercase().contains(&q))
+                || mcp.keywords.iter().any(|k| k.to_lowercase().contains(&q))
+                || mcp.category.to_lowercase().contains(&q)
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Serialize)]

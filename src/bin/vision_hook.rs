@@ -9,9 +9,9 @@
 //! - PostToolUse (Bash): after git commit → flag task status updates
 //! - Stop: session summary
 
-use regex::Regex;
 use dx_terminal::config::RuntimeConfig;
 use dx_terminal::vision;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -34,8 +34,20 @@ static NOISE_WORDS: &[&str] = &[
 ];
 
 static WORK_INDICATORS: &[&str] = &[
-    "add", "build", "create", "implement", "fix", "update", "refactor", "change", "modify",
-    "improve", "make", "write", "design", "develop",
+    "add",
+    "build",
+    "create",
+    "implement",
+    "fix",
+    "update",
+    "refactor",
+    "change",
+    "modify",
+    "improve",
+    "make",
+    "write",
+    "design",
+    "develop",
 ];
 
 // ── Data types ──
@@ -101,7 +113,10 @@ fn load_session() -> SessionEdits {
 }
 
 fn save_session(session: &SessionEdits) {
-    let _ = fs::write(SESSION_FILE, serde_json::to_string_pretty(session).unwrap_or_default());
+    let _ = fs::write(
+        SESSION_FILE,
+        serde_json::to_string_pretty(session).unwrap_or_default(),
+    );
 }
 
 // ── Vision scanning ──
@@ -152,7 +167,10 @@ fn scan_all_visions() -> Vec<Value> {
         ts: now_secs(),
         visions: visions.clone(),
     };
-    let _ = fs::write(VISIONS_CACHE, serde_json::to_string(&cache).unwrap_or_default());
+    let _ = fs::write(
+        VISIONS_CACHE,
+        serde_json::to_string(&cache).unwrap_or_default(),
+    );
 
     visions
 }
@@ -248,9 +266,7 @@ fn feature_readiness_blockers<'a>(feature: &'a Value, phase: &str) -> Vec<&'a st
 }
 
 fn is_doc_like_edit(file_path: &str) -> bool {
-    file_path.contains("/.vision/")
-        || file_path.ends_with(".md")
-        || file_path.contains("/docs/")
+    file_path.contains("/.vision/") || file_path.ends_with(".md") || file_path.contains("/docs/")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -367,7 +383,10 @@ fn auto_verify_acceptance_items(
             Some(id) => id,
             None => continue,
         };
-        let status = item.get("status").and_then(|v| v.as_str()).unwrap_or("draft");
+        let status = item
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("draft");
         if status == "verified" || status == "failed" {
             continue;
         }
@@ -386,7 +405,10 @@ fn auto_verify_acceptance_items(
             continue;
         }
 
-        let evidence = vec![format!("command: {}", command.chars().take(240).collect::<String>())];
+        let evidence = vec![format!(
+            "command: {}",
+            command.chars().take(240).collect::<String>()
+        )];
         let result = vision::verify_acceptance_criterion(
             project,
             feature_id,
@@ -480,14 +502,8 @@ fn classify_prompt(prompt: &str, visions: &[Value]) -> Option<Classification> {
     let mut best_score = 0i32;
 
     for vision in visions {
-        let project = vision
-            .get("project")
-            .and_then(|p| p.as_str())
-            .unwrap_or("");
-        let project_path = vision
-            .get("_path")
-            .and_then(|p| p.as_str())
-            .unwrap_or("");
+        let project = vision.get("project").and_then(|p| p.as_str()).unwrap_or("");
+        let project_path = vision.get("_path").and_then(|p| p.as_str()).unwrap_or("");
         let project_bonus = if !project.is_empty() && prompt_lower.contains(&project.to_lowercase())
         {
             2
@@ -509,7 +525,10 @@ fn classify_prompt(prompt: &str, visions: &[Value]) -> Option<Classification> {
         for goal in goals {
             let goal_id = goal.get("id").and_then(|i| i.as_str()).unwrap_or("");
             let goal_title = goal.get("title").and_then(|t| t.as_str()).unwrap_or("");
-            let goal_desc = goal.get("description").and_then(|d| d.as_str()).unwrap_or("");
+            let goal_desc = goal
+                .get("description")
+                .and_then(|d| d.as_str())
+                .unwrap_or("");
             let goal_metrics = goal
                 .get("metrics")
                 .and_then(|m| m.as_array())
@@ -534,7 +553,10 @@ fn classify_prompt(prompt: &str, visions: &[Value]) -> Option<Classification> {
             let mut matched_feature: Option<Value> = None;
             for feat in &goal_features {
                 let feat_title = feat.get("title").and_then(|t| t.as_str()).unwrap_or("");
-                let feat_desc = feat.get("description").and_then(|d| d.as_str()).unwrap_or("");
+                let feat_desc = feat
+                    .get("description")
+                    .and_then(|d| d.as_str())
+                    .unwrap_or("");
                 let feat_text = format!("{} {}", feat_title, feat_desc);
                 let f_score = score_match(&feat_text, &words);
                 if f_score > 0 {
@@ -690,8 +712,10 @@ fn build_context(classification: &Classification) -> Option<String> {
                         })
                         .unwrap_or(0);
 
-                    let mut line =
-                        format!("  {}: {} [{}] \u{2014} {}/{} tasks", fid, ftitle, fstatus, tasks_done, tasks);
+                    let mut line = format!(
+                        "  {}: {} [{}] \u{2014} {}/{} tasks",
+                        fid, ftitle, fstatus, tasks_done, tasks
+                    );
                     if open_q > 0 {
                         line += &format!(" \u{2014} {} OPEN QUESTIONS", open_q);
                     }
@@ -1095,12 +1119,17 @@ fn handle_post_tool_use(event: &Value) -> Option<Value> {
         let tid = task.get("id").and_then(|i| i.as_str()).unwrap_or("?");
         let ttitle = task.get("title").and_then(|t| t.as_str()).unwrap_or("?");
         let fid = feature.get("id").and_then(|i| i.as_str()).unwrap_or("?");
-        let task_status = task.get("status").and_then(|s| s.as_str()).unwrap_or("planned");
+        let task_status = task
+            .get("status")
+            .and_then(|s| s.as_str())
+            .unwrap_or("planned");
 
         let mut notes = Vec::new();
 
-        if matches!(command_kind, CommandKind::Build | CommandKind::Test | CommandKind::Lint | CommandKind::Commit)
-            && task_status == "planned"
+        if matches!(
+            command_kind,
+            CommandKind::Build | CommandKind::Test | CommandKind::Lint | CommandKind::Commit
+        ) && task_status == "planned"
         {
             let result = vision::update_task_status(
                 &project,
@@ -1117,7 +1146,14 @@ fn handle_post_tool_use(event: &Value) -> Option<Value> {
 
         if command_kind == CommandKind::Test && command_success == Some(true) {
             let current_status = load_vision(&project)
-                .and_then(|v| find_task_by_branch(&v, &branch).map(|(_, t)| t.get("status").and_then(|s| s.as_str()).unwrap_or("planned").to_string()))
+                .and_then(|v| {
+                    find_task_by_branch(&v, &branch).map(|(_, t)| {
+                        t.get("status")
+                            .and_then(|s| s.as_str())
+                            .unwrap_or("planned")
+                            .to_string()
+                    })
+                })
                 .unwrap_or_else(|| task_status.to_string());
 
             if current_status == "done" || current_status == "in_progress" {
@@ -1131,17 +1167,18 @@ fn handle_post_tool_use(event: &Value) -> Option<Value> {
                     None,
                 );
                 notify_dashboard_vision_change(&project, &result, Some(fid));
-                notes.push(format!("task {} auto-marked verified after successful test command", tid));
+                notes.push(format!(
+                    "task {} auto-marked verified after successful test command",
+                    tid
+                ));
             }
 
             let refreshed = load_vision(&project).unwrap_or_else(|| vision.clone());
             if let Some((refreshed_feature, _)) = find_task_by_branch(&refreshed, &branch) {
-                let verified = auto_verify_acceptance_items(&project, refreshed_feature, command, &actor);
+                let verified =
+                    auto_verify_acceptance_items(&project, refreshed_feature, command, &actor);
                 if !verified.is_empty() {
-                    notes.push(format!(
-                        "acceptance auto-verified: {}",
-                        verified.join(", ")
-                    ));
+                    notes.push(format!("acceptance auto-verified: {}", verified.join(", ")));
                 }
             }
         }
@@ -1272,10 +1309,7 @@ fn handle_stop(_event: &Value) -> Option<Value> {
         parts.push(format!("{} open questions need answers", open_questions));
     }
 
-    let branches: HashSet<String> = untracked
-        .iter()
-        .filter_map(|c| c.branch.clone())
-        .collect();
+    let branches: HashSet<String> = untracked.iter().filter_map(|c| c.branch.clone()).collect();
     if !branches.is_empty() {
         parts.push(format!(
             "Untracked commits on: {}",
@@ -1335,7 +1369,10 @@ mod tests {
     fn test_classify_command_detects_build_test_lint_commit() {
         assert_eq!(classify_command("cargo test -q"), CommandKind::Test);
         assert_eq!(classify_command("pnpm build"), CommandKind::Build);
-        assert_eq!(classify_command("cargo clippy --all-targets"), CommandKind::Lint);
+        assert_eq!(
+            classify_command("cargo clippy --all-targets"),
+            CommandKind::Lint
+        );
         assert_eq!(classify_command("git commit -m 'x'"), CommandKind::Commit);
         assert_eq!(classify_command("echo hi"), CommandKind::Other);
     }

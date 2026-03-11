@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 // Re-use the actual crate types
 use dx_terminal::tui::input;
-use dx_terminal::tui::{TuiCommand, TuiResult, TuiMode, PendingAction, ViewMode};
+use dx_terminal::tui::{PendingAction, TuiCommand, TuiMode, TuiResult, ViewMode};
 
 // ========== Command Parsing ==========
 
@@ -11,7 +11,12 @@ use dx_terminal::tui::{TuiCommand, TuiResult, TuiMode, PendingAction, ViewMode};
 fn test_parse_spawn_command() {
     let cmd = input::parse_command("spawn 3 dataxlr8").unwrap();
     match cmd {
-        TuiCommand::Spawn { pane, project, role, task } => {
+        TuiCommand::Spawn {
+            pane,
+            project,
+            role,
+            task,
+        } => {
             assert_eq!(pane, "3");
             assert_eq!(project, "dataxlr8");
             assert!(role.is_none());
@@ -94,11 +99,23 @@ fn test_parse_auto_cycle() {
 fn test_parse_invalid_commands() {
     assert!(input::parse_command("").is_none());
     // "invalid" now routes to McpDispatch (universal dispatch)
-    assert!(matches!(input::parse_command("invalid"), Some(TuiCommand::McpDispatch { .. })));
+    assert!(matches!(
+        input::parse_command("invalid"),
+        Some(TuiCommand::McpDispatch { .. })
+    ));
     // spawn/kill without enough args also route to McpDispatch
-    assert!(matches!(input::parse_command("spawn"), Some(TuiCommand::McpDispatch { .. })));
-    assert!(matches!(input::parse_command("spawn 3"), Some(TuiCommand::McpDispatch { .. })));
-    assert!(matches!(input::parse_command("kill"), Some(TuiCommand::McpDispatch { .. })));
+    assert!(matches!(
+        input::parse_command("spawn"),
+        Some(TuiCommand::McpDispatch { .. })
+    ));
+    assert!(matches!(
+        input::parse_command("spawn 3"),
+        Some(TuiCommand::McpDispatch { .. })
+    ));
+    assert!(matches!(
+        input::parse_command("kill"),
+        Some(TuiCommand::McpDispatch { .. })
+    ));
 }
 
 #[test]
@@ -187,7 +204,12 @@ fn test_spawn_form_to_command() {
 
     let cmd = input::form_to_command(&form).unwrap();
     match cmd {
-        TuiCommand::Spawn { pane, project, role, task } => {
+        TuiCommand::Spawn {
+            pane,
+            project,
+            role,
+            task,
+        } => {
             assert_eq!(pane, "5");
             assert_eq!(project, "dataxlr8");
             assert_eq!(role.unwrap(), "developer"); // Default
@@ -205,7 +227,12 @@ fn test_queue_form_to_command() {
 
     let cmd = input::form_to_command(&form).unwrap();
     match cmd {
-        TuiCommand::QueueAdd { project, task, role, priority } => {
+        TuiCommand::QueueAdd {
+            project,
+            task,
+            role,
+            priority,
+        } => {
             assert_eq!(project, "bskiller");
             assert_eq!(task, "Add login page");
             assert_eq!(role.unwrap(), "developer");
@@ -284,7 +311,11 @@ fn test_extract_summary_long_message_truncated() {
 fn extract_summary_test(result: &TuiResult) -> String {
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(&result.message) {
         if let Some(status) = v.get("status").and_then(|s| s.as_str()) {
-            let pane = v.get("pane").and_then(|p| p.as_u64()).map(|p| format!(" P{}", p)).unwrap_or_default();
+            let pane = v
+                .get("pane")
+                .and_then(|p| p.as_u64())
+                .map(|p| format!(" P{}", p))
+                .unwrap_or_default();
             return format!("{}: {}{}", result.description, status, pane);
         }
         if let Some(err) = v.get("error").and_then(|e| e.as_str()) {
@@ -302,7 +333,11 @@ fn test_command_channel_roundtrip() {
     let (tx, rx) = mpsc::channel::<TuiCommand>();
 
     tx.send(TuiCommand::AutoCycle).unwrap();
-    tx.send(TuiCommand::Kill { pane: "3".into(), reason: None }).unwrap();
+    tx.send(TuiCommand::Kill {
+        pane: "3".into(),
+        reason: None,
+    })
+    .unwrap();
 
     let cmd1 = rx.recv_timeout(Duration::from_millis(100)).unwrap();
     assert!(matches!(cmd1, TuiCommand::AutoCycle));
@@ -322,7 +357,8 @@ fn test_result_channel_roundtrip() {
         description: "Test".into(),
         success: true,
         message: "ok".into(),
-    }).unwrap();
+    })
+    .unwrap();
 
     let result = rx.recv_timeout(Duration::from_millis(100)).unwrap();
     assert!(result.success);
@@ -401,23 +437,43 @@ fn test_view_mode_toggle() {
     let mut vm = ViewMode::Normal;
 
     // Toggle to Features
-    vm = if vm == ViewMode::Features { ViewMode::Normal } else { ViewMode::Features };
+    vm = if vm == ViewMode::Features {
+        ViewMode::Normal
+    } else {
+        ViewMode::Features
+    };
     assert_eq!(vm, ViewMode::Features);
 
     // Toggle back
-    vm = if vm == ViewMode::Features { ViewMode::Normal } else { ViewMode::Features };
+    vm = if vm == ViewMode::Features {
+        ViewMode::Normal
+    } else {
+        ViewMode::Features
+    };
     assert_eq!(vm, ViewMode::Normal);
 
     // Toggle to Board
-    vm = if vm == ViewMode::Board { ViewMode::Normal } else { ViewMode::Board };
+    vm = if vm == ViewMode::Board {
+        ViewMode::Normal
+    } else {
+        ViewMode::Board
+    };
     assert_eq!(vm, ViewMode::Board);
 
     // Toggle to Coord (replaces Board)
-    vm = if vm == ViewMode::Coord { ViewMode::Normal } else { ViewMode::Coord };
+    vm = if vm == ViewMode::Coord {
+        ViewMode::Normal
+    } else {
+        ViewMode::Coord
+    };
     assert_eq!(vm, ViewMode::Coord);
 
     // Toggle Projects
-    vm = if vm == ViewMode::Projects { ViewMode::Normal } else { ViewMode::Projects };
+    vm = if vm == ViewMode::Projects {
+        ViewMode::Normal
+    } else {
+        ViewMode::Projects
+    };
     assert_eq!(vm, ViewMode::Projects);
 }
 
@@ -503,7 +559,11 @@ fn test_tab_cycles_fields() {
     assert_eq!(form.focused, 0); // Wraps to Pane
 
     // BackTab
-    form.focused = if form.focused == 0 { form.fields.len() - 1 } else { form.focused - 1 };
+    form.focused = if form.focused == 0 {
+        form.fields.len() - 1
+    } else {
+        form.focused - 1
+    };
     assert_eq!(form.focused, 3); // Wraps to Task
 }
 

@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::OnceLock;
-use serde::{Deserialize, Serialize};
 
 /// Runtime configuration — loaded once at startup from ~/.config/dx-terminal/config.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,12 +28,18 @@ pub struct ThemeEntry {
     pub name: String,
 }
 
-fn default_pane_count() -> u8 { 9 }
-fn default_session_name() -> String { "dx".into() }
-fn default_web_port() -> u16 { 3100 }
+fn default_pane_count() -> u8 {
+    9
+}
+fn default_session_name() -> String {
+    "dx".into()
+}
+fn default_web_port() -> u16 {
+    3100
+}
 
 /// Default color palette (cycles if pane_count > len)
-const DEFAULT_THEMES: &[(& str, &str)] = &[
+const DEFAULT_THEMES: &[(&str, &str)] = &[
     ("#00d4ff", "CYAN"),
     ("#00ff41", "GREEN"),
     ("#bf00ff", "PURPLE"),
@@ -109,13 +115,15 @@ impl RuntimeConfig {
 
     /// Get theme for pane (1-indexed)
     pub fn theme_name(&self, pane: u8) -> &str {
-        self.themes.get((pane as usize).wrapping_sub(1))
+        self.themes
+            .get((pane as usize).wrapping_sub(1))
             .map(|t| t.name.as_str())
             .unwrap_or("UNKNOWN")
     }
 
     pub fn theme_fg(&self, pane: u8) -> &str {
-        self.themes.get((pane as usize).wrapping_sub(1))
+        self.themes
+            .get((pane as usize).wrapping_sub(1))
             .map(|t| t.fg.as_str())
             .unwrap_or("#ffffff")
     }
@@ -131,7 +139,9 @@ pub fn init() -> &'static RuntimeConfig {
 
 /// Get the global config (panics if init() wasn't called)
 pub fn get() -> &'static RuntimeConfig {
-    RUNTIME_CONFIG.get().expect("config::init() must be called before config::get()")
+    RUNTIME_CONFIG
+        .get()
+        .expect("config::init() must be called before config::get()")
 }
 
 // --- Pane resolution (uses global config) ---
@@ -172,7 +182,9 @@ pub fn resolve_pane(pane_ref: &str) -> Option<u8> {
     let cfg = get();
     for (idx, theme) in cfg.themes.iter().enumerate() {
         let pane_num = (idx + 1) as u8;
-        if pane_num > max { break; }
+        if pane_num > max {
+            break;
+        }
 
         if theme.name.to_lowercase() == lower {
             return Some(pane_num);
@@ -265,7 +277,10 @@ mod tests {
 
     #[test]
     fn test_ensure_themes_fills_to_pane_count() {
-        let mut cfg = RuntimeConfig { pane_count: 3, ..Default::default() };
+        let mut cfg = RuntimeConfig {
+            pane_count: 3,
+            ..Default::default()
+        };
         cfg.ensure_themes();
         assert_eq!(cfg.themes.len(), 3);
         assert_eq!(cfg.themes[0].name, "CYAN");
@@ -275,7 +290,10 @@ mod tests {
 
     #[test]
     fn test_ensure_themes_cycles_beyond_palette() {
-        let mut cfg = RuntimeConfig { pane_count: 22, ..Default::default() };
+        let mut cfg = RuntimeConfig {
+            pane_count: 22,
+            ..Default::default()
+        };
         cfg.ensure_themes();
         assert_eq!(cfg.themes.len(), 22);
         // 21st theme (index 20) wraps: 20 % 20 = 0 → CYAN
@@ -285,7 +303,10 @@ mod tests {
 
     #[test]
     fn test_theme_name_lookup() {
-        let mut cfg = RuntimeConfig { pane_count: 3, ..Default::default() };
+        let mut cfg = RuntimeConfig {
+            pane_count: 3,
+            ..Default::default()
+        };
         cfg.ensure_themes();
         assert_eq!(cfg.theme_name(1), "CYAN");
         assert_eq!(cfg.theme_name(2), "GREEN");
@@ -296,7 +317,10 @@ mod tests {
 
     #[test]
     fn test_theme_fg_lookup() {
-        let mut cfg = RuntimeConfig { pane_count: 2, ..Default::default() };
+        let mut cfg = RuntimeConfig {
+            pane_count: 2,
+            ..Default::default()
+        };
         cfg.ensure_themes();
         assert_eq!(cfg.theme_fg(1), "#00d4ff");
         assert_eq!(cfg.theme_fg(0), "#ffffff"); // fallback
@@ -330,7 +354,11 @@ mod tests {
 
     #[test]
     fn test_config_serialization_roundtrip() {
-        let mut cfg = RuntimeConfig { pane_count: 4, web_port: 9999, ..Default::default() };
+        let mut cfg = RuntimeConfig {
+            pane_count: 4,
+            web_port: 9999,
+            ..Default::default()
+        };
         cfg.ensure_themes();
         let json = serde_json::to_string(&cfg).unwrap();
         let loaded: RuntimeConfig = serde_json::from_str(&json).unwrap();

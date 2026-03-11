@@ -6,25 +6,32 @@
 /// Scan ~/Projects for git repos
 pub fn project_scan() -> String {
     let reg = crate::scanner::scan_all();
-    let summary: Vec<serde_json::Value> = reg.projects.iter().map(|p| {
-        serde_json::json!({
-            "name": p.name,
-            "tech": p.tech,
-            "test_cmd": p.test_cmd,
-            "git_dirty": p.git_dirty,
+    let summary: Vec<serde_json::Value> = reg
+        .projects
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "name": p.name,
+                "tech": p.tech,
+                "test_cmd": p.test_cmd,
+                "git_dirty": p.git_dirty,
+            })
         })
-    }).collect();
+        .collect();
     serde_json::json!({
         "count": reg.projects.len(),
         "projects": summary,
         "last_scan": reg.last_scan,
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// List discovered projects with health grades
 pub fn project_list(tech: Option<&str>) -> String {
     let reg = crate::scanner::load_registry();
-    let projects: Vec<serde_json::Value> = reg.projects.iter()
+    let projects: Vec<serde_json::Value> = reg
+        .projects
+        .iter()
         .filter(|p| {
             if let Some(tech) = tech {
                 p.tech.iter().any(|t| t.contains(tech))
@@ -55,7 +62,8 @@ pub fn project_list(tech: Option<&str>) -> String {
         "count": projects.len(),
         "projects": projects,
         "last_scan": reg.last_scan,
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Full detail for one project
@@ -67,25 +75,29 @@ pub fn project_detail(project: &str) -> String {
 pub async fn project_test(project: &str) -> String {
     let info = match crate::scanner::project_by_name(project) {
         Some(i) => i,
-        None => return serde_json::json!({"error": format!("Project '{}' not found", project)}).to_string(),
+        None => {
+            return serde_json::json!({"error": format!("Project '{}' not found", project)})
+                .to_string()
+        }
     };
     match crate::engine::health::run_tests(&info).await {
-        Some(result) => {
-            serde_json::json!({
-                "project": info.name,
-                "success": result.success,
-                "total": result.total,
-                "passed": result.passed,
-                "failed": result.failed,
-                "duration_ms": result.duration_ms,
-                "output": if result.output.len() > 2000 {
-                    format!("{}...(truncated)", &result.output[..2000])
-                } else {
-                    result.output
-                },
-            }).to_string()
+        Some(result) => serde_json::json!({
+            "project": info.name,
+            "success": result.success,
+            "total": result.total,
+            "passed": result.passed,
+            "failed": result.failed,
+            "duration_ms": result.duration_ms,
+            "output": if result.output.len() > 2000 {
+                format!("{}...(truncated)", &result.output[..2000])
+            } else {
+                result.output
+            },
+        })
+        .to_string(),
+        None => {
+            serde_json::json!({"error": "No test command available for this project"}).to_string()
         }
-        None => serde_json::json!({"error": "No test command available for this project"}).to_string(),
     }
 }
 
@@ -93,8 +105,14 @@ pub async fn project_test(project: &str) -> String {
 pub fn project_deps(project: Option<&str>) -> String {
     let reg = crate::scanner::load_registry();
     if let Some(name) = project {
-        if let Some(p) = reg.projects.iter().find(|p| p.name.to_lowercase() == name.to_lowercase()) {
-            let depended_on_by: Vec<&str> = reg.projects.iter()
+        if let Some(p) = reg
+            .projects
+            .iter()
+            .find(|p| p.name.to_lowercase() == name.to_lowercase())
+        {
+            let depended_on_by: Vec<&str> = reg
+                .projects
+                .iter()
                 .filter(|other| other.deps.iter().any(|d| d == &p.name))
                 .map(|other| other.name.as_str())
                 .collect();
@@ -102,12 +120,15 @@ pub fn project_deps(project: Option<&str>) -> String {
                 "project": p.name,
                 "depends_on": p.deps,
                 "depended_on_by": depended_on_by,
-            }).to_string()
+            })
+            .to_string()
         } else {
             serde_json::json!({"error": format!("Project '{}' not found", name)}).to_string()
         }
     } else {
-        let graph: Vec<serde_json::Value> = reg.projects.iter()
+        let graph: Vec<serde_json::Value> = reg
+            .projects
+            .iter()
             .filter(|p| !p.deps.is_empty())
             .map(|p| serde_json::json!({"project": p.name, "depends_on": p.deps}))
             .collect();

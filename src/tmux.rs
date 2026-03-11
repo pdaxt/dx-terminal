@@ -3,8 +3,8 @@
 //! This replaces the internal PTY approach with visible tmux windows.
 //! DX Terminal creates windows, runs claude there, monitors via capture-pane.
 
-use std::process::Command;
 use anyhow::{Context, Result};
+use std::process::Command;
 
 /// Default tmux session for factory agents
 const DEFAULT_SESSION: &str = "claude6";
@@ -26,14 +26,30 @@ pub fn create_window(name: &str) -> Result<TmuxAgent> {
     let session = active_session().unwrap_or_else(|| DEFAULT_SESSION.to_string());
 
     // Clean the name for tmux (no special chars)
-    let clean_name: String = name.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+    let clean_name: String = name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     let clean_name = clean_name.trim_matches('-');
 
     // Create new window
     let output = Command::new("tmux")
-        .args(["new-window", "-t", &session, "-n", clean_name, "-P", "-F", "#{window_index}"])
+        .args([
+            "new-window",
+            "-t",
+            &session,
+            "-n",
+            clean_name,
+            "-P",
+            "-F",
+            "#{window_index}",
+        ])
         .output()
         .context("Failed to create tmux window")?;
 
@@ -86,7 +102,8 @@ pub fn spawn_agent(
 
     // Export environment variables
     if !env_vars.is_empty() {
-        let exports: Vec<String> = env_vars.iter()
+        let exports: Vec<String> = env_vars
+            .iter()
             .map(|(k, v)| format!("export {}={}", k, shell_escape(v)))
             .collect();
         send_command(&agent.target, &exports.join(" && "))?;
@@ -102,7 +119,11 @@ pub fn spawn_agent(
     // Build the claude command — escape the prompt for shell
     let claude_bin = resolve_claude_binary();
     let escaped_prompt = prompt.replace('\'', "'\\''");
-    let perms_flag = if autonomous { " --dangerously-skip-permissions" } else { "" };
+    let perms_flag = if autonomous {
+        " --dangerously-skip-permissions"
+    } else {
+        ""
+    };
     let cmd = format!("{}{} -p '{}'", claude_bin, perms_flag, escaped_prompt);
     send_command(&agent.target, &cmd)?;
 
@@ -155,8 +176,13 @@ pub fn check_done(target: &str) -> bool {
 pub fn check_error(target: &str) -> Option<String> {
     let output = capture_output(target);
     let patterns = [
-        "Error:", "FATAL:", "panic:", "Traceback",
-        "rate limit", "hit your limit", "SIGTERM",
+        "Error:",
+        "FATAL:",
+        "panic:",
+        "Traceback",
+        "rate limit",
+        "hit your limit",
+        "SIGTERM",
     ];
     for pat in &patterns {
         if output.contains(pat) {
@@ -223,26 +249,30 @@ fn active_session() -> Option<String> {
 pub fn list_windows() -> Vec<(u32, String, bool)> {
     let session = active_session().unwrap_or_else(|| DEFAULT_SESSION.to_string());
     let output = Command::new("tmux")
-        .args(["list-windows", "-t", &session, "-F", "#{window_index}|#{window_name}|#{window_active}"])
+        .args([
+            "list-windows",
+            "-t",
+            &session,
+            "-F",
+            "#{window_index}|#{window_name}|#{window_active}",
+        ])
         .output();
 
     match output {
-        Ok(o) if o.status.success() => {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .filter_map(|line| {
-                    let parts: Vec<&str> = line.splitn(3, '|').collect();
-                    if parts.len() >= 3 {
-                        let idx: u32 = parts[0].parse().ok()?;
-                        let name = parts[1].to_string();
-                        let active = parts[2] == "1";
-                        Some((idx, name, active))
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        }
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.splitn(3, '|').collect();
+                if parts.len() >= 3 {
+                    let idx: u32 = parts[0].parse().ok()?;
+                    let name = parts[1].to_string();
+                    let active = parts[2] == "1";
+                    Some((idx, name, active))
+                } else {
+                    None
+                }
+            })
+            .collect(),
         _ => vec![],
     }
 }
@@ -286,36 +316,39 @@ pub fn discover_live_panes() -> Vec<LivePane> {
         .output();
 
     let mut panes: Vec<LivePane> = match output {
-        Ok(o) if o.status.success() => {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .filter_map(|line| {
-                    let parts: Vec<&str> = line.splitn(7, '|').collect();
-                    if parts.len() >= 7 {
-                        let session = parts[0].to_string();
-                        let window: u32 = parts[1].parse().ok()?;
-                        let pane_idx: u32 = parts[2].parse().ok()?;
-                        let window_name = parts[3].to_string();
-                        let command = parts[4].to_string();
-                        let cwd = parts[5].to_string();
-                        let pid: u32 = parts[6].parse().unwrap_or(0);
-                        if command == "claude" || command == "node" {
-                            Some(LivePane {
-                                target: format!("{}:{}.{}", session, window, pane_idx),
-                                session, window, pane_idx, window_name, command,
-                                cwd, pid,
-                                jsonl_path: None,
-                                session_id: None,
-                            })
-                        } else {
-                            None
-                        }
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.splitn(7, '|').collect();
+                if parts.len() >= 7 {
+                    let session = parts[0].to_string();
+                    let window: u32 = parts[1].parse().ok()?;
+                    let pane_idx: u32 = parts[2].parse().ok()?;
+                    let window_name = parts[3].to_string();
+                    let command = parts[4].to_string();
+                    let cwd = parts[5].to_string();
+                    let pid: u32 = parts[6].parse().unwrap_or(0);
+                    if command == "claude" || command == "node" {
+                        Some(LivePane {
+                            target: format!("{}:{}.{}", session, window, pane_idx),
+                            session,
+                            window,
+                            pane_idx,
+                            window_name,
+                            command,
+                            cwd,
+                            pid,
+                            jsonl_path: None,
+                            session_id: None,
+                        })
                     } else {
                         None
                     }
-                })
-                .collect()
-        }
+                } else {
+                    None
+                }
+            })
+            .collect(),
         _ => vec![],
     };
 
@@ -332,7 +365,9 @@ fn resolve_jsonl_sessions(panes: &mut [LivePane]) {
 
     // Scan all JSONL files modified in last 2 hours
     let cutoff = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
         .saturating_sub(7200);
 
     // Build index: project_dir_key -> Vec<(jsonl_path, session_id, cwd, mtime)>
@@ -351,15 +386,20 @@ fn resolve_jsonl_sessions(panes: &mut [LivePane]) {
                             && !fp.to_string_lossy().contains("/subagents/")
                         {
                             if let Ok(meta) = fp.metadata() {
-                                let mtime = meta.modified().ok()
+                                let mtime = meta
+                                    .modified()
+                                    .ok()
                                     .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                                    .map(|d| d.as_secs()).unwrap_or(0);
+                                    .map(|d| d.as_secs())
+                                    .unwrap_or(0);
                                 if mtime > cutoff {
                                     // Read first line for sessionId and cwd
                                     if let Some((sid, cwd)) = read_jsonl_header(&fp) {
                                         jsonl_index.push((
                                             fp.to_string_lossy().to_string(),
-                                            sid, cwd, mtime,
+                                            sid,
+                                            cwd,
+                                            mtime,
                                         ));
                                     }
                                 }
@@ -370,15 +410,15 @@ fn resolve_jsonl_sessions(panes: &mut [LivePane]) {
             } else if path.extension().map(|e| e == "jsonl").unwrap_or(false) {
                 // Top-level JSONL file
                 if let Ok(meta) = path.metadata() {
-                    let mtime = meta.modified().ok()
+                    let mtime = meta
+                        .modified()
+                        .ok()
                         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                        .map(|d| d.as_secs()).unwrap_or(0);
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
                     if mtime > cutoff {
                         if let Some((sid, cwd)) = read_jsonl_header(&path) {
-                            jsonl_index.push((
-                                path.to_string_lossy().to_string(),
-                                sid, cwd, mtime,
-                            ));
+                            jsonl_index.push((path.to_string_lossy().to_string(), sid, cwd, mtime));
                         }
                     }
                 }
@@ -393,7 +433,9 @@ fn resolve_jsonl_sessions(panes: &mut [LivePane]) {
     let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
     for pane in panes.iter_mut() {
         for (jpath, sid, cwd, _mtime) in &jsonl_index {
-            if used.contains(jpath) { continue; }
+            if used.contains(jpath) {
+                continue;
+            }
             // Match: pane cwd starts with jsonl cwd or vice versa
             if pane.cwd == *cwd || pane.cwd.starts_with(cwd) || cwd.starts_with(&pane.cwd) {
                 pane.jsonl_path = Some(jpath.clone());
@@ -446,7 +488,9 @@ pub fn read_jsonl_cwd(path: &str) -> Option<String> {
             Err(_) => continue,
         };
         lines_read += 1;
-        if lines_read > 500 { break; } // cap scan to first 500 lines
+        if lines_read > 500 {
+            break;
+        } // cap scan to first 500 lines
 
         // Find all occurrences of /Users/pran/Projects/<name>
         let mut start = 0;
@@ -454,7 +498,8 @@ pub fn read_jsonl_cwd(path: &str) -> Option<String> {
             let abs = start + pos + prefix.len();
             if abs < line.len() {
                 let rest = &line[abs..];
-                let end = rest.find(|c: char| !c.is_alphanumeric() && c != '-' && c != '_' && c != '.')
+                let end = rest
+                    .find(|c: char| !c.is_alphanumeric() && c != '-' && c != '_' && c != '.')
                     .unwrap_or(rest.len());
                 if end > 0 {
                     let name = &rest[..end];
@@ -466,7 +511,8 @@ pub fn read_jsonl_cwd(path: &str) -> Option<String> {
     }
 
     // Return the most-referenced project, or fall back to header cwd
-    counts.into_iter()
+    counts
+        .into_iter()
         .max_by_key(|(_, c)| *c)
         .map(|(name, _)| format!("{}/{}", projects_parent, name))
         .or(Some(header_cwd))
@@ -475,7 +521,14 @@ pub fn read_jsonl_cwd(path: &str) -> Option<String> {
 /// Capture output from a tmux pane — extended version with more lines for live view.
 pub fn capture_output_extended(target: &str, lines: u32) -> String {
     Command::new("tmux")
-        .args(["capture-pane", "-t", target, "-p", "-S", &format!("-{}", lines)])
+        .args([
+            "capture-pane",
+            "-t",
+            target,
+            "-p",
+            "-S",
+            &format!("-{}", lines),
+        ])
         .output()
         .ok()
         .filter(|o| o.status.success())

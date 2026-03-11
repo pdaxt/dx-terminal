@@ -1,17 +1,17 @@
 //! DX Terminal Tracker: Issue tracking, features, capacity planning, code audits.
 //! 32 tools.
 
-use std::sync::Arc;
+use crate::app::App;
+use crate::mcp::tools;
+use crate::mcp::types::*;
 use rmcp::{
-    ServerHandler, ServiceExt,
-    model::{CallToolResult, Content, ServerCapabilities, ServerInfo},
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
+    model::{CallToolResult, Content, ServerCapabilities, ServerInfo},
     tool, tool_handler, tool_router,
     transport::stdio,
+    ServerHandler, ServiceExt,
 };
-use crate::app::App;
-use crate::mcp::types::*;
-use crate::mcp::tools;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct DxTrackerService {
@@ -48,7 +48,9 @@ impl DxTrackerService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "List issues with filters: status, type, priority, assignee, milestone, label, sprint, role.")]
+    #[tool(
+        description = "List issues with filters: status, type, priority, assignee, milestone, label, sprint, role."
+    )]
     async fn issue_list_filtered(
         &self,
         Parameters(req): Parameters<IssueListFilteredRequest>,
@@ -72,7 +74,10 @@ impl DxTrackerService {
         Parameters(req): Parameters<IssueCommentRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let result = tools::tracker_tools::issue_comment(
-            &req.space, &req.issue_id, &req.text, &req.author.clone().unwrap_or_else(|| "agent".into()),
+            &req.space,
+            &req.issue_id,
+            &req.text,
+            &req.author.clone().unwrap_or_else(|| "agent".into()),
         );
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -82,7 +87,12 @@ impl DxTrackerService {
         &self,
         Parameters(req): Parameters<IssueLinkRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::tracker_tools::issue_link(&req.space, &req.issue_id, &req.link_type, &req.reference);
+        let result = tools::tracker_tools::issue_link(
+            &req.space,
+            &req.issue_id,
+            &req.link_type,
+            &req.reference,
+        );
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -92,7 +102,9 @@ impl DxTrackerService {
         Parameters(req): Parameters<IssueCloseRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let result = tools::tracker_tools::issue_close(
-            &req.space, &req.issue_id, req.resolution.as_deref().unwrap_or(""),
+            &req.space,
+            &req.issue_id,
+            req.resolution.as_deref().unwrap_or(""),
         );
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -120,11 +132,16 @@ impl DxTrackerService {
         &self,
         Parameters(req): Parameters<TimelineGenerateRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::tracker_tools::timeline_generate(&req.space, &req.milestone.clone().unwrap_or_default());
+        let result = tools::tracker_tools::timeline_generate(
+            &req.space,
+            &req.milestone.clone().unwrap_or_default(),
+        );
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Start a process from a checklist template. Context vars substitute {{var}} placeholders.")]
+    #[tool(
+        description = "Start a process from a checklist template. Context vars substitute {{var}} placeholders."
+    )]
     async fn process_start(
         &self,
         Parameters(req): Parameters<ProcessStartRequest>,
@@ -171,7 +188,9 @@ impl DxTrackerService {
 
     // === FEATURE MANAGEMENT TOOLS (4 tools) ===
 
-    #[tool(description = "List child issues (micro-features) of a parent feature/epic. Shows progress.")]
+    #[tool(
+        description = "List child issues (micro-features) of a parent feature/epic. Shows progress."
+    )]
     async fn issue_children(
         &self,
         Parameters(req): Parameters<IssueChildrenRequest>,
@@ -180,16 +199,21 @@ impl DxTrackerService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Decompose a feature/epic into micro-feature child issues. Creates task issues linked to parent. Children: [{title, description?, priority?, role?, estimated_acu?}]")]
+    #[tool(
+        description = "Decompose a feature/epic into micro-feature child issues. Creates task issues linked to parent. Children: [{title, description?, priority?, role?, estimated_acu?}]"
+    )]
     async fn feature_decompose(
         &self,
         Parameters(req): Parameters<FeatureDecomposeRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::tracker_tools::feature_decompose(&req.space, &req.parent_id, &req.children);
+        let result =
+            tools::tracker_tools::feature_decompose(&req.space, &req.parent_id, &req.children);
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Push tracker issues into the execution queue. Links queue tasks back to issues for auto-status updates on completion. Set sequential=true for ordered execution.")]
+    #[tool(
+        description = "Push tracker issues into the execution queue. Links queue tasks back to issues for auto-status updates on completion. Set sequential=true for ordered execution."
+    )]
     async fn feature_to_queue(
         &self,
         Parameters(req): Parameters<FeatureToQueueRequest>,
@@ -198,7 +222,9 @@ impl DxTrackerService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Hierarchical feature status: parent feature → child micro-features → queue task status. Shows overall progress.")]
+    #[tool(
+        description = "Hierarchical feature status: parent feature → child micro-features → queue task status. Shows overall progress."
+    )]
     async fn feature_status(
         &self,
         Parameters(req): Parameters<FeatureStatusRequest>,
@@ -209,7 +235,9 @@ impl DxTrackerService {
 
     // === CAPACITY TOOLS (8 tools) ===
 
-    #[tool(description = "Configure capacity: pane count, hours, availability factor, review bandwidth, build slots.")]
+    #[tool(
+        description = "Configure capacity: pane count, hours, availability factor, review bandwidth, build slots."
+    )]
     async fn cap_configure(
         &self,
         Parameters(req): Parameters<CapConfigureRequest>,
@@ -236,7 +264,9 @@ impl DxTrackerService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Plan a sprint: assign issues, calculate capacity vs load, detect bottlenecks.")]
+    #[tool(
+        description = "Plan a sprint: assign issues, calculate capacity vs load, detect bottlenecks."
+    )]
     async fn cap_plan_sprint(
         &self,
         Parameters(req): Parameters<CapPlanSprintRequest>,
@@ -245,7 +275,9 @@ impl DxTrackerService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Capacity dashboard: today's ACU usage, review load, active sprint progress.")]
+    #[tool(
+        description = "Capacity dashboard: today's ACU usage, review load, active sprint progress."
+    )]
     async fn cap_dashboard(
         &self,
         Parameters(req): Parameters<CapDashboardRequest>,
@@ -259,11 +291,14 @@ impl DxTrackerService {
         &self,
         Parameters(req): Parameters<CapBurndownRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::capacity_tools::cap_burndown(&req.sprint_id.clone().unwrap_or_default());
+        let result =
+            tools::capacity_tools::cap_burndown(&req.sprint_id.clone().unwrap_or_default());
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Sprint velocity: historical throughput across sprints with accuracy tracking.")]
+    #[tool(
+        description = "Sprint velocity: historical throughput across sprints with accuracy tracking."
+    )]
     async fn cap_velocity(
         &self,
         Parameters(req): Parameters<CapVelocityRequest>,
@@ -280,7 +315,9 @@ impl DxTrackerService {
 
     // === AUDIT TOOLS (5 tools) ===
 
-    #[tool(description = "Audit code quality: find dead code, fragmentation, loose ends (TODO/FIXME/HACK), empty impls, and incomplete patterns. Works on any project in the registry or by absolute path.")]
+    #[tool(
+        description = "Audit code quality: find dead code, fragmentation, loose ends (TODO/FIXME/HACK), empty impls, and incomplete patterns. Works on any project in the registry or by absolute path."
+    )]
     async fn audit_code(
         &self,
         Parameters(req): Parameters<AuditCodeRequest>,
@@ -289,7 +326,9 @@ impl DxTrackerService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Security audit: scan for hardcoded secrets, unsafe code, command injection vectors, path traversal, and dependency CVEs (via cargo audit). Returns findings by severity.")]
+    #[tool(
+        description = "Security audit: scan for hardcoded secrets, unsafe code, command injection vectors, path traversal, and dependency CVEs (via cargo audit). Returns findings by severity."
+    )]
     async fn audit_security(
         &self,
         Parameters(req): Parameters<AuditSecurityRequest>,
@@ -298,16 +337,23 @@ impl DxTrackerService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Intent verification: check if code matches its purpose. Finds stub functions, untested modules, missing module files, and compares README claims against actual source. Optionally provide a description of intended functionality.")]
+    #[tool(
+        description = "Intent verification: check if code matches its purpose. Finds stub functions, untested modules, missing module files, and compares README claims against actual source. Optionally provide a description of intended functionality."
+    )]
     async fn audit_intent(
         &self,
         Parameters(req): Parameters<AuditIntentRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::audit_tools::audit_intent(&req.project, req.description.as_deref().unwrap_or(""));
+        let result = tools::audit_tools::audit_intent(
+            &req.project,
+            req.description.as_deref().unwrap_or(""),
+        );
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Dependency health audit: check for wildcard versions, excessive dependencies, duplicate crate versions, and known vulnerabilities in Cargo.lock/package.json.")]
+    #[tool(
+        description = "Dependency health audit: check for wildcard versions, excessive dependencies, duplicate crate versions, and known vulnerabilities in Cargo.lock/package.json."
+    )]
     async fn audit_deps(
         &self,
         Parameters(req): Parameters<AuditDepsRequest>,
@@ -316,7 +362,9 @@ impl DxTrackerService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Full audit: runs code, security, intent, and dependency audits. Returns aggregate grade (A-F), findings by severity, and stores results for trend tracking. Use this for production readiness checks.")]
+    #[tool(
+        description = "Full audit: runs code, security, intent, and dependency audits. Returns aggregate grade (A-F), findings by severity, and stores results for trend tracking. Use this for production readiness checks."
+    )]
     async fn audit_full(
         &self,
         Parameters(req): Parameters<AuditFullRequest>,
@@ -324,7 +372,6 @@ impl DxTrackerService {
         let result = tools::audit_tools::audit_full(&req.project);
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
-
 }
 
 #[tool_handler]
@@ -332,11 +379,10 @@ impl ServerHandler for DxTrackerService {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             instructions: Some(
-                "DX Terminal Tracker: Issue tracking, features, capacity planning, code audits.".into()
+                "DX Terminal Tracker: Issue tracking, features, capacity planning, code audits."
+                    .into(),
             ),
-            capabilities: ServerCapabilities::builder()
-                .enable_tools()
-                .build(),
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
             ..Default::default()
         }
     }

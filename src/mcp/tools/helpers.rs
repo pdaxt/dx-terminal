@@ -1,13 +1,13 @@
 //! Shared helpers used across all micro MCP modules.
 
-use std::path::PathBuf;
-use chrono::{Local, NaiveDateTime};
 use crate::app::App;
-use crate::config;
 use crate::claude;
+use crate::config;
 use crate::state;
 use crate::tracker;
 use crate::workspace;
+use chrono::{Local, NaiveDateTime};
+use std::path::PathBuf;
 
 /// JSON error response
 pub fn json_err(msg: &str) -> String {
@@ -28,7 +28,9 @@ pub fn truncate(s: &str, max: usize) -> String {
 pub fn save_agent_output(app: &App, pane_num: u8, reason: &str) -> Option<String> {
     // Try tmux first by checking state synchronously via blocking_read (this runs in sync context)
     let state = app.state.blocking_read();
-    let tmux_target = state.panes.get(&pane_num.to_string())
+    let tmux_target = state
+        .panes
+        .get(&pane_num.to_string())
         .and_then(|p| p.tmux_target.clone());
     drop(state);
 
@@ -43,7 +45,11 @@ pub fn save_agent_output(app: &App, pane_num: u8, reason: &str) -> Option<String
         let o = pty.last_output(pane_num, 200).unwrap_or_default();
         let s = pty.screen_text(pane_num).unwrap_or_default();
         drop(pty);
-        if !s.trim().is_empty() { s } else { o }
+        if !s.trim().is_empty() {
+            s
+        } else {
+            o
+        }
     };
 
     if output.trim().is_empty() {
@@ -52,7 +58,11 @@ pub fn save_agent_output(app: &App, pane_num: u8, reason: &str) -> Option<String
 
     let dir = config::output_logs_dir();
     let _ = std::fs::create_dir_all(&dir);
-    let filename = format!("pane{}_{}.log", pane_num, Local::now().format("%Y%m%d_%H%M%S"));
+    let filename = format!(
+        "pane{}_{}.log",
+        pane_num,
+        Local::now().format("%Y%m%d_%H%M%S")
+    );
     let path = dir.join(&filename);
 
     let content = format!(
@@ -67,7 +77,9 @@ pub fn save_agent_output(app: &App, pane_num: u8, reason: &str) -> Option<String
 pub fn extract_result(app: &App, pane_num: u8) -> String {
     // Try tmux first
     let state = app.state.blocking_read();
-    let tmux_target = state.panes.get(&pane_num.to_string())
+    let tmux_target = state
+        .panes
+        .get(&pane_num.to_string())
         .and_then(|p| p.tmux_target.clone());
     drop(state);
 
@@ -78,7 +90,11 @@ pub fn extract_result(app: &App, pane_num: u8) -> String {
         let output = pty.last_output(pane_num, 50).unwrap_or_default();
         let screen = pty.screen_text(pane_num).unwrap_or_default();
         drop(pty);
-        if !screen.trim().is_empty() { screen } else { output }
+        if !screen.trim().is_empty() {
+            screen
+        } else {
+            output
+        }
     };
 
     let text = &text_owned;
@@ -90,7 +106,15 @@ pub fn extract_result(app: &App, pane_num: u8) -> String {
         if trimmed.contains("github.com") && trimmed.contains("/pull/") {
             for word in trimmed.split_whitespace() {
                 if word.contains("github.com") && word.contains("/pull/") {
-                    results.push(format!("PR: {}", word.trim_matches(|c: char| !c.is_alphanumeric() && c != '/' && c != ':' && c != '.' && c != '-' && c != '_')));
+                    results.push(format!(
+                        "PR: {}",
+                        word.trim_matches(|c: char| !c.is_alphanumeric()
+                            && c != '/'
+                            && c != ':'
+                            && c != '.'
+                            && c != '-'
+                            && c != '_')
+                    ));
                     break;
                 }
             }
@@ -99,7 +123,10 @@ pub fn extract_result(app: &App, pane_num: u8) -> String {
         if trimmed.starts_with('[') && trimmed.contains(']') {
             for word in trimmed.split_whitespace() {
                 let clean = word.trim_matches(|c: char| !c.is_ascii_hexdigit());
-                if clean.len() >= 7 && clean.len() <= 40 && clean.chars().all(|c| c.is_ascii_hexdigit()) {
+                if clean.len() >= 7
+                    && clean.len() <= 40
+                    && clean.chars().all(|c| c.is_ascii_hexdigit())
+                {
                     results.push(format!("commit: {}", &clean[..7.min(clean.len())]));
                     break;
                 }
@@ -108,7 +135,8 @@ pub fn extract_result(app: &App, pane_num: u8) -> String {
     }
 
     if results.is_empty() {
-        text.lines().rev()
+        text.lines()
+            .rev()
             .find(|l| !l.trim().is_empty() && !l.contains('$') && !l.contains('%'))
             .map(|l| truncate(l.trim(), 200))
             .unwrap_or_else(|| "auto-completed".into())
@@ -145,25 +173,50 @@ pub fn prepare_workspace(project: &str, pane_num: u8, task: &str) -> WorkspaceSe
         .unwrap_or_else(|| project.to_string());
 
     let skip_worktrees = std::env::var("DX_SKIP_WORKTREES").is_ok();
-    let (spawn_cwd, ws_path, ws_branch, ws_base) = if !skip_worktrees && workspace::is_git_repo(&project_path) {
-        match workspace::create_worktree(&project_path, pane_num, task) {
-            Ok(info) => {
-                tracing::info!("Created worktree for pane {}: {} (branch {})", pane_num, info.worktree_path, info.branch_name);
-                (info.worktree_path.clone(), Some(info.worktree_path), Some(info.branch_name), Some(info.base_branch))
+    let (spawn_cwd, ws_path, ws_branch, ws_base) =
+        if !skip_worktrees && workspace::is_git_repo(&project_path) {
+            match workspace::create_worktree(&project_path, pane_num, task) {
+                Ok(info) => {
+                    tracing::info!(
+                        "Created worktree for pane {}: {} (branch {})",
+                        pane_num,
+                        info.worktree_path,
+                        info.branch_name
+                    );
+                    (
+                        info.worktree_path.clone(),
+                        Some(info.worktree_path),
+                        Some(info.branch_name),
+                        Some(info.base_branch),
+                    )
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Worktree creation failed for pane {}, using direct path: {}",
+                        pane_num,
+                        e
+                    );
+                    (project_path.clone(), None, None, None)
+                }
             }
-            Err(e) => {
-                tracing::warn!("Worktree creation failed for pane {}, using direct path: {}", pane_num, e);
-                (project_path.clone(), None, None, None)
+        } else {
+            if skip_worktrees {
+                tracing::info!(
+                    "Skipping worktree for pane {} (DX_SKIP_WORKTREES set)",
+                    pane_num
+                );
             }
-        }
-    } else {
-        if skip_worktrees {
-            tracing::info!("Skipping worktree for pane {} (DX_SKIP_WORKTREES set)", pane_num);
-        }
-        (project_path.clone(), None, None, None)
-    };
+            (project_path.clone(), None, None, None)
+        };
 
-    WorkspaceSetup { spawn_cwd, ws_path, ws_branch, ws_base, project_path, project_name }
+    WorkspaceSetup {
+        spawn_cwd,
+        ws_path,
+        ws_branch,
+        ws_base,
+        project_path,
+        project_name,
+    }
 }
 
 /// Pre-spawn cleanup: kill stale processes and clear locks for a pane
@@ -189,7 +242,11 @@ pub fn cleanup_pane_resources(pane_num: u8) {
                     // Check if PID is alive using libc::kill(pid, 0)
                     if unsafe { libc::kill(pid, 0) } != 0 {
                         let _ = std::fs::remove_file(&lock);
-                        tracing::info!("Cleaned stale SingletonLock for pane {} (dead PID {})", pane_num, pid);
+                        tracing::info!(
+                            "Cleaned stale SingletonLock for pane {} (dead PID {})",
+                            pane_num,
+                            pid
+                        );
                     }
                 }
             }
@@ -200,11 +257,18 @@ pub fn cleanup_pane_resources(pane_num: u8) {
 }
 
 /// Select and configure MCPs for a project — auto-route if none explicitly set
-pub async fn select_mcps(app: &App, project_name: &str, project_path: &str, task: &str, role: &str) -> Vec<String> {
+pub async fn select_mcps(
+    app: &App,
+    project_name: &str,
+    project_path: &str,
+    task: &str,
+    role: &str,
+) -> Vec<String> {
     let mut mcps = app.state.get_project_mcps(project_name).await;
     if mcps.is_empty() {
         let matches = crate::mcp_registry::route_mcps(project_name, task, role);
-        mcps = matches.iter()
+        mcps = matches
+            .iter()
             .filter(|m| m.score >= 20)
             .map(|m| m.name.clone())
             .collect();
@@ -235,7 +299,15 @@ pub struct GitResult {
 }
 
 /// Commit, push, create PR, optionally auto-merge, and cleanup worktree
-pub fn finalize_git(ws: &str, branch: &str, base_project: &str, pane_num: u8, task: &str, summary: &str, acu: f64) -> GitResult {
+pub fn finalize_git(
+    ws: &str,
+    branch: &str,
+    base_project: &str,
+    pane_num: u8,
+    task: &str,
+    summary: &str,
+    acu: f64,
+) -> GitResult {
     let commit_msg = if summary.is_empty() {
         format!("Pane {}: {}", pane_num, truncate(task, 60))
     } else {
@@ -244,7 +316,8 @@ pub fn finalize_git(ws: &str, branch: &str, base_project: &str, pane_num: u8, ta
     let commit_result = workspace::commit_all(ws, &commit_msg);
     let push_result = workspace::push_branch(ws, branch);
     let pr_title = format!("[Pane {}] {}", pane_num, truncate(task, 50));
-    let pr_body = format!(
+    let pr_body =
+        format!(
         "## Task\n{}\n\n## Summary\n{}\n\n## ACU\n{:.2}\n\nAutomated PR from DX Terminal pane {}",
         task, if summary.is_empty() { "completed" } else { summary }, acu, pane_num
     );
@@ -282,12 +355,15 @@ pub fn check_feature_closure(space: &str, issue_id: &str) -> bool {
             let done_count = children_status["done"].as_u64().unwrap_or(0);
             if total > 0 && done_count == total {
                 let _ = tracker::issue_update_full(
-                    space, parent_id, "done", "", "", "", "", "",
-                    "", "", 0.0, 0.0, "", "",
+                    space, parent_id, "done", "", "", "", "", "", "", "", 0.0, 0.0, "", "",
                 );
                 let _ = tracker::issue_comment(
-                    space, parent_id,
-                    &format!("All {} micro-features completed. Feature auto-closed.", total),
+                    space,
+                    parent_id,
+                    &format!(
+                        "All {} micro-features completed. Feature auto-closed.",
+                        total
+                    ),
                     "dx-terminal",
                 );
                 return true;

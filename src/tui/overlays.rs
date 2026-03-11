@@ -1,19 +1,24 @@
 use ratatui::{
-    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
+    Frame,
 };
 
-use super::{TuiMode, input};
 use super::dashboard::DashboardData;
+use super::{input, TuiMode};
 
 /// Render the appropriate overlay based on current TUI mode
 pub fn render_overlay(f: &mut Frame, area: Rect, mode: &TuiMode, _data: &DashboardData) {
     match mode {
         TuiMode::Navigate => {} // No overlay
-        TuiMode::Command { input: input_str, cursor, completions, comp_idx } => {
+        TuiMode::Command {
+            input: input_str,
+            cursor,
+            completions,
+            comp_idx,
+        } => {
             render_command_bar(f, area, input_str, *cursor);
             if !completions.is_empty() {
                 render_autocomplete(f, area, completions, *comp_idx);
@@ -28,10 +33,16 @@ pub fn render_overlay(f: &mut Frame, area: Rect, mode: &TuiMode, _data: &Dashboa
         TuiMode::Executing { description, .. } => {
             render_executing(f, area, description);
         }
-        TuiMode::Result { message, is_error, .. } => {
+        TuiMode::Result {
+            message, is_error, ..
+        } => {
             render_result(f, area, message, *is_error);
         }
-        TuiMode::Talk { target_pane, input: input_str, cursor } => {
+        TuiMode::Talk {
+            target_pane,
+            input: input_str,
+            cursor,
+        } => {
             render_talk(f, area, *target_pane, input_str, *cursor);
         }
     }
@@ -46,13 +57,24 @@ fn render_command_bar(f: &mut Frame, area: Rect, input_str: &str, cursor: usize)
     let cursor_pos = cursor + 1; // +1 for the ':'
 
     let paragraph = Paragraph::new(Line::from(vec![
-        Span::styled(&display[..cursor_pos.min(display.len())], Style::default().fg(Color::White)),
         Span::styled(
-            if cursor_pos < display.len() { &display[cursor_pos..cursor_pos + 1] } else { " " },
+            &display[..cursor_pos.min(display.len())],
+            Style::default().fg(Color::White),
+        ),
+        Span::styled(
+            if cursor_pos < display.len() {
+                &display[cursor_pos..cursor_pos + 1]
+            } else {
+                " "
+            },
             Style::default().fg(Color::Black).bg(Color::White),
         ),
         Span::styled(
-            if cursor_pos + 1 < display.len() { &display[cursor_pos + 1..] } else { "" },
+            if cursor_pos + 1 < display.len() {
+                &display[cursor_pos + 1..]
+            } else {
+                ""
+            },
             Style::default().fg(Color::White),
         ),
     ]));
@@ -75,7 +97,9 @@ fn render_form(f: &mut Frame, area: Rect, form: &input::FormState) {
     let inner = block.inner(popup);
     f.render_widget(block, popup);
 
-    let field_constraints: Vec<Constraint> = form.fields.iter()
+    let field_constraints: Vec<Constraint> = form
+        .fields
+        .iter()
         .flat_map(|_| vec![Constraint::Length(1), Constraint::Length(1)])
         .chain(std::iter::once(Constraint::Min(0)))
         .collect();
@@ -87,14 +111,16 @@ fn render_form(f: &mut Frame, area: Rect, form: &input::FormState) {
 
     for (i, field) in form.fields.iter().enumerate() {
         let label_style = if i == form.focused {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::DarkGray)
         };
 
         let required_marker = if field.required { "*" } else { "" };
-        let label = Paragraph::new(format!("{}{}", field.label, required_marker))
-            .style(label_style);
+        let label =
+            Paragraph::new(format!("{}{}", field.label, required_marker)).style(label_style);
         f.render_widget(label, chunks[i * 2]);
 
         let value_display = if field.value.is_empty() && i != form.focused {
@@ -131,12 +157,21 @@ fn render_confirm(f: &mut Frame, area: Rect, message: &str) {
         Line::from(message),
         Line::from(""),
         Line::from(vec![
-            Span::styled("[y]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[y]",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" yes  "),
-            Span::styled("[n]", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[n]",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" no"),
         ]),
-    ]).alignment(Alignment::Center);
+    ])
+    .alignment(Alignment::Center);
     f.render_widget(text, inner);
 }
 
@@ -179,8 +214,15 @@ fn render_result(f: &mut Frame, area: Rect, message: &str, is_error: bool) {
 }
 
 /// Autocomplete dropdown for command mode
-fn render_autocomplete(f: &mut Frame, area: Rect, completions: &[(String, String)], selected: Option<usize>) {
-    if completions.is_empty() { return; }
+fn render_autocomplete(
+    f: &mut Frame,
+    area: Rect,
+    completions: &[(String, String)],
+    selected: Option<usize>,
+) {
+    if completions.is_empty() {
+        return;
+    }
     let height = (completions.len() as u16 + 2).min(8);
     let width = 50u16.min(area.width - 2);
     let popup = Rect::new(1, area.y + area.height - 1 - height, width, height);
@@ -192,17 +234,22 @@ fn render_autocomplete(f: &mut Frame, area: Rect, completions: &[(String, String
     let inner = block.inner(popup);
     f.render_widget(block, popup);
 
-    let lines: Vec<Line> = completions.iter().enumerate().take(inner.height as usize).map(|(i, (cmd, desc))| {
-        let style = if selected == Some(i) {
-            Style::default().fg(Color::Black).bg(Color::Cyan)
-        } else {
-            Style::default().fg(Color::White)
-        };
-        Line::from(vec![
-            Span::styled(format!(" {:<12}", cmd), style.add_modifier(Modifier::BOLD)),
-            Span::styled(desc.as_str(), Style::default().fg(Color::DarkGray)),
-        ])
-    }).collect();
+    let lines: Vec<Line> = completions
+        .iter()
+        .enumerate()
+        .take(inner.height as usize)
+        .map(|(i, (cmd, desc))| {
+            let style = if selected == Some(i) {
+                Style::default().fg(Color::Black).bg(Color::Cyan)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            Line::from(vec![
+                Span::styled(format!(" {:<12}", cmd), style.add_modifier(Modifier::BOLD)),
+                Span::styled(desc.as_str(), Style::default().fg(Color::DarkGray)),
+            ])
+        })
+        .collect();
     f.render_widget(Paragraph::new(lines), inner);
 }
 
@@ -230,7 +277,10 @@ fn render_talk(f: &mut Frame, area: Rect, pane: u8, input_str: &str, cursor: usi
 
     let paragraph = Paragraph::new(Line::from(vec![
         Span::styled(before_cursor, Style::default().fg(Color::Cyan)),
-        Span::styled(at_cursor, Style::default().fg(Color::Black).bg(Color::White)),
+        Span::styled(
+            at_cursor,
+            Style::default().fg(Color::Black).bg(Color::White),
+        ),
         Span::styled(after_cursor, Style::default().fg(Color::Cyan)),
     ]));
     f.render_widget(paragraph, bar);

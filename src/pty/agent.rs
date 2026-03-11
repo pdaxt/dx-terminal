@@ -1,7 +1,7 @@
+use portable_pty::{Child, CommandBuilder, MasterPty, PtySize};
+use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
-use std::collections::VecDeque;
-use portable_pty::{CommandBuilder, MasterPty, PtySize, Child};
 
 /// Represents a running agent in a PTY
 pub struct AgentHandle {
@@ -147,7 +147,10 @@ impl AgentHandle {
     /// Check if the child process is still running.
     /// Sets exit_status to -1 on first detection of reader EOF (compare-and-set to avoid races).
     pub fn is_running(&self) -> bool {
-        let reader_done = self.reader_handle.as_ref().map_or(true, |h| h.is_finished());
+        let reader_done = self
+            .reader_handle
+            .as_ref()
+            .map_or(true, |h| h.is_finished());
         if reader_done {
             // Reader finished = process exited — set sentinel only if not already set
             if let Ok(mut status) = self.exit_status.lock() {

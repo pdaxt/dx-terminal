@@ -1,45 +1,48 @@
+mod analytics;
 mod app;
-mod config;
-mod claude;
-mod tracker;
+mod audit;
+mod build;
 mod capacity;
-mod state;
-mod mcp;
-mod mcp_registry;
-mod pty;
-mod tui;
-mod web;
-mod workspace;
-mod queue;
-mod multi_agent;
+mod claude;
 mod collab;
+mod config;
+mod dashboard;
+mod design_tokens;
+mod engine;
+mod factory;
+mod ipc;
 mod knowledge;
 mod machine;
-mod analytics;
+mod mcp;
+mod mcp_registry;
+mod multi_agent;
+mod pty;
 mod quality;
-mod dashboard;
-mod engine;
+mod queue;
 mod scanner;
-mod audit;
-mod factory;
 mod screen;
-mod tmux;
 mod session_stream;
-mod build;
-mod ipc;
-mod vision;
-mod vision_events;
-mod design_tokens;
+mod state;
+mod sync;
+mod tmux;
+mod tracker;
+mod tui;
 mod ui_audit;
 mod ux_audit;
-mod sync;
+mod vision;
+mod vision_events;
+mod web;
+mod workspace;
 
-use std::sync::Arc;
-use std::hash::{Hash, Hasher};
 use clap::{Parser, Subcommand};
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 #[derive(Parser)]
-#[command(name = "dx", about = "DX Terminal: AI-native terminal multiplexer for AI agent teams")]
+#[command(
+    name = "dx",
+    about = "DX Terminal: AI-native terminal multiplexer for AI agent teams"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -69,13 +72,20 @@ enum Commands {
 }
 
 fn runtime_identity(cli: &Cli, default_web_port: u16) -> String {
-    let cwd = std::env::current_dir().unwrap_or_default().to_string_lossy().to_string();
+    let cwd = std::env::current_dir()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     cwd.hash(&mut hasher);
     let cwd_hash = hasher.finish();
 
     match cli.command.as_ref() {
-        Some(Commands::Mcp { server, web_port, no_web }) => format!(
+        Some(Commands::Mcp {
+            server,
+            web_port,
+            no_web,
+        }) => format!(
             "mcp-{}-{}-{}-{:x}",
             server.as_deref().unwrap_or("all"),
             if *no_web { "noweb" } else { "web" },
@@ -83,7 +93,9 @@ fn runtime_identity(cli: &Cli, default_web_port: u16) -> String {
             cwd_hash,
         ),
         Some(Commands::Tui) => format!("tui-{:x}", cwd_hash),
-        Some(Commands::Web { port }) => format!("web-{}-{:x}", port.unwrap_or(default_web_port), cwd_hash),
+        Some(Commands::Web { port }) => {
+            format!("web-{}-{:x}", port.unwrap_or(default_web_port), cwd_hash)
+        }
         None => format!("default-{}-{:x}", default_web_port, cwd_hash),
     }
 }
@@ -95,7 +107,10 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
     let application = Arc::new(app::App::new());
-    ipc::start_local_ipc(Arc::clone(&application), runtime_identity(&cli, cfg.web_port));
+    ipc::start_local_ipc(
+        Arc::clone(&application),
+        runtime_identity(&cli, cfg.web_port),
+    );
 
     // Clean up stale worktrees from previous crashed sessions
     if let Ok(cleaned) = workspace::cleanup_stale_worktrees() {
@@ -112,7 +127,11 @@ async fn main() -> anyhow::Result<()> {
     start_sync_manager(&application).await;
 
     match cli.command {
-        Some(Commands::Mcp { server, web_port, no_web }) => {
+        Some(Commands::Mcp {
+            server,
+            web_port,
+            no_web,
+        }) => {
             let port = web_port.unwrap_or(cfg.web_port);
             run_mcp_mode(application, port, no_web, server).await?;
         }
@@ -128,19 +147,19 @@ async fn main() -> anyhow::Result<()> {
             engine::start_background_tasks(Some(Arc::clone(&application.state))).await;
 
             let tui_app = application;
-            let handle = std::thread::spawn(move || {
-                tui::run_tui(tui_app)
-            });
-            handle.join().map_err(|_| anyhow::anyhow!("TUI thread panicked"))??;
+            let handle = std::thread::spawn(move || tui::run_tui(tui_app));
+            handle
+                .join()
+                .map_err(|_| anyhow::anyhow!("TUI thread panicked"))??;
         }
         Some(Commands::Tui) => {
             // TUI uses blocking_read() which panics inside tokio runtime.
             // Spawn on a dedicated OS thread outside the runtime.
             let tui_app = application;
-            let handle = std::thread::spawn(move || {
-                tui::run_tui(tui_app)
-            });
-            handle.join().map_err(|_| anyhow::anyhow!("TUI thread panicked"))??;
+            let handle = std::thread::spawn(move || tui::run_tui(tui_app));
+            handle
+                .join()
+                .map_err(|_| anyhow::anyhow!("TUI thread panicked"))??;
         }
         Some(Commands::Web { port }) => {
             let port = port.unwrap_or(cfg.web_port);
@@ -153,7 +172,12 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn run_mcp_mode(app: Arc<app::App>, web_port: u16, no_web: bool, server: Option<String>) -> anyhow::Result<()> {
+async fn run_mcp_mode(
+    app: Arc<app::App>,
+    web_port: u16,
+    no_web: bool,
+    server: Option<String>,
+) -> anyhow::Result<()> {
     init_tracing();
 
     if !no_web {
@@ -188,7 +212,10 @@ async fn run_mcp_mode(app: Arc<app::App>, web_port: u16, no_web: bool, server: O
 
             let result = mcp::tools::auto_cycle(&cycle_app).await;
             // Only log if something happened (not just empty cycle)
-            if result.contains("auto_complete") || result.contains("auto_spawn") || result.contains("error_kill") {
+            if result.contains("auto_complete")
+                || result.contains("auto_spawn")
+                || result.contains("error_kill")
+            {
                 tracing::info!("Auto-cycle: {}", result);
             }
         }
@@ -218,7 +245,10 @@ async fn run_mcp_mode(app: Arc<app::App>, web_port: u16, no_web: bool, server: O
         Some("coord") => mcp::servers::coord::run(app).await,
         Some("intel") => mcp::servers::intel::run(app).await,
         Some(unknown) => {
-            anyhow::bail!("Unknown MCP server '{}'. Options: core, queue, tracker, coord, intel", unknown);
+            anyhow::bail!(
+                "Unknown MCP server '{}'. Options: core, queue, tracker, coord, intel",
+                unknown
+            );
         }
         None => {
             // Default: monolithic server (all 206 tools)
@@ -236,7 +266,8 @@ async fn start_sync_manager(app: &Arc<app::App>) {
         return;
     }
 
-    let project_name = cwd.file_name()
+    let project_name = cwd
+        .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "unknown".into());
 

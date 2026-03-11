@@ -1,14 +1,16 @@
 //! Configuration tools: set_mcps, set_preamble, config_show.
 
-use crate::app::App;
-use crate::config;
-use crate::claude;
 use super::super::types::*;
 use super::helpers::json_err;
+use crate::app::App;
+use crate::claude;
+use crate::config;
 
 /// Execute os_set_mcps logic
 pub async fn set_mcps(app: &App, req: SetMcpsRequest) -> String {
-    app.state.set_project_mcps(&req.project, req.mcps.clone()).await;
+    app.state
+        .set_project_mcps(&req.project, req.mcps.clone())
+        .await;
 
     let project_path = config::resolve_project_path(&req.project);
     match claude::set_project_mcps(&project_path, &req.mcps) {
@@ -17,12 +19,14 @@ pub async fn set_mcps(app: &App, req: SetMcpsRequest) -> String {
             "project": req.project,
             "mcps": req.mcps,
             "project_path": project_path,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => serde_json::json!({
             "status": "partial",
             "state_updated": true,
             "claude_json_error": e.to_string(),
-        }).to_string(),
+        })
+        .to_string(),
     }
 }
 
@@ -39,7 +43,8 @@ pub async fn set_preamble(_app: &App, req: SetPreambleRequest) -> String {
             "pane": pane_num,
             "path": path,
             "size": req.content.len(),
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => json_err(&format!("Failed to write preamble: {}", e)),
     }
 }
@@ -71,7 +76,8 @@ pub async fn config_show(app: &App, req: ConfigShowRequest) -> String {
                 "pty_running": running,
                 "preamble_exists": claude::preamble_exists(pane_num),
                 "project_mcps": mcps,
-            }).to_string();
+            })
+            .to_string();
         }
     }
 
@@ -83,14 +89,17 @@ pub async fn config_show(app: &App, req: ConfigShowRequest) -> String {
     let pty = app.pty_lock();
     let mut result = serde_json::Map::new();
     for (i, pd) in &pane_states {
-        result.insert(i.to_string(), serde_json::json!({
-            "theme": config::theme_name(*i),
-            "project": pd.project,
-            "role": pd.role,
-            "task": pd.task,
-            "status": pd.status,
-            "pty_active": pty.has_agent(*i),
-        }));
+        result.insert(
+            i.to_string(),
+            serde_json::json!({
+                "theme": config::theme_name(*i),
+                "project": pd.project,
+                "role": pd.role,
+                "task": pd.task,
+                "status": pd.status,
+                "pty_active": pty.has_agent(*i),
+            }),
+        );
     }
     drop(pty);
     serde_json::Value::Object(result).to_string()

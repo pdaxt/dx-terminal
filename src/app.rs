@@ -1,10 +1,10 @@
-use std::sync::{Arc, Mutex, MutexGuard, RwLock};
-use crate::state::StateManager;
+use crate::config;
 use crate::pty::PtyManager;
 use crate::screen::ScreenManager;
+use crate::state::StateManager;
 use crate::sync::SyncManager;
-use crate::config;
 use dx_gateway::MCPRegistry;
+use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
 pub struct App {
     pub state: Arc<StateManager>,

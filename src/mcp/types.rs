@@ -1,5 +1,5 @@
-use serde::Deserialize;
 use schemars::JsonSchema;
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SpawnRequest {
@@ -7,7 +7,9 @@ pub struct SpawnRequest {
     pub pane: String,
     #[schemars(description = "Project name or path (fuzzy matched against ~/Projects)")]
     pub project: String,
-    #[schemars(description = "Agent role: pm/architect/frontend/backend/qa/security/devops/developer")]
+    #[schemars(
+        description = "Agent role: pm/architect/frontend/backend/qa/security/devops/developer"
+    )]
     pub role: Option<String>,
     #[schemars(description = "Task description for the agent")]
     pub task: Option<String>,
@@ -206,7 +208,9 @@ pub struct QueueAddRequest {
 pub struct DecomposeRequest {
     #[schemars(description = "Project name or path")]
     pub project: String,
-    #[schemars(description = "High-level goal — use numbered steps (1. 2. 3.) or bullet points (- *) to define sub-tasks. Sequential by default; prefix with || for parallel tasks.")]
+    #[schemars(
+        description = "High-level goal — use numbered steps (1. 2. 3.) or bullet points (- *) to define sub-tasks. Sequential by default; prefix with || for parallel tasks."
+    )]
     pub goal: String,
     #[schemars(description = "Max sub-tasks to create (default 5)")]
     pub max_subtasks: Option<u8>,
@@ -252,7 +256,9 @@ pub struct QueueClearRequest {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct FactoryDetectRequest {
-    #[schemars(description = "Natural language description — auto-detects which project it refers to")]
+    #[schemars(
+        description = "Natural language description — auto-detects which project it refers to"
+    )]
     pub description: String,
 }
 
@@ -266,7 +272,9 @@ pub struct AutoConfigRequest {
     pub auto_complete: Option<bool>,
     #[schemars(description = "Auto-assign next task when pane frees")]
     pub auto_assign: Option<bool>,
-    #[schemars(description = "Background auto-cycle interval in seconds (0 = disabled, default 30)")]
+    #[schemars(
+        description = "Background auto-cycle interval in seconds (0 = disabled, default 30)"
+    )]
     pub cycle_interval_secs: Option<u64>,
 }
 
@@ -744,7 +752,9 @@ pub struct FeatureDecomposeRequest {
     pub space: String,
     #[schemars(description = "Parent feature/epic issue ID")]
     pub parent_id: String,
-    #[schemars(description = "Array of micro-features: [{title, description?, priority?, role?, estimated_acu?}]")]
+    #[schemars(
+        description = "Array of micro-features: [{title, description?, priority?, role?, estimated_acu?}]"
+    )]
     pub children: Vec<serde_json::Value>,
 }
 
@@ -754,7 +764,9 @@ pub struct FeatureToQueueRequest {
     pub space: String,
     #[schemars(description = "Issue IDs to push to the execution queue")]
     pub issue_ids: Vec<String>,
-    #[schemars(description = "If true, tasks run sequentially (each depends on previous). If false, all run in parallel.")]
+    #[schemars(
+        description = "If true, tasks run sequentially (each depends on previous). If false, all run in parallel."
+    )]
     pub sequential: Option<bool>,
 }
 
@@ -1024,7 +1036,9 @@ pub struct DocDeleteRequest {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct MonitorRequest {
-    #[schemars(description = "Include PTY output snippets for active panes (default false, saves tokens)")]
+    #[schemars(
+        description = "Include PTY output snippets for active panes (default false, saves tokens)"
+    )]
     pub include_output: Option<bool>,
 }
 
@@ -1062,7 +1076,9 @@ pub struct WatchRequest {
 pub struct KgraphAddEntityRequest {
     #[schemars(description = "Entity name")]
     pub name: String,
-    #[schemars(description = "Entity type: project, file, tool, pattern, error, person, concept, mcp, library, platform, config, service, database")]
+    #[schemars(
+        description = "Entity type: project, file, tool, pattern, error, person, concept, mcp, library, platform, config, service, database"
+    )]
     pub entity_type: String,
     #[schemars(description = "JSON properties object")]
     pub properties: Option<String>,
@@ -1076,7 +1092,9 @@ pub struct KgraphAddEdgeRequest {
     pub source: String,
     #[schemars(description = "Target entity (name or ID)")]
     pub target: String,
-    #[schemars(description = "Relation: uses, depends_on, causes, fixes, part_of, related_to, conflicts_with, replaced_by, about, solved_by, creates, configures, tests, deploys, documents")]
+    #[schemars(
+        description = "Relation: uses, depends_on, causes, fixes, part_of, related_to, conflicts_with, replaced_by, about, solved_by, creates, configures, tests, deploys, documents"
+    )]
     pub relation: String,
     #[schemars(description = "Edge weight 0.0-10.0 (default 1.0)")]
     pub weight: Option<f64>,
@@ -1679,15 +1697,23 @@ pub struct ProjectDepsRequest {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct OrchestrateRequest {
-    #[schemars(description = "Natural language request: what you want built/done. DX Terminal will identify the project, decompose into tasks, spawn developer + QA + security agents.")]
+    #[schemars(
+        description = "Natural language request: what you want built/done. DX Terminal will identify the project, decompose into tasks, spawn developer + QA + security agents."
+    )]
     pub request: String,
     #[schemars(description = "Explicit project name (auto-detected from request if empty)")]
     pub project: Option<String>,
-    #[schemars(description = "Run QA agent concurrently with developer (default true). If false, QA runs after developer completes.")]
+    #[schemars(
+        description = "Run QA agent concurrently with developer (default true). If false, QA runs after developer completes."
+    )]
     pub concurrent_qa: Option<bool>,
-    #[schemars(description = "Run security audit concurrently (default false). If true, security agent watches in real-time.")]
+    #[schemars(
+        description = "Run security audit concurrently (default false). If true, security agent watches in real-time."
+    )]
     pub concurrent_security: Option<bool>,
-    #[schemars(description = "Max panes to use for this orchestration (default 3: dev + qa + security)")]
+    #[schemars(
+        description = "Max panes to use for this orchestration (default 3: dev + qa + security)"
+    )]
     pub max_panes: Option<u8>,
 }
 
@@ -1695,9 +1721,13 @@ pub struct OrchestrateRequest {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct FactoryRequest {
-    #[schemars(description = "What to build/fix/test (natural language). Project auto-detected if not specified.")]
+    #[schemars(
+        description = "What to build/fix/test (natural language). Project auto-detected if not specified."
+    )]
     pub request: String,
-    #[schemars(description = "Project name (optional — auto-detected from request text if omitted)")]
+    #[schemars(
+        description = "Project name (optional — auto-detected from request text if omitted)"
+    )]
     pub project: Option<String>,
     #[schemars(description = "Pipeline template: full, quick, secure (default: full)")]
     pub template: Option<String>,
@@ -1743,7 +1773,9 @@ pub struct SignalAckRequest {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GatewayDiscoverRequest {
-    #[schemars(description = "Capability keyword to search for (e.g. 'knowledge', 'testing', 'email')")]
+    #[schemars(
+        description = "Capability keyword to search for (e.g. 'knowledge', 'testing', 'email')"
+    )]
     pub capability: String,
     #[schemars(description = "Auto-start matching MCPs (default false)")]
     pub auto_start: Option<bool>,
@@ -1783,7 +1815,9 @@ pub struct AuditSecurityRequest {
 pub struct AuditIntentRequest {
     #[schemars(description = "Project name or absolute path to audit")]
     pub project: String,
-    #[schemars(description = "Description of what the project should do (for intent verification)")]
+    #[schemars(
+        description = "Description of what the project should do (for intent verification)"
+    )]
     pub description: Option<String>,
 }
 
@@ -1896,7 +1930,9 @@ pub struct VisionAcceptanceUpdateRequest {
     pub criterion_id: String,
     #[schemars(description = "Updated criterion text")]
     pub text: Option<String>,
-    #[schemars(description = "Verification method, e.g. integration_test/manual_review/pipeline_gate")]
+    #[schemars(
+        description = "Verification method, e.g. integration_test/manual_review/pipeline_gate"
+    )]
     pub verification_method: Option<String>,
 }
 
@@ -2033,7 +2069,9 @@ pub struct VisionAddGoalRequest {
     pub priority: u8,
 }
 
-fn default_priority() -> u8 { 2 }
+fn default_priority() -> u8 {
+    2
+}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct VisionUpdateGoalRequest {
@@ -2049,9 +2087,13 @@ pub struct VisionUpdateGoalRequest {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AddScreenRequest {
-    #[schemars(description = "Screen name (e.g., 'Dev Screen', 'QA Screen'). Auto-generated if not provided.")]
+    #[schemars(
+        description = "Screen name (e.g., 'Dev Screen', 'QA Screen'). Auto-generated if not provided."
+    )]
     pub name: Option<String>,
-    #[schemars(description = "Layout: single, split2, horizontal (default, 3 panes), vertical, grid2x2")]
+    #[schemars(
+        description = "Layout: single, split2, horizontal (default, 3 panes), vertical, grid2x2"
+    )]
     pub layout: Option<String>,
     #[schemars(description = "Override number of panes (default: based on layout)")]
     pub panes: Option<u8>,

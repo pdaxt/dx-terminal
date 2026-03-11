@@ -4,13 +4,13 @@
 //! Takes a human request, identifies the project, decomposes work into
 //! developer + QA + security tasks, spawns agents on free panes, and monitors.
 
+use super::super::types::*;
+use super::helpers::*;
+use super::panes;
 use crate::app::App;
 use crate::config;
 use crate::queue;
 use crate::scanner;
-use super::super::types::*;
-use super::helpers::*;
-use super::panes;
 
 /// Main orchestration entry point
 pub async fn orchestrate(app: &App, req: OrchestrateRequest) -> String {
@@ -21,18 +21,28 @@ pub async fn orchestrate(app: &App, req: OrchestrateRequest) -> String {
     // Step 1: Identify project
     let project = match identify_project(&req.request, req.project.as_deref()) {
         Some(p) => p,
-        None => return json_err("Could not identify project. Specify project= explicitly or run project_scan first."),
+        None => return json_err(
+            "Could not identify project. Specify project= explicitly or run project_scan first.",
+        ),
     };
 
     // Step 2: Build task plan
-    let plan = build_plan(&req.request, &project, concurrent_qa, concurrent_security, max_panes);
+    let plan = build_plan(
+        &req.request,
+        &project,
+        concurrent_qa,
+        concurrent_security,
+        max_panes,
+    );
 
     // Step 3: Queue all tasks
     let mut task_ids: Vec<String> = Vec::new();
     let mut spawned: Vec<serde_json::Value> = Vec::new();
 
     for planned_task in &plan.tasks {
-        let deps: Vec<String> = planned_task.depends_on.iter()
+        let deps: Vec<String> = planned_task
+            .depends_on
+            .iter()
             .filter_map(|dep_idx| task_ids.get(*dep_idx).cloned())
             .collect();
 
@@ -48,7 +58,10 @@ pub async fn orchestrate(app: &App, req: OrchestrateRequest) -> String {
                 task_ids.push(task.id.clone());
             }
             Err(e) => {
-                return json_err(&format!("Failed to queue task '{}': {}", planned_task.task, e));
+                return json_err(&format!(
+                    "Failed to queue task '{}': {}",
+                    planned_task.task, e
+                ));
             }
         }
     }
@@ -83,14 +96,18 @@ pub async fn orchestrate(app: &App, req: OrchestrateRequest) -> String {
             let _ = queue::mark_running(task_id, pane);
             occupied.push(pane);
 
-            let _result = panes::spawn(app, SpawnRequest {
-                pane: pane.to_string(),
-                project: project.name.clone(),
-                role: Some(planned_task.role.clone()),
-                task: Some(planned_task.task.clone()),
-                prompt: Some(planned_task.prompt.clone()),
-                autonomous: None,
-            }).await;
+            let _result = panes::spawn(
+                app,
+                SpawnRequest {
+                    pane: pane.to_string(),
+                    project: project.name.clone(),
+                    role: Some(planned_task.role.clone()),
+                    task: Some(planned_task.task.clone()),
+                    prompt: Some(planned_task.prompt.clone()),
+                    autonomous: None,
+                },
+            )
+            .await;
 
             spawned.push(serde_json::json!({
                 "pane": pane,
@@ -127,7 +144,8 @@ pub async fn orchestrate(app: &App, req: OrchestrateRequest) -> String {
         "pending": pending,
         "task_ids": task_ids,
         "auto_cycle": "Tasks in queue. Auto-cycle will spawn remaining when panes free up.",
-    }).to_string()
+    })
+    .to_string()
 }
 
 // === Internal helpers ===
@@ -156,7 +174,11 @@ fn identify_project(request: &str, explicit_project: Option<&str>) -> Option<Ide
 
     // If explicitly specified, use that
     if let Some(name) = explicit_project {
-        if let Some(p) = reg.projects.iter().find(|p| p.name.to_lowercase() == name.to_lowercase()) {
+        if let Some(p) = reg
+            .projects
+            .iter()
+            .find(|p| p.name.to_lowercase() == name.to_lowercase())
+        {
             return Some(IdentifiedProject {
                 name: p.name.clone(),
                 path: p.path.clone(),
@@ -172,7 +194,8 @@ fn identify_project(request: &str, explicit_project: Option<&str>) -> Option<Ide
     }
 
     // Fuzzy match request text against project names, tech, readme
-    let words: Vec<String> = request.to_lowercase()
+    let words: Vec<String> = request
+        .to_lowercase()
         .split_whitespace()
         .map(|s| s.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
         .filter(|s| !s.is_empty() && s.len() > 2)
@@ -185,7 +208,11 @@ fn identify_project(request: &str, explicit_project: Option<&str>) -> Option<Ide
         let mut score = 0i32;
         let name_lower = project.name.to_lowercase();
         let tech_lower: Vec<String> = project.tech.iter().map(|t| t.to_lowercase()).collect();
-        let readme = project.readme_summary.as_deref().unwrap_or("").to_lowercase();
+        let readme = project
+            .readme_summary
+            .as_deref()
+            .unwrap_or("")
+            .to_lowercase();
 
         for word in &words {
             // Exact name match = strongest signal
@@ -269,7 +296,11 @@ fn build_plan(
     // Task 1: QA Agent
     if max_panes >= 2 {
         let qa_deps = if concurrent_qa { vec![] } else { vec![0usize] };
-        let qa_mode = if concurrent_qa { "concurrent" } else { "sequential" };
+        let qa_mode = if concurrent_qa {
+            "concurrent"
+        } else {
+            "sequential"
+        };
 
         let qa_prompt = format!(
             "You are the QA engineer for this project.\n\n\
@@ -295,12 +326,18 @@ fn build_plan(
             project.tech.join(", "),
             qa_mode,
             if concurrent_qa {
-                format!("The developer is currently implementing: {}. \
+                format!(
+                    "The developer is currently implementing: {}. \
                          Monitor the project, run tests after each commit. \
-                         Report issues immediately.", truncate(request, 80))
+                         Report issues immediately.",
+                    truncate(request, 80)
+                )
             } else {
-                format!("The developer has completed: {}. \
-                         Review their work and verify everything works.", truncate(request, 80))
+                format!(
+                    "The developer has completed: {}. \
+                         Review their work and verify everything works.",
+                    truncate(request, 80)
+                )
             },
         );
 
@@ -315,8 +352,16 @@ fn build_plan(
 
     // Task 2: Security Audit
     if max_panes >= 3 {
-        let sec_deps = if concurrent_security { vec![] } else { vec![0usize] };
-        let sec_mode = if concurrent_security { "concurrent" } else { "post-implementation" };
+        let sec_deps = if concurrent_security {
+            vec![]
+        } else {
+            vec![0usize]
+        };
+        let sec_mode = if concurrent_security {
+            "concurrent"
+        } else {
+            "post-implementation"
+        };
 
         let security_prompt = format!(
             "You are the security auditor for this project.\n\n\

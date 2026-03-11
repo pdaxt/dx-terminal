@@ -1,10 +1,10 @@
 pub mod agent;
-pub mod output;
 pub mod health;
+pub mod output;
 
-use std::collections::HashMap;
 use self::agent::AgentHandle;
 use self::health::PaneHealth;
+use std::collections::HashMap;
 
 /// Manages all PTY-based agent processes
 pub struct PtyManager {

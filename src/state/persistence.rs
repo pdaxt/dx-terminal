@@ -1,16 +1,14 @@
-use std::path::Path;
-use anyhow::Result;
 use crate::state::types::DxTerminalState;
+use anyhow::Result;
+use std::path::Path;
 
 pub fn load_state(path: &Path) -> DxTerminalState {
     if path.exists() {
         match std::fs::read_to_string(path) {
-            Ok(contents) => {
-                match serde_json::from_str(&contents) {
-                    Ok(state) => return state,
-                    Err(e) => tracing::warn!("Failed to parse state.json: {}", e),
-                }
-            }
+            Ok(contents) => match serde_json::from_str(&contents) {
+                Ok(state) => return state,
+                Err(e) => tracing::warn!("Failed to parse state.json: {}", e),
+            },
             Err(e) => tracing::warn!("Failed to read state.json: {}", e),
         }
     }

@@ -1,10 +1,15 @@
+use crate::multi_agent::coordination_db;
 use rusqlite::params;
 use serde_json::{json, Value};
-use crate::multi_agent::coordination_db;
 
 pub fn dash_overview(project: Option<&str>) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
-    let proj_filter = project.map(|p| format!("AND project = '{}'", p.replace('\'', "''"))).unwrap_or_default();
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
+    let proj_filter = project
+        .map(|p| format!("AND project = '{}'", p.replace('\'', "''")))
+        .unwrap_or_default();
 
     // Active agents
     let mut agents = vec![];
@@ -19,16 +24,23 @@ pub fn dash_overview(project: Option<&str>) -> Value {
                 "status": r.get::<_, String>(4)?, "last_heartbeat": r.get::<_, Option<String>>(5)?,
             }))
         }) {
-            for row in rows.flatten() { agents.push(row); }
+            for row in rows.flatten() {
+                agents.push(row);
+            }
         }
     }
     let agent_count = agents.len();
 
     // Pending tasks
-    let pending_tasks: i64 = conn.query_row(
-        &format!("SELECT COUNT(*) FROM tasks WHERE status IN ('pending','blocked') {proj_filter}"),
-        [], |r| r.get(0),
-    ).unwrap_or(0);
+    let pending_tasks: i64 = conn
+        .query_row(
+            &format!(
+                "SELECT COUNT(*) FROM tasks WHERE status IN ('pending','blocked') {proj_filter}"
+            ),
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
 
     // Active locks
     let active_locks: i64 = conn.query_row(
@@ -48,10 +60,13 @@ pub fn dash_overview(project: Option<&str>) -> Value {
     ).unwrap_or(0);
 
     // Unread messages
-    let unread_msgs: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM messages WHERE read_by = '[]'",
-        [], |r| r.get(0),
-    ).unwrap_or(0);
+    let unread_msgs: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM messages WHERE read_by = '[]'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
 
     // Allocated ports
     let mut ports = vec![];
@@ -92,7 +107,10 @@ pub fn dash_overview(project: Option<&str>) -> Value {
 }
 
 pub fn dash_agent_detail(pane_id: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
 
     // Agent info
     let agent = match conn.query_row(
@@ -125,11 +143,15 @@ pub fn dash_agent_detail(pane_id: &str) -> Value {
 
     // Current locks
     let mut locks = vec![];
-    if let Ok(mut stmt) = conn.prepare("SELECT file_path, reason FROM file_locks WHERE pane_id = ?1") {
+    if let Ok(mut stmt) =
+        conn.prepare("SELECT file_path, reason FROM file_locks WHERE pane_id = ?1")
+    {
         if let Ok(rows) = stmt.query_map(params![pane_id], |r| {
             Ok(json!({"file": r.get::<_, String>(0)?, "reason": r.get::<_, String>(1)?}))
         }) {
-            for row in rows.flatten() { locks.push(row); }
+            for row in rows.flatten() {
+                locks.push(row);
+            }
         }
     }
 
@@ -150,7 +172,10 @@ pub fn dash_agent_detail(pane_id: &str) -> Value {
 }
 
 pub fn dash_project(project: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
 
     // Agents on this project
     let mut agents = vec![];
@@ -167,11 +192,15 @@ pub fn dash_project(project: &str) -> Value {
 
     // Task breakdown
     let mut task_counts = vec![];
-    if let Ok(mut stmt) = conn.prepare("SELECT status, COUNT(*) FROM tasks WHERE project = ?1 GROUP BY status") {
+    if let Ok(mut stmt) =
+        conn.prepare("SELECT status, COUNT(*) FROM tasks WHERE project = ?1 GROUP BY status")
+    {
         if let Ok(rows) = stmt.query_map(params![project], |r| {
             Ok(json!({"status": r.get::<_, String>(0)?, "count": r.get::<_, i64>(1)?}))
         }) {
-            for row in rows.flatten() { task_counts.push(row); }
+            for row in rows.flatten() {
+                task_counts.push(row);
+            }
         }
     }
 
@@ -196,10 +225,13 @@ pub fn dash_project(project: &str) -> Value {
     }
 
     // KB count
-    let kb_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM kb_entries WHERE project = ?1",
-        params![project], |r| r.get(0),
-    ).unwrap_or(0);
+    let kb_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM kb_entries WHERE project = ?1",
+            params![project],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
 
     json!({
         "project": project,
@@ -212,8 +244,13 @@ pub fn dash_project(project: &str) -> Value {
 }
 
 pub fn dash_leaderboard(days: i64, project: Option<&str>) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
-    let proj_filter = project.map(|p| format!("AND project = '{}'", p.replace('\'', "''"))).unwrap_or_default();
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
+    let proj_filter = project
+        .map(|p| format!("AND project = '{}'", p.replace('\'', "''")))
+        .unwrap_or_default();
 
     let sql = format!(
         "SELECT pane_id,
@@ -247,13 +284,26 @@ pub fn dash_leaderboard(days: i64, project: Option<&str>) -> Value {
 }
 
 pub fn dash_timeline(project: Option<&str>, pane_id: Option<&str>, limit: i64) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
 
     let mut conditions = Vec::new();
-    if let Some(p) = project { conditions.push(format!("project = '{}'", p.replace('\'', "''"))); }
-    if let Some(a) = pane_id { conditions.push(format!("pane_id = '{}'", a.replace('\'', "''"))); }
-    let where_tc = if conditions.is_empty() { String::new() } else { format!("WHERE {}", conditions.join(" AND ")) };
-    let pane_filter = pane_id.map(|a| format!("WHERE pane_id = '{}'", a.replace('\'', "''"))).unwrap_or_default();
+    if let Some(p) = project {
+        conditions.push(format!("project = '{}'", p.replace('\'', "''")));
+    }
+    if let Some(a) = pane_id {
+        conditions.push(format!("pane_id = '{}'", a.replace('\'', "''")));
+    }
+    let where_tc = if conditions.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", conditions.join(" AND "))
+    };
+    let pane_filter = pane_id
+        .map(|a| format!("WHERE pane_id = '{}'", a.replace('\'', "''")))
+        .unwrap_or_default();
 
     let sql = format!(
         "SELECT 'tool_call' as type, tool_name as detail, pane_id, timestamp FROM tool_calls {where_tc}
@@ -270,7 +320,9 @@ pub fn dash_timeline(project: Option<&str>, pane_id: Option<&str>, limit: i64) -
                 "pane_id": r.get::<_, String>(2)?, "at": r.get::<_, String>(3)?,
             }))
         }) {
-            for row in rows.flatten() { events.push(row); }
+            for row in rows.flatten() {
+                events.push(row);
+            }
         }
     }
     let count = events.len();
@@ -278,8 +330,13 @@ pub fn dash_timeline(project: Option<&str>, pane_id: Option<&str>, limit: i64) -
 }
 
 pub fn dash_alerts(project: Option<&str>) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
-    let proj_filter = project.map(|p| format!("AND project = '{}'", p.replace('\'', "''"))).unwrap_or_default();
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
+    let proj_filter = project
+        .map(|p| format!("AND project = '{}'", p.replace('\'', "''")))
+        .unwrap_or_default();
     let mut alert_list: Vec<Value> = Vec::new();
 
     // Dead agents (no heartbeat in 10 min)
@@ -335,8 +392,13 @@ pub fn dash_alerts(project: Option<&str>) -> Value {
 }
 
 pub fn dash_daily_digest(project: Option<&str>) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
-    let proj_filter = project.map(|p| format!("AND project = '{}'", p.replace('\'', "''"))).unwrap_or_default();
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
+    let proj_filter = project
+        .map(|p| format!("AND project = '{}'", p.replace('\'', "''")))
+        .unwrap_or_default();
     let date_filter = "AND timestamp > datetime('now', '-24 hours')";
 
     let agents_today: i64 = conn.query_row(
@@ -344,20 +406,31 @@ pub fn dash_daily_digest(project: Option<&str>) -> Value {
         [], |r| r.get(0),
     ).unwrap_or(0);
 
-    let calls_today: i64 = conn.query_row(
-        &format!("SELECT COUNT(*) FROM tool_calls WHERE 1=1 {date_filter} {proj_filter}"),
-        [], |r| r.get(0),
-    ).unwrap_or(0);
+    let calls_today: i64 = conn
+        .query_row(
+            &format!("SELECT COUNT(*) FROM tool_calls WHERE 1=1 {date_filter} {proj_filter}"),
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
 
-    let errors_today: i64 = conn.query_row(
-        &format!("SELECT COUNT(*) FROM tool_calls WHERE success = 0 {date_filter} {proj_filter}"),
-        [], |r| r.get(0),
-    ).unwrap_or(0);
+    let errors_today: i64 = conn
+        .query_row(
+            &format!(
+                "SELECT COUNT(*) FROM tool_calls WHERE success = 0 {date_filter} {proj_filter}"
+            ),
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
 
-    let commits_today: i64 = conn.query_row(
-        &format!("SELECT COUNT(*) FROM git_commits WHERE 1=1 {date_filter} {proj_filter}"),
-        [], |r| r.get(0),
-    ).unwrap_or(0);
+    let commits_today: i64 = conn
+        .query_row(
+            &format!("SELECT COUNT(*) FROM git_commits WHERE 1=1 {date_filter} {proj_filter}"),
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
 
     let files_today: i64 = conn.query_row(
         &format!("SELECT COUNT(DISTINCT file_path) FROM file_operations WHERE 1=1 {date_filter} {proj_filter}"),
@@ -388,8 +461,13 @@ pub fn dash_daily_digest(project: Option<&str>) -> Value {
 }
 
 pub fn dash_export(report: &str, project: Option<&str>, days: i64) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
-    let proj_filter = project.map(|p| format!("AND project = '{}'", p.replace('\'', "''"))).unwrap_or_default();
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
+    let proj_filter = project
+        .map(|p| format!("AND project = '{}'", p.replace('\'', "''")))
+        .unwrap_or_default();
 
     match report {
         "agents" => {
@@ -408,7 +486,7 @@ pub fn dash_export(report: &str, project: Option<&str>, days: i64) -> Value {
             }
             let count = data.len();
             json!({"report": "agents", "data": data, "count": count})
-        },
+        }
         "usage" => {
             let mut data = vec![];
             if let Ok(mut stmt) = conn.prepare(&format!(
@@ -417,15 +495,19 @@ pub fn dash_export(report: &str, project: Option<&str>, days: i64) -> Value {
                  ORDER BY timestamp DESC LIMIT 1000"
             )) {
                 if let Ok(rows) = stmt.query_map([], |r| {
-                    Ok(json!({"pane_id": r.get::<_, String>(0)?, "tool": r.get::<_, String>(1)?,
-                              "success": r.get::<_, i32>(2)? != 0, "at": r.get::<_, String>(3)?}))
+                    Ok(
+                        json!({"pane_id": r.get::<_, String>(0)?, "tool": r.get::<_, String>(1)?,
+                              "success": r.get::<_, i32>(2)? != 0, "at": r.get::<_, String>(3)?}),
+                    )
                 }) {
-                    for row in rows.flatten() { data.push(row); }
+                    for row in rows.flatten() {
+                        data.push(row);
+                    }
                 }
             }
             let count = data.len();
             json!({"report": "usage", "period_days": days, "data": data, "count": count})
-        },
+        }
         "quality" => {
             let mut data = vec![];
             if let Ok(mut stmt) = conn.prepare(&format!(
@@ -443,7 +525,9 @@ pub fn dash_export(report: &str, project: Option<&str>, days: i64) -> Value {
             }
             let count = data.len();
             json!({"report": "quality", "period_days": days, "data": data, "count": count})
-        },
-        _ => json!({"error": format!("Unknown report type: {report}. Use: agents, usage, quality")}),
+        }
+        _ => {
+            json!({"error": format!("Unknown report type: {report}. Use: agents, usage, quality")})
+        }
     }
 }
