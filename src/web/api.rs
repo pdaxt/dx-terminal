@@ -1639,3 +1639,103 @@ pub async fn get_sync_status(State(app): State<Arc<crate::app::App>>) -> Json<Va
         })),
     }
 }
+
+/// GET /api/pane/:id/context — VDD context for a pane's project
+/// Returns the vision, active features, tasks, and docs for the project the pane is working on
+pub async fn get_pane_context(
+    State(app): State<Arc<crate::app::App>>,
+    Path(pane_ref): Path<String>,
+) -> Json<Value> {
+    // Get pane data to find its project
+    let config_result = tools::config_show(&app, types::ConfigShowRequest {
+        pane: Some(pane_ref.clone()),
+    }).await;
+    let pane_data = parse_mcp(&config_result);
+
+    let project = pane_data["project"].as_str().unwrap_or("--");
+    let task = pane_data["task"].as_str().unwrap_or("");
+    let cwd = pane_data["cwd"].as_str().unwrap_or("");
+
+    // Try to find vision.json for this project
+    let vision = find_vision_for_project(project, cwd);
+
+    // Build context response
+    let mut ctx = json!({
+        "pane": pane_ref,
+        "project": project,
+        "task": task,
+        "cwd": cwd,
+    });
+
+    if let Some(v) = vision {
+        let mission = v["mission"].as_str().unwrap_or("");
+        let goals = v["goals"].as_array().map(|gs| {
+            gs.iter().map(|g| json!({
+                "id": g["id"],
+                "title": g["title"],
+                "status": g["status"],
+                "priority": g["priority"],
+            })).collect::<Vec<_>>()
+        }).unwrap_or_default();
+
+        let features = v["features"].as_array().map(|fs| {
+            fs.iter().map(|f| {
+                let tasks = f["tasks"].as_array().map(|ts| {
+                    ts.iter().map(|t| json!({
+                        "id": t["id"],
+                        "title": t["title"],
+                        "status": t["status"],
+                    })).collect::<Vec<_>>()
+                }).unwrap_or_default();
+                json!({
+                    "id": f["id"],
+                    "title": f["title"],
+                    "status": f["status"],
+                    "goal_id": f["goal_id"],
+                    "acceptance_criteria": f["acceptance_criteria"],
+                    "tasks": tasks,
+                })
+            }).collect::<Vec<_>>()
+        }).unwrap_or_default();
+
+        ctx["vision"] = json!({
+            "project": v["project"],
+            "mission": mission,
+            "goals": goals,
+            "features": features,
+            "wiki_url": format!("/wiki?project={}", project),
+        });
+    }
+
+    Json(ctx)
+}
+
+/// Find vision.json for a project by name or cwd
+fn find_vision_for_project(project: &str, cwd: &str) -> Option<Value> {
+    // Try cwd first
+    if !cwd.is_empty() {
+        let p = std::path::Path::new(cwd).join(".vision/vision.json");
+        if p.exists() {
+            if let Ok(content) = std::fs::read_to_string(&p) {
+                if let Ok(v) = serde_json::from_str::<Value>(&content) {
+                    return Some(v);
+                }
+            }
+        }
+    }
+
+    // Try common project locations
+    let home = std::env::var("HOME").unwrap_or_default();
+    for base in &[format!("{}/Projects", home), format!("{}", home)] {
+        let p = std::path::Path::new(base).join(project).join(".vision/vision.json");
+        if p.exists() {
+            if let Ok(content) = std::fs::read_to_string(&p) {
+                if let Ok(v) = serde_json::from_str::<Value>(&content) {
+                    return Some(v);
+                }
+            }
+        }
+    }
+
+    None
+}
