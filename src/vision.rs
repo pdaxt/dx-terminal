@@ -338,7 +338,32 @@ fn feature_status_from_phase(phase: &FeaturePhase) -> FeatureStatus {
     }
 }
 
+fn acceptance_id(feature_id: &str, idx: usize) -> String {
+    format!("AC{}.{}", feature_id.trim_start_matches('F'), idx + 1)
+}
+
+fn sync_acceptance_items(feature: &mut Feature) {
+    if feature.acceptance_items.is_empty() && !feature.acceptance_criteria.is_empty() {
+        feature.acceptance_items = feature.acceptance_criteria.iter().enumerate().map(|(idx, text)| AcceptanceCriterion {
+            id: acceptance_id(&feature.id, idx),
+            text: text.clone(),
+            status: AcceptanceStatus::Draft,
+            verification_method: None,
+            evidence: vec![],
+            verified_at: None,
+            verified_by: None,
+            verification_source: None,
+        }).collect();
+    }
+
+    if !feature.acceptance_items.is_empty() {
+        feature.acceptance_criteria = feature.acceptance_items.iter().map(|item| item.text.clone()).collect();
+    }
+}
+
 fn normalize_feature(feature: &mut Feature) {
+    sync_acceptance_items(feature);
+
     let phase_was_default = feature.phase == FeaturePhase::Planned;
     let state_was_default = feature.state == FeatureState::Planned;
 
@@ -396,7 +421,13 @@ fn feature_readiness_value(project_path: &str, feature: &Feature) -> serde_json:
     let has_research_doc = feature_doc_exists(project_path, &feature.id, "research");
     let has_discovery_doc = feature_doc_exists(project_path, &feature.id, "discovery");
     let has_discovery_artifact = has_research_doc || has_discovery_doc;
-    let acceptance_count = feature.acceptance_criteria.len();
+    let acceptance_count = feature.acceptance_items.len();
+    let acceptance_verified = feature.acceptance_items.iter()
+        .filter(|item| item.status == AcceptanceStatus::Verified)
+        .count();
+    let acceptance_failed = feature.acceptance_items.iter()
+        .filter(|item| item.status == AcceptanceStatus::Failed)
+        .count();
     let (task_total, task_complete, task_verified) = task_counts(feature);
 
     let mut build_blockers = Vec::new();
@@ -429,6 +460,11 @@ fn feature_readiness_value(project_path: &str, feature: &Feature) -> serde_json:
     }
     if acceptance_count == 0 {
         done_blockers.push("acceptance criteria missing".to_string());
+    } else if acceptance_verified < acceptance_count {
+        done_blockers.push(format!(
+            "{} acceptance criterion/criteria not verified",
+            acceptance_count - acceptance_verified
+        ));
     }
 
     let mut blockers = build_blockers.clone();
@@ -452,6 +488,8 @@ fn feature_readiness_value(project_path: &str, feature: &Feature) -> serde_json:
             "blocking_open_questions": blocking_open_questions,
             "non_blocking_open_questions": non_blocking_open_questions,
             "acceptance_criteria": acceptance_count,
+            "acceptance_verified": acceptance_verified,
+            "acceptance_failed": acceptance_failed,
             "tasks_total": task_total,
             "tasks_complete": task_complete,
             "tasks_verified": task_verified,
@@ -465,6 +503,8 @@ fn feature_readiness_value(project_path: &str, feature: &Feature) -> serde_json:
             "blocking_open_questions": blocking_open_questions,
             "non_blocking_open_questions": non_blocking_open_questions,
             "acceptance_criteria": acceptance_count,
+            "acceptance_verified": acceptance_verified,
+            "acceptance_failed": acceptance_failed,
         }
     })
 }
