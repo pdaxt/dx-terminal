@@ -97,6 +97,20 @@
         "8-framework QA engine",
         "Auto-triggered by VDD hooks"
       ]
+    },
+    {
+      "id": "G8",
+      "title": "Real-Time Sync Protocol",
+      "description": "Rust-native streaming sync that keeps local files, GitHub, and DX Terminal dashboard always in perfect sync via WebSocket + file watcher + git auto-push",
+      "status": "in_progress",
+      "priority": 1,
+      "linked_issues": [],
+      "metrics": [
+        "File changes → GitHub push < 5s",
+        "Vision changes → dashboard update < 1s",
+        "Git status visible on dashboard",
+        "Zero stale state across sessions"
+      ]
     }
   ],
   "milestones": [
