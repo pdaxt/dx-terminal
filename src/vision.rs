@@ -2511,7 +2511,45 @@ mod tests {
         );
 
         let done_ready: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        assert_eq!(done_ready["phase"], "done");
         assert_eq!(done_ready["readiness"]["ready_for_done"], true);
+    }
+
+    #[test]
+    fn test_feature_with_acceptance_starts_in_discovery() {
+        let dir = temp_project();
+        let path = dir.path().to_str().unwrap();
+        init_test_vision(dir.path());
+        add_goal(path, "G1", "Goal", "desc", 1);
+
+        let result = add_feature(path, "G1", "Feature", "desc", vec!["criterion".to_string()]);
+        assert!(result.contains("F1.1"));
+
+        let vision = load_vision(path).unwrap();
+        let feature = vision.features.iter().find(|f| f.id == "F1.1").unwrap();
+        assert_eq!(feature.phase, FeaturePhase::Discovery);
+        assert_eq!(feature.state, FeatureState::Active);
+    }
+
+    #[test]
+    fn test_discovery_artifacts_auto_advance_to_build() {
+        let dir = temp_project();
+        let path = dir.path().to_str().unwrap();
+        init_test_vision(dir.path());
+        add_goal(path, "G1", "Goal", "desc", 1);
+        add_feature(path, "G1", "Feature", "desc", vec!["criterion".to_string()]);
+
+        add_question(path, "F1.1", "Blocking question?");
+        upsert_feature_doc(path, "F1.1", "discovery", "# Discovery");
+
+        let before: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        assert_eq!(before["phase"], "discovery");
+
+        answer_question(path, "F1.1", "Q1.1.1", "Answer", "Resolved", vec![]);
+
+        let after: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        assert_eq!(after["phase"], "build");
+        assert_eq!(after["readiness"]["ready_for_build"], true);
     }
 
     #[test]
