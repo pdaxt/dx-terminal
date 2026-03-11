@@ -1497,14 +1497,9 @@ fn now() -> String {
     chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
-fn append_history(_project_path: &str, _change: &VisionChange) {
-    // Future: write to .vision/history.jsonl
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     fn temp_project() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
