@@ -1240,3 +1240,35 @@ fn main() {
         println!("{}", r);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_classify_command_detects_build_test_lint_commit() {
+        assert_eq!(classify_command("cargo test -q"), CommandKind::Test);
+        assert_eq!(classify_command("pnpm build"), CommandKind::Build);
+        assert_eq!(classify_command("cargo clippy --all-targets"), CommandKind::Lint);
+        assert_eq!(classify_command("git commit -m 'x'"), CommandKind::Commit);
+        assert_eq!(classify_command("echo hi"), CommandKind::Other);
+    }
+
+    #[test]
+    fn test_extract_command_success_from_exit_code() {
+        let ok = json!({"tool_response": {"exit_code": 0}});
+        let fail = json!({"tool_result": {"exit_code": 1}});
+        let unknown = json!({"tool_response": {"stdout": "ok"}});
+
+        assert_eq!(extract_command_success(&ok), Some(true));
+        assert_eq!(extract_command_success(&fail), Some(false));
+        assert_eq!(extract_command_success(&unknown), None);
+    }
+
+    #[test]
+    fn test_doc_like_edit_detection() {
+        assert!(is_doc_like_edit("/tmp/project/.vision/discovery/F1.1.md"));
+        assert!(is_doc_like_edit("/tmp/project/docs/notes.md"));
+        assert!(!is_doc_like_edit("/tmp/project/src/lib.rs"));
+    }
+}
