@@ -10,15 +10,17 @@
 //! - Stop: session summary
 
 use regex::Regex;
+use dx_terminal::config::RuntimeConfig;
 use dx_terminal::vision;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const SESSION_FILE: &str = "/tmp/vdd_session_edits.json";
 const VISIONS_CACHE: &str = "/tmp/vdd_visions_cache.json";
@@ -394,6 +396,7 @@ fn auto_verify_acceptance_items(
             Some("hook:test_command"),
         );
         if !result.contains("\"error\"") {
+            notify_dashboard_vision_change(project, &result, Some(feature_id));
             verified.push(criterion_id.to_string());
         }
     }
@@ -978,6 +981,54 @@ fn handle_pre_tool_use(event: &Value) -> Option<Value> {
     None
 }
 
+fn dashboard_port() -> u16 {
+    std::env::var("DX_WEB_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or_else(|| RuntimeConfig::load().web_port)
+}
+
+fn build_dashboard_notify_request(port: u16, body: &str) -> String {
+    format!(
+        "POST /api/vision/notify HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        port,
+        body.as_bytes().len(),
+        body,
+    )
+}
+
+fn notify_dashboard_vision_change(project_path: &str, result: &str, feature_id: Option<&str>) {
+    if project_path.trim().is_empty() || result.trim().is_empty() {
+        return;
+    }
+
+    let port = dashboard_port();
+    let addr: SocketAddr = match format!("127.0.0.1:{}", port).parse() {
+        Ok(addr) => addr,
+        Err(_) => return,
+    };
+
+    let body = json!({
+        "project_path": project_path,
+        "result": result,
+        "feature_id": feature_id,
+    })
+    .to_string();
+
+    let request = build_dashboard_notify_request(port, &body);
+
+    let mut stream = match TcpStream::connect_timeout(&addr, Duration::from_millis(150)) {
+        Ok(stream) => stream,
+        Err(_) => return,
+    };
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(150)));
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(150)));
+    let _ = stream.write_all(request.as_bytes());
+
+    let mut response = [0u8; 64];
+    let _ = stream.read(&mut response);
+}
+
 fn handle_post_tool_use(event: &Value) -> Option<Value> {
     let tool = event.get("tool_name").and_then(|t| t.as_str())?;
     if tool != "Bash" {
@@ -1018,7 +1069,7 @@ fn handle_post_tool_use(event: &Value) -> Option<Value> {
         if matches!(command_kind, CommandKind::Build | CommandKind::Test | CommandKind::Lint | CommandKind::Commit)
             && task_status == "planned"
         {
-            let _ = vision::update_task_status(
+            let result = vision::update_task_status(
                 &project,
                 fid,
                 tid,
@@ -1027,6 +1078,7 @@ fn handle_post_tool_use(event: &Value) -> Option<Value> {
                 None,
                 None,
             );
+            notify_dashboard_vision_change(&project, &result, Some(fid));
             notes.push(format!("task {} auto-moved to in_progress", tid));
         }
 
@@ -1036,7 +1088,7 @@ fn handle_post_tool_use(event: &Value) -> Option<Value> {
                 .unwrap_or_else(|| task_status.to_string());
 
             if current_status == "done" || current_status == "in_progress" {
-                let _ = vision::update_task_status(
+                let result = vision::update_task_status(
                     &project,
                     fid,
                     tid,
@@ -1045,6 +1097,7 @@ fn handle_post_tool_use(event: &Value) -> Option<Value> {
                     None,
                     None,
                 );
+                notify_dashboard_vision_change(&project, &result, Some(fid));
                 notes.push(format!("task {} auto-marked verified after successful test command", tid));
             }
 
@@ -1270,5 +1323,16 @@ mod tests {
         assert!(is_doc_like_edit("/tmp/project/.vision/discovery/F1.1.md"));
         assert!(is_doc_like_edit("/tmp/project/docs/notes.md"));
         assert!(!is_doc_like_edit("/tmp/project/src/lib.rs"));
+    }
+
+    #[test]
+    fn test_build_dashboard_notify_request_contains_path_and_length() {
+        let body = r#"{"project_path":"/tmp/demo","result":"ok"}"#;
+        let request = build_dashboard_notify_request(3100, body);
+
+        assert!(request.starts_with("POST /api/vision/notify HTTP/1.1\r\n"));
+        assert!(request.contains("Host: 127.0.0.1:3100\r\n"));
+        assert!(request.contains(&format!("Content-Length: {}\r\n", body.len())));
+        assert!(request.ends_with(body));
     }
 }

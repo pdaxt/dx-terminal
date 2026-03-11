@@ -83,6 +83,7 @@ pub fn build_router(app: Arc<App>) -> Router {
         // VDD Research & Discovery Docs
         .route("/api/vision/docs", get(api::list_vision_docs))
         .route("/api/vision/doc", get(api::get_vision_doc).post(api::upsert_vision_doc))
+        .route("/api/vision/notify", post(api::notify_vision_change))
         // Confluence-style Wiki page
         .route("/wiki", get(api::wiki_page))
         // UI/UX Audit
