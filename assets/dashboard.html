@@ -1119,6 +1119,8 @@ async function renderPaneContext(paneNum){
         html+=`<span style="font-size:10px;font-weight:600;color:var(--text)">${escHtml(f.id+': '+(f.title||''))}</span>`;
         html+=`<span style="font-size:8px;padding:1px 5px;border-radius:8px;background:${col}15;color:${col};text-transform:uppercase">${f.status}</span>`;
         html+=`</div>`;
+        // VDD Pipeline phases
+        html+=vddPipelineBar(f.status);
         if(f.tasks&&f.tasks.length){
           html+=`<div style="margin-top:4px">`;
           f.tasks.forEach(t=>{
@@ -1774,11 +1776,24 @@ async function renderVision(){
   if(ws==='all'){
     const list=await fetchJSON('/api/vision/list');
     if(!list||!list.visions||!list.visions.length){section.style.display='none';return;}
-    await renderVisionCockpit(list.visions[0].project);
+    // Show project selector if multiple visions exist
+    if(list.visions.length>1){
+      const selHtml=list.visions.map(v=>
+        `<button onclick="selectedVisionProject='${escHtml(v.project)}';renderVision()" style="font-size:9px;padding:2px 8px;border-radius:4px;cursor:pointer;border:1px solid ${selectedVisionProject===v.project?'var(--blue)':'var(--border)'};background:${selectedVisionProject===v.project?'rgba(77,166,255,.12)':'transparent'};color:${selectedVisionProject===v.project?'var(--blue)':'var(--dim)'}">${escHtml(v.project)}</button>`
+      ).join('');
+      let picker=document.getElementById('vision-project-picker');
+      if(!picker){picker=document.createElement('div');picker.id='vision-project-picker';picker.style.cssText='display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap';
+        document.getElementById('vision-mission').parentNode.insertBefore(picker,document.getElementById('vision-mission'));
+      }
+      picker.innerHTML=selHtml;
+    }
+    const proj=selectedVisionProject||list.visions[0].project;
+    await renderVisionCockpit(proj);
     return;
   }
   await renderVisionCockpit(ws);
 }
+let selectedVisionProject=null;
 function visionStatusPill(status){
   const colors={achieved:'var(--green)',done:'var(--green)',verified:'var(--green)',
     in_progress:'var(--blue)',building:'var(--blue)',
