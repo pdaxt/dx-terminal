@@ -1,7 +1,15 @@
 //! WebSocket handler for real-time bidirectional communication.
 //!
-//! Server → Client: terminal output diffs, state events, pane status
+//! Server → Client: sequenced deltas from RuntimeReplicator via EventBus
 //! Client → Server: spawn, kill, talk, queue commands
+//!
+//! ## Architecture (post-replicator)
+//!
+//! - NO per-client tmux polling — the RuntimeReplicator does this once
+//! - NO per-client JSONL tailing — the RuntimeReplicator uses cursor-based SessionTailer
+//! - Each WS connection subscribes to EventBus and forwards sequenced events
+//! - On connect: full snapshot + current seq number
+//! - On lag: client detects seq gap and requests resync
 
 use std::sync::Arc;
 use std::collections::HashMap;
@@ -14,7 +22,7 @@ use serde_json::{json, Value};
 use tokio::sync::broadcast;
 
 use crate::app::App;
-use crate::state::events::StateEvent;
+use crate::state::events::{StateEvent, next_seq};
 use crate::sync::SyncEvent;
 use crate::tmux;
 use crate::session_stream;
@@ -34,13 +42,15 @@ pub async fn ws_handler(
 async fn handle_socket(socket: WebSocket, app: Arc<App>) {
     let (mut sender, mut receiver) = socket.split();
 
-    // Subscribe to state events
+    // Subscribe to state events BEFORE building snapshot to avoid missing events
     let event_rx = app.state.event_bus.subscribe();
 
-    // Send initial full state snapshot
+    // Send initial full state snapshot with current seq
     let snapshot = build_full_snapshot(&app).await;
+    let current_seq = next_seq();
     let init_msg = json!({
         "type": "init",
+        "seq": current_seq,
         "data": snapshot,
     });
     if sender.send(Message::Text(init_msg.to_string().into())).await.is_err() {
@@ -50,16 +60,14 @@ async fn handle_socket(socket: WebSocket, app: Arc<App>) {
     // Shared sender for multiple tasks
     let sender: WsSender = Arc::new(tokio::sync::Mutex::new(sender));
 
-    // --- Task 1: Forward state events to client ---
+    // --- Task 1: Forward sequenced state events to client ---
+    // This now includes OutputChunk, SessionEventChunk, PaneUpsert etc.
+    // from the RuntimeReplicator — no per-client polling needed.
     let event_sender = Arc::clone(&sender);
-    let event_handle = tokio::spawn(forward_events(event_rx, event_sender));
+    let event_app = Arc::clone(&app);
+    let event_handle = tokio::spawn(forward_events(event_rx, event_sender, event_app));
 
-    // --- Task 2: Poll tmux pane output every 1s, push diffs ---
-    let poll_sender = Arc::clone(&sender);
-    let poll_app = Arc::clone(&app);
-    let poll_handle = tokio::spawn(poll_terminal_output(poll_app, poll_sender));
-
-    // --- Task 3: Forward sync events to client ---
+    // --- Task 2: Forward sync events to client ---
     let sync_sender = Arc::clone(&sender);
     let sync_app = Arc::clone(&app);
     let sync_handle = tokio::spawn(forward_sync_events(sync_app, sync_sender));
@@ -71,9 +79,26 @@ async fn handle_socket(socket: WebSocket, app: Arc<App>) {
         match msg {
             Message::Text(text) => {
                 if let Ok(cmd) = serde_json::from_str::<Value>(&text) {
+                    // Handle resync request
+                    if cmd.get("cmd").and_then(|c| c.as_str()) == Some("resync") {
+                        let snapshot = build_full_snapshot(&cmd_app).await;
+                        let seq = next_seq();
+                        let msg = json!({
+                            "type": "init",
+                            "seq": seq,
+                            "data": snapshot,
+                        });
+                        let mut s = cmd_sender.lock().await;
+                        if s.send(Message::Text(msg.to_string().into())).await.is_err() {
+                            break;
+                        }
+                        continue;
+                    }
+
                     let result = handle_client_command(&cmd_app, &cmd).await;
                     let response = json!({
                         "type": "cmd_result",
+                        "seq": next_seq(),
                         "cmd": cmd.get("cmd").and_then(|c| c.as_str()).unwrap_or("unknown"),
                         "result": result,
                     });
@@ -90,7 +115,6 @@ async fn handle_socket(socket: WebSocket, app: Arc<App>) {
 
     // Cleanup
     event_handle.abort();
-    poll_handle.abort();
     sync_handle.abort();
 }
 
@@ -159,9 +183,7 @@ async fn build_full_snapshot(app: &App) -> Value {
 
         // Project: prefer JSONL cwd (most accurate), then tmux cwd, then state
         let project = if let Some(lp) = live {
-            // If we have a JSONL session, its cwd might be more specific
             if let Some(ref jp) = lp.jsonl_path {
-                // Read the JSONL header cwd (session start dir)
                 let jp_clone = jp.clone();
                 let jsonl_cwd = tokio::task::spawn_blocking(move || {
                     crate::tmux::read_jsonl_cwd(&jp_clone)
@@ -192,7 +214,7 @@ async fn build_full_snapshot(app: &App) -> Value {
         let role = if let Some(ref p) = ps {
             crate::config::role_short(&p.role).to_string()
         } else {
-            "AG".to_string()  // Agent
+            "AG".to_string()
         };
 
         // JSONL session info
@@ -272,61 +294,108 @@ async fn build_full_snapshot(app: &App) -> Value {
 }
 
 /// Extract project name from a working directory path.
-/// e.g. "/Users/pran/Projects/dataxlr8-workspace" → "dataxlr8-workspace"
-/// e.g. "/Users/pran/Projects" → "Projects"
 fn project_from_cwd(cwd: &str) -> String {
     let path = std::path::Path::new(cwd);
     let home = std::env::var("HOME").unwrap_or_default();
     let projects_dir = format!("{}/Projects", home);
 
-    // If cwd IS ~/Projects (not a subdirectory), return "--" (no specific project)
     if cwd == projects_dir || cwd == home {
         return "--".to_string();
     }
 
-    // Strip ~/Projects/ prefix and take the first component (the project folder)
     if let Ok(rel) = path.strip_prefix(&projects_dir) {
         if let Some(first) = rel.components().next() {
             return first.as_os_str().to_string_lossy().to_string();
         }
     }
 
-    // Fallback: last path component
     path.file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "--".to_string())
 }
 
-/// Forward state events from EventBus → WebSocket
+/// Forward state events from EventBus → WebSocket with sequence numbers.
+/// Includes all event types (OutputChunk, SessionEventChunk, PaneUpsert, etc.)
+/// since the RuntimeReplicator now publishes through the EventBus.
 async fn forward_events(
     mut rx: broadcast::Receiver<StateEvent>,
     sender: WsSender,
+    _app: Arc<App>,
 ) {
     loop {
         match rx.recv().await {
             Ok(event) => {
+                let seq = next_seq();
                 let msg = match &event {
+                    StateEvent::PaneUpsert { pane, data } => json!({
+                        "type": "pane_upsert",
+                        "seq": seq,
+                        "pane": pane, "data": data,
+                    }),
+                    StateEvent::PaneRemoved { pane, reason } => json!({
+                        "type": "pane_removed",
+                        "seq": seq,
+                        "pane": pane, "reason": reason,
+                    }),
                     StateEvent::PaneSpawned { pane, project, role } => json!({
                         "type": "pane_spawned",
+                        "seq": seq,
                         "pane": pane, "project": project, "role": role,
                     }),
                     StateEvent::PaneKilled { pane, reason } => json!({
                         "type": "pane_killed",
+                        "seq": seq,
                         "pane": pane, "reason": reason,
                     }),
                     StateEvent::PaneStatusChanged { pane, status } => json!({
                         "type": "pane_status",
+                        "seq": seq,
                         "pane": pane, "status": status,
+                    }),
+                    StateEvent::OutputChunk { pane, output, full_lines, tmux_target } => json!({
+                        "type": "terminal_output",
+                        "seq": seq,
+                        "updates": [{ "pane": pane, "output": output, "full_lines": full_lines, "tmux_target": tmux_target }],
+                    }),
+                    StateEvent::SessionEventChunk { pane, events } => json!({
+                        "type": "session_events",
+                        "seq": seq,
+                        "updates": [{ "pane": pane, "events": events }],
                     }),
                     StateEvent::LogAppended { pane, event, summary } => json!({
                         "type": "log",
+                        "seq": seq,
                         "pane": pane, "event": event, "summary": summary,
+                    }),
+                    StateEvent::QueueUpsert { task_id, task } => json!({
+                        "type": "queue_upsert",
+                        "seq": seq,
+                        "task_id": task_id, "task": task,
+                    }),
+                    StateEvent::QueueRemoved { task_id } => json!({
+                        "type": "queue_removed",
+                        "seq": seq,
+                        "task_id": task_id,
                     }),
                     StateEvent::QueueChanged { action, task_id, task } => json!({
                         "type": "queue",
+                        "seq": seq,
                         "action": action, "task_id": task_id, "task": task,
                     }),
-                    StateEvent::StateRefreshed => json!({"type": "refresh"}),
+                    StateEvent::VisionChanged { project, summary } => json!({
+                        "type": "vision_changed",
+                        "seq": seq,
+                        "project": project, "summary": summary,
+                    }),
+                    StateEvent::SyncStatusChanged { project, data } => json!({
+                        "type": "sync_status",
+                        "seq": seq,
+                        "project": project, "data": data,
+                    }),
+                    StateEvent::StateRefreshed => json!({
+                        "type": "refresh",
+                        "seq": seq,
+                    }),
                 };
                 let mut s = sender.lock().await;
                 if s.send(Message::Text(msg.to_string().into())).await.is_err() {
@@ -334,7 +403,17 @@ async fn forward_events(
                 }
             }
             Err(broadcast::error::RecvError::Lagged(n)) => {
+                // Notify client of lag so it can request resync
                 tracing::debug!("WS event stream lagged by {} events", n);
+                let msg = json!({
+                    "type": "lagged",
+                    "seq": next_seq(),
+                    "missed": n,
+                });
+                let mut s = sender.lock().await;
+                if s.send(Message::Text(msg.to_string().into())).await.is_err() {
+                    break;
+                }
             }
             Err(broadcast::error::RecvError::Closed) => break,
         }
@@ -343,7 +422,6 @@ async fn forward_events(
 
 /// Forward sync events (file changes, git commits, pushes) to WebSocket client
 async fn forward_sync_events(app: Arc<App>, sender: WsSender) {
-    // Try to subscribe to sync events if a sync manager exists
     let sync_rx = {
         let sync_mgr = app.sync_manager.read().unwrap();
         sync_mgr.as_ref().map(|mgr| mgr.event_tx.subscribe())
@@ -362,6 +440,7 @@ async fn forward_sync_events(app: Arc<App>, sender: WsSender) {
             Ok(event) => {
                 let msg = json!({
                     "type": "sync_event",
+                    "seq": next_seq(),
                     "event": serde_json::to_value(&event).unwrap_or(json!(null)),
                 });
                 let mut s = sender.lock().await;
@@ -373,158 +452,6 @@ async fn forward_sync_events(app: Arc<App>, sender: WsSender) {
                 tracing::debug!("WS sync event stream lagged by {} events", n);
             }
             Err(broadcast::error::RecvError::Closed) => break,
-        }
-    }
-}
-
-/// Poll tmux pane output every 1s and push diffs to WebSocket.
-/// Auto-discovers live Claude panes across ALL tmux sessions.
-async fn poll_terminal_output(
-    app: Arc<App>,
-    sender: WsSender,
-) {
-    // Key by pane_num for state-managed panes, or by tmux target for discovered ones
-    let mut prev_outputs: HashMap<String, String> = HashMap::new();
-    let interval = tokio::time::Duration::from_secs(1);
-
-    loop {
-        tokio::time::sleep(interval).await;
-
-        let state = app.state.get_state_snapshot().await;
-        let max_panes = crate::config::pane_count();
-
-        // Collect targets: first from state, then merge with live discovery
-        let mut pane_targets: Vec<(u8, String)> = Vec::new();
-
-        // 1) State-managed panes with tmux targets
-        for i in 1..=max_panes {
-            if let Some(p) = state.panes.get(&i.to_string()) {
-                if let Some(ref target) = p.tmux_target {
-                    pane_targets.push((i, target.clone()));
-                }
-            }
-        }
-
-        // 2) Auto-discover live Claude panes from ALL tmux sessions
-        let live_panes = tokio::task::spawn_blocking(|| {
-            tmux::discover_live_panes()
-        }).await.unwrap_or_default();
-
-        // Merge discovered panes — assign pane numbers beyond state-managed ones
-        let mut used_targets: std::collections::HashSet<String> = pane_targets.iter()
-            .map(|(_, t)| t.clone()).collect();
-        let mut next_pane = max_panes + 1;
-        for lp in &live_panes {
-            if !used_targets.contains(&lp.target) {
-                pane_targets.push((next_pane, lp.target.clone()));
-                used_targets.insert(lp.target.clone());
-                next_pane += 1;
-            }
-        }
-
-        // Also add discovered panes that match state panes with no target
-        for i in 1..=max_panes {
-            let has_target = pane_targets.iter().any(|(p, _)| *p == i);
-            if !has_target && (i as usize) <= live_panes.len() {
-                let lp = &live_panes[(i as usize) - 1];
-                if !used_targets.contains(&lp.target) {
-                    pane_targets.push((i, lp.target.clone()));
-                    used_targets.insert(lp.target.clone());
-                }
-            }
-        }
-
-        if pane_targets.is_empty() {
-            continue;
-        }
-
-        // Capture all pane outputs via spawn_blocking
-        let captures: Vec<(u8, String, String)> = tokio::task::spawn_blocking(move || {
-            pane_targets.iter().map(|(i, target)| {
-                (*i, target.clone(), tmux::capture_output(target))
-            }).collect()
-        }).await.unwrap_or_default();
-
-        let mut updates = Vec::new();
-        for (pane_num, target, output) in captures {
-            let key = format!("{}:{}", pane_num, target);
-            let prev = prev_outputs.get(&key).map(|s| s.as_str()).unwrap_or("");
-            if output != prev {
-                // Extract diff
-                let new_lines = if output.len() > prev.len() && output.starts_with(prev) {
-                    output[prev.len()..].to_string()
-                } else {
-                    let lines: Vec<&str> = output.lines().collect();
-                    let tail_start = lines.len().saturating_sub(30);
-                    lines[tail_start..].join("\n")
-                };
-
-                if !new_lines.trim().is_empty() {
-                    updates.push(json!({
-                        "pane": pane_num,
-                        "output": new_lines,
-                        "full_lines": output.lines().count(),
-                        "tmux_target": target,
-                    }));
-                }
-
-                prev_outputs.insert(key, output);
-            }
-        }
-
-        if !updates.is_empty() {
-            let msg = json!({
-                "type": "terminal_output",
-                "updates": updates,
-            });
-            let mut s = sender.lock().await;
-            if s.send(Message::Text(msg.to_string().into())).await.is_err() {
-                break;
-            }
-        }
-
-        // --- JSONL session event streaming ---
-        // Build pane→jsonl mapping from live panes
-        let mut jsonl_polls: Vec<(u8, String)> = Vec::new();
-        for (idx, lp) in live_panes.iter().enumerate() {
-            if let Some(ref jp) = lp.jsonl_path {
-                let pane_num = if idx < max_panes as usize {
-                    (idx + 1) as u8
-                } else {
-                    max_panes + 1 + idx as u8
-                };
-                jsonl_polls.push((pane_num, jp.clone()));
-            }
-        }
-
-        if !jsonl_polls.is_empty() {
-            // Poll new JSONL events (use a static-ish tailer per connection)
-            // For simplicity, we re-read last 5 events each cycle
-            // (SessionTailer would be better but needs persistent state)
-            let session_updates: Vec<Value> = tokio::task::spawn_blocking(move || {
-                let mut results = Vec::new();
-                for (pane_num, jp) in &jsonl_polls {
-                    let events = session_stream::tail_session_events(jp, 5);
-                    if !events.is_empty() {
-                        results.push(json!({
-                            "pane": pane_num,
-                            "events": events,
-                        }));
-                    }
-                }
-                results
-            }).await.unwrap_or_default();
-
-            if !session_updates.is_empty() {
-                let msg = json!({
-                    "type": "session_events",
-                    "updates": session_updates,
-                });
-                let mut s = sender.lock().await;
-                if s.send(Message::Text(msg.to_string().into())).await.is_err() {
-                    break;
-                }
-            }
         }
     }
 }
@@ -562,7 +489,6 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
             if pane == 0 || message.is_empty() {
                 return json!({"error": "pane (number) and message required"});
             }
-            // Get tmux target: first from state, then from live discovery
             let target = resolve_pane_target(app, pane).await;
             let target = match target {
                 Some(t) => t,
@@ -606,7 +532,6 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
             serde_json::from_str(&result).unwrap_or(json!({"raw": result}))
         }
         "capture" => {
-            // On-demand full capture of a specific pane via spawn_blocking
             let pane = cmd.get("pane").and_then(|p| p.as_u64()).unwrap_or(0) as u8;
             if pane == 0 {
                 return json!({"error": "pane number required"});
