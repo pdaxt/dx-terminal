@@ -28,6 +28,10 @@ impl DxTerminalService {
         }
     }
 
+    fn emit_vision_change(&self, project_path: &str, result: &str, feature_id: Option<&str>) {
+        crate::vision_events::emit_from_result(self.app.as_ref(), project_path, result, feature_id);
+    }
+
     // === AGENT LIFECYCLE ===
 
     #[tool(description = "Spawn a Claude agent in a pane with full auto-config. Resolves project path, sets MCPs, generates role preamble.")]
@@ -1929,10 +1933,12 @@ impl DxTerminalService {
         &self,
         Parameters(req): Parameters<types::VisionFeatureRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
         let result = tools::vision_tools::vision_add_feature(
             req.project.as_deref(), &req.goal_id, &req.title, &req.description,
             req.acceptance_criteria,
         );
+        self.emit_vision_change(&project_path, &result, None);
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -1941,9 +1947,11 @@ impl DxTerminalService {
         &self,
         Parameters(req): Parameters<types::VisionFeatureReadinessRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
         let result = tools::vision_tools::vision_discovery_start(
             req.project.as_deref(), &req.feature_id,
         );
+        self.emit_vision_change(&project_path, &result, Some(&req.feature_id));
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -1952,9 +1960,11 @@ impl DxTerminalService {
         &self,
         Parameters(req): Parameters<types::VisionAcceptanceRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
         let result = tools::vision_tools::vision_acceptance_add(
             req.project.as_deref(), &req.feature_id, &req.criterion,
         );
+        self.emit_vision_change(&project_path, &result, Some(&req.feature_id));
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -1963,6 +1973,7 @@ impl DxTerminalService {
         &self,
         Parameters(req): Parameters<types::VisionAcceptanceUpdateRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
         let result = tools::vision_tools::vision_acceptance_update(
             req.project.as_deref(),
             &req.feature_id,
@@ -1970,6 +1981,7 @@ impl DxTerminalService {
             req.text.as_deref(),
             req.verification_method.as_deref(),
         );
+        self.emit_vision_change(&project_path, &result, Some(&req.feature_id));
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -1978,6 +1990,7 @@ impl DxTerminalService {
         &self,
         Parameters(req): Parameters<types::VisionAcceptanceVerifyRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
         let result = tools::vision_tools::vision_acceptance_verify(
             req.project.as_deref(),
             &req.feature_id,
@@ -1987,6 +2000,7 @@ impl DxTerminalService {
             req.verified_by.as_deref(),
             req.verification_source.as_deref(),
         );
+        self.emit_vision_change(&project_path, &result, Some(&req.feature_id));
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -1995,9 +2009,11 @@ impl DxTerminalService {
         &self,
         Parameters(req): Parameters<types::VisionQuestionRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
         let result = tools::vision_tools::vision_add_question(
             req.project.as_deref(), &req.feature_id, &req.question, req.blocking,
         );
+        self.emit_vision_change(&project_path, &result, Some(&req.feature_id));
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -2006,9 +2022,11 @@ impl DxTerminalService {
         &self,
         Parameters(req): Parameters<types::VisionDocUpsertRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
         let result = tools::vision_tools::vision_research_doc_upsert(
             req.project.as_deref(), &req.feature_id, &req.content,
         );
+        self.emit_vision_change(&project_path, &result, Some(&req.feature_id));
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -2017,9 +2035,11 @@ impl DxTerminalService {
         &self,
         Parameters(req): Parameters<types::VisionDocUpsertRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
         let result = tools::vision_tools::vision_discovery_doc_upsert(
             req.project.as_deref(), &req.feature_id, &req.content,
         );
+        self.emit_vision_change(&project_path, &result, Some(&req.feature_id));
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -2028,10 +2048,12 @@ impl DxTerminalService {
         &self,
         Parameters(req): Parameters<types::VisionAnswerRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
         let result = tools::vision_tools::vision_answer(
             req.project.as_deref(), &req.feature_id, &req.question_id,
             &req.answer, &req.rationale, req.alternatives,
         );
+        self.emit_vision_change(&project_path, &result, Some(&req.feature_id));
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -2040,11 +2062,13 @@ impl DxTerminalService {
         &self,
         Parameters(req): Parameters<types::VisionTaskRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
         let result = tools::vision_tools::vision_add_task(
             req.project.as_deref(), &req.feature_id, &req.title,
             req.description.as_deref().unwrap_or(""),
             req.branch.as_deref(),
         );
+        self.emit_vision_change(&project_path, &result, Some(&req.feature_id));
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -2053,10 +2077,12 @@ impl DxTerminalService {
         &self,
         Parameters(req): Parameters<types::VisionTaskStatusRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
         let result = tools::vision_tools::vision_update_task(
             req.project.as_deref(), &req.feature_id, &req.task_id,
             &req.status, req.branch.as_deref(), req.pr.as_deref(), req.commit.as_deref(),
         );
+        self.emit_vision_change(&project_path, &result, Some(&req.feature_id));
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -2065,9 +2091,11 @@ impl DxTerminalService {
         &self,
         Parameters(req): Parameters<types::VisionFeatureStatusRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
         let result = tools::vision_tools::vision_update_feature(
             req.project.as_deref(), &req.feature_id, &req.status,
         );
+        self.emit_vision_change(&project_path, &result, Some(&req.feature_id));
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -2098,9 +2126,11 @@ impl DxTerminalService {
         &self,
         Parameters(req): Parameters<types::VisionFeatureReadinessRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
         let result = tools::vision_tools::vision_discovery_complete(
             req.project.as_deref(), &req.feature_id,
         );
+        self.emit_vision_change(&project_path, &result, Some(&req.feature_id));
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -2109,7 +2139,9 @@ impl DxTerminalService {
         &self,
         Parameters(req): Parameters<types::VisionSyncRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
         let result = tools::vision_tools::vision_sync(req.project.as_deref());
+        self.emit_vision_change(&project_path, &result, None);
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -2121,6 +2153,7 @@ impl DxTerminalService {
         let result = tools::vision_tools::vision_init(
             &req.project, &req.name, &req.mission, req.repo.as_deref().unwrap_or(""),
         );
+        self.emit_vision_change(&req.project, &result, None);
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -2129,9 +2162,11 @@ impl DxTerminalService {
         &self,
         Parameters(req): Parameters<types::VisionAddGoalRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
         let result = tools::vision_tools::vision_add_goal(
             req.project.as_deref(), &req.id, &req.title, &req.description, req.priority,
         );
+        self.emit_vision_change(&project_path, &result, None);
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -2140,9 +2175,11 @@ impl DxTerminalService {
         &self,
         Parameters(req): Parameters<types::VisionUpdateGoalRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
         let result = tools::vision_tools::vision_update_goal(
             req.project.as_deref(), &req.goal_id, &req.status,
         );
+        self.emit_vision_change(&project_path, &result, None);
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 }
