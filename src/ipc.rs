@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::fs::OpenOptions;
+use std::io;
+use std::os::unix::io::AsRawFd;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -15,6 +18,7 @@ const VISION_SOCKET_SUFFIX: &str = ".sock";
 const VISION_REPLAY_FILE: &str = "vision-events.jsonl";
 const VISION_CURSOR_PREFIX: &str = "vision-cursor-";
 const VISION_CURSOR_SUFFIX: &str = ".json";
+const LOCK_SUFFIX: &str = ".lock";
 const VISION_REPLAY_MAX_AGE_MS: u64 = 30_000;
 const VISION_REPLAY_MAX_COUNT: usize = 256;
 
@@ -57,24 +61,24 @@ pub fn vision_replay_log_path() -> PathBuf {
 
 pub fn prepare_outbound_event(payload: Value) -> Option<String> {
     let path = vision_replay_log_path();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).ok()?;
-    }
-
-    let now = now_ms();
-    let mut entries = load_replay_entries(&path);
-    let next_seq = entries.last().map(|entry| entry.seq + 1).unwrap_or(1);
-    let mut payload = payload;
-    payload["replay_seq"] = Value::from(next_seq);
-    payload["replay_ts_ms"] = Value::from(now);
-    entries.push(ReplayEnvelope {
-        seq: next_seq,
-        ts_ms: now,
-        payload: payload.clone(),
-    });
-    retain_recent_entries(&mut entries, now, VISION_REPLAY_MAX_AGE_MS, VISION_REPLAY_MAX_COUNT);
-    write_replay_entries(&path, &entries).ok()?;
-    serde_json::to_string(&payload).ok()
+    with_exclusive_lock(&lock_path_for(&path), || {
+        let now = now_ms();
+        let mut entries = load_replay_entries(&path);
+        let next_seq = entries.last().map(|entry| entry.seq + 1).unwrap_or(1);
+        let mut payload = payload;
+        payload["replay_seq"] = Value::from(next_seq);
+        payload["replay_ts_ms"] = Value::from(now);
+        entries.push(ReplayEnvelope {
+            seq: next_seq,
+            ts_ms: now,
+            payload: payload.clone(),
+        });
+        retain_recent_entries(&mut entries, now, VISION_REPLAY_MAX_AGE_MS, VISION_REPLAY_MAX_COUNT);
+        write_replay_entries(&path, &entries)?;
+        serde_json::to_string(&payload)
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
+    })
+    .ok()
 }
 
 fn is_vision_socket_path(path: &std::path::Path) -> bool {
@@ -155,13 +159,17 @@ async fn handle_connection(mut stream: UnixStream, app: Arc<App>, runtime_id: St
 
 fn replay_recent_events(app: &App, runtime_id: &str) {
     let path = vision_replay_log_path();
-    let mut entries = load_replay_entries(&path);
+    let entries = with_exclusive_lock(&lock_path_for(&path), || {
+        let mut entries = load_replay_entries(&path);
+        retain_recent_entries(&mut entries, now_ms(), VISION_REPLAY_MAX_AGE_MS, VISION_REPLAY_MAX_COUNT);
+        write_replay_entries(&path, &entries)?;
+        Ok(entries)
+    })
+    .unwrap_or_default();
     if entries.is_empty() {
         return;
     }
 
-    retain_recent_entries(&mut entries, now_ms(), VISION_REPLAY_MAX_AGE_MS, VISION_REPLAY_MAX_COUNT);
-    let _ = write_replay_entries(&path, &entries);
     let last_seq = read_cursor(runtime_id);
     let mut max_seq = last_seq;
 
@@ -206,7 +214,7 @@ fn write_replay_entries(path: &std::path::Path, entries: &[ReplayEnvelope]) -> s
         .collect::<Vec<_>>()
         .join("\n");
     let content = if content.is_empty() { content } else { format!("{}\n", content) };
-    std::fs::write(path, content)
+    atomic_write(path, &content)
 }
 
 fn retain_recent_entries(entries: &mut Vec<ReplayEnvelope>, now_ms: u64, max_age_ms: u64, max_count: usize) {
@@ -222,6 +230,41 @@ fn now_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+fn lock_path_for(path: &Path) -> PathBuf {
+    let name = path.file_name().and_then(|name| name.to_str()).unwrap_or("ipc");
+    path.with_file_name(format!("{}{}", name, LOCK_SUFFIX))
+}
+
+fn with_exclusive_lock<T, F>(lock_path: &Path, f: F) -> io::Result<T>
+where
+    F: FnOnce() -> io::Result<T>,
+{
+    if let Some(parent) = lock_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let lock_file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(lock_path)?;
+    let fd = lock_file.as_raw_fd();
+    let lock_result = unsafe { libc::flock(fd, libc::LOCK_EX) };
+    if lock_result != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    f()
+}
+
+fn atomic_write(path: &Path, content: &str) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("ipc");
+    let tmp = path.with_file_name(format!("{}.tmp-{}", file_name, std::process::id()));
+    std::fs::write(&tmp, content)?;
+    std::fs::rename(&tmp, path)
 }
 
 fn runtime_cursor_path(runtime_id: &str) -> PathBuf {
@@ -242,15 +285,36 @@ fn read_cursor(runtime_id: &str) -> u64 {
 
 fn advance_cursor(runtime_id: &str, seq: u64) {
     let path = runtime_cursor_path(runtime_id);
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let _ = std::fs::write(path, serde_json::json!({ "last_seq": seq }).to_string());
+    let lock_path = lock_path_for(&path);
+    let _ = with_exclusive_lock(&lock_path, || {
+        let current = read_cursor(runtime_id);
+        let next = current.max(seq);
+        atomic_write(&path, &serde_json::json!({ "last_seq": next }).to_string())
+    });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn with_temp_dx_root<T>(f: impl FnOnce() -> T) -> T {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let original = std::env::var("DX_ROOT").ok();
+        std::env::set_var("DX_ROOT", tmp.path());
+        std::fs::create_dir_all(vision_socket_dir()).unwrap();
+
+        let result = f();
+
+        match original {
+            Some(value) => std::env::set_var("DX_ROOT", value),
+            None => std::env::remove_var("DX_ROOT"),
+        }
+        result
+    }
 
     #[test]
     fn socket_path_lives_under_dx_root() {
@@ -287,5 +351,45 @@ mod tests {
     fn cursor_path_is_sanitized() {
         let path = runtime_cursor_path("web:3100/demo");
         assert!(path.ends_with("vision-cursor-web-3100-demo.json"));
+    }
+
+    #[test]
+    fn prepare_outbound_event_assigns_unique_sequences_under_contention() {
+        with_temp_dx_root(|| {
+            let mut workers = Vec::new();
+            for i in 0..12 {
+                workers.push(std::thread::spawn(move || {
+                    let body = prepare_outbound_event(serde_json::json!({
+                        "project_path": format!("/tmp/project-{i}"),
+                        "result": r#"{"status":"ok"}"#,
+                    }))
+                    .unwrap();
+                    serde_json::from_str::<Value>(&body)
+                        .unwrap()["replay_seq"]
+                        .as_u64()
+                        .unwrap()
+                }));
+            }
+
+            let mut seqs = workers
+                .into_iter()
+                .map(|worker| worker.join().unwrap())
+                .collect::<Vec<_>>();
+            seqs.sort_unstable();
+            assert_eq!(seqs, (1..=12).collect::<Vec<_>>());
+
+            let entries = load_replay_entries(&vision_replay_log_path());
+            assert_eq!(entries.len(), 12);
+            assert_eq!(entries.last().map(|entry| entry.seq), Some(12));
+        });
+    }
+
+    #[test]
+    fn advance_cursor_is_monotonic() {
+        with_temp_dx_root(|| {
+            advance_cursor("web-3100-demo", 8);
+            advance_cursor("web-3100-demo", 3);
+            assert_eq!(read_cursor("web-3100-demo"), 8);
+        });
     }
 }
