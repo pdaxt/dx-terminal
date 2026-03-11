@@ -216,6 +216,10 @@ pub struct AcceptanceCriterion {
     pub evidence: Vec<String>,
     #[serde(default)]
     pub verified_at: Option<String>,
+    #[serde(default)]
+    pub verified_by: Option<String>,
+    #[serde(default)]
+    pub verification_source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
