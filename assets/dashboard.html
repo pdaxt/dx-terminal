@@ -632,6 +632,7 @@ canvas{width:100%;display:block}
       <div class="card">
         <h3>Vision <span id="vision-project" style="color:var(--blue);font-size:10px;margin-left:4px"></span>
           <span id="vision-progress-badge" style="font-size:9px;padding:2px 7px;border-radius:10px;background:var(--surface2);color:var(--dim);margin-left:6px;font-weight:600"></span>
+          <a id="wiki-link" href="/wiki" target="_blank" style="font-size:9px;padding:2px 8px;margin-left:8px;color:var(--blue);text-decoration:none;border:1px solid var(--blue);border-radius:4px;opacity:0.7" title="Open full wiki">Wiki ↗</a>
         </h3>
         <div id="vision-mission" style="font-size:11px;color:var(--text);padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px"></div>
         <div id="vision-summary-stats"></div>
@@ -1662,6 +1663,8 @@ async function renderVisionCockpit(project){
   section.style.display='';
   document.getElementById('vision-project').textContent=tree.project||project;
   document.getElementById('vision-mission').textContent=tree.mission||'';
+  const wikiLink=document.getElementById('wiki-link');
+  if(wikiLink)wikiLink.href='/wiki?project='+encodeURIComponent(tree.project||project);
   // Summary stats
   const s=tree.summary||{};
   const overallPct=s.overall_progress||0;

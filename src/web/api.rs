@@ -1073,6 +1073,470 @@ fn escape_html(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
+// ── Confluence-Style Wiki ──
+
+/// GET /wiki?project=NAME — Serve a full Confluence-style wiki page for a project's vision
+pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
+    let path = resolve_project_path(&q);
+    let vision_file = std::path::Path::new(&path).join(".vision/vision.json");
+
+    let vision: Value = if vision_file.exists() {
+        let content = std::fs::read_to_string(&vision_file).unwrap_or_default();
+        serde_json::from_str(&content).unwrap_or(json!({}))
+    } else {
+        json!({"error": "No vision found"})
+    };
+
+    let project = vision["project"].as_str().unwrap_or("Unknown");
+    let mission = vision["mission"].as_str().unwrap_or("");
+    let updated = vision["updated_at"].as_str().unwrap_or("");
+
+    // Build goals HTML
+    let mut goals_html = String::new();
+    if let Some(goals) = vision["goals"].as_array() {
+        for g in goals {
+            let id = g["id"].as_str().unwrap_or("");
+            let title = g["title"].as_str().unwrap_or("");
+            let desc = g["description"].as_str().unwrap_or("");
+            let status = g["status"].as_str().unwrap_or("planned");
+            let priority = g["priority"].as_u64().unwrap_or(3);
+            let (badge_color, badge_bg) = match status {
+                "achieved" => ("#10b981", "rgba(16,185,129,0.1)"),
+                "in_progress" | "build" => ("#3b82f6", "rgba(59,130,246,0.1)"),
+                _ => ("#6b7280", "rgba(107,114,128,0.1)"),
+            };
+            let metrics_html = if let Some(metrics) = g["metrics"].as_array() {
+                let items: Vec<String> = metrics.iter()
+                    .filter_map(|m| m.as_str())
+                    .map(|m| format!("<span class='wiki-metric'>{}</span>", escape_html(m)))
+                    .collect();
+                format!("<div class='wiki-metrics'>{}</div>", items.join(""))
+            } else { String::new() };
+
+            goals_html.push_str(&format!(r#"
+                <div class="wiki-goal">
+                    <div class="wiki-goal-header">
+                        <span class="wiki-id">{id}</span>
+                        <span class="wiki-goal-title">{title}</span>
+                        <span class="wiki-badge" style="color:{badge_color};background:{badge_bg}">{status}</span>
+                        <span class="wiki-priority">P{priority}</span>
+                    </div>
+                    <div class="wiki-desc">{desc}</div>
+                    {metrics_html}
+                </div>
+            "#, id=escape_html(id), title=escape_html(title), desc=escape_html(desc),
+               status=status, badge_color=badge_color, badge_bg=badge_bg,
+               priority=priority, metrics_html=metrics_html));
+        }
+    }
+
+    // Build features HTML
+    let mut features_html = String::new();
+    if let Some(features) = vision["features"].as_array() {
+        for f in features {
+            let id = f["id"].as_str().unwrap_or("");
+            let title = f["title"].as_str().unwrap_or("");
+            let desc = f["description"].as_str().unwrap_or("");
+            let status = f.get("phase").or(f.get("status")).and_then(|v| v.as_str()).unwrap_or("planned");
+            let goal_id = f["goal_id"].as_str().unwrap_or("");
+
+            let (badge_color, badge_bg) = match status {
+                "done" => ("#10b981", "rgba(16,185,129,0.1)"),
+                "test" | "testing" => ("#f59e0b", "rgba(245,158,11,0.1)"),
+                "build" | "building" | "in_progress" => ("#3b82f6", "rgba(59,130,246,0.1)"),
+                "specifying" => ("#8b5cf6", "rgba(139,92,246,0.1)"),
+                _ => ("#6b7280", "rgba(107,114,128,0.1)"),
+            };
+
+            // Tasks
+            let mut tasks_html = String::new();
+            if let Some(tasks) = f["tasks"].as_array() {
+                for t in tasks {
+                    let t_title = t["title"].as_str().unwrap_or("");
+                    let t_status = t["status"].as_str().unwrap_or("planned");
+                    let icon = match t_status {
+                        "done" => "&#x2705;",
+                        "in_progress" => "&#x1F6E0;",
+                        _ => "&#x25CB;",
+                    };
+                    let branch = t["branch"].as_str().unwrap_or("");
+                    let branch_tag = if !branch.is_empty() {
+                        format!("<code class='wiki-branch'>{}</code>", escape_html(branch))
+                    } else { String::new() };
+                    tasks_html.push_str(&format!(
+                        "<div class='wiki-task'><span>{icon}</span> <span>{title}</span> {branch}</div>",
+                        icon=icon, title=escape_html(t_title), branch=branch_tag
+                    ));
+                }
+            }
+
+            // Questions
+            let mut questions_html = String::new();
+            if let Some(questions) = f["questions"].as_array() {
+                for q in questions {
+                    let q_text = q["text"].as_str().unwrap_or("");
+                    let q_status = q["status"].as_str().unwrap_or("open");
+                    let q_answer = q["answer"].as_str().unwrap_or("");
+                    let icon = if q_status == "answered" { "&#x2705;" } else { "&#x2753;" };
+                    questions_html.push_str(&format!(
+                        "<div class='wiki-question'><span>{icon}</span> <span>{text}</span>{answer}</div>",
+                        icon=icon, text=escape_html(q_text),
+                        answer=if !q_answer.is_empty() {
+                            format!("<div class='wiki-answer'>{}</div>", escape_html(q_answer))
+                        } else { String::new() }
+                    ));
+                }
+            }
+
+            // Decisions
+            let mut decisions_html = String::new();
+            if let Some(decisions) = f["decisions"].as_array() {
+                for d in decisions {
+                    let d_decision = d["decision"].as_str().unwrap_or("");
+                    let d_rationale = d["rationale"].as_str().unwrap_or("");
+                    decisions_html.push_str(&format!(
+                        "<div class='wiki-decision'><strong>Decision:</strong> {decision}<br><em>Rationale:</em> {rationale}</div>",
+                        decision=escape_html(d_decision), rationale=escape_html(d_rationale)
+                    ));
+                }
+            }
+
+            // Acceptance criteria
+            let mut criteria_html = String::new();
+            if let Some(criteria) = f["acceptance_criteria"].as_array() {
+                for c in criteria {
+                    if let Some(text) = c.as_str() {
+                        let check = if status == "done" { "&#x2705;" } else { "&#x25CB;" };
+                        criteria_html.push_str(&format!(
+                            "<div class='wiki-criterion'><span>{check}</span> {text}</div>",
+                            check=check, text=escape_html(text)
+                        ));
+                    }
+                }
+            }
+
+            features_html.push_str(&format!(r#"
+                <div class="wiki-feature" id="feature-{id}">
+                    <div class="wiki-feature-header">
+                        <span class="wiki-id">{id}</span>
+                        <span class="wiki-feature-title">{title}</span>
+                        <span class="wiki-badge" style="color:{badge_color};background:{badge_bg}">{status}</span>
+                        <span class="wiki-goal-ref">&#x2192; {goal_id}</span>
+                    </div>
+                    <div class="wiki-desc">{desc}</div>
+                    {tasks_section}
+                    {criteria_section}
+                    {questions_section}
+                    {decisions_section}
+                </div>
+            "#,
+                id=escape_html(id), title=escape_html(title), desc=escape_html(desc),
+                status=status, badge_color=badge_color, badge_bg=badge_bg,
+                goal_id=escape_html(goal_id),
+                tasks_section=if !tasks_html.is_empty() {
+                    format!("<div class='wiki-section-title'>Tasks</div>{}", tasks_html)
+                } else { String::new() },
+                criteria_section=if !criteria_html.is_empty() {
+                    format!("<div class='wiki-section-title'>Acceptance Criteria</div>{}", criteria_html)
+                } else { String::new() },
+                questions_section=if !questions_html.is_empty() {
+                    format!("<div class='wiki-section-title'>Questions</div>{}", questions_html)
+                } else { String::new() },
+                decisions_section=if !decisions_html.is_empty() {
+                    format!("<div class='wiki-section-title'>Decisions</div>{}", decisions_html)
+                } else { String::new() },
+            ));
+        }
+    }
+
+    // Architecture Decision Records
+    let mut adr_html = String::new();
+    if let Some(adrs) = vision["architecture"].as_array() {
+        for a in adrs {
+            let id = a["id"].as_str().unwrap_or("");
+            let title = a["title"].as_str().unwrap_or("");
+            let decision = a["decision"].as_str().unwrap_or("");
+            let rationale = a["rationale"].as_str().unwrap_or("");
+            let date = a["date"].as_str().unwrap_or("");
+            let status = a["status"].as_str().unwrap_or("active");
+            let alts = a["alternatives_considered"].as_array()
+                .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(", "))
+                .unwrap_or_default();
+
+            adr_html.push_str(&format!(r#"
+                <div class="wiki-adr">
+                    <div class="wiki-adr-header">
+                        <span class="wiki-id">{id}</span>
+                        <span class="wiki-adr-title">{title}</span>
+                        <span class="wiki-badge" style="color:#10b981;background:rgba(16,185,129,0.1)">{status}</span>
+                        <span class="wiki-date">{date}</span>
+                    </div>
+                    <div class="wiki-adr-body">
+                        <p><strong>Decision:</strong> {decision}</p>
+                        <p><strong>Rationale:</strong> {rationale}</p>
+                        {alts_html}
+                    </div>
+                </div>
+            "#,
+                id=escape_html(id), title=escape_html(title), decision=escape_html(decision),
+                rationale=escape_html(rationale), date=escape_html(date), status=escape_html(status),
+                alts_html=if !alts.is_empty() {
+                    format!("<p><strong>Alternatives considered:</strong> {}</p>", escape_html(&alts))
+                } else { String::new() }
+            ));
+        }
+    }
+
+    // Milestones
+    let mut milestones_html = String::new();
+    if let Some(milestones) = vision["milestones"].as_array() {
+        for m in milestones {
+            let id = m["id"].as_str().unwrap_or("");
+            let title = m["title"].as_str().unwrap_or("");
+            let desc = m["description"].as_str().unwrap_or("");
+            let status = m["status"].as_str().unwrap_or("upcoming");
+            let target = m["target_date"].as_str().unwrap_or("");
+            let pct = m["progress_pct"].as_u64().unwrap_or(0);
+            let (badge_color, badge_bg) = match status {
+                "complete" => ("#10b981", "rgba(16,185,129,0.1)"),
+                "active" | "in_progress" => ("#3b82f6", "rgba(59,130,246,0.1)"),
+                _ => ("#6b7280", "rgba(107,114,128,0.1)"),
+            };
+
+            milestones_html.push_str(&format!(r#"
+                <div class="wiki-milestone">
+                    <div class="wiki-milestone-header">
+                        <span class="wiki-id">{id}</span>
+                        <span>{title}</span>
+                        <span class="wiki-badge" style="color:{badge_color};background:{badge_bg}">{status}</span>
+                        <span class="wiki-date">{target}</span>
+                        <span class="wiki-pct">{pct}%</span>
+                    </div>
+                    <div class="wiki-desc">{desc}</div>
+                    <div class="wiki-progress-bar"><div class="wiki-progress-fill" style="width:{pct}%"></div></div>
+                </div>
+            "#,
+                id=escape_html(id), title=escape_html(title), desc=escape_html(desc),
+                status=escape_html(status), target=escape_html(target), pct=pct,
+                badge_color=badge_color, badge_bg=badge_bg,
+            ));
+        }
+    }
+
+    // Recent changes
+    let mut changes_html = String::new();
+    if let Some(changes) = vision["changes"].as_array() {
+        let recent: Vec<&Value> = changes.iter().rev().take(20).collect();
+        for c in recent {
+            let ts = c["timestamp"].as_str().unwrap_or("");
+            let change_type = c["change_type"].as_str().unwrap_or("");
+            let field = c["field"].as_str().unwrap_or("");
+            let reason = c["reason"].as_str().unwrap_or("");
+            let triggered_by = c["triggered_by"].as_str().unwrap_or("");
+            let icon = match change_type {
+                "added" => "&#x2795;",
+                "modified" => "&#x270F;",
+                "status_change" => "&#x1F504;",
+                _ => "&#x2022;",
+            };
+            changes_html.push_str(&format!(
+                "<tr><td>{icon}</td><td><code>{field}</code></td><td>{reason}</td><td>{by}</td><td class='wiki-date'>{ts}</td></tr>",
+                icon=icon, field=escape_html(field), reason=escape_html(reason),
+                by=escape_html(triggered_by), ts=escape_html(&ts.get(..16).unwrap_or(ts))
+            ));
+        }
+    }
+
+    // Research/Discovery docs
+    let mut docs_html = String::new();
+    let base = std::path::Path::new(&path).join(".vision");
+    for subdir in &["research", "discovery"] {
+        let dir = base.join(subdir);
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let fname = entry.file_name().to_string_lossy().to_string();
+                if fname.ends_with(".md") {
+                    let feature_id = fname.trim_end_matches(".md");
+                    let content = std::fs::read_to_string(entry.path()).unwrap_or_default();
+                    let html = markdown_to_html(&content);
+                    docs_html.push_str(&format!(r#"
+                        <div class="wiki-doc">
+                            <div class="wiki-doc-header">
+                                <span class="wiki-badge" style="color:#8b5cf6;background:rgba(139,92,246,0.1)">{subdir}</span>
+                                <span>{feature_id}</span>
+                            </div>
+                            <div class="wiki-doc-content">{html}</div>
+                        </div>
+                    "#, subdir=subdir, feature_id=escape_html(feature_id), html=html));
+                }
+            }
+        }
+    }
+
+    // Principles
+    let principles_html = vision["principles"].as_array()
+        .map(|arr| arr.iter()
+            .filter_map(|v| v.as_str())
+            .map(|p| format!("<li>{}</li>", escape_html(p)))
+            .collect::<Vec<_>>().join(""))
+        .unwrap_or_default();
+
+    // Assemble full page
+    let html = format!(r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{project} — Project Wiki</title>
+<style>
+:root {{
+    --bg: #0d1117; --surface: #161b22; --surface2: #1c2333; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --dim: #484f58;
+    --blue: #58a6ff; --green: #3fb950; --yellow: #d29922; --red: #f85149;
+    --purple: #bc8cff; --teal: #39d2c0;
+}}
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; line-height:1.6; }}
+.wiki-container {{ max-width:960px; margin:0 auto; padding:32px 24px; }}
+.wiki-header {{ border-bottom:1px solid var(--border); padding-bottom:24px; margin-bottom:32px; }}
+.wiki-title {{ font-size:28px; font-weight:700; color:var(--text); margin-bottom:4px; }}
+.wiki-mission {{ font-size:14px; color:var(--muted); margin-bottom:12px; }}
+.wiki-meta {{ font-size:11px; color:var(--dim); display:flex; gap:16px; }}
+.wiki-nav {{ display:flex; gap:8px; margin-bottom:32px; flex-wrap:wrap; }}
+.wiki-nav a {{ padding:6px 14px; border-radius:6px; background:var(--surface); color:var(--muted); text-decoration:none; font-size:12px; font-weight:500; border:1px solid var(--border); transition:all 0.15s; }}
+.wiki-nav a:hover, .wiki-nav a.active {{ background:var(--surface2); color:var(--blue); border-color:var(--blue); }}
+.wiki-section {{ margin-bottom:40px; }}
+.wiki-section > h2 {{ font-size:20px; font-weight:600; color:var(--text); border-bottom:2px solid var(--border); padding-bottom:8px; margin-bottom:16px; }}
+.wiki-section > h2 span {{ font-size:12px; color:var(--dim); font-weight:400; margin-left:8px; }}
+.wiki-id {{ font-size:10px; font-weight:700; color:var(--purple); background:rgba(139,92,246,0.1); padding:2px 6px; border-radius:4px; font-family:monospace; }}
+.wiki-badge {{ font-size:10px; font-weight:600; padding:2px 8px; border-radius:10px; text-transform:uppercase; letter-spacing:0.3px; }}
+.wiki-date {{ font-size:11px; color:var(--dim); }}
+.wiki-priority {{ font-size:10px; color:var(--yellow); font-weight:600; }}
+.wiki-pct {{ font-size:11px; color:var(--blue); font-weight:600; }}
+.wiki-desc {{ font-size:13px; color:var(--muted); margin:6px 0 10px; }}
+.wiki-goal, .wiki-feature, .wiki-adr, .wiki-milestone, .wiki-doc {{ background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:12px; }}
+.wiki-goal-header, .wiki-feature-header, .wiki-adr-header, .wiki-milestone-header {{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
+.wiki-goal-title, .wiki-feature-title, .wiki-adr-title {{ font-size:15px; font-weight:600; }}
+.wiki-goal-ref {{ font-size:10px; color:var(--dim); }}
+.wiki-metrics {{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }}
+.wiki-metric {{ font-size:10px; padding:3px 8px; border-radius:4px; background:var(--surface2); color:var(--teal); border:1px solid rgba(57,210,192,0.15); }}
+.wiki-section-title {{ font-size:11px; font-weight:700; color:var(--dim); text-transform:uppercase; letter-spacing:0.5px; margin:12px 0 6px; }}
+.wiki-task {{ display:flex; align-items:center; gap:6px; font-size:12px; padding:3px 0; color:var(--muted); }}
+.wiki-branch {{ font-size:10px; padding:1px 5px; background:var(--surface2); border-radius:3px; color:var(--blue); }}
+.wiki-question {{ font-size:12px; padding:4px 0; color:var(--muted); }}
+.wiki-answer {{ margin-left:22px; padding:4px 8px; border-left:2px solid var(--green); color:var(--green); font-size:12px; }}
+.wiki-decision {{ font-size:12px; padding:8px; background:var(--surface2); border-radius:4px; margin:4px 0; color:var(--muted); }}
+.wiki-criterion {{ display:flex; align-items:center; gap:6px; font-size:12px; padding:3px 0; color:var(--muted); }}
+.wiki-adr-body {{ font-size:13px; color:var(--muted); margin-top:8px; }}
+.wiki-adr-body p {{ margin:4px 0; }}
+.wiki-progress-bar {{ height:4px; background:var(--surface2); border-radius:2px; margin-top:8px; overflow:hidden; }}
+.wiki-progress-fill {{ height:100%; background:var(--green); border-radius:2px; transition:width 0.3s; }}
+.wiki-doc-header {{ display:flex; align-items:center; gap:8px; margin-bottom:8px; }}
+.wiki-doc-content {{ font-size:13px; color:var(--muted); }}
+.wiki-doc-content h1,.wiki-doc-content h2,.wiki-doc-content h3 {{ color:var(--text); margin:12px 0 6px; }}
+.wiki-doc-content pre {{ background:var(--surface2); padding:10px; border-radius:6px; overflow-x:auto; font-size:12px; }}
+.wiki-doc-content code {{ font-size:12px; padding:1px 4px; background:var(--surface2); border-radius:3px; }}
+.wiki-doc-content ul,.wiki-doc-content ol {{ margin-left:20px; margin-bottom:8px; }}
+.wiki-doc-content li {{ margin:2px 0; }}
+.wiki-changelog {{ width:100%; border-collapse:collapse; font-size:12px; }}
+.wiki-changelog td {{ padding:6px 8px; border-bottom:1px solid var(--border); color:var(--muted); }}
+.wiki-changelog code {{ font-size:11px; background:var(--surface2); padding:1px 5px; border-radius:3px; color:var(--purple); }}
+.wiki-principles {{ list-style:none; }}
+.wiki-principles li {{ padding:4px 0; font-size:13px; color:var(--muted); }}
+.wiki-principles li::before {{ content:"→ "; color:var(--blue); font-weight:700; }}
+.wiki-footer {{ border-top:1px solid var(--border); padding-top:16px; margin-top:40px; text-align:center; font-size:11px; color:var(--dim); }}
+@media (max-width:768px) {{ .wiki-container {{ padding:16px 12px; }} .wiki-title {{ font-size:22px; }} }}
+</style>
+</head>
+<body>
+<div class="wiki-container">
+    <div class="wiki-header">
+        <div class="wiki-title">{project}</div>
+        <div class="wiki-mission">{mission}</div>
+        <div class="wiki-meta">
+            <span>Last updated: {updated}</span>
+            <span><a href="/" style="color:var(--blue);text-decoration:none">&#x2190; Dashboard</a></span>
+        </div>
+    </div>
+
+    <nav class="wiki-nav">
+        <a href="#principles">Principles</a>
+        <a href="#milestones">Milestones</a>
+        <a href="#goals">Goals</a>
+        <a href="#features">Features</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#docs">Docs</a>
+        <a href="#changelog">Changelog</a>
+    </nav>
+
+    <div class="wiki-section" id="principles">
+        <h2>Principles</h2>
+        <ul class="wiki-principles">{principles}</ul>
+    </div>
+
+    <div class="wiki-section" id="milestones">
+        <h2>Milestones <span>{milestone_count} milestones</span></h2>
+        {milestones}
+    </div>
+
+    <div class="wiki-section" id="goals">
+        <h2>Goals <span>{goal_count} goals</span></h2>
+        {goals}
+    </div>
+
+    <div class="wiki-section" id="features">
+        <h2>Features <span>{feature_count} features</span></h2>
+        {features}
+    </div>
+
+    <div class="wiki-section" id="architecture">
+        <h2>Architecture Decision Records <span>{adr_count} ADRs</span></h2>
+        {adrs}
+    </div>
+
+    {docs_section}
+
+    <div class="wiki-section" id="changelog">
+        <h2>Changelog <span>{change_count} changes</span></h2>
+        <table class="wiki-changelog">{changes}</table>
+    </div>
+
+    <div class="wiki-footer">
+        Generated from <code>.vision/vision.json</code> &mdash; DX Terminal
+    </div>
+</div>
+<script>
+document.querySelectorAll('.wiki-nav a').forEach(a => {{
+    a.addEventListener('click', e => {{
+        document.querySelectorAll('.wiki-nav a').forEach(x => x.classList.remove('active'));
+        a.classList.add('active');
+    }});
+}});
+</script>
+</body>
+</html>"##,
+        project=escape_html(project),
+        mission=escape_html(mission),
+        updated=escape_html(updated),
+        principles=principles_html,
+        goals=goals_html,
+        features=features_html,
+        adrs=adr_html,
+        milestones=milestones_html,
+        changes=changes_html,
+        milestone_count=vision["milestones"].as_array().map(|a| a.len()).unwrap_or(0),
+        goal_count=vision["goals"].as_array().map(|a| a.len()).unwrap_or(0),
+        feature_count=vision["features"].as_array().map(|a| a.len()).unwrap_or(0),
+        adr_count=vision["architecture"].as_array().map(|a| a.len()).unwrap_or(0),
+        change_count=vision["changes"].as_array().map(|a| a.len()).unwrap_or(0),
+        docs_section=if !docs_html.is_empty() {
+            format!(r#"<div class="wiki-section" id="docs"><h2>Research &amp; Discovery Docs</h2>{}</div>"#, docs_html)
+        } else { String::new() },
+    );
+
+    Html(html)
+}
+
 // ── UI/UX Audit ──
 
 #[derive(Deserialize, Default)]
