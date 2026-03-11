@@ -66,6 +66,7 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/vision/tree", get(api::get_vision_tree))
         .route("/api/vision/drill", get(api::get_vision_drill))
         .route("/api/vision/feature/readiness", get(api::get_vision_feature_readiness))
+        .route("/api/vision/discovery/readiness", get(api::get_vision_discovery_readiness))
         .route("/api/vision/feature", post(api::add_vision_feature))
         .route("/api/vision/question", post(api::add_vision_question))
         .route("/api/vision/answer", post(api::answer_vision_question))
