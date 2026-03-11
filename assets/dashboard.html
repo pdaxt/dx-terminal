@@ -689,6 +689,7 @@ canvas{width:100%;display:block}
       <div class="panel-tabs" id="panel-tabs">
         <button class="ptab active" data-tab="session" onclick="switchTab('session')">Session</button>
         <button class="ptab" data-tab="terminal" onclick="switchTab('terminal')">Terminal</button>
+        <button class="ptab" data-tab="context" onclick="switchTab('context')">Context</button>
         <button class="ptab" data-tab="chat" onclick="switchTab('chat')">Chat</button>
       </div>
       <div class="tab-content tab-session active" id="tab-session">
@@ -696,6 +697,11 @@ canvas{width:100%;display:block}
       </div>
       <div class="tab-content tab-terminal" id="tab-terminal">
         <div class="terminal" id="panel-terminal"></div>
+      </div>
+      <div class="tab-content tab-context" id="tab-context">
+        <div id="context-panel" style="padding:8px;font-size:11px;color:var(--text);overflow-y:auto;max-height:100%">
+          <div style="color:var(--dim)">Loading context...</div>
+        </div>
       </div>
       <div class="tab-content tab-chat" id="tab-chat">
         <div class="chat-log" id="chat-log"></div>
