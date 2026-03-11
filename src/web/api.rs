@@ -731,7 +731,7 @@ pub async fn list_visions() -> Json<Value> {
 }
 
 /// POST /api/vision/init — Initialize vision
-pub async fn init_vision(Json(body): Json<Value>) -> Json<Value> {
+pub async fn init_vision(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
     let path = body["path"].as_str().unwrap_or("").to_string();
     let project = body["project"].as_str().unwrap_or("").to_string();
     let mission = body["mission"].as_str().unwrap_or("").to_string();
@@ -749,14 +749,16 @@ pub async fn init_vision(Json(body): Json<Value>) -> Json<Value> {
     };
 
     let result = crate::vision::init_vision(&project_path, &project, &mission, &repo);
+    maybe_emit_vision_change(&app, &project_path, &result, None);
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
 /// POST /api/vision/sync — Sync vision to GitHub
-pub async fn sync_vision(Json(body): Json<Value>) -> Json<Value> {
+pub async fn sync_vision(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
     let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let result = crate::vision::github_sync(&path);
+    maybe_emit_vision_change(&app, &path, &result, None);
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
@@ -815,7 +817,7 @@ pub async fn get_vision_discovery_readiness(Query(q): Query<VisionFeatureQuery>)
 }
 
 /// POST /api/vision/discovery/complete — Advance a feature to build if discovery is complete
-pub async fn complete_vision_discovery(Json(body): Json<Value>) -> Json<Value> {
+pub async fn complete_vision_discovery(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
     let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let feature_id = body["feature_id"].as_str().unwrap_or("");
@@ -823,11 +825,12 @@ pub async fn complete_vision_discovery(Json(body): Json<Value>) -> Json<Value> {
         return Json(json!({"error": "feature_id required"}));
     }
     let result = crate::vision::complete_discovery(&path, feature_id);
+    maybe_emit_vision_change(&app, &path, &result, Some(feature_id));
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
 /// POST /api/vision/feature — Add feature under a goal
-pub async fn add_vision_feature(Json(body): Json<Value>) -> Json<Value> {
+pub async fn add_vision_feature(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
     let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let goal_id = body["goal_id"].as_str().unwrap_or("");
@@ -837,30 +840,33 @@ pub async fn add_vision_feature(Json(body): Json<Value>) -> Json<Value> {
         .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
         .unwrap_or_default();
     let result = crate::vision::add_feature(&path, goal_id, title, description, criteria);
+    maybe_emit_vision_change(&app, &path, &result, None);
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
 /// POST /api/vision/discovery/start — Explicitly move a planned feature into discovery
-pub async fn start_vision_discovery(Json(body): Json<Value>) -> Json<Value> {
+pub async fn start_vision_discovery(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
     let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let feature_id = body["feature_id"].as_str().unwrap_or("");
     let result = crate::vision::start_discovery(&path, feature_id);
+    maybe_emit_vision_change(&app, &path, &result, Some(feature_id));
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
 /// POST /api/vision/acceptance — Add one acceptance criterion to a feature
-pub async fn add_vision_acceptance(Json(body): Json<Value>) -> Json<Value> {
+pub async fn add_vision_acceptance(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
     let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let feature_id = body["feature_id"].as_str().unwrap_or("");
     let criterion = body["criterion"].as_str().unwrap_or("");
     let result = crate::vision::add_acceptance_criterion(&path, feature_id, criterion);
+    maybe_emit_vision_change(&app, &path, &result, Some(feature_id));
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
 /// POST /api/vision/acceptance/update — Update text or verification method for one acceptance criterion
-pub async fn update_vision_acceptance(Json(body): Json<Value>) -> Json<Value> {
+pub async fn update_vision_acceptance(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
     let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let feature_id = body["feature_id"].as_str().unwrap_or("");
@@ -874,11 +880,12 @@ pub async fn update_vision_acceptance(Json(body): Json<Value>) -> Json<Value> {
         text,
         verification_method,
     );
+    maybe_emit_vision_change(&app, &path, &result, Some(feature_id));
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
 /// POST /api/vision/acceptance/verify — Set acceptance verification status with provider-neutral metadata
-pub async fn verify_vision_acceptance(Json(body): Json<Value>) -> Json<Value> {
+pub async fn verify_vision_acceptance(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
     let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let feature_id = body["feature_id"].as_str().unwrap_or("");
@@ -898,22 +905,24 @@ pub async fn verify_vision_acceptance(Json(body): Json<Value>) -> Json<Value> {
         verified_by,
         verification_source,
     );
+    maybe_emit_vision_change(&app, &path, &result, Some(feature_id));
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
 /// POST /api/vision/question — Add question to a feature
-pub async fn add_vision_question(Json(body): Json<Value>) -> Json<Value> {
+pub async fn add_vision_question(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
     let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let feature_id = body["feature_id"].as_str().unwrap_or("");
     let question = body["question"].as_str().unwrap_or("");
     let blocking = body["blocking"].as_bool().unwrap_or(true);
     let result = crate::vision::add_question_with_blocking(&path, feature_id, question, blocking);
+    maybe_emit_vision_change(&app, &path, &result, Some(feature_id));
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
 /// POST /api/vision/answer — Answer a question with decision
-pub async fn answer_vision_question(Json(body): Json<Value>) -> Json<Value> {
+pub async fn answer_vision_question(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
     let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let feature_id = body["feature_id"].as_str().unwrap_or("");
@@ -924,11 +933,12 @@ pub async fn answer_vision_question(Json(body): Json<Value>) -> Json<Value> {
         .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
         .unwrap_or_default();
     let result = crate::vision::answer_question(&path, feature_id, question_id, answer, rationale, alternatives);
+    maybe_emit_vision_change(&app, &path, &result, Some(feature_id));
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
 /// POST /api/vision/task — Add task to a feature
-pub async fn add_vision_task(Json(body): Json<Value>) -> Json<Value> {
+pub async fn add_vision_task(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
     let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let feature_id = body["feature_id"].as_str().unwrap_or("");
@@ -936,11 +946,12 @@ pub async fn add_vision_task(Json(body): Json<Value>) -> Json<Value> {
     let description = body["description"].as_str().unwrap_or("");
     let branch = body["branch"].as_str();
     let result = crate::vision::add_task(&path, feature_id, title, description, branch);
+    maybe_emit_vision_change(&app, &path, &result, Some(feature_id));
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
 /// POST /api/vision/task/status — Update task status with Git linking
-pub async fn update_vision_task(Json(body): Json<Value>) -> Json<Value> {
+pub async fn update_vision_task(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
     let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let feature_id = body["feature_id"].as_str().unwrap_or("");
@@ -950,24 +961,27 @@ pub async fn update_vision_task(Json(body): Json<Value>) -> Json<Value> {
     let pr = body["pr"].as_str();
     let commit = body["commit"].as_str();
     let result = crate::vision::update_task_status(&path, feature_id, task_id, status, branch, pr, commit);
+    maybe_emit_vision_change(&app, &path, &result, Some(feature_id));
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
 /// POST /api/vision/git-sync — Sync task statuses from Git
-pub async fn git_sync_vision(Json(body): Json<Value>) -> Json<Value> {
+pub async fn git_sync_vision(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
     let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let result = crate::vision::sync_git_status(&path);
+    maybe_emit_vision_change(&app, &path, &result, None);
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
 /// POST /api/vision/feature/status — Update feature status (planned→specifying→building→testing→done)
-pub async fn update_vision_feature_status(Json(body): Json<Value>) -> Json<Value> {
+pub async fn update_vision_feature_status(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
     let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let feature_id = body["feature_id"].as_str().unwrap_or("");
     let status = body["status"].as_str().unwrap_or("");
     let result = crate::vision::update_feature_status(&path, feature_id, status);
+    maybe_emit_vision_change(&app, &path, &result, Some(feature_id));
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
@@ -1065,7 +1079,7 @@ pub async fn get_vision_doc(Query(q): Query<VisionDocQuery>) -> Json<Value> {
 }
 
 /// POST /api/vision/doc — Create or update a research/discovery doc for a feature
-pub async fn upsert_vision_doc(Json(body): Json<Value>) -> Json<Value> {
+pub async fn upsert_vision_doc(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
     let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let feature_id = body["feature_id"].as_str().unwrap_or("");
@@ -1080,6 +1094,7 @@ pub async fn upsert_vision_doc(Json(body): Json<Value>) -> Json<Value> {
     }
 
     let result = crate::vision::upsert_feature_doc(&path, feature_id, doc_type, content);
+    maybe_emit_vision_change(&app, &path, &result, Some(feature_id));
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
