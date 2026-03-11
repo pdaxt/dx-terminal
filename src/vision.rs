@@ -249,8 +249,20 @@ fn history_file(project_path: &str) -> PathBuf {
 
 pub fn load_vision(project_path: &str) -> Option<Vision> {
     let path = vision_file(project_path);
-    let content = std::fs::read_to_string(&path).ok()?;
-    serde_json::from_str(&content).ok()
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("vision: cannot read {}: {}", path.display(), e);
+            return None;
+        }
+    };
+    match serde_json::from_str::<Vision>(&content) {
+        Ok(v) => Some(v),
+        Err(e) => {
+            tracing::warn!("vision: parse error for {}: {}", path.display(), e);
+            None
+        }
+    }
 }
 
 pub fn save_vision(project_path: &str, vision: &Vision) -> Result<(), String> {
