@@ -1609,3 +1609,33 @@ pub async fn get_contrast(Query(q): Query<ContrastQuery>) -> Json<Value> {
         _ => Json(crate::design_tokens::check_all_contrasts()),
     }
 }
+
+/// Sync status endpoint — returns git sync state for dashboard
+pub async fn get_sync_status(State(app): State<Arc<crate::app::App>>) -> Json<Value> {
+    let sync_mgr = app.sync_manager.read().unwrap();
+    match sync_mgr.as_ref() {
+        Some(mgr) => {
+            let root = &mgr.config.root;
+            let git_status = crate::sync::git::status(root).ok();
+            Json(json!({
+                "active": true,
+                "project": mgr.config.project,
+                "root": root.display().to_string(),
+                "auto_commit": mgr.config.auto_commit,
+                "auto_push": mgr.config.auto_push,
+                "git": git_status.map(|s| json!({
+                    "branch": s.branch,
+                    "dirty_files": s.dirty_count,
+                    "ahead": s.ahead,
+                    "behind": s.behind,
+                    "has_remote": s.has_remote,
+                })),
+                "subscribers": mgr.event_tx.receiver_count(),
+            }))
+        }
+        None => Json(json!({
+            "active": false,
+            "reason": "no git repository detected"
+        })),
+    }
+}

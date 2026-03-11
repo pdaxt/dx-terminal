@@ -30,3 +30,4 @@ pub mod vision;
 pub mod design_tokens;
 pub mod ui_audit;
 pub mod ux_audit;
+pub mod sync;

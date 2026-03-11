@@ -15,6 +15,7 @@ use tokio::sync::broadcast;
 
 use crate::app::App;
 use crate::state::events::StateEvent;
+use crate::sync::SyncEvent;
 use crate::tmux;
 use crate::session_stream;
 use crate::mcp::{tools, types};
@@ -58,6 +59,11 @@ async fn handle_socket(socket: WebSocket, app: Arc<App>) {
     let poll_app = Arc::clone(&app);
     let poll_handle = tokio::spawn(poll_terminal_output(poll_app, poll_sender));
 
+    // --- Task 3: Forward sync events to client ---
+    let sync_sender = Arc::clone(&sender);
+    let sync_app = Arc::clone(&app);
+    let sync_handle = tokio::spawn(forward_sync_events(sync_app, sync_sender));
+
     // --- Task 3: Receive commands from client ---
     let cmd_app = Arc::clone(&app);
     let cmd_sender = Arc::clone(&sender);
@@ -85,6 +91,7 @@ async fn handle_socket(socket: WebSocket, app: Arc<App>) {
     // Cleanup
     event_handle.abort();
     poll_handle.abort();
+    sync_handle.abort();
 }
 
 /// Build complete state snapshot for initial connection.
@@ -314,6 +321,42 @@ async fn forward_events(
             }
             Err(broadcast::error::RecvError::Lagged(n)) => {
                 tracing::debug!("WS event stream lagged by {} events", n);
+            }
+            Err(broadcast::error::RecvError::Closed) => break,
+        }
+    }
+}
+
+/// Forward sync events (file changes, git commits, pushes) to WebSocket client
+async fn forward_sync_events(app: Arc<App>, sender: WsSender) {
+    // Try to subscribe to sync events if a sync manager exists
+    let sync_rx = {
+        let sync_mgr = app.sync_manager.read().unwrap();
+        sync_mgr.as_ref().map(|mgr| mgr.event_tx.subscribe())
+    };
+
+    let mut rx: broadcast::Receiver<crate::sync::SyncEvent> = match sync_rx {
+        Some(rx) => rx,
+        None => {
+            // No sync manager — just sleep forever
+            loop { tokio::time::sleep(std::time::Duration::from_secs(3600)).await; }
+        }
+    };
+
+    loop {
+        match rx.recv().await {
+            Ok(event) => {
+                let msg = json!({
+                    "type": "sync_event",
+                    "event": serde_json::to_value(&event).unwrap_or(json!(null)),
+                });
+                let mut s = sender.lock().await;
+                if s.send(Message::Text(msg.to_string().into())).await.is_err() {
+                    break;
+                }
+            }
+            Err(broadcast::error::RecvError::Lagged(n)) => {
+                tracing::debug!("WS sync event stream lagged by {} events", n);
             }
             Err(broadcast::error::RecvError::Closed) => break,
         }

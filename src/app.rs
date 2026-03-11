@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use crate::state::StateManager;
 use crate::pty::PtyManager;
 use crate::screen::ScreenManager;
+use crate::sync::SyncManager;
 use crate::config;
 use dx_gateway::MCPRegistry;
 
@@ -10,6 +11,7 @@ pub struct App {
     pub pty: Arc<Mutex<PtyManager>>,
     pub gateway: Arc<tokio::sync::Mutex<MCPRegistry>>,
     pub screens: Arc<RwLock<ScreenManager>>,
+    pub sync_manager: Arc<RwLock<Option<Arc<SyncManager>>>>,
 }
 
 impl App {
@@ -22,6 +24,7 @@ impl App {
             pty: Arc::new(Mutex::new(PtyManager::new())),
             gateway: Arc::new(tokio::sync::Mutex::new(MCPRegistry::new(descriptors_dir))),
             screens: Arc::new(RwLock::new(screen_mgr)),
+            sync_manager: Arc::new(RwLock::new(None)),
         }
     }
 

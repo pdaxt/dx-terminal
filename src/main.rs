@@ -30,6 +30,7 @@ mod vision;
 mod design_tokens;
 mod ui_audit;
 mod ux_audit;
+mod sync;
 
 use std::sync::Arc;
 use clap::{Parser, Subcommand};
@@ -82,6 +83,9 @@ async fn main() -> anyhow::Result<()> {
     // Graceful shutdown: kill all PTY children when process exits
     let shutdown_app = Arc::clone(&application);
     let _shutdown_guard = ShutdownGuard(shutdown_app);
+
+    // Start sync manager for current directory (if it's a git repo)
+    start_sync_manager(&application).await;
 
     match cli.command {
         Some(Commands::Mcp { server, web_port, no_web }) => {
@@ -197,6 +201,42 @@ async fn run_mcp_mode(app: Arc<app::App>, web_port: u16, no_web: bool, server: O
             mcp::run_mcp_server(app).await
         }
     }
+}
+
+/// Start the Rust-native sync manager for file watching + auto git sync
+async fn start_sync_manager(app: &Arc<app::App>) {
+    let cwd = std::env::current_dir().unwrap_or_default();
+    // Only start if current dir is a git repo
+    let is_git = cwd.join(".git").exists();
+    if !is_git {
+        return;
+    }
+
+    let project_name = cwd.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "unknown".into());
+
+    let config = sync::SyncConfig {
+        root: cwd,
+        project: project_name,
+        ..sync::SyncConfig::default()
+    };
+
+    let mgr = Arc::new(sync::SyncManager::new(config));
+    let mgr_clone = Arc::clone(&mgr);
+
+    // Store in app
+    {
+        let mut sync_lock = app.sync_manager.write().unwrap();
+        *sync_lock = Some(Arc::clone(&mgr));
+    }
+
+    // Start the sync system
+    tokio::spawn(async move {
+        if let Err(e) = mgr_clone.start().await {
+            tracing::error!("Sync manager error: {}", e);
+        }
+    });
 }
 
 fn init_tracing() {
