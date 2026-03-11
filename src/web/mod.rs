@@ -70,6 +70,9 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/vision/task/status", post(api::update_vision_task))
         .route("/api/vision/git-sync", post(api::git_sync_vision))
         .route("/api/vision/work", post(api::assess_vision_work))
+        // VDD Research & Discovery Docs
+        .route("/api/vision/docs", get(api::list_vision_docs))
+        .route("/api/vision/doc", get(api::get_vision_doc))
         // UI/UX Audit
         .route("/api/audit/ui", get(api::get_audit_ui))
         .route("/api/audit/ux", get(api::get_audit_ux))
