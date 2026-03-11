@@ -374,6 +374,7 @@ These tests should be added progressively, not left until the end.
 - hook records verification evidence from test commands
 - migration from legacy `vision.json` preserves phase meaning
 - dashboard read model reflects canonical VDD state
+- provider-neutral actor/source metadata works for Claude, ChatGPT, Gemini, humans, and pipelines without schema changes
 
 ## Recommended implementation slices
 
