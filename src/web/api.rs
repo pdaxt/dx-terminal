@@ -798,6 +798,18 @@ pub async fn get_vision_feature_readiness(Query(q): Query<VisionFeatureQuery>) -
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
+/// GET /api/vision/discovery/readiness?project=NAME&feature_id=F1.1 — Check discovery completeness for a feature
+pub async fn get_vision_discovery_readiness(Query(q): Query<VisionFeatureQuery>) -> Json<Value> {
+    let vq = VisionQuery { project: q.project.clone(), path: None };
+    let path = resolve_project_path(&vq);
+    let feature_id = q.feature_id.as_deref().unwrap_or("");
+    if feature_id.is_empty() {
+        return Json(json!({"error": "feature_id required"}));
+    }
+    let result = crate::vision::discovery_ready_check(&path, feature_id);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
 /// POST /api/vision/feature — Add feature under a goal
 pub async fn add_vision_feature(Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
@@ -818,7 +830,8 @@ pub async fn add_vision_question(Json(body): Json<Value>) -> Json<Value> {
     let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
     let feature_id = body["feature_id"].as_str().unwrap_or("");
     let question = body["question"].as_str().unwrap_or("");
-    let result = crate::vision::add_question(&path, feature_id, question);
+    let blocking = body["blocking"].as_bool().unwrap_or(true);
+    let result = crate::vision::add_question_with_blocking(&path, feature_id, question, blocking);
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
