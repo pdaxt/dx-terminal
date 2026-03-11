@@ -1481,8 +1481,19 @@ function requestResync(){
 }
 
 function handleWSMessage(msg){
+  // --- Sequence tracking: detect gaps and request resync ---
+  if(msg.seq){
+    if(lastSeq>0 && msg.seq>lastSeq+1 && msg.type!=='init'){
+      console.warn(`[ws] seq gap: expected ${lastSeq+1}, got ${msg.seq} (missed ${msg.seq-lastSeq-1})`);
+      requestResync();
+    }
+    lastSeq=msg.seq;
+  }
+
   switch(msg.type){
     case 'init':
+      // Full snapshot — reset seq tracking, apply authoritative state
+      resyncPending=false;
       wsState=msg.data;
       for(const p of wsState.panes||[]){
         if(p.output)paneOutputs[p.pane]=p.output;
@@ -1492,6 +1503,27 @@ function handleWSMessage(msg){
       updateWorkspaces(wsState.workspaces);
       renderPanes();renderGauges();
       break;
+
+    case 'pane_upsert':
+      // Authoritative delta: apply single pane update without full refresh
+      if(wsState&&wsState.panes){
+        const idx=wsState.panes.findIndex(p=>p.pane===msg.pane);
+        const paneData=Object.assign({pane:msg.pane},msg.data||{});
+        if(idx>=0){wsState.panes[idx]=Object.assign(wsState.panes[idx],paneData);}
+        else{wsState.panes.push(paneData);}
+      }
+      renderPanes();renderGauges();
+      break;
+
+    case 'pane_removed':
+      // Mark pane as lost in UI
+      if(wsState&&wsState.panes){
+        const idx=wsState.panes.findIndex(p=>p.pane===msg.pane);
+        if(idx>=0){wsState.panes[idx].status='lost';wsState.panes[idx].task=msg.reason||'lost';}
+      }
+      renderPanes();renderGauges();
+      break;
+
     case 'terminal_output':
       for(const u of msg.updates||[]){
         const prev=paneOutputs[u.pane]||'';
@@ -1506,15 +1538,34 @@ function handleWSMessage(msg){
         const badge=document.getElementById(`pane-lines-${u.pane}`);
         if(badge)badge.textContent=u.full_lines+'L';
       }
-      // Re-render pane previews
       renderPanes();
       break;
+
     case 'pane_spawned':case 'pane_killed':case 'pane_status':
+      // These still trigger refresh for backward compat; pane_upsert handles the fine-grained path
       refresh();break;
+
     case 'log':
       addLogEntry(msg);break;
+
+    case 'queue_upsert':
+      // Fine-grained queue update — re-render queue section
+      renderQueue();break;
+    case 'queue_removed':
+      renderQueue();break;
     case 'queue':
       renderQueue();break;
+
+    case 'vision_changed':
+      // Vision doc changed — refresh vision panel
+      renderVision();renderVddDocs();
+      break;
+
+    case 'sync_status':
+      // Sync status delta from replicator
+      renderSync();
+      break;
+
     case 'cmd_result':
       // Flash capture result into panel terminal
       if(msg.cmd==='capture'&&msg.result&&msg.result.output){
@@ -1534,17 +1585,18 @@ function handleWSMessage(msg){
         }
       }
       break;
+
     case 'session_events':
       for(const u of msg.updates||[]){
-        paneEvents[u.pane]=u.events; // Replace with latest N events
+        paneEvents[u.pane]=u.events;
         if(activePaneNum===u.pane){
           renderSessionLog(u.pane);
         }
       }
-      renderPanes(); // Update pane cards with latest activity
+      renderPanes();
       break;
+
     case 'sync_event':
-      // File changed / git commit / push — update sync card and vision in real-time
       renderSync();
       const ev=msg.event||{};
       const changedPath=(ev.FileChanged&&ev.FileChanged.path)||'';
@@ -1552,9 +1604,16 @@ function handleWSMessage(msg){
         renderVision();renderVddDocs();
       }
       if(ev.GitCommit||ev.GitPush){
-        renderSync(); // Refresh git status after commit/push
+        renderSync();
       }
       break;
+
+    case 'lagged':
+      // Server detected we missed events — request full resync
+      console.warn(`[ws] server reports ${msg.missed} events lagged — resyncing`);
+      requestResync();
+      break;
+
     case 'refresh':refresh();break;
   }
 }
