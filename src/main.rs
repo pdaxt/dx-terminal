@@ -35,6 +35,7 @@ mod ux_audit;
 mod sync;
 
 use std::sync::Arc;
+use std::hash::{Hash, Hasher};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -67,6 +68,26 @@ enum Commands {
     },
 }
 
+fn runtime_identity(cli: &Cli, default_web_port: u16) -> String {
+    let cwd = std::env::current_dir().unwrap_or_default().to_string_lossy().to_string();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    cwd.hash(&mut hasher);
+    let cwd_hash = hasher.finish();
+
+    match cli.command.as_ref() {
+        Some(Commands::Mcp { server, web_port, no_web }) => format!(
+            "mcp-{}-{}-{}-{:x}",
+            server.as_deref().unwrap_or("all"),
+            if *no_web { "noweb" } else { "web" },
+            web_port.unwrap_or(default_web_port),
+            cwd_hash,
+        ),
+        Some(Commands::Tui) => format!("tui-{:x}", cwd_hash),
+        Some(Commands::Web { port }) => format!("web-{}-{:x}", port.unwrap_or(default_web_port), cwd_hash),
+        None => format!("default-{}-{:x}", default_web_port, cwd_hash),
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize config singleton (reads ~/.config/dx-terminal/config.json)
@@ -74,7 +95,7 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
     let application = Arc::new(app::App::new());
-    ipc::start_local_ipc(Arc::clone(&application));
+    ipc::start_local_ipc(Arc::clone(&application), runtime_identity(&cli, cfg.web_port));
 
     // Clean up stale worktrees from previous crashed sessions
     if let Ok(cleaned) = workspace::cleanup_stale_worktrees() {

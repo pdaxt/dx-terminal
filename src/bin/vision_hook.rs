@@ -1029,14 +1029,15 @@ fn notify_dashboard_vision_change(project_path: &str, result: &str, feature_id: 
         return;
     }
 
-    let body = json!({
+    let payload = json!({
         "project_path": project_path,
         "result": result,
         "feature_id": feature_id,
-    })
-    .to_string();
-
-    dx_terminal::ipc::append_replay_event(&body);
+    });
+    let body = match dx_terminal::ipc::prepare_outbound_event(payload) {
+        Some(body) => body,
+        None => return,
+    };
 
     if try_notify_via_socket(&body) {
         return;
