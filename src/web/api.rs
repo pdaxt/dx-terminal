@@ -855,6 +855,48 @@ pub async fn add_vision_acceptance(Json(body): Json<Value>) -> Json<Value> {
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
+/// POST /api/vision/acceptance/update — Update text or verification method for one acceptance criterion
+pub async fn update_vision_acceptance(Json(body): Json<Value>) -> Json<Value> {
+    let project = body["project"].as_str().unwrap_or("").to_string();
+    let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
+    let feature_id = body["feature_id"].as_str().unwrap_or("");
+    let criterion_id = body["criterion_id"].as_str().unwrap_or("");
+    let text = body["text"].as_str();
+    let verification_method = body["verification_method"].as_str();
+    let result = crate::vision::update_acceptance_criterion(
+        &path,
+        feature_id,
+        criterion_id,
+        text,
+        verification_method,
+    );
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/vision/acceptance/verify — Set acceptance verification status with provider-neutral metadata
+pub async fn verify_vision_acceptance(Json(body): Json<Value>) -> Json<Value> {
+    let project = body["project"].as_str().unwrap_or("").to_string();
+    let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
+    let feature_id = body["feature_id"].as_str().unwrap_or("");
+    let criterion_id = body["criterion_id"].as_str().unwrap_or("");
+    let status = body["status"].as_str().unwrap_or("");
+    let evidence: Vec<String> = body["evidence"].as_array()
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+    let verified_by = body["verified_by"].as_str();
+    let verification_source = body["verification_source"].as_str();
+    let result = crate::vision::verify_acceptance_criterion(
+        &path,
+        feature_id,
+        criterion_id,
+        status,
+        evidence,
+        verified_by,
+        verification_source,
+    );
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
 /// POST /api/vision/question — Add question to a feature
 pub async fn add_vision_question(Json(body): Json<Value>) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();

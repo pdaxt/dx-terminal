@@ -71,6 +71,8 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/vision/discovery/complete", post(api::complete_vision_discovery))
         .route("/api/vision/feature", post(api::add_vision_feature))
         .route("/api/vision/acceptance", post(api::add_vision_acceptance))
+        .route("/api/vision/acceptance/update", post(api::update_vision_acceptance))
+        .route("/api/vision/acceptance/verify", post(api::verify_vision_acceptance))
         .route("/api/vision/question", post(api::add_vision_question))
         .route("/api/vision/answer", post(api::answer_vision_question))
         .route("/api/vision/task", post(api::add_vision_task))
