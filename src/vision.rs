@@ -1957,6 +1957,30 @@ mod tests {
     }
 
     #[test]
+    fn test_upsert_feature_doc_creates_file_and_starts_discovery() {
+        let dir = temp_project();
+        let path = dir.path().to_str().unwrap();
+        init_test_vision(dir.path());
+        add_goal(path, "G1", "Goal", "desc", 1);
+        add_feature(path, "G1", "Feature", "desc", vec![]);
+
+        let result = upsert_feature_doc(path, "F1.1", "research", "# Notes");
+        let json: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(json["status"], "created");
+        assert_eq!(json["phase"], "discovery");
+        assert_eq!(json["state"], "active");
+
+        let doc_path = dir.path().join(".vision/research/F1.1.md");
+        assert!(doc_path.exists());
+        assert_eq!(std::fs::read_to_string(doc_path).unwrap(), "# Notes");
+
+        let vision = load_vision(path).unwrap();
+        let feature = vision.features.iter().find(|f| f.id == "F1.1").unwrap();
+        assert_eq!(feature.phase, FeaturePhase::Discovery);
+        assert_eq!(feature.status, FeatureStatus::Specifying);
+    }
+
+    #[test]
     fn test_milestone_in_progress_parses() {
         // This was the root cause bug — InProgress missing from MilestoneStatus
         let json = r#"{"status":"in_progress","id":"M1","title":"Test","description":"","target_date":"2026-01-01","goals":[]}"#;

@@ -973,6 +973,25 @@ pub async fn get_vision_doc(Query(q): Query<VisionDocQuery>) -> Json<Value> {
     Json(result)
 }
 
+/// POST /api/vision/doc — Create or update a research/discovery doc for a feature
+pub async fn upsert_vision_doc(Json(body): Json<Value>) -> Json<Value> {
+    let project = body["project"].as_str().unwrap_or("").to_string();
+    let path = resolve_project_path(&VisionQuery { project: Some(project.clone()), path: None });
+    let feature_id = body["feature_id"].as_str().unwrap_or("");
+    let doc_type = body["doc_type"]
+        .as_str()
+        .or_else(|| body["type"].as_str())
+        .unwrap_or("");
+    let content = body["content"].as_str().unwrap_or("");
+
+    if feature_id.is_empty() || doc_type.is_empty() {
+        return Json(json!({"error": "feature_id and doc_type required"}));
+    }
+
+    let result = crate::vision::upsert_feature_doc(&path, feature_id, doc_type, content);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
 /// Simple markdown to HTML converter (no external deps)
 fn markdown_to_html(md: &str) -> String {
     let mut html = String::new();
