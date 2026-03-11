@@ -140,6 +140,10 @@ pub struct Feature {
     pub description: String,
     pub status: FeatureStatus,
     #[serde(default)]
+    pub phase: FeaturePhase,
+    #[serde(default)]
+    pub state: FeatureState,
+    #[serde(default)]
     pub questions: Vec<Question>,
     #[serde(default)]
     pub decisions: Vec<VisionDecision>,
@@ -165,6 +169,37 @@ pub enum FeatureStatus {
     Building,
     Testing,
     Done,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum FeaturePhase {
+    Planned,
+    Discovery,
+    Build,
+    Test,
+    Done,
+}
+
+impl Default for FeaturePhase {
+    fn default() -> Self {
+        Self::Planned
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum FeatureState {
+    Planned,
+    Active,
+    Blocked,
+    Complete,
+}
+
+impl Default for FeatureState {
+    fn default() -> Self {
+        Self::Planned
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -232,6 +267,137 @@ pub enum TaskStatus {
     Done,
     Verified,
     Blocked,
+}
+
+fn feature_phase_from_status(status: &FeatureStatus) -> FeaturePhase {
+    match status {
+        FeatureStatus::Planned => FeaturePhase::Planned,
+        FeatureStatus::Specifying => FeaturePhase::Discovery,
+        FeatureStatus::Building => FeaturePhase::Build,
+        FeatureStatus::Testing => FeaturePhase::Test,
+        FeatureStatus::Done => FeaturePhase::Done,
+    }
+}
+
+fn feature_state_from_status(status: &FeatureStatus) -> FeatureState {
+    match status {
+        FeatureStatus::Planned => FeatureState::Planned,
+        FeatureStatus::Done => FeatureState::Complete,
+        FeatureStatus::Specifying | FeatureStatus::Building | FeatureStatus::Testing => FeatureState::Active,
+    }
+}
+
+fn feature_status_from_phase(phase: &FeaturePhase) -> FeatureStatus {
+    match phase {
+        FeaturePhase::Planned => FeatureStatus::Planned,
+        FeaturePhase::Discovery => FeatureStatus::Specifying,
+        FeaturePhase::Build => FeatureStatus::Building,
+        FeaturePhase::Test => FeatureStatus::Testing,
+        FeaturePhase::Done => FeatureStatus::Done,
+    }
+}
+
+fn normalize_feature(feature: &mut Feature) {
+    let phase_was_default = feature.phase == FeaturePhase::Planned;
+    let state_was_default = feature.state == FeatureState::Planned;
+
+    if phase_was_default && state_was_default {
+        feature.phase = feature_phase_from_status(&feature.status);
+        feature.state = feature_state_from_status(&feature.status);
+        return;
+    }
+
+    if feature.phase == FeaturePhase::Planned && feature.state != FeatureState::Planned {
+        feature.state = FeatureState::Planned;
+    } else if feature.phase == FeaturePhase::Done && feature.state == FeatureState::Planned {
+        feature.state = FeatureState::Complete;
+    } else if feature.phase != FeaturePhase::Planned
+        && feature.phase != FeaturePhase::Done
+        && feature.state == FeatureState::Planned
+    {
+        feature.state = FeatureState::Active;
+    }
+
+    feature.status = feature_status_from_phase(&feature.phase);
+}
+
+fn set_feature_lifecycle(feature: &mut Feature, phase: FeaturePhase, state: FeatureState) {
+    feature.phase = phase.clone();
+    feature.state = state;
+    feature.status = feature_status_from_phase(&phase);
+}
+
+fn task_counts(feature: &Feature) -> (usize, usize, usize) {
+    let total = feature.tasks.len();
+    let complete = feature.tasks.iter()
+        .filter(|t| t.status == TaskStatus::Done || t.status == TaskStatus::Verified)
+        .count();
+    let verified = feature.tasks.iter()
+        .filter(|t| t.status == TaskStatus::Verified)
+        .count();
+    (total, complete, verified)
+}
+
+fn feature_readiness_value(feature: &Feature) -> serde_json::Value {
+    let open_questions = feature.questions.iter()
+        .filter(|q| q.status == QuestionStatus::Open)
+        .count();
+    let acceptance_count = feature.acceptance_criteria.len();
+    let (task_total, task_complete, task_verified) = task_counts(feature);
+
+    let mut build_blockers = Vec::new();
+    if open_questions > 0 {
+        build_blockers.push(format!("{} open discovery question(s)", open_questions));
+    }
+    if acceptance_count == 0 {
+        build_blockers.push("acceptance criteria missing".to_string());
+    }
+
+    let mut test_blockers = Vec::new();
+    if task_total == 0 {
+        test_blockers.push("build tasks missing".to_string());
+    } else if task_complete < task_total {
+        test_blockers.push(format!(
+            "{} build task(s) still incomplete",
+            task_total - task_complete
+        ));
+    }
+
+    let mut done_blockers = test_blockers.clone();
+    if task_total > 0 && task_verified < task_total {
+        done_blockers.push(format!(
+            "{} build task(s) not yet verified",
+            task_total - task_verified
+        ));
+    }
+    if acceptance_count == 0 {
+        done_blockers.push("acceptance criteria missing".to_string());
+    }
+
+    let mut blockers = build_blockers.clone();
+    for blocker in test_blockers.iter().chain(done_blockers.iter()) {
+        if !blockers.contains(blocker) {
+            blockers.push(blocker.clone());
+        }
+    }
+
+    serde_json::json!({
+        "ready_for_build": build_blockers.is_empty(),
+        "ready_for_test": test_blockers.is_empty(),
+        "ready_for_done": done_blockers.is_empty(),
+        "blockers": {
+            "build": build_blockers,
+            "test": test_blockers,
+            "done": done_blockers,
+        },
+        "counts": {
+            "open_questions": open_questions,
+            "acceptance_criteria": acceptance_count,
+            "tasks_total": task_total,
+            "tasks_complete": task_complete,
+            "tasks_verified": task_verified,
+        }
+    })
 }
 
 // ─── Storage ────────────────────────────────────────────────────────────────
