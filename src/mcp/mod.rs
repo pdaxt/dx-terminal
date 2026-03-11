@@ -1958,6 +1958,38 @@ impl DxTerminalService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
+    #[tool(description = "Update an acceptance criterion's text or verification method. Provider-neutral and safe for Claude, ChatGPT, Gemini, humans, or pipelines to use.")]
+    async fn vision_acceptance_update(
+        &self,
+        Parameters(req): Parameters<types::VisionAcceptanceUpdateRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_acceptance_update(
+            req.project.as_deref(),
+            &req.feature_id,
+            &req.criterion_id,
+            req.text.as_deref(),
+            req.verification_method.as_deref(),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Set acceptance verification state with provider-neutral actor/source metadata and evidence refs.")]
+    async fn vision_acceptance_verify(
+        &self,
+        Parameters(req): Parameters<types::VisionAcceptanceVerifyRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::vision_tools::vision_acceptance_verify(
+            req.project.as_deref(),
+            &req.feature_id,
+            &req.criterion_id,
+            &req.status,
+            req.evidence,
+            req.verified_by.as_deref(),
+            req.verification_source.as_deref(),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
     #[tool(description = "Ask a question about a feature. Questions are blocking by default unless `blocking=false` is provided.")]
     async fn vision_add_question(
         &self,

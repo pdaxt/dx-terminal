@@ -1887,6 +1887,39 @@ pub struct VisionAcceptanceRequest {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct VisionAcceptanceUpdateRequest {
+    #[schemars(description = "Project path")]
+    pub project: Option<String>,
+    #[schemars(description = "Feature ID (e.g. 'F1.1')")]
+    pub feature_id: String,
+    #[schemars(description = "Acceptance criterion ID (e.g. 'AC1.1.1')")]
+    pub criterion_id: String,
+    #[schemars(description = "Updated criterion text")]
+    pub text: Option<String>,
+    #[schemars(description = "Verification method, e.g. integration_test/manual_review/pipeline_gate")]
+    pub verification_method: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VisionAcceptanceVerifyRequest {
+    #[schemars(description = "Project path")]
+    pub project: Option<String>,
+    #[schemars(description = "Feature ID (e.g. 'F1.1')")]
+    pub feature_id: String,
+    #[schemars(description = "Acceptance criterion ID (e.g. 'AC1.1.1')")]
+    pub criterion_id: String,
+    #[schemars(description = "New criterion status: draft/mapped/verified/failed")]
+    pub status: String,
+    #[schemars(description = "Evidence refs, e.g. test IDs, artifact paths, URLs")]
+    #[serde(default)]
+    pub evidence: Vec<String>,
+    #[schemars(description = "Actor who recorded the verification, provider-neutral")]
+    pub verified_by: Option<String>,
+    #[schemars(description = "Source of verification, e.g. human/agent/pipeline")]
+    pub verification_source: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct VisionDocUpsertRequest {
     #[schemars(description = "Project path")]
     pub project: Option<String>,

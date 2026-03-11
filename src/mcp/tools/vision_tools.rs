@@ -34,6 +34,42 @@ pub fn vision_acceptance_add(project: Option<&str>, feature_id: &str, criterion:
     vision::add_acceptance_criterion(&resolve_project(project), feature_id, criterion)
 }
 
+pub fn vision_acceptance_update(
+    project: Option<&str>,
+    feature_id: &str,
+    criterion_id: &str,
+    text: Option<&str>,
+    verification_method: Option<&str>,
+) -> String {
+    vision::update_acceptance_criterion(
+        &resolve_project(project),
+        feature_id,
+        criterion_id,
+        text,
+        verification_method,
+    )
+}
+
+pub fn vision_acceptance_verify(
+    project: Option<&str>,
+    feature_id: &str,
+    criterion_id: &str,
+    status: &str,
+    evidence: Vec<String>,
+    verified_by: Option<&str>,
+    verification_source: Option<&str>,
+) -> String {
+    vision::verify_acceptance_criterion(
+        &resolve_project(project),
+        feature_id,
+        criterion_id,
+        status,
+        evidence,
+        verified_by,
+        verification_source,
+    )
+}
+
 pub fn vision_add_question(project: Option<&str>, feature_id: &str, question: &str, blocking: Option<bool>) -> String {
     vision::add_question_with_blocking(
         &resolve_project(project),
