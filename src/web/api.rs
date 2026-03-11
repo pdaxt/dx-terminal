@@ -1672,12 +1672,23 @@ pub async fn get_pane_context(
     // Use live cwd if available, otherwise state cwd
     let cwd = if !live_cwd.is_empty() { &live_cwd } else { &state_cwd };
 
-    // Derive project name from cwd
+    // Derive project name from cwd (same logic as ws.rs project_from_cwd)
     let project = if !cwd.is_empty() {
-        let p = std::path::Path::new(cwd);
-        p.file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| state_project.clone())
+        let home = std::env::var("HOME").unwrap_or_default();
+        let projects_dir = format!("{}/Projects", home);
+        let path = std::path::Path::new(cwd.as_str());
+        if cwd.as_str() == projects_dir || cwd.as_str() == home {
+            // At root — use state project if available
+            if state_project != "--" { state_project.clone() } else { "--".to_string() }
+        } else if let Ok(rel) = path.strip_prefix(&projects_dir) {
+            rel.components().next()
+                .map(|c| c.as_os_str().to_string_lossy().to_string())
+                .unwrap_or_else(|| state_project.clone())
+        } else {
+            path.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| state_project.clone())
+        }
     } else {
         state_project.clone()
     };
