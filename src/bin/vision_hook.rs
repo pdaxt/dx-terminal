@@ -999,20 +999,29 @@ fn build_dashboard_notify_request(port: u16, body: &str) -> String {
 }
 
 fn try_notify_via_socket(body: &str) -> bool {
-    let socket_path = dx_terminal::ipc::vision_socket_path();
-    let mut stream = match UnixStream::connect(&socket_path) {
-        Ok(stream) => stream,
-        Err(_) => return false,
-    };
-    let _ = stream.set_write_timeout(Some(Duration::from_millis(150)));
-    let _ = stream.set_read_timeout(Some(Duration::from_millis(150)));
-    if stream.write_all(body.as_bytes()).is_err() {
-        return false;
+    let socket_paths = dx_terminal::ipc::discover_vision_socket_paths();
+    let mut delivered = false;
+
+    for socket_path in socket_paths {
+        let mut stream = match UnixStream::connect(&socket_path) {
+            Ok(stream) => stream,
+            Err(_) => {
+                let _ = fs::remove_file(&socket_path);
+                continue;
+            }
+        };
+        let _ = stream.set_write_timeout(Some(Duration::from_millis(150)));
+        let _ = stream.set_read_timeout(Some(Duration::from_millis(150)));
+        if stream.write_all(body.as_bytes()).is_err() {
+            continue;
+        }
+        let _ = stream.shutdown(Shutdown::Write);
+        let mut response = [0u8; 64];
+        let _ = stream.read(&mut response);
+        delivered = true;
     }
-    let _ = stream.shutdown(Shutdown::Write);
-    let mut response = [0u8; 64];
-    let _ = stream.read(&mut response);
-    true
+
+    delivered
 }
 
 fn notify_dashboard_vision_change(project_path: &str, result: &str, feature_id: Option<&str>) {
