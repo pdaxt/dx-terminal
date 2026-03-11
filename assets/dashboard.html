@@ -2043,26 +2043,40 @@ async function renderVisionCockpit(project){
       for(const f of features){
         const fKey='f_'+f.id;
         const fExpanded=visionExpandState[fKey]===true;
+        const phase=normalizeVddPhase(f.phase||f.status);
+        const state=f.state||'planned';
         const fPct=f.progress||0;
         const tasks=f.tasks||[];
-        const oq=f.open_questions||0;
+        const readiness=f.readiness||{};
+        const counts=readiness.counts||{};
+        const oq=f.open_questions||counts.open_questions||0;
         if(oq>0) allOpenQuestions.push({feature:f.id,count:oq});
         treeHtml+=`<div style="margin-left:20px;margin-top:2px">
           <div onclick="visionExpandState['${fKey}']=!visionExpandState['${fKey}'];renderVision()" style="cursor:pointer;display:flex;align-items:center;gap:5px;padding:3px 0">
             <span style="font-size:9px;color:var(--dim);width:10px">${fExpanded?'▾':'▸'}</span>
             <span style="font-size:9px;color:var(--dim);font-weight:600">${escHtml(f.id)}</span>
             <span style="font-size:10px;color:var(--muted);flex:1">${escHtml(f.title)}</span>
-            ${visionStatusPill(f.status)}
+            ${vddPhaseBadge(phase)}
+            ${vddStatePill(state)}
             <span style="font-size:8px;color:var(--dim)">${f.tasks_done||0}/${f.tasks_total||0}</span>
             ${featureDocLink(f.id,tree.project||project)}
             ${f.has_sub_vision?'<span style="font-size:8px;color:var(--purple)" title="Has sub-vision">◆</span>':''}
           </div>
-          ${vddPipelineBar(f.status)}`;
+          ${vddPipelineBar(phase)}`;
         if(fExpanded){
           // Progress bar
           if(tasks.length) treeHtml+=`<div style="margin-left:22px;margin-bottom:4px">${visionProgressBar(fPct,'200px')}</div>`;
+          treeHtml+=renderReadinessSummary(f);
           // Open questions indicator
-          if(oq>0) treeHtml+=`<div style="margin-left:22px;font-size:9px;color:var(--yellow);margin-bottom:3px">${oq} open question${oq>1?'s':''}</div>`;
+          if(oq>0){
+            const blocking=counts.blocking_open_questions||0;
+            const nonBlocking=counts.non_blocking_open_questions||0;
+            let questionLabel=`${oq} open question${oq>1?'s':''}`;
+            if(blocking>0) questionLabel+=` · ${blocking} blocking`;
+            if(nonBlocking>0) questionLabel+=` · ${nonBlocking} non-blocking`;
+            treeHtml+=`<div style="margin-left:22px;font-size:9px;color:var(--yellow);margin-bottom:3px">${questionLabel}</div>`;
+          }
+          treeHtml+=renderAcceptanceList(f.acceptance_items||[]);
           // Tasks
           for(const t of tasks){
             const tColor=t.status==='done'||t.status==='verified'?'var(--green)':t.status==='in_progress'?'var(--blue)':t.status==='blocked'?'var(--red)':'var(--dim)';
