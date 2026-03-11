@@ -1871,6 +1871,9 @@ pub struct VisionQuestionRequest {
     pub feature_id: String,
     #[schemars(description = "Question text")]
     pub question: String,
+    #[schemars(description = "Whether this question blocks discovery completion (default: true)")]
+    #[serde(default)]
+    pub blocking: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
