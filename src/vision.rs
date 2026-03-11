@@ -952,6 +952,16 @@ fn features_dir(project_path: &str) -> PathBuf {
     vision_dir(project_path).join("features")
 }
 
+fn feature_doc_path(project_path: &str, doc_type: &str, feature_id: &str) -> Result<(PathBuf, String), String> {
+    match doc_type {
+        "research" | "discovery" => {
+            let relative = format!(".vision/{}/{}.md", doc_type, feature_id);
+            Ok((vision_dir(project_path).join(format!("{}/{}.md", doc_type, feature_id)), relative))
+        }
+        _ => Err(format!("invalid_doc_type: {}", doc_type)),
+    }
+}
+
 /// Add a feature under a goal.
 pub fn add_feature(
     project_path: &str, goal_id: &str, title: &str, description: &str,
@@ -1011,6 +1021,65 @@ pub fn add_feature(
             "status": "added",
             "feature": id,
             "goal": goal_id,
+        }).to_string(),
+        Err(e) => serde_json::json!({"error": e}).to_string(),
+    }
+}
+
+pub fn upsert_feature_doc(project_path: &str, feature_id: &str, doc_type: &str, content: &str) -> String {
+    let mut vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
+        Some(f) => f,
+        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+    };
+
+    let (doc_path, relative_path) = match feature_doc_path(project_path, doc_type, feature_id) {
+        Ok(paths) => paths,
+        Err(e) => return serde_json::json!({"error": e, "options": ["research", "discovery"]}).to_string(),
+    };
+
+    if let Some(parent) = doc_path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            return serde_json::json!({"error": format!("mkdir: {}", e)}).to_string();
+        }
+    }
+
+    let existed = doc_path.exists();
+    if let Err(e) = std::fs::write(&doc_path, content) {
+        return serde_json::json!({"error": format!("write: {}", e)}).to_string();
+    }
+
+    if feature.phase == FeaturePhase::Planned {
+        set_feature_lifecycle(feature, FeaturePhase::Discovery, FeatureState::Active);
+    }
+    feature.updated_at = now();
+    vision.updated_at = now();
+
+    let change = VisionChange {
+        timestamp: now(),
+        change_type: if existed { ChangeType::Modified } else { ChangeType::Added },
+        field: format!("{}_doc:{}", doc_type, feature_id),
+        old_value: if existed { "existing".to_string() } else { String::new() },
+        new_value: relative_path.clone(),
+        reason: format!("{} doc upserted", doc_type),
+        triggered_by: "user".to_string(),
+        github_issue: None,
+    };
+    vision.changes.push(change.clone());
+    append_history(project_path, &change);
+
+    match save_vision(project_path, &vision) {
+        Ok(()) => serde_json::json!({
+            "status": if existed { "updated" } else { "created" },
+            "feature": feature_id,
+            "doc_type": doc_type,
+            "path": relative_path,
+            "phase": feature.phase,
+            "state": feature.state,
         }).to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }

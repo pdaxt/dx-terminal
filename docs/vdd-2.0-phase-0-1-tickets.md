@@ -25,8 +25,8 @@ Done when:
 
 ### P0-02 Record the current VDD storage contract
 
-- `[ ]` Document the current `.vision/vision.json` feature, question, decision, and task shape.
-- `[ ]` Note the current compatibility assumptions for web and MCP consumers.
+- `[x]` Document the current `.vision/vision.json` feature, question, decision, and task shape.
+- `[x]` Note the current compatibility assumptions for web and MCP consumers.
 
 Depends on:
 
@@ -38,9 +38,9 @@ Done when:
 
 ### P0-03 Tighten regression coverage around feature lifecycle
 
-- `[ ]` Add tests for legacy feature status transitions.
-- `[ ]` Add tests for load/save compatibility when new fields are absent.
-- `[ ]` Add tests for new read-model fields once added.
+- `[x]` Add tests for legacy feature status transitions.
+- `[x]` Add tests for load/save compatibility when new fields are absent.
+- `[x]` Add tests for new read-model fields once added.
 
 Depends on:
 
@@ -54,10 +54,10 @@ Done when:
 
 ### P1-01 Add explicit feature `phase` and `state`
 
-- `[-]` Add a VDD 2.0 `phase` enum for `planned/discovery/build/test/done`.
-- `[-]` Add a VDD 2.0 `state` enum for `planned/active/blocked/complete`.
-- `[-]` Persist both on `Feature` while keeping legacy `status`.
-- `[ ]` Normalize old feature records that only have legacy `status`.
+- `[x]` Add a VDD 2.0 `phase` enum for `planned/discovery/build/test/done`.
+- `[x]` Add a VDD 2.0 `state` enum for `planned/active/blocked/complete`.
+- `[x]` Persist both on `Feature` while keeping legacy `status`.
+- `[x]` Normalize old feature records that only have legacy `status`.
 
 Depends on:
 
@@ -71,9 +71,9 @@ Done when:
 
 ### P1-02 Add lifecycle normalization helpers
 
-- `[ ]` Centralize mapping between legacy `status` and VDD 2.0 `phase/state`.
-- `[ ]` Route all feature lifecycle mutations through the helper.
-- `[ ]` Ensure add-question, add-task, task-update, git-sync, and feature-update all keep fields aligned.
+- `[x]` Centralize mapping between legacy `status` and VDD 2.0 `phase/state`.
+- `[x]` Route all feature lifecycle mutations through the helper.
+- `[x]` Ensure add-question, add-task, task-update, git-sync, and feature-update all keep fields aligned.
 
 Depends on:
 
@@ -85,9 +85,9 @@ Done when:
 
 ### P1-03 Add a first readiness read model
 
-- `[ ]` Compute `ready_for_build`, `ready_for_test`, and `ready_for_done`.
-- `[ ]` Return blockers for unmet readiness conditions.
-- `[ ]` Surface readiness in at least one machine-readable API.
+- `[x]` Compute `ready_for_build`, `ready_for_test`, and `ready_for_done`.
+- `[x]` Return blockers for unmet readiness conditions.
+- `[x]` Surface readiness in at least one machine-readable API.
 
 Depends on:
 
@@ -99,9 +99,9 @@ Done when:
 
 ### P1-04 Expose readiness through MCP and web
 
-- `[ ]` Add a VDD MCP read tool for feature readiness.
-- `[ ]` Add a web endpoint for feature readiness.
-- `[ ]` Include `phase/state` and readiness in existing vision tree or drill payloads.
+- `[x]` Add a VDD MCP read tool for feature readiness.
+- `[x]` Add a web endpoint for feature readiness.
+- `[x]` Include `phase/state` and readiness in existing vision tree or drill payloads.
 
 Depends on:
 
@@ -113,9 +113,9 @@ Done when:
 
 ### P1-05 Add compatibility tests for the new schema
 
-- `[ ]` Test that old features with only `status` are normalized on load.
-- `[ ]` Test that question/task lifecycle changes update both legacy and VDD 2.0 fields.
-- `[ ]` Test readiness output for planned, discovery, build, and test scenarios.
+- `[x]` Test that old features with only `status` are normalized on load.
+- `[x]` Test that question/task lifecycle changes update both legacy and VDD 2.0 fields.
+- `[x]` Test readiness output for planned, discovery, build, and test scenarios.
 
 Depends on:
 
@@ -141,7 +141,9 @@ Done when:
 
 The code work starting now covers:
 
+- `P0-03`
 - `P1-01`
 - `P1-02`
 - `P1-03`
-- `P1-04` minimal
+- `P1-04`
+- `P1-05`
