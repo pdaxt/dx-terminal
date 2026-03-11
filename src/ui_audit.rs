@@ -4,9 +4,9 @@
 //! Checks: raw colors, off-scale fonts, non-standard radius, missing transitions,
 //! contrast failures, component pattern compliance.
 
-use serde_json::{json, Value};
-use regex::Regex;
 use crate::design_tokens::{self, parse_hex_color, FONT_SCALE};
+use regex::Regex;
+use serde_json::{json, Value};
 
 // ========== Violation Types ==========
 
@@ -63,12 +63,19 @@ pub fn audit_ui_html(html: &str, file_name: &str) -> Value {
 
     // Scoring — weight by severity
     let error_count = violations.iter().filter(|v| v.severity == "error").count();
-    let warning_count = violations.iter().filter(|v| v.severity == "warning").count();
+    let warning_count = violations
+        .iter()
+        .filter(|v| v.severity == "warning")
+        .count();
     let info_count = violations.iter().filter(|v| v.severity == "info").count();
 
     let rule_categories: Vec<&str> = vec![
-        "raw-hex-color", "off-scale-font-size", "raw-font-family",
-        "non-standard-radius", "hardcoded-transition", "light-theme-leak",
+        "raw-hex-color",
+        "off-scale-font-size",
+        "raw-font-family",
+        "non-standard-radius",
+        "hardcoded-transition",
+        "light-theme-leak",
     ];
 
     let mut category_results = Vec::new();
@@ -82,10 +89,14 @@ pub fn audit_ui_html(html: &str, file_name: &str) -> Value {
     }
 
     // Contrast pass
-    let contrast_pass = contrast_results.get("all_pass")
-        .and_then(|v| v.as_bool()).unwrap_or(false);
-    let contrast_failures = contrast_results.get("failures")
-        .and_then(|v| v.as_u64()).unwrap_or(0);
+    let contrast_pass = contrast_results
+        .get("all_pass")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let contrast_failures = contrast_results
+        .get("failures")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
 
     // Score: start at 100, deduct for violations
     // errors: -10 each, warnings: -3 each, info: -1 each, contrast fails: -5 each
@@ -96,7 +107,8 @@ pub fn audit_ui_html(html: &str, file_name: &str) -> Value {
     let score = (100.0 - deductions).max(0.0);
 
     let total_checks = rule_categories.len() + 1; // +1 for contrast
-    let passed = category_results.iter()
+    let passed = category_results
+        .iter()
         .filter(|c| c["passed"].as_bool().unwrap_or(false))
         .count()
         + if contrast_pass { 1 } else { 0 };
@@ -160,28 +172,42 @@ fn check_raw_colors(html: &str, root_range: &(usize, usize)) -> Vec<Violation> {
 
     for (i, line) in lines.iter().enumerate() {
         // Skip :root block
-        if i >= root_range.0 && i <= root_range.1 { continue; }
+        if i >= root_range.0 && i <= root_range.1 {
+            continue;
+        }
         // Only check CSS lines (inside <style>)
-        if i < in_style.0 || i > in_style.1 { continue; }
+        if i < in_style.0 || i > in_style.1 {
+            continue;
+        }
 
         // Skip SVG data URIs
-        if line.contains("data:image") { continue; }
+        if line.contains("data:image") {
+            continue;
+        }
 
         for cap in re.captures_iter(line) {
             let hex = &cap[0];
             // Skip if it's inside an rgba() — the hex is the color, rgba is fine
             let pos = cap.get(0).unwrap().start();
             let prefix = &line[..pos];
-            if prefix.ends_with("rgba(") || prefix.ends_with("rgb(") { continue; }
+            if prefix.ends_with("rgba(") || prefix.ends_with("rgb(") {
+                continue;
+            }
 
             // Skip common acceptable patterns: #000 for text-on-bright, #fff for icon fills
             let hex_lower = hex.to_lowercase();
-            if hex_lower == "#000" || hex_lower == "#000000" || hex_lower == "#fff" || hex_lower == "#ffffff" {
+            if hex_lower == "#000"
+                || hex_lower == "#000000"
+                || hex_lower == "#fff"
+                || hex_lower == "#ffffff"
+            {
                 continue;
             }
 
             // Skip if inside color-mix(), mix-blend, or gradient context with a CSS var
-            if line.contains("color-mix(") || line.contains("var(--") { continue; }
+            if line.contains("color-mix(") || line.contains("var(--") {
+                continue;
+            }
 
             // Suggest the matching token
             let suggestion = suggest_color_token(hex);
@@ -256,13 +282,20 @@ fn check_font_sizes(html: &str, root_range: &(usize, usize)) -> Vec<Violation> {
 
     let lines: Vec<&str> = html.lines().collect();
     for (i, line) in lines.iter().enumerate() {
-        if i >= root_range.0 && i <= root_range.1 { continue; }
+        if i >= root_range.0 && i <= root_range.1 {
+            continue;
+        }
 
         for cap in re.captures_iter(line) {
             let size: f32 = cap[1].parse().unwrap_or(0.0);
             if !FONT_SCALE.contains(&size) {
-                let nearest = FONT_SCALE.iter()
-                    .min_by(|a, b| ((**a - size).abs()).partial_cmp(&((**b - size).abs())).unwrap())
+                let nearest = FONT_SCALE
+                    .iter()
+                    .min_by(|a, b| {
+                        ((**a - size).abs())
+                            .partial_cmp(&((**b - size).abs()))
+                            .unwrap()
+                    })
                     .unwrap_or(&10.0);
                 violations.push(Violation {
                     severity: "warning",
@@ -286,12 +319,17 @@ fn check_font_families(html: &str, root_range: &(usize, usize)) -> Vec<Violation
 
     let lines: Vec<&str> = html.lines().collect();
     for (i, line) in lines.iter().enumerate() {
-        if i >= root_range.0 && i <= root_range.1 { continue; }
+        if i >= root_range.0 && i <= root_range.1 {
+            continue;
+        }
 
         for cap in re.captures_iter(line) {
             let family = cap[1].trim();
             if !family.contains("var(--mono)") && !family.contains("var(--sans)") {
-                let suggest = if family.contains("Mono") || family.contains("monospace") || family.contains("Consolas") {
+                let suggest = if family.contains("Mono")
+                    || family.contains("monospace")
+                    || family.contains("Consolas")
+                {
                     "var(--mono)"
                 } else {
                     "var(--sans)"
@@ -316,15 +354,21 @@ fn check_border_radius(html: &str, root_range: &(usize, usize)) -> Vec<Violation
     let mut violations = Vec::new();
     let re = Regex::new(r"border-radius\s*:\s*([^;]+);").unwrap();
 
-    let allowed_literals = ["50%", "20px", "4px", "3px", "2px", "0", "10px", "6px", "7px", "8px", "12px"];
+    let allowed_literals = [
+        "50%", "20px", "4px", "3px", "2px", "0", "10px", "6px", "7px", "8px", "12px",
+    ];
 
     let lines: Vec<&str> = html.lines().collect();
     for (i, line) in lines.iter().enumerate() {
-        if i >= root_range.0 && i <= root_range.1 { continue; }
+        if i >= root_range.0 && i <= root_range.1 {
+            continue;
+        }
 
         for cap in re.captures_iter(line) {
             let val = cap[1].trim();
-            if val.contains("var(--radius") { continue; }
+            if val.contains("var(--radius") {
+                continue;
+            }
             // Check if it's a known allowed literal
             let parts: Vec<&str> = val.split_whitespace().collect();
             let all_allowed = parts.iter().all(|p| allowed_literals.contains(p));
@@ -335,7 +379,8 @@ fn check_border_radius(html: &str, root_range: &(usize, usize)) -> Vec<Violation
                     message: format!("Border radius '{}' doesn't use design token", val),
                     line: i + 1,
                     snippet: line.trim().to_string(),
-                    suggestion: "Use var(--radius) for 10px or var(--radius-sm) for 6px".to_string(),
+                    suggestion: "Use var(--radius) for 10px or var(--radius-sm) for 6px"
+                        .to_string(),
                 });
             }
         }
@@ -351,7 +396,9 @@ fn check_transitions(html: &str, root_range: &(usize, usize)) -> Vec<Violation> 
 
     let lines: Vec<&str> = html.lines().collect();
     for (i, line) in lines.iter().enumerate() {
-        if i >= root_range.0 && i <= root_range.1 { continue; }
+        if i >= root_range.0 && i <= root_range.1 {
+            continue;
+        }
 
         for cap in re.captures_iter(line) {
             let val = cap[1].trim();
@@ -399,7 +446,9 @@ fn check_light_theme_leaks(html: &str) -> Vec<Violation> {
                     message: msg.to_string(),
                     line: i + 1,
                     snippet: line.trim().to_string(),
-                    suggestion: "Use var(--surface) or var(--bg) for backgrounds, var(--text) for text".to_string(),
+                    suggestion:
+                        "Use var(--surface) or var(--bg) for backgrounds, var(--text) for text"
+                            .to_string(),
                 });
             }
         }
@@ -413,8 +462,13 @@ fn find_style_range(lines: &[&str]) -> (usize, usize) {
     let mut start = 0;
     let mut end = 0;
     for (i, line) in lines.iter().enumerate() {
-        if line.contains("<style") { start = i; }
-        if line.contains("</style") { end = i; break; }
+        if line.contains("<style") {
+            start = i;
+        }
+        if line.contains("</style") {
+            end = i;
+            break;
+        }
     }
     (start, end)
 }
@@ -436,10 +490,17 @@ mod tests {
         eprintln!("Violations: {}", result["violation_count"]);
         if let Some(violations) = result["violations"].as_array() {
             for v in violations.iter().take(10) {
-                eprintln!("  {} [{}] line {}: {}", v["severity"], v["rule"], v["line"], v["message"]);
+                eprintln!(
+                    "  {} [{}] line {}: {}",
+                    v["severity"], v["rule"], v["line"], v["message"]
+                );
             }
         }
-        assert!(score >= 40.0, "Dashboard itself should score >= 40, got {}", score);
+        assert!(
+            score >= 40.0,
+            "Dashboard itself should score >= 40, got {}",
+            score
+        );
     }
 
     #[test]
@@ -449,8 +510,10 @@ mod tests {
 .bad{color:#ff0000}
 </style>"#;
         let violations = check_raw_colors(css, &(1, 1));
-        assert!(violations.iter().any(|v| v.rule == "raw-hex-color"),
-            "Should detect raw hex outside :root");
+        assert!(
+            violations.iter().any(|v| v.rule == "raw-hex-color"),
+            "Should detect raw hex outside :root"
+        );
     }
 
     #[test]
@@ -460,7 +523,9 @@ mod tests {
 .bad{font-size:14px}
 </style>"#;
         let violations = check_font_sizes(css, &(1, 1));
-        assert!(violations.iter().any(|v| v.rule == "off-scale-font-size"),
-            "14px is not in the scale");
+        assert!(
+            violations.iter().any(|v| v.rule == "off-scale-font-size"),
+            "14px is not in the scale"
+        );
     }
 }

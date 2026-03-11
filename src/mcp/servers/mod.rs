@@ -5,8 +5,8 @@
 //!
 //! Usage: `dx mcp core`, `dx mcp queue`, `dx mcp tracker`, `dx mcp coord`, `dx mcp intel`
 
+pub mod coord;
 pub mod core_server;
+pub mod intel;
 pub mod queue;
 pub mod tracker;
-pub mod coord;
-pub mod intel;

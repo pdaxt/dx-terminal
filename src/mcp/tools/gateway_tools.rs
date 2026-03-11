@@ -1,8 +1,8 @@
 //! Gateway tools: discover, call, list micro MCPs via the gateway crate.
 
-use crate::app::App;
 use super::super::types::*;
 use super::helpers::*;
+use crate::app::App;
 
 /// Discover micro MCPs matching a capability
 pub async fn gateway_discover(app: &App, req: GatewayDiscoverRequest) -> String {
@@ -18,17 +18,21 @@ pub async fn gateway_discover(app: &App, req: GatewayDiscoverRequest) -> String 
             }).to_string();
         }
 
-        let results: Vec<serde_json::Value> = matches.iter().map(|d| {
-            serde_json::json!({
-                "name": d.name,
-                "description": d.description,
-                "capabilities": d.capabilities,
-                "auto_start": d.auto_start,
-                "running": gateway.get_tools(&d.name).is_some(),
+        let results: Vec<serde_json::Value> = matches
+            .iter()
+            .map(|d| {
+                serde_json::json!({
+                    "name": d.name,
+                    "description": d.description,
+                    "capabilities": d.capabilities,
+                    "auto_start": d.auto_start,
+                    "running": gateway.get_tools(&d.name).is_some(),
+                })
             })
-        }).collect();
+            .collect();
 
-        let names: Vec<String> = matches.iter()
+        let names: Vec<String> = matches
+            .iter()
             .filter(|d| gateway.get_tools(&d.name).is_none())
             .map(|d| d.name.clone())
             .collect();
@@ -45,7 +49,8 @@ pub async fn gateway_discover(app: &App, req: GatewayDiscoverRequest) -> String 
                     "status": "partial",
                     "matches": results,
                     "start_error": format!("Failed to start '{}': {}", name, e),
-                }).to_string();
+                })
+                .to_string();
             }
         }
     }
@@ -54,7 +59,8 @@ pub async fn gateway_discover(app: &App, req: GatewayDiscoverRequest) -> String 
         "status": "found",
         "count": results.len(),
         "matches": results,
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Call a tool on a running micro MCP
@@ -83,7 +89,8 @@ pub async fn gateway_call(app: &App, req: GatewayCallRequest) -> String {
             "tool": result.tool,
             "content": result.content,
             "error": result.error,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => json_err(&format!("Gateway call failed: {}", e)),
     }
 }
@@ -103,7 +110,8 @@ pub async fn gateway_list(app: &App, req: GatewayListRequest) -> String {
                 "last_used_secs_ago": s.last_used_secs_ago,
             })).collect::<Vec<_>>(),
             "count": running.len(),
-        }).to_string()
+        })
+        .to_string()
     } else {
         let all = gw.list_all();
         let running_count = all.iter().filter(|(_, r)| *r).count();
@@ -115,6 +123,7 @@ pub async fn gateway_list(app: &App, req: GatewayListRequest) -> String {
             "total": all.len(),
             "running": running_count,
             "registered": all.len() - running_count,
-        }).to_string()
+        })
+        .to_string()
     }
 }

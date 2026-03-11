@@ -3,14 +3,14 @@
 use chrono::{Local, NaiveDateTime};
 
 use crate::app::App;
-use crate::config;
-use crate::tracker;
 use crate::capacity;
+use crate::config;
 use crate::state;
+use crate::tracker;
 
-use crate::queue;
 use super::super::types::*;
 use super::helpers::truncate;
+use crate::queue;
 
 /// Execute os_status logic
 pub async fn status(app: &App) -> String {
@@ -53,11 +53,17 @@ pub async fn status(app: &App) -> String {
     }
 
     let active = panes.iter().filter(|p| p["status"] == "active").count();
-    let idle = panes.iter().filter(|p| {
-        let s = p["status"].as_str().unwrap_or("");
-        s == "idle" || s.is_empty()
-    }).count();
-    let running = panes.iter().filter(|p| p["running"].as_bool().unwrap_or(false)).count();
+    let idle = panes
+        .iter()
+        .filter(|p| {
+            let s = p["status"].as_str().unwrap_or("");
+            s == "idle" || s.is_empty()
+        })
+        .count();
+    let running = panes
+        .iter()
+        .filter(|p| p["running"].as_bool().unwrap_or(false))
+        .count();
 
     serde_json::json!({
         "panes": panes,
@@ -108,42 +114,59 @@ pub async fn dashboard(app: &App, req: DashboardRequest) -> String {
             "panes": panes,
             "board": board,
             "log": log,
-        }).to_string();
+        })
+        .to_string();
     }
 
     let acu_pct = if cap.acu_total > 0.0 {
         (cap.acu_used / cap.acu_total * 100.0) as i32
-    } else { 0 };
+    } else {
+        0
+    };
     let rev_pct = if cap.reviews_total > 0 {
         (cap.reviews_used as f64 / cap.reviews_total as f64 * 100.0) as i32
-    } else { 0 };
-    let bn = if rev_pct > 80 { "REVIEW" } else if acu_pct > 90 { "COMPUTE" } else { "BALANCED" };
+    } else {
+        0
+    };
+    let bn = if rev_pct > 80 {
+        "REVIEW"
+    } else if acu_pct > 90 {
+        "COMPUTE"
+    } else {
+        "BALANCED"
+    };
 
     let now_str = state::now();
     let display_ts = now_str.get(..16).unwrap_or(&now_str);
     let mut lines = vec![
         format!("DX Terminal Dashboard — {}", display_ts),
-        format!("ACU: {}/{} ({}%)  Reviews: {}/{}  Bottleneck: {}",
-            cap.acu_used, cap.acu_total, acu_pct, cap.reviews_used, cap.reviews_total, bn),
+        format!(
+            "ACU: {}/{} ({}%)  Reviews: {}/{}  Bottleneck: {}",
+            cap.acu_used, cap.acu_total, acu_pct, cap.reviews_used, cap.reviews_total, bn
+        ),
         String::new(),
         " #  Theme   Project        Task                          Role  Status  Run".into(),
         " -  ------  -------------- ------------------------------ ----  ------  ---".into(),
     ];
     for p in &panes {
-        lines.push(format!(" {}  {:<7} {:<14} {:<30} {:<5} {:<7} {}",
-            p["pane"], p["theme"].as_str().unwrap_or(""),
+        lines.push(format!(
+            " {}  {:<7} {:<14} {:<30} {:<5} {:<7} {}",
+            p["pane"],
+            p["theme"].as_str().unwrap_or(""),
             p["project"].as_str().unwrap_or("--"),
             p["task"].as_str().unwrap_or("--"),
             p["role"].as_str().unwrap_or("--"),
             p["status"].as_str().unwrap_or("idle"),
-            if p["running"].as_bool().unwrap_or(false) { "Y" } else { "-" },
+            if p["running"].as_bool().unwrap_or(false) {
+                "Y"
+            } else {
+                "-"
+            },
         ));
     }
 
     lines.push(String::new());
-    let board_str: Vec<String> = board.iter()
-        .map(|(k, v)| format!("{}:{}", k, v))
-        .collect();
+    let board_str: Vec<String> = board.iter().map(|(k, v)| format!("{}:{}", k, v)).collect();
     lines.push(format!("Board: {}", board_str.join("  ")));
 
     if !log.is_empty() {
@@ -151,7 +174,12 @@ pub async fn dashboard(app: &App, req: DashboardRequest) -> String {
         lines.push("Recent:".into());
         for entry in log.iter().take(5) {
             let ts = entry.ts.get(11..16).unwrap_or(&entry.ts);
-            lines.push(format!("  {} P{} {}", ts, entry.pane, truncate(&entry.summary, 50)));
+            lines.push(format!(
+                "  {} P{} {}",
+                ts,
+                entry.pane,
+                truncate(&entry.summary, 50)
+            ));
         }
     }
 
@@ -204,7 +232,9 @@ pub async fn health(app: &App) -> String {
 
             if pd.status == "active" && !done && error.is_none() {
                 if let Some(started) = &pd.started_at {
-                    if let Ok(start_dt) = NaiveDateTime::parse_from_str(started, "%Y-%m-%dT%H:%M:%S") {
+                    if let Ok(start_dt) =
+                        NaiveDateTime::parse_from_str(started, "%Y-%m-%dT%H:%M:%S")
+                    {
                         let now = Local::now().naive_local();
                         let mins = (now - start_dt).num_minutes();
                         if mins > (stuck_mins * 10) as i64 {
@@ -245,7 +275,9 @@ pub async fn health(app: &App) -> String {
 
                 if pd.status == "active" && health.running && !health.done {
                     if let Some(started) = &pd.started_at {
-                        if let Ok(start_dt) = NaiveDateTime::parse_from_str(started, "%Y-%m-%dT%H:%M:%S") {
+                        if let Ok(start_dt) =
+                            NaiveDateTime::parse_from_str(started, "%Y-%m-%dT%H:%M:%S")
+                        {
                             let now = Local::now().naive_local();
                             let mins = (now - start_dt).num_minutes();
                             if mins > (stuck_mins * 10) as i64 {
@@ -295,7 +327,10 @@ pub async fn health(app: &App) -> String {
     let active = results.iter().filter(|r| r["status"] == "active").count();
     let stuck = results.iter().filter(|r| r["health"] == "stuck").count();
     let errors = results.iter().filter(|r| r["health"] == "error").count();
-    let running = results.iter().filter(|r| r["running"].as_bool().unwrap_or(false)).count();
+    let running = results
+        .iter()
+        .filter(|r| r["running"].as_bool().unwrap_or(false))
+        .count();
 
     serde_json::json!({
         "panes": results,
@@ -306,7 +341,8 @@ pub async fn health(app: &App) -> String {
             "idle": config::pane_count() as usize - active,
             "running": running,
         }
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// os_monitor — Single-call "what's happening right now" overview
@@ -330,10 +366,22 @@ pub async fn monitor(app: &App, req: MonitorRequest) -> String {
 
     for (i, pd) in &pane_states {
         let mut health_status = match pd.status.as_str() {
-            "active" => { active_count += 1; "active" },
-            "done" => { done_count += 1; "done" },
-            "error" => { error_count += 1; "error" },
-            _ => { idle_count += 1; "idle" },
+            "active" => {
+                active_count += 1;
+                "active"
+            }
+            "done" => {
+                done_count += 1;
+                "done"
+            }
+            "error" => {
+                error_count += 1;
+                "error"
+            }
+            _ => {
+                idle_count += 1;
+                "idle"
+            }
         };
 
         let mut error_msg: Option<String> = None;
@@ -353,7 +401,10 @@ pub async fn monitor(app: &App, req: MonitorRequest) -> String {
             if let Some(err) = tmux_error {
                 health_status = "error";
                 error_msg = Some(err.clone());
-                if pd.status == "active" { error_count += 1; active_count = active_count.saturating_sub(1); }
+                if pd.status == "active" {
+                    error_count += 1;
+                    active_count = active_count.saturating_sub(1);
+                }
                 alerts.push(serde_json::json!({
                     "level": "error",
                     "pane": i,
@@ -372,7 +423,9 @@ pub async fn monitor(app: &App, req: MonitorRequest) -> String {
 
             if pd.status == "active" && !tmux_done && error_msg.is_none() {
                 if let Some(started) = &pd.started_at {
-                    if let Ok(start_dt) = NaiveDateTime::parse_from_str(started, "%Y-%m-%dT%H:%M:%S") {
+                    if let Ok(start_dt) =
+                        NaiveDateTime::parse_from_str(started, "%Y-%m-%dT%H:%M:%S")
+                    {
                         let now = Local::now().naive_local();
                         let mins = (now - start_dt).num_minutes();
                         if mins > (state_snap.config.stuck_threshold_minutes * 10) as i64 {
@@ -405,7 +458,10 @@ pub async fn monitor(app: &App, req: MonitorRequest) -> String {
                 if h.error.is_some() {
                     health_status = "error";
                     error_msg = h.error.clone();
-                    if pd.status == "active" { error_count += 1; active_count = active_count.saturating_sub(1); }
+                    if pd.status == "active" {
+                        error_count += 1;
+                        active_count = active_count.saturating_sub(1);
+                    }
                     alerts.push(serde_json::json!({
                         "level": "error",
                         "pane": i,
@@ -468,22 +524,47 @@ pub async fn monitor(app: &App, req: MonitorRequest) -> String {
     }
 
     let q = queue::load_queue();
-    let q_pending = q.tasks.iter().filter(|t| t.status == queue::QueueStatus::Pending).count();
-    let q_running = q.tasks.iter().filter(|t| t.status == queue::QueueStatus::Running).count();
-    let q_done = q.tasks.iter().filter(|t| t.status == queue::QueueStatus::Done).count();
-    let q_failed = q.tasks.iter().filter(|t| t.status == queue::QueueStatus::Failed).count();
+    let q_pending = q
+        .tasks
+        .iter()
+        .filter(|t| t.status == queue::QueueStatus::Pending)
+        .count();
+    let q_running = q
+        .tasks
+        .iter()
+        .filter(|t| t.status == queue::QueueStatus::Running)
+        .count();
+    let q_done = q
+        .tasks
+        .iter()
+        .filter(|t| t.status == queue::QueueStatus::Done)
+        .count();
+    let q_failed = q
+        .tasks
+        .iter()
+        .filter(|t| t.status == queue::QueueStatus::Failed)
+        .count();
 
     let cap = capacity::load_capacity();
-    let acu_pct = if cap.acu_total > 0.0 { (cap.acu_used / cap.acu_total * 100.0) as i32 } else { 0 };
+    let acu_pct = if cap.acu_total > 0.0 {
+        (cap.acu_used / cap.acu_total * 100.0) as i32
+    } else {
+        0
+    };
 
-    let recent: Vec<_> = state_snap.activity_log.iter().take(5).map(|e| {
-        serde_json::json!({
-            "time": e.ts.get(11..16).unwrap_or(&e.ts),
-            "pane": e.pane,
-            "event": e.event,
-            "summary": truncate(&e.summary, 60),
+    let recent: Vec<_> = state_snap
+        .activity_log
+        .iter()
+        .take(5)
+        .map(|e| {
+            serde_json::json!({
+                "time": e.ts.get(11..16).unwrap_or(&e.ts),
+                "pane": e.pane,
+                "event": e.event,
+                "summary": truncate(&e.summary, 60),
+            })
         })
-    }).collect();
+        .collect();
 
     let urgency = if error_count > 0 || stuck_count > 0 {
         "ATTENTION NEEDED"
@@ -517,7 +598,8 @@ pub async fn monitor(app: &App, req: MonitorRequest) -> String {
             "acu_pct": acu_pct,
         },
         "recent": recent,
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// os_watch — Tail a pane's output with error analysis (tmux or PTY)
@@ -558,14 +640,19 @@ pub async fn watch(app: &App, req: WatchRequest) -> String {
                 "errors": [],
                 "warnings": [],
                 "output": format!("[No agent] Pane {} is {}", pane_num, pd.status),
-            }).to_string();
+            })
+            .to_string();
         }
         let screen = pty.screen_text(pane_num).unwrap_or_default();
         let output = pty.last_output(pane_num, _tail_lines).unwrap_or_default();
         let r = pty.is_running(pane_num);
         let h = pty.check_health(pane_num, &markers);
         drop(pty);
-        let d = if !screen.trim().is_empty() { screen } else { output };
+        let d = if !screen.trim().is_empty() {
+            screen
+        } else {
+            output
+        };
         (d, r, h.done)
     };
 
@@ -574,12 +661,15 @@ pub async fn watch(app: &App, req: WatchRequest) -> String {
     let mut errors_found = Vec::new();
     let mut warnings_found = Vec::new();
     if analyze {
-        let error_patterns = ["error", "Error", "ERROR", "panic", "PANIC", "failed", "FAILED", "fatal", "FATAL"];
+        let error_patterns = [
+            "error", "Error", "ERROR", "panic", "PANIC", "failed", "FAILED", "fatal", "FATAL",
+        ];
         let warning_patterns = ["warning", "Warning", "WARN", "deprecated", "timeout"];
 
         for (line_num, line) in display.lines().enumerate() {
             for pat in &error_patterns {
-                if line.contains(pat) && !line.contains("error_count") && !line.contains("no_error") {
+                if line.contains(pat) && !line.contains("error_count") && !line.contains("no_error")
+                {
                     errors_found.push(serde_json::json!({
                         "line": line_num + 1,
                         "text": truncate(line.trim(), 120),
@@ -618,11 +708,18 @@ pub async fn watch(app: &App, req: WatchRequest) -> String {
         "completed"
     } else if display.contains("Thinking") || display.contains("thinking") {
         "thinking"
-    } else if display.contains("Writing") || display.contains("Editing") || display.contains("Creating") {
+    } else if display.contains("Writing")
+        || display.contains("Editing")
+        || display.contains("Creating")
+    {
         "writing"
     } else if display.contains("Reading") || display.contains("Searching") {
         "reading"
-    } else if display.contains("Running") || display.contains("testing") || display.contains("cargo") || display.contains("npm") {
+    } else if display.contains("Running")
+        || display.contains("testing")
+        || display.contains("cargo")
+        || display.contains("npm")
+    {
         "running_commands"
     } else if running {
         "working"
@@ -649,7 +746,8 @@ pub async fn watch(app: &App, req: WatchRequest) -> String {
         "warnings": warnings_found,
         "error_count": errors_found.len(),
         "warning_count": warnings_found.len(),
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// os_project_status — Everything about one project across all panes, issues, git, capacity
@@ -661,7 +759,9 @@ pub async fn project_status(app: &App, req: ProjectStatusRequest) -> String {
     let mut project_panes = Vec::new();
     for i in 1..=config::pane_count() {
         let pd = app.state.get_pane(i).await;
-        if pd.project.to_lowercase().contains(&project_lower) || pd.project_path.to_lowercase().contains(&project_lower) {
+        if pd.project.to_lowercase().contains(&project_lower)
+            || pd.project_path.to_lowercase().contains(&project_lower)
+        {
             let (running, lines) = if let Some(ref target) = pd.tmux_target {
                 let output = crate::tmux::capture_output(target);
                 (!crate::tmux::check_done(target), output.lines().count())
@@ -701,16 +801,24 @@ pub async fn project_status(app: &App, req: ProjectStatusRequest) -> String {
         }
         if !matched_space.is_empty() {
             let board = tracker::board_view(&matched_space);
-            board_data = serde_json::from_str(&board.to_string()).unwrap_or(serde_json::json!(null));
+            board_data =
+                serde_json::from_str(&board.to_string()).unwrap_or(serde_json::json!(null));
 
-            let issues_dir = config::collab_root().join("spaces").join(&matched_space).join("issues");
+            let issues_dir = config::collab_root()
+                .join("spaces")
+                .join(&matched_space)
+                .join("issues");
             let mut counts = std::collections::HashMap::new();
             if let Ok(entries) = std::fs::read_dir(&issues_dir) {
                 for entry in entries.flatten() {
                     if entry.path().extension().map_or(false, |e| e == "json") {
                         if let Ok(content) = std::fs::read_to_string(entry.path()) {
                             if let Ok(issue) = serde_json::from_str::<serde_json::Value>(&content) {
-                                let status = issue.get("status").and_then(|v| v.as_str()).unwrap_or("backlog").to_string();
+                                let status = issue
+                                    .get("status")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("backlog")
+                                    .to_string();
                                 *counts.entry(status).or_insert(0u32) += 1;
                             }
                         }
@@ -735,7 +843,11 @@ pub async fn project_status(app: &App, req: ProjectStatusRequest) -> String {
                 .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
                 .unwrap_or_default();
             let branch_output = std::process::Command::new("git")
-                .args(["branch", "-a", "--format=%(refname:short) %(upstream:track)"])
+                .args([
+                    "branch",
+                    "-a",
+                    "--format=%(refname:short) %(upstream:track)",
+                ])
                 .current_dir(&project_path)
                 .output()
                 .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
@@ -757,10 +869,16 @@ pub async fn project_status(app: &App, req: ProjectStatusRequest) -> String {
 
     let log_path = config::capacity_root().join("work_log.json");
     let log = crate::state::persistence::read_json(&log_path);
-    let entries = log.get("entries").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-    let project_acu: f64 = entries.iter()
+    let entries = log
+        .get("entries")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let project_acu: f64 = entries
+        .iter()
         .filter(|e| {
-            e.get("space").and_then(|v| v.as_str())
+            e.get("space")
+                .and_then(|v| v.as_str())
                 .map_or(false, |s| s.to_lowercase().contains(&project_lower))
         })
         .filter_map(|e| e.get("acu_spent").and_then(|v| v.as_f64()))
@@ -777,7 +895,8 @@ pub async fn project_status(app: &App, req: ProjectStatusRequest) -> String {
         "git": git_data,
         "total_acu": (project_acu * 100.0).round() / 100.0,
         "mcps": mcps,
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// os_digest — Daily/weekly summary of team output
@@ -787,9 +906,15 @@ pub async fn digest(app: &App, req: DigestRequest) -> String {
 
     let now = Local::now();
     let start = match period {
-        "yesterday" => (now - chrono::Duration::days(1)).format("%Y-%m-%dT00:00:00").to_string(),
-        "week" => (now - chrono::Duration::days(7)).format("%Y-%m-%dT00:00:00").to_string(),
-        "month" => (now - chrono::Duration::days(30)).format("%Y-%m-%dT00:00:00").to_string(),
+        "yesterday" => (now - chrono::Duration::days(1))
+            .format("%Y-%m-%dT00:00:00")
+            .to_string(),
+        "week" => (now - chrono::Duration::days(7))
+            .format("%Y-%m-%dT00:00:00")
+            .to_string(),
+        "month" => (now - chrono::Duration::days(30))
+            .format("%Y-%m-%dT00:00:00")
+            .to_string(),
         _ => now.format("%Y-%m-%dT00:00:00").to_string(),
     };
     let end = now.format("%Y-%m-%dT%H:%M:%S").to_string();
@@ -802,17 +927,28 @@ pub async fn digest(app: &App, req: DigestRequest) -> String {
     let mut projects_seen = std::collections::HashSet::new();
 
     for entry in &state_snap.activity_log {
-        if entry.ts < start { continue; }
-        if !project_filter.is_empty() && !entry.summary.to_lowercase().contains(&project_filter.to_lowercase()) {
+        if entry.ts < start {
+            continue;
+        }
+        if !project_filter.is_empty()
+            && !entry
+                .summary
+                .to_lowercase()
+                .contains(&project_filter.to_lowercase())
+        {
             continue;
         }
         match entry.event.as_str() {
             "spawn" => spawns += 1,
             "complete" => completions += 1,
             "kill" => kills += 1,
-            other => { tracing::trace!("Unknown activity event: {}", other); }
+            other => {
+                tracing::trace!("Unknown activity event: {}", other);
+            }
         }
-        if entry.summary.to_lowercase().contains("error") { errors += 1; }
+        if entry.summary.to_lowercase().contains("error") {
+            errors += 1;
+        }
         if entry.event == "spawn" {
             if let Some(proj) = entry.summary.split(" on ").nth(1) {
                 if let Some(name) = proj.split(':').next() {
@@ -824,7 +960,11 @@ pub async fn digest(app: &App, req: DigestRequest) -> String {
 
     let log_path = config::capacity_root().join("work_log.json");
     let work_log = crate::state::persistence::read_json(&log_path);
-    let work_entries = work_log.get("entries").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let work_entries = work_log
+        .get("entries")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
 
     let mut total_acu = 0.0f64;
     let mut acu_by_role = std::collections::HashMap::<String, f64>::new();
@@ -833,25 +973,45 @@ pub async fn digest(app: &App, req: DigestRequest) -> String {
     let mut issues_worked = std::collections::HashSet::new();
 
     for entry in &work_entries {
-        let logged_at = entry.get("logged_at").and_then(|v| v.as_str()).unwrap_or("");
-        if logged_at < start.as_str() { continue; }
-
-        let space = entry.get("space").and_then(|v| v.as_str()).unwrap_or("");
-        if !project_filter.is_empty() && !space.to_lowercase().contains(&project_filter.to_lowercase()) {
+        let logged_at = entry
+            .get("logged_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if logged_at < start.as_str() {
             continue;
         }
 
-        let acu = entry.get("acu_spent").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let space = entry.get("space").and_then(|v| v.as_str()).unwrap_or("");
+        if !project_filter.is_empty()
+            && !space
+                .to_lowercase()
+                .contains(&project_filter.to_lowercase())
+        {
+            continue;
+        }
+
+        let acu = entry
+            .get("acu_spent")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
         total_acu += acu;
 
-        let role = entry.get("role").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
+        let role = entry
+            .get("role")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
         *acu_by_role.entry(role).or_default() += acu;
 
         if !space.is_empty() {
             *acu_by_project.entry(space.to_string()).or_default() += acu;
         }
 
-        if entry.get("review_needed").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if entry
+            .get("review_needed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             reviews_needed += 1;
         }
 
@@ -862,13 +1022,27 @@ pub async fn digest(app: &App, req: DigestRequest) -> String {
     }
 
     let q = queue::load_queue();
-    let q_done = q.tasks.iter().filter(|t| {
-        t.status == queue::QueueStatus::Done && t.completed_at.as_deref().unwrap_or("") >= start.as_str()
-    }).count();
-    let q_failed = q.tasks.iter().filter(|t| {
-        t.status == queue::QueueStatus::Failed && t.completed_at.as_deref().unwrap_or("") >= start.as_str()
-    }).count();
-    let q_pending = q.tasks.iter().filter(|t| t.status == queue::QueueStatus::Pending).count();
+    let q_done = q
+        .tasks
+        .iter()
+        .filter(|t| {
+            t.status == queue::QueueStatus::Done
+                && t.completed_at.as_deref().unwrap_or("") >= start.as_str()
+        })
+        .count();
+    let q_failed = q
+        .tasks
+        .iter()
+        .filter(|t| {
+            t.status == queue::QueueStatus::Failed
+                && t.completed_at.as_deref().unwrap_or("") >= start.as_str()
+        })
+        .count();
+    let q_pending = q
+        .tasks
+        .iter()
+        .filter(|t| t.status == queue::QueueStatus::Pending)
+        .count();
 
     let round_map = |m: &std::collections::HashMap<String, f64>| -> serde_json::Value {
         let mut result = serde_json::Map::new();
@@ -880,19 +1054,32 @@ pub async fn digest(app: &App, req: DigestRequest) -> String {
 
     let mut recommendations = Vec::new();
     if q_pending > 5 {
-        recommendations.push(format!("{} tasks queued — consider increasing max_parallel panes", q_pending));
+        recommendations.push(format!(
+            "{} tasks queued — consider increasing max_parallel panes",
+            q_pending
+        ));
     }
     if q_failed > 0 {
-        recommendations.push(format!("{} tasks failed — review and retry or fix", q_failed));
+        recommendations.push(format!(
+            "{} tasks failed — review and retry or fix",
+            q_failed
+        ));
     }
     if errors > 2 {
-        recommendations.push(format!("{} errors in period — investigate recurring failures", errors));
+        recommendations.push(format!(
+            "{} errors in period — investigate recurring failures",
+            errors
+        ));
     }
     if reviews_needed > 3 {
-        recommendations.push(format!("{} items need review — review bottleneck risk", reviews_needed));
+        recommendations.push(format!(
+            "{} items need review — review bottleneck risk",
+            reviews_needed
+        ));
     }
     if completions == 0 && spawns > 0 {
-        recommendations.push("Agents spawned but nothing completed — check if tasks are stuck".into());
+        recommendations
+            .push("Agents spawned but nothing completed — check if tasks are stuck".into());
     }
 
     serde_json::json!({
@@ -918,5 +1105,6 @@ pub async fn digest(app: &App, req: DigestRequest) -> String {
         },
         "projects_active": projects_seen.into_iter().collect::<Vec<_>>(),
         "recommendations": recommendations,
-    }).to_string()
+    })
+    .to_string()
 }

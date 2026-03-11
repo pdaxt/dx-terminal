@@ -61,7 +61,9 @@ pub const FONT_SCALE: &[f32] = &[8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 15.0, 16.0, 1
 pub const WEIGHT_SCALE: &[u16] = &[400, 500, 600, 700, 800];
 
 /// Allowed spacing values (px)
-pub const SPACING_SCALE: &[f32] = &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 10.0, 12.0, 14.0, 16.0, 20.0];
+pub const SPACING_SCALE: &[f32] = &[
+    1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 10.0, 12.0, 14.0, 16.0, 20.0,
+];
 
 // ========== Hex Parsing ==========
 
@@ -226,7 +228,14 @@ pub fn parse_tokens_from_html(html: &str) -> DesignTokens {
         }
     }
 
-    DesignTokens { colors, typography, radii, transitions, shadows, raw }
+    DesignTokens {
+        colors,
+        typography,
+        radii,
+        transitions,
+        shadows,
+        raw,
+    }
 }
 
 /// Extract the content of the :root { ... } block from CSS/HTML
@@ -281,12 +290,16 @@ pub fn check_all_contrasts() -> Value {
     let html = include_str!("../assets/dashboard.html");
     let tokens = parse_tokens_from_html(html);
 
-    let bg_colors: Vec<(&str, &str)> = tokens.colors.iter()
+    let bg_colors: Vec<(&str, &str)> = tokens
+        .colors
+        .iter()
         .filter(|c| c.category == "background")
         .map(|c| (c.name.as_str(), c.value.as_str()))
         .collect();
 
-    let text_colors: Vec<(&str, &str)> = tokens.colors.iter()
+    let text_colors: Vec<(&str, &str)> = tokens
+        .colors
+        .iter()
         .filter(|c| c.category == "text" || c.category == "accent")
         .map(|c| (c.name.as_str(), c.value.as_str()))
         .collect();
@@ -305,7 +318,8 @@ pub fn check_all_contrasts() -> Value {
 
     // --dim is intentionally below AA contrast (decorative-only: timestamps, IDs)
     // Don't count it as a failure in scoring
-    let failures: Vec<&Value> = results.iter()
+    let failures: Vec<&Value> = results
+        .iter()
         .filter(|r| {
             r.get("grade").and_then(|g| g.as_str()) == Some("fail")
                 && r.get("fg_name").and_then(|n| n.as_str()) != Some("--dim")

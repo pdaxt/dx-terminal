@@ -10,11 +10,11 @@
 //! - Lossy session streaming (re-reads last N events each cycle instead of cursor-based)
 //! - Missing events from mutation paths (set_pane without broadcast)
 
+use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use serde_json::json;
 
 use crate::app::App;
 use crate::session_stream::SessionTailer;
@@ -55,9 +55,7 @@ async fn run_replicator(app: Arc<App>) {
         let max_panes = crate::config::pane_count();
 
         // --- Phase 1: Discover live panes (once, shared across all clients) ---
-        let live_panes = match tokio::task::spawn_blocking(|| {
-            tmux::discover_live_panes()
-        }).await {
+        let live_panes = match tokio::task::spawn_blocking(|| tmux::discover_live_panes()).await {
             Ok(panes) => panes,
             Err(_) => continue,
         };
@@ -160,15 +158,18 @@ async fn run_replicator(app: Arc<App>) {
         }
 
         // Update stable identity map
-        let new_targets: HashMap<u8, String> = targets.iter()
-            .map(|(p, t, _)| (*p, t.clone()))
-            .collect();
+        let new_targets: HashMap<u8, String> =
+            targets.iter().map(|(p, t, _)| (*p, t.clone())).collect();
 
         // Detect panes that disappeared since last cycle
         for (pane, old_target) in &pane_targets {
             if !new_targets.contains_key(pane) {
                 // Pane disappeared — but don't override reconciler's judgment
-                tracing::debug!("Replicator: pane {} (target {}) no longer discovered", pane, old_target);
+                tracing::debug!(
+                    "Replicator: pane {} (target {}) no longer discovered",
+                    pane,
+                    old_target
+                );
             }
         }
         pane_targets = new_targets;
@@ -178,15 +179,17 @@ async fn run_replicator(app: Arc<App>) {
         }
 
         // --- Phase 2: Capture terminal output diffs (once for all clients) ---
-        let capture_targets: Vec<(u8, String)> = targets.iter()
-            .map(|(p, t, _)| (*p, t.clone()))
-            .collect();
+        let capture_targets: Vec<(u8, String)> =
+            targets.iter().map(|(p, t, _)| (*p, t.clone())).collect();
 
         let captures: Vec<(u8, String, String)> = match tokio::task::spawn_blocking(move || {
-            capture_targets.iter().map(|(i, target)| {
-                (*i, target.clone(), tmux::capture_output(target))
-            }).collect::<Vec<_>>()
-        }).await {
+            capture_targets
+                .iter()
+                .map(|(i, target)| (*i, target.clone(), tmux::capture_output(target)))
+                .collect::<Vec<_>>()
+        })
+        .await
+        {
             Ok(c) => c,
             Err(_) => continue,
         };
@@ -218,7 +221,9 @@ async fn run_replicator(app: Arc<App>) {
         }
 
         // --- Phase 3: Cursor-based JSONL tailing (once for all clients) ---
-        let jsonl_polls: Vec<(u8, String)> = live_panes.iter().enumerate()
+        let jsonl_polls: Vec<(u8, String)> = live_panes
+            .iter()
+            .enumerate()
             .filter_map(|(idx, lp)| {
                 lp.jsonl_path.as_ref().map(|jp| {
                     let pane_num = if idx < max_panes as usize {
@@ -234,11 +239,17 @@ async fn run_replicator(app: Arc<App>) {
         if !jsonl_polls.is_empty() {
             // Use cursor-based tailing — no duplicate events, no missed events
             let tailer = &mut session_tailer;
-            let session_updates: Vec<(u8, Vec<crate::session_stream::SessionEvent>)> =
-                jsonl_polls.iter().filter_map(|(pane_num, jp)| {
+            let session_updates: Vec<(u8, Vec<crate::session_stream::SessionEvent>)> = jsonl_polls
+                .iter()
+                .filter_map(|(pane_num, jp)| {
                     let events = tailer.poll_new_events(jp, 20);
-                    if events.is_empty() { None } else { Some((*pane_num, events)) }
-                }).collect();
+                    if events.is_empty() {
+                        None
+                    } else {
+                        Some((*pane_num, events))
+                    }
+                })
+                .collect();
 
             for (pane_num, events) in session_updates {
                 app.state.event_bus.send(StateEvent::SessionEventChunk {
@@ -328,9 +339,16 @@ fn vision_project_name(project_path: &str) -> String {
 fn vision_change_summary(project_path: &str) -> String {
     let summary = crate::vision::vision_summary(project_path);
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(&summary) {
-        if let Some(change) = value.get("recent_changes").and_then(|v| v.as_array()).and_then(|changes| changes.first()) {
+        if let Some(change) = value
+            .get("recent_changes")
+            .and_then(|v| v.as_array())
+            .and_then(|changes| changes.first())
+        {
             let field = change.get("field").and_then(|v| v.as_str()).unwrap_or("");
-            let reason = change.get("reason").and_then(|v| v.as_str()).unwrap_or("Vision updated");
+            let reason = change
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Vision updated");
             return if field.is_empty() {
                 reason.to_string()
             } else {
@@ -342,28 +360,63 @@ fn vision_change_summary(project_path: &str) -> String {
     "Vision updated".to_string()
 }
 
-fn vision_feature_snapshots(project_path: &str) -> Option<(String, HashMap<String, FeatureSnapshot>)> {
+fn vision_feature_snapshots(
+    project_path: &str,
+) -> Option<(String, HashMap<String, FeatureSnapshot>)> {
     let tree = crate::vision::vision_tree(project_path);
     let value: serde_json::Value = serde_json::from_str(&tree).ok()?;
     if value.get("error").is_some() {
         return None;
     }
 
-    let project = value.get("project").and_then(|v| v.as_str()).unwrap_or("--").to_string();
+    let project = value
+        .get("project")
+        .and_then(|v| v.as_str())
+        .unwrap_or("--")
+        .to_string();
     let mut features = HashMap::new();
 
-    for goal in value.get("goals").and_then(|v| v.as_array()).into_iter().flatten() {
-        for feature in goal.get("features").and_then(|v| v.as_array()).into_iter().flatten() {
+    for goal in value
+        .get("goals")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+    {
+        for feature in goal
+            .get("features")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+        {
             let feature_id = match feature.get("id").and_then(|v| v.as_str()) {
                 Some(id) => id.to_string(),
                 None => continue,
             };
-            features.insert(feature_id, FeatureSnapshot {
-                title: feature.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                phase: feature.get("phase").or_else(|| feature.get("status")).and_then(|v| v.as_str()).unwrap_or("planned").to_string(),
-                state: feature.get("state").and_then(|v| v.as_str()).unwrap_or("planned").to_string(),
-                readiness: feature.get("readiness").cloned().unwrap_or_else(|| json!({})),
-            });
+            features.insert(
+                feature_id,
+                FeatureSnapshot {
+                    title: feature
+                        .get("title")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    phase: feature
+                        .get("phase")
+                        .or_else(|| feature.get("status"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("planned")
+                        .to_string(),
+                    state: feature
+                        .get("state")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("planned")
+                        .to_string(),
+                    readiness: feature
+                        .get("readiness")
+                        .cloned()
+                        .unwrap_or_else(|| json!({})),
+                },
+            );
         }
     }
 
@@ -401,7 +454,12 @@ fn diff_vision_features(
                 Some(snapshot.state.clone()),
                 Some(snapshot.readiness.clone()),
             ),
-            None => (prev.map(|snapshot| snapshot.title.clone()), None, None, None),
+            None => (
+                prev.map(|snapshot| snapshot.title.clone()),
+                None,
+                None,
+                None,
+            ),
         };
 
         events.push(StateEvent::VisionChanged {
@@ -454,7 +512,10 @@ mod tests {
         std::fs::write(project.join(".vision/vision.json"), r#"{"project":"demo"}"#).unwrap();
 
         let resolved = resolve_vision_project_path(&project.join("src/nested").to_string_lossy());
-        assert_eq!(resolved.as_deref(), Some(project.to_string_lossy().as_ref()));
+        assert_eq!(
+            resolved.as_deref(),
+            Some(project.to_string_lossy().as_ref())
+        );
     }
 
     #[test]
@@ -527,12 +588,25 @@ mod tests {
         let events = diff_vision_features("demo", Some(&previous), &current);
         assert_eq!(events.len(), 1);
         match &events[0] {
-            StateEvent::VisionChanged { project, summary, feature_id, phase, readiness, .. } => {
+            StateEvent::VisionChanged {
+                project,
+                summary,
+                feature_id,
+                phase,
+                readiness,
+                ..
+            } => {
                 assert_eq!(project, "demo");
                 assert_eq!(feature_id.as_deref(), Some("F1.1"));
                 assert_eq!(phase.as_deref(), Some("build"));
                 assert_eq!(summary, "F1.1 phase discovery -> build");
-                assert_eq!(readiness.as_ref().and_then(|r| r.get("ready_for_build")).and_then(|v| v.as_bool()), Some(true));
+                assert_eq!(
+                    readiness
+                        .as_ref()
+                        .and_then(|r| r.get("ready_for_build"))
+                        .and_then(|v| v.as_bool()),
+                    Some(true)
+                );
             }
             other => panic!("unexpected event: {:?}", other),
         }

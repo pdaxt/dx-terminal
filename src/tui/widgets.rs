@@ -54,28 +54,26 @@ pub fn pane_line<'a>(
     let mut spans = vec![
         Span::styled(
             format!(" {} ", pane_num),
-            Style::default().fg(Color::Black).bg(tc).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Black)
+                .bg(tc)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" "),
-        Span::styled(
-            format!("{:<7}", theme_name),
-            Style::default().fg(tc),
-        ),
+        Span::styled(format!("{:<7}", theme_name), Style::default().fg(tc)),
         Span::styled(
             format!("{:<12}", truncate(project, 12)),
             Style::default().fg(Color::White),
         ),
-        Span::styled(
-            format!("{:<5}", role),
-            Style::default().fg(Color::Cyan),
-        ),
-        Span::styled(
-            format!("{:<7}", status),
-            Style::default().fg(sc),
-        ),
+        Span::styled(format!("{:<5}", role), Style::default().fg(Color::Cyan)),
+        Span::styled(format!("{:<7}", status), Style::default().fg(sc)),
         Span::styled(
             pty_indicator.to_string(),
-            Style::default().fg(if pty_running { Color::Green } else { Color::DarkGray }),
+            Style::default().fg(if pty_running {
+                Color::Green
+            } else {
+                Color::DarkGray
+            }),
         ),
         health_badge(health),
         if !runtime.is_empty() {
@@ -86,10 +84,7 @@ pub fn pane_line<'a>(
         } else {
             Span::styled("       ", Style::default())
         },
-        Span::styled(
-            task_display,
-            Style::default().fg(Color::DarkGray),
-        ),
+        Span::styled(task_display, Style::default().fg(Color::DarkGray)),
     ];
 
     if selected {
@@ -104,20 +99,46 @@ pub fn pane_line<'a>(
 /// Health badge for a pane
 pub fn health_badge(badge: &str) -> Span<'static> {
     match badge {
-        "error" => Span::styled(" ERR", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        "error" => Span::styled(
+            " ERR",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
         "done" => Span::styled("  OK", Style::default().fg(Color::Blue)),
-        "stuck" => Span::styled(" STK", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        "stuck" => Span::styled(
+            " STK",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
         _ => Span::styled("    ", Style::default()),
     }
 }
 
 /// Gauge bar using Unicode block characters
 pub fn gauge_bar(value: f64, max: f64, width: usize) -> (String, Color) {
-    let pct = if max > 0.0 { (value / max * 100.0) as u32 } else { 0 };
-    let filled = if max > 0.0 { (value / max * width as f64) as usize } else { 0 }.min(width);
+    let pct = if max > 0.0 {
+        (value / max * 100.0) as u32
+    } else {
+        0
+    };
+    let filled = if max > 0.0 {
+        (value / max * width as f64) as usize
+    } else {
+        0
+    }
+    .min(width);
     let empty = width.saturating_sub(filled);
-    let color = if pct > 80 { Color::Red } else if pct > 50 { Color::Yellow } else { Color::Green };
-    (format!("{}{}", "█".repeat(filled), "░".repeat(empty)), color)
+    let color = if pct > 80 {
+        Color::Red
+    } else if pct > 50 {
+        Color::Yellow
+    } else {
+        Color::Green
+    };
+    (
+        format!("{}{}", "█".repeat(filled), "░".repeat(empty)),
+        color,
+    )
 }
 
 /// Compact inline bar as a styled Span (for dashboard gauges)

@@ -11,31 +11,28 @@
 //! - On connect: full snapshot + current seq number
 //! - On lag: client detects seq gap and requests resync
 
-use std::sync::Arc;
-use std::collections::HashMap;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
 use axum::response::IntoResponse;
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::broadcast;
 
 use crate::app::App;
-use crate::state::events::{StateEvent, next_seq};
+use crate::mcp::{tools, types};
+use crate::session_stream;
+use crate::state::events::{next_seq, StateEvent};
 use crate::sync::SyncEvent;
 use crate::tmux;
-use crate::session_stream;
-use crate::mcp::{tools, types};
 
 type AppState = Arc<App>;
 type WsSender = Arc<tokio::sync::Mutex<SplitSink<WebSocket, Message>>>;
 
 /// GET /ws — Upgrade to WebSocket
-pub async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(app): State<AppState>,
-) -> impl IntoResponse {
+pub async fn ws_handler(ws: WebSocketUpgrade, State(app): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, app))
 }
 
@@ -53,7 +50,11 @@ async fn handle_socket(socket: WebSocket, app: Arc<App>) {
         "seq": current_seq,
         "data": snapshot,
     });
-    if sender.send(Message::Text(init_msg.to_string().into())).await.is_err() {
+    if sender
+        .send(Message::Text(init_msg.to_string().into()))
+        .await
+        .is_err()
+    {
         return;
     }
 
@@ -103,7 +104,10 @@ async fn handle_socket(socket: WebSocket, app: Arc<App>) {
                         "result": result,
                     });
                     let mut s = cmd_sender.lock().await;
-                    if s.send(Message::Text(response.to_string().into())).await.is_err() {
+                    if s.send(Message::Text(response.to_string().into()))
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -125,9 +129,9 @@ async fn build_full_snapshot(app: &App) -> Value {
     let max_panes = crate::config::pane_count();
 
     // Auto-discover all live Claude panes across all tmux sessions
-    let live_panes = tokio::task::spawn_blocking(|| {
-        tmux::discover_live_panes()
-    }).await.unwrap_or_default();
+    let live_panes = tokio::task::spawn_blocking(|| tmux::discover_live_panes())
+        .await
+        .unwrap_or_default();
 
     let mut panes = Vec::new();
 
@@ -163,31 +167,46 @@ async fn build_full_snapshot(app: &App) -> Value {
         // Capture output
         let output = if let Some(ref target) = tmux_target {
             let t = target.clone();
-            tokio::task::spawn_blocking(move || {
-                tmux::capture_output_extended(&t, 80)
-            }).await.unwrap_or_default()
+            tokio::task::spawn_blocking(move || tmux::capture_output_extended(&t, 80))
+                .await
+                .unwrap_or_default()
         } else {
             String::new()
         };
 
         let line_vec: Vec<&str> = output.lines().collect();
-        let tail: String = line_vec.iter().rev().take(50).rev()
-            .copied().collect::<Vec<&str>>().join("\n");
+        let tail: String = line_vec
+            .iter()
+            .rev()
+            .take(50)
+            .rev()
+            .copied()
+            .collect::<Vec<&str>>()
+            .join("\n");
 
         let theme_idx = i % themes.len();
         let status = if tmux_target.is_some() && !output.trim().is_empty() {
-            if let Some(ref p) = ps { p.status.as_str() } else { "active" }
+            if let Some(ref p) = ps {
+                p.status.as_str()
+            } else {
+                "active"
+            }
         } else {
-            if let Some(ref p) = ps { p.status.as_str() } else { "idle" }
+            if let Some(ref p) = ps {
+                p.status.as_str()
+            } else {
+                "idle"
+            }
         };
 
         // Project: prefer JSONL cwd (most accurate), then tmux cwd, then state
         let project = if let Some(lp) = live {
             if let Some(ref jp) = lp.jsonl_path {
                 let jp_clone = jp.clone();
-                let jsonl_cwd = tokio::task::spawn_blocking(move || {
-                    crate::tmux::read_jsonl_cwd(&jp_clone)
-                }).await.unwrap_or(None);
+                let jsonl_cwd =
+                    tokio::task::spawn_blocking(move || crate::tmux::read_jsonl_cwd(&jp_clone))
+                        .await
+                        .unwrap_or(None);
                 if let Some(jcwd) = jsonl_cwd {
                     project_from_cwd(&jcwd)
                 } else {
@@ -204,7 +223,11 @@ async fn build_full_snapshot(app: &App) -> Value {
 
         let task = if let Some(ref p) = ps {
             let t = &p.task;
-            if t.len() > 80 { t[..80].to_string() } else { t.clone() }
+            if t.len() > 80 {
+                t[..80].to_string()
+            } else {
+                t.clone()
+            }
         } else if let Some(lp) = live {
             format!("Claude in {}", lp.target)
         } else {
@@ -227,9 +250,9 @@ async fn build_full_snapshot(app: &App) -> Value {
         // Get last 20 structured events from JSONL
         let session_events = if let Some(ref jp) = jsonl_path {
             let jp_clone = jp.clone();
-            tokio::task::spawn_blocking(move || {
-                session_stream::tail_session_events(&jp_clone, 20)
-            }).await.unwrap_or_default()
+            tokio::task::spawn_blocking(move || session_stream::tail_session_events(&jp_clone, 20))
+                .await
+                .unwrap_or_default()
         } else {
             vec![]
         };
@@ -274,12 +297,14 @@ async fn build_full_snapshot(app: &App) -> Value {
     let active_count = panes.iter().filter(|p| p["status"] == "active").count();
 
     // Collect unique workspaces from all panes
-    let mut workspaces: Vec<String> = panes.iter()
+    let mut workspaces: Vec<String> = panes
+        .iter()
         .filter_map(|p| p["project"].as_str())
         .filter(|s| *s != "--")
         .map(|s| s.to_string())
         .collect::<std::collections::BTreeSet<_>>()
-        .into_iter().collect();
+        .into_iter()
+        .collect();
     workspaces.sort();
 
     json!({
@@ -317,11 +342,7 @@ fn project_from_cwd(cwd: &str) -> String {
 /// Forward state events from EventBus → WebSocket with sequence numbers.
 /// Includes all event types (OutputChunk, SessionEventChunk, PaneUpsert, etc.)
 /// since the RuntimeReplicator now publishes through the EventBus.
-async fn forward_events(
-    mut rx: broadcast::Receiver<StateEvent>,
-    sender: WsSender,
-    _app: Arc<App>,
-) {
+async fn forward_events(mut rx: broadcast::Receiver<StateEvent>, sender: WsSender, _app: Arc<App>) {
     loop {
         match rx.recv().await {
             Ok(event) => {
@@ -337,7 +358,11 @@ async fn forward_events(
                         "seq": seq,
                         "pane": pane, "reason": reason,
                     }),
-                    StateEvent::PaneSpawned { pane, project, role } => json!({
+                    StateEvent::PaneSpawned {
+                        pane,
+                        project,
+                        role,
+                    } => json!({
                         "type": "pane_spawned",
                         "seq": seq,
                         "pane": pane, "project": project, "role": role,
@@ -352,7 +377,12 @@ async fn forward_events(
                         "seq": seq,
                         "pane": pane, "status": status,
                     }),
-                    StateEvent::OutputChunk { pane, output, full_lines, tmux_target } => json!({
+                    StateEvent::OutputChunk {
+                        pane,
+                        output,
+                        full_lines,
+                        tmux_target,
+                    } => json!({
                         "type": "terminal_output",
                         "seq": seq,
                         "updates": [{ "pane": pane, "output": output, "full_lines": full_lines, "tmux_target": tmux_target }],
@@ -362,7 +392,11 @@ async fn forward_events(
                         "seq": seq,
                         "updates": [{ "pane": pane, "events": events }],
                     }),
-                    StateEvent::LogAppended { pane, event, summary } => json!({
+                    StateEvent::LogAppended {
+                        pane,
+                        event,
+                        summary,
+                    } => json!({
                         "type": "log",
                         "seq": seq,
                         "pane": pane, "event": event, "summary": summary,
@@ -377,12 +411,24 @@ async fn forward_events(
                         "seq": seq,
                         "task_id": task_id,
                     }),
-                    StateEvent::QueueChanged { action, task_id, task } => json!({
+                    StateEvent::QueueChanged {
+                        action,
+                        task_id,
+                        task,
+                    } => json!({
                         "type": "queue",
                         "seq": seq,
                         "action": action, "task_id": task_id, "task": task,
                     }),
-                    StateEvent::VisionChanged { project, summary, feature_id, feature_title, phase, state, readiness } => json!({
+                    StateEvent::VisionChanged {
+                        project,
+                        summary,
+                        feature_id,
+                        feature_title,
+                        phase,
+                        state,
+                        readiness,
+                    } => json!({
                         "type": "vision_changed",
                         "seq": seq,
                         "project": project,
@@ -437,7 +483,9 @@ async fn forward_sync_events(app: Arc<App>, sender: WsSender) {
         Some(rx) => rx,
         None => {
             // No sync manager — just sleep forever
-            loop { tokio::time::sleep(std::time::Duration::from_secs(3600)).await; }
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+            }
         }
     };
 
@@ -468,21 +516,51 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
 
     match cmd_type {
         "spawn" => {
-            let pane = cmd.get("pane").and_then(|p| p.as_str()).unwrap_or("").to_string();
-            let project = cmd.get("project").and_then(|p| p.as_str()).unwrap_or("").to_string();
-            let role = cmd.get("role").and_then(|r| r.as_str()).map(|s| s.to_string());
-            let task = cmd.get("task").and_then(|t| t.as_str()).map(|s| s.to_string());
+            let pane = cmd
+                .get("pane")
+                .and_then(|p| p.as_str())
+                .unwrap_or("")
+                .to_string();
+            let project = cmd
+                .get("project")
+                .and_then(|p| p.as_str())
+                .unwrap_or("")
+                .to_string();
+            let role = cmd
+                .get("role")
+                .and_then(|r| r.as_str())
+                .map(|s| s.to_string());
+            let task = cmd
+                .get("task")
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string());
             if pane.is_empty() || project.is_empty() {
                 return json!({"error": "pane and project required"});
             }
-            let result = tools::spawn(app, types::SpawnRequest {
-                pane, project, role, task, prompt: None, autonomous: None,
-            }).await;
+            let result = tools::spawn(
+                app,
+                types::SpawnRequest {
+                    pane,
+                    project,
+                    role,
+                    task,
+                    prompt: None,
+                    autonomous: None,
+                },
+            )
+            .await;
             serde_json::from_str(&result).unwrap_or(json!({"raw": result}))
         }
         "kill" => {
-            let pane = cmd.get("pane").and_then(|p| p.as_str()).unwrap_or("").to_string();
-            let reason = cmd.get("reason").and_then(|r| r.as_str()).map(|s| s.to_string());
+            let pane = cmd
+                .get("pane")
+                .and_then(|p| p.as_str())
+                .unwrap_or("")
+                .to_string();
+            let reason = cmd
+                .get("reason")
+                .and_then(|r| r.as_str())
+                .map(|s| s.to_string());
             if pane.is_empty() {
                 return json!({"error": "pane required"});
             }
@@ -491,7 +569,11 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
         }
         "talk" => {
             let pane = cmd.get("pane").and_then(|p| p.as_u64()).unwrap_or(0) as u8;
-            let message = cmd.get("message").and_then(|m| m.as_str()).unwrap_or("").to_string();
+            let message = cmd
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("")
+                .to_string();
             if pane == 0 || message.is_empty() {
                 return json!({"error": "pane (number) and message required"});
             }
@@ -500,36 +582,68 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
                 Some(t) => t,
                 None => return json!({"error": format!("pane {} has no tmux target", pane)}),
             };
-            match tokio::task::spawn_blocking(move || {
-                tmux::send_command(&target, &message)
-            }).await {
+            match tokio::task::spawn_blocking(move || tmux::send_command(&target, &message)).await {
                 Ok(Ok(())) => json!({"status": "sent", "pane": pane}),
                 Ok(Err(e)) => json!({"error": format!("{}", e)}),
                 Err(e) => json!({"error": format!("task join error: {}", e)}),
             }
         }
         "queue_add" => {
-            let project = cmd.get("project").and_then(|p| p.as_str()).unwrap_or("").to_string();
-            let task = cmd.get("task").and_then(|t| t.as_str()).unwrap_or("").to_string();
-            let role = cmd.get("role").and_then(|r| r.as_str()).map(|s| s.to_string());
-            let priority = cmd.get("priority").and_then(|p| p.as_u64()).map(|p| p as u8);
+            let project = cmd
+                .get("project")
+                .and_then(|p| p.as_str())
+                .unwrap_or("")
+                .to_string();
+            let task = cmd
+                .get("task")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string();
+            let role = cmd
+                .get("role")
+                .and_then(|r| r.as_str())
+                .map(|s| s.to_string());
+            let priority = cmd
+                .get("priority")
+                .and_then(|p| p.as_u64())
+                .map(|p| p as u8);
             if project.is_empty() || task.is_empty() {
                 return json!({"error": "project and task required"});
             }
-            let result = tools::queue_add(app, types::QueueAddRequest {
-                project, task, role, priority, prompt: None, depends_on: None, max_retries: None,
-            }).await;
+            let result = tools::queue_add(
+                app,
+                types::QueueAddRequest {
+                    project,
+                    task,
+                    role,
+                    priority,
+                    prompt: None,
+                    depends_on: None,
+                    max_retries: None,
+                },
+            )
+            .await;
             serde_json::from_str(&result).unwrap_or(json!({"raw": result}))
         }
         "screen_add" => {
-            let name = cmd.get("name").and_then(|n| n.as_str()).map(|s| s.to_string());
-            let layout = cmd.get("layout").and_then(|l| l.as_str()).map(|s| s.to_string());
+            let name = cmd
+                .get("name")
+                .and_then(|n| n.as_str())
+                .map(|s| s.to_string());
+            let layout = cmd
+                .get("layout")
+                .and_then(|l| l.as_str())
+                .map(|s| s.to_string());
             let panes = cmd.get("panes").and_then(|p| p.as_u64()).map(|p| p as u8);
             let result = tools::screen_tools::add_screen(app, name, layout, panes);
             serde_json::from_str(&result).unwrap_or(json!({"raw": result}))
         }
         "screen_rm" => {
-            let screen_ref = cmd.get("screen").and_then(|s| s.as_str()).unwrap_or("").to_string();
+            let screen_ref = cmd
+                .get("screen")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string();
             let force = cmd.get("force").and_then(|f| f.as_bool()).unwrap_or(false);
             if screen_ref.is_empty() {
                 return json!({"error": "screen name/id required"});
@@ -545,11 +659,13 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
             let target = resolve_pane_target(app, pane).await;
             let target = match target {
                 Some(t) => t,
-                None => return json!({"pane": pane, "output": "", "lines": 0, "error": "no tmux target"}),
+                None => {
+                    return json!({"pane": pane, "output": "", "lines": 0, "error": "no tmux target"})
+                }
             };
-            let output = tokio::task::spawn_blocking(move || {
-                tmux::capture_output(&target)
-            }).await.unwrap_or_default();
+            let output = tokio::task::spawn_blocking(move || tmux::capture_output(&target))
+                .await
+                .unwrap_or_default();
             json!({"pane": pane, "output": output, "lines": output.lines().count()})
         }
         _ => json!({"error": format!("unknown command: {}", cmd_type)}),
@@ -569,7 +685,8 @@ async fn resolve_pane_target(app: &App, pane: u8) -> Option<String> {
 
     // 2) Fall back to live discovery (pane number maps to index)
     let live = tokio::task::spawn_blocking(|| tmux::discover_live_panes())
-        .await.unwrap_or_default();
+        .await
+        .unwrap_or_default();
 
     let idx = (pane as usize).wrapping_sub(1);
     if idx < live.len() {

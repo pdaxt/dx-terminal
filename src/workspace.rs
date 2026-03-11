@@ -1,6 +1,6 @@
+use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use anyhow::{Context, Result};
 
 use crate::config;
 
@@ -42,7 +42,13 @@ fn task_slug(task: &str) -> String {
     let slug: String = task
         .to_lowercase()
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     // Collapse multiple dashes, strip leading/trailing
     let mut result = String::new();
@@ -59,7 +65,12 @@ fn task_slug(task: &str) -> String {
         }
     }
     let trimmed = result.trim_end_matches('-');
-    trimmed.chars().take(40).collect::<String>().trim_end_matches('-').to_string()
+    trimmed
+        .chars()
+        .take(40)
+        .collect::<String>()
+        .trim_end_matches('-')
+        .to_string()
 }
 
 /// Workspace root directory
@@ -75,7 +86,11 @@ pub fn create_worktree(project_path: &str, pane_num: u8, task: &str) -> Result<W
         .unwrap_or_else(|| "project".into());
 
     let slug = task_slug(task);
-    let branch_name = format!("pane-{}/{}", pane_num, if slug.is_empty() { "work" } else { &slug });
+    let branch_name = format!(
+        "pane-{}/{}",
+        pane_num,
+        if slug.is_empty() { "work" } else { &slug }
+    );
 
     let worktree_dir = workspaces_root()
         .join(format!("pane-{}", pane_num))
@@ -174,7 +189,11 @@ pub fn commit_all(worktree_path: &str, message: &str) -> Result<String> {
         return Ok("nothing to commit".into());
     }
 
-    let msg = if message.is_empty() { "DX Terminal: work in progress" } else { message };
+    let msg = if message.is_empty() {
+        "DX Terminal: work in progress"
+    } else {
+        message
+    };
     let output = Command::new("git")
         .args(["commit", "-m", msg])
         .current_dir(worktree_path)
@@ -214,9 +233,7 @@ pub fn create_pr(worktree_path: &str, title: &str, body: &str) -> Result<String>
         .output();
 
     match output {
-        Ok(o) if o.status.success() => {
-            Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
-        }
+        Ok(o) if o.status.success() => Ok(String::from_utf8_lossy(&o.stdout).trim().to_string()),
         Ok(o) => {
             let stderr = String::from_utf8_lossy(&o.stderr);
             Ok(format!("PR creation failed (non-fatal): {}", stderr.trim()))
@@ -335,7 +352,13 @@ pub fn merge_branch(project_path: &str, branch: &str, base_branch: &str) -> Resu
 
     // Merge the feature branch (--no-ff to preserve history)
     let merge = Command::new("git")
-        .args(["merge", "--no-ff", branch, "-m", &format!("Merge branch '{}'", branch)])
+        .args([
+            "merge",
+            "--no-ff",
+            branch,
+            "-m",
+            &format!("Merge branch '{}'", branch),
+        ])
         .current_dir(project_path)
         .output()
         .context("Failed to merge branch")?;
@@ -351,7 +374,11 @@ pub fn merge_branch(project_path: &str, branch: &str, base_branch: &str) -> Resu
             .current_dir(project_path)
             .output();
         let stderr = String::from_utf8_lossy(&merge.stderr);
-        anyhow::bail!("merge failed (aborted, restored to {}): {}", original_branch, stderr.trim());
+        anyhow::bail!(
+            "merge failed (aborted, restored to {}): {}",
+            original_branch,
+            stderr.trim()
+        );
     }
 
     // Push merged base
@@ -364,7 +391,10 @@ pub fn merge_branch(project_path: &str, branch: &str, base_branch: &str) -> Resu
     let push_status = if push.status.success() {
         "pushed".to_string()
     } else {
-        format!("push failed: {}", String::from_utf8_lossy(&push.stderr).trim())
+        format!(
+            "push failed: {}",
+            String::from_utf8_lossy(&push.stderr).trim()
+        )
     };
 
     // Delete the merged branch locally and remotely
@@ -377,7 +407,10 @@ pub fn merge_branch(project_path: &str, branch: &str, base_branch: &str) -> Resu
         .current_dir(project_path)
         .output();
 
-    Ok(format!("merged {} into {}, {}", branch, base_branch, push_status))
+    Ok(format!(
+        "merged {} into {}, {}",
+        branch, base_branch, push_status
+    ))
 }
 
 /// Clean up stale worktrees from crashed sessions
@@ -397,7 +430,11 @@ pub fn cleanup_stale_worktrees() -> Result<Vec<String>> {
             continue;
         }
 
-        let dir_name = pane_dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let dir_name = pane_dir
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         if !dir_name.starts_with("pane-") {
             continue;
         }
@@ -418,7 +455,8 @@ pub fn cleanup_stale_worktrees() -> Result<Vec<String>> {
                                 if let Some(repo_root) = Path::new(main_git)
                                     .parent() // worktrees/xxx
                                     .and_then(|p| p.parent()) // worktrees
-                                    .and_then(|p| p.parent()) // .git
+                                    .and_then(|p| p.parent())
+                                // .git
                                 {
                                     let _ = Command::new("git")
                                         .args(["worktree", "remove", "--force"])
@@ -439,7 +477,11 @@ pub fn cleanup_stale_worktrees() -> Result<Vec<String>> {
         }
 
         // Remove empty pane directory
-        if pane_dir.read_dir().map(|mut d| d.next().is_none()).unwrap_or(true) {
+        if pane_dir
+            .read_dir()
+            .map(|mut d| d.next().is_none())
+            .unwrap_or(true)
+        {
             let _ = std::fs::remove_dir(&pane_dir);
         }
     }
@@ -467,7 +509,11 @@ pub fn files_changed(worktree_path: &str, base: &str) -> Vec<String> {
 
 /// Get commits since a timestamp (returns vec of (hash, message))
 pub fn commits_since(worktree_path: &str, since: &str) -> Vec<(String, String)> {
-    let since_arg = if since.is_empty() { "1 hour ago".to_string() } else { since.to_string() };
+    let since_arg = if since.is_empty() {
+        "1 hour ago".to_string()
+    } else {
+        since.to_string()
+    };
     Command::new("git")
         .args(["log", &format!("--since={}", since_arg), "--format=%H|%s"])
         .current_dir(worktree_path)

@@ -5,7 +5,12 @@ use serde_json::Value;
 use crate::app::App;
 use crate::state::events::StateEvent;
 
-pub fn emit_from_result(app: &App, project_path: &str, result: &str, fallback_feature_id: Option<&str>) {
+pub fn emit_from_result(
+    app: &App,
+    project_path: &str,
+    result: &str,
+    fallback_feature_id: Option<&str>,
+) {
     let Ok(value) = serde_json::from_str::<Value>(result) else {
         return;
     };
@@ -29,9 +34,18 @@ pub fn emit_from_result(app: &App, project_path: &str, result: &str, fallback_fe
                     project,
                     summary,
                     feature_id: Some(feature_id.to_string()),
-                    feature_title: readiness_value.get("title").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    phase: readiness_value.get("phase").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    state: readiness_value.get("state").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    feature_title: readiness_value
+                        .get("title")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    phase: readiness_value
+                        .get("phase")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    state: readiness_value
+                        .get("state")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                     readiness: readiness_value.get("readiness").cloned(),
                 });
                 return;
@@ -44,8 +58,14 @@ pub fn emit_from_result(app: &App, project_path: &str, result: &str, fallback_fe
         summary,
         feature_id: feature_id.map(|s| s.to_string()),
         feature_title: None,
-        phase: value.get("phase").and_then(|v| v.as_str()).map(|s| s.to_string()),
-        state: value.get("state").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        phase: value
+            .get("phase")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        state: value
+            .get("state")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
         readiness: None,
     });
 }
@@ -100,7 +120,10 @@ fn change_summary(project_path: &str, result: &Value, feature_id: Option<&str>) 
             .and_then(|changes| changes.first())
         {
             let field = change.get("field").and_then(|v| v.as_str()).unwrap_or("");
-            let reason = change.get("reason").and_then(|v| v.as_str()).unwrap_or("Vision updated");
+            let reason = change
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Vision updated");
             return if field.is_empty() {
                 reason.to_string()
             } else {

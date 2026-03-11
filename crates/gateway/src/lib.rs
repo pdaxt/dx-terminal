@@ -62,8 +62,11 @@ impl MCPRegistry {
                 match std::fs::read_to_string(&path) {
                     Ok(content) => match toml::from_str::<MCPDescriptor>(&content) {
                         Ok(desc) => {
-                            tracing::info!("Loaded MCP descriptor: {} ({} capabilities)",
-                                desc.name, desc.capabilities.len());
+                            tracing::info!(
+                                "Loaded MCP descriptor: {} ({} capabilities)",
+                                desc.name,
+                                desc.capabilities.len()
+                            );
                             self.descriptors.insert(desc.name.clone(), desc);
                         }
                         Err(e) => {
@@ -89,7 +92,9 @@ impl MCPRegistry {
         self.descriptors
             .values()
             .filter(|d| {
-                d.capabilities.iter().any(|c| c.to_lowercase().contains(&cap_lower))
+                d.capabilities
+                    .iter()
+                    .any(|c| c.to_lowercase().contains(&cap_lower))
                     || d.name.to_lowercase().contains(&cap_lower)
                     || d.description.to_lowercase().contains(&cap_lower)
             })
@@ -108,7 +113,11 @@ impl MCPRegistry {
             .ok_or_else(|| anyhow::anyhow!("No MCP descriptor found for '{}'", name))?
             .clone();
 
-        tracing::info!("Spawning micro MCP: {} (command: {:?})", name, descriptor.command);
+        tracing::info!(
+            "Spawning micro MCP: {} (command: {:?})",
+            name,
+            descriptor.command
+        );
 
         if descriptor.command.is_empty() {
             return Err(anyhow::anyhow!("MCP '{}' has empty command", name));
@@ -124,25 +133,42 @@ impl MCPRegistry {
 
         let transport = TokioChildProcess::new(cmd)?;
         let pid = transport.id();
-        let service: RunningService<RoleClient, ()> = ().serve(transport).await
+        let service: RunningService<RoleClient, ()> = ()
+            .serve(transport)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to connect to MCP '{}': {}", name, e))?;
 
         // List available tools
-        let tools_result = service.peer().list_tools(None).await
+        let tools_result = service
+            .peer()
+            .list_tools(None)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to list tools from '{}': {}", name, e))?;
 
         let tool_count = tools_result.tools.len();
-        let tool_names: Vec<String> = tools_result.tools.iter().map(|t| t.name.to_string()).collect();
-        tracing::info!("MCP '{}' connected: {} tools ({:?})", name, tool_count, tool_names);
+        let tool_names: Vec<String> = tools_result
+            .tools
+            .iter()
+            .map(|t| t.name.to_string())
+            .collect();
+        tracing::info!(
+            "MCP '{}' connected: {} tools ({:?})",
+            name,
+            tool_count,
+            tool_names
+        );
 
         let now = Instant::now();
-        self.running.insert(name.to_string(), RunningMCP {
-            service,
-            tools: tools_result.tools,
-            started_at: now,
-            last_used: Mutex::new(now),
-            _pid: pid,
-        });
+        self.running.insert(
+            name.to_string(),
+            RunningMCP {
+                service,
+                tools: tools_result.tools,
+                started_at: now,
+                last_used: Mutex::new(now),
+                _pid: pid,
+            },
+        );
 
         Ok(())
     }
@@ -248,8 +274,11 @@ impl MCPRegistry {
         for (name, mcp) in &self.running {
             let last_used = *mcp.last_used.lock().await;
             if now.duration_since(last_used) > max_idle {
-                tracing::info!("GC: shutting down idle MCP '{}' (idle {}s)",
-                    name, now.duration_since(last_used).as_secs());
+                tracing::info!(
+                    "GC: shutting down idle MCP '{}' (idle {}s)",
+                    name,
+                    now.duration_since(last_used).as_secs()
+                );
                 to_remove.push(name.clone());
             }
         }
@@ -451,14 +480,18 @@ mod tests {
     fn test_multiple_descriptors() {
         let dir = tempfile::tempdir().unwrap();
         for i in 0..5 {
-            save_descriptor(dir.path(), &MCPDescriptor {
-                name: format!("mcp_{}", i),
-                command: vec!["cmd".to_string()],
-                capabilities: vec!["shared".to_string(), format!("unique_{}", i)],
-                auto_start: false,
-                env: HashMap::new(),
-                description: String::new(),
-            }).unwrap();
+            save_descriptor(
+                dir.path(),
+                &MCPDescriptor {
+                    name: format!("mcp_{}", i),
+                    command: vec!["cmd".to_string()],
+                    capabilities: vec!["shared".to_string(), format!("unique_{}", i)],
+                    auto_start: false,
+                    env: HashMap::new(),
+                    description: String::new(),
+                },
+            )
+            .unwrap();
         }
 
         let registry = MCPRegistry::new(dir.path().to_path_buf());

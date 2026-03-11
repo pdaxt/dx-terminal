@@ -1,7 +1,7 @@
-use std::path::PathBuf;
 use chrono::Local;
 use regex::Regex;
 use serde_json::{json, Value};
+use std::path::PathBuf;
 
 use crate::config;
 
@@ -66,11 +66,14 @@ fn save_meta(space: &str, name: &str, meta: &Value) {
 
 fn is_locked(meta: &mut Value, agent_id: &str) -> bool {
     let locked_by = meta["locked_by"].as_str().unwrap_or("").to_string();
-    if locked_by.is_empty() { return false; }
+    if locked_by.is_empty() {
+        return false;
+    }
 
     // Check expiry
     if let Some(locked_at) = meta["locked_at"].as_str() {
-        if let Ok(lock_time) = chrono::NaiveDateTime::parse_from_str(locked_at, "%Y-%m-%dT%H:%M:%S") {
+        if let Ok(lock_time) = chrono::NaiveDateTime::parse_from_str(locked_at, "%Y-%m-%dT%H:%M:%S")
+        {
             let now = Local::now().naive_local();
             if now.signed_duration_since(lock_time).num_minutes() > LOCK_TIMEOUT_MINUTES {
                 meta["locked_by"] = json!(null);
@@ -81,7 +84,9 @@ fn is_locked(meta: &mut Value, agent_id: &str) -> bool {
     }
 
     // Same agent holds lock → not locked for them
-    if !agent_id.is_empty() && locked_by == agent_id { return false; }
+    if !agent_id.is_empty() && locked_by == agent_id {
+        return false;
+    }
     true
 }
 
@@ -109,8 +114,13 @@ pub fn space_list() -> Value {
         for entry in entries.flatten() {
             if entry.path().is_dir() && !entry.file_name().to_string_lossy().starts_with('.') {
                 let name = entry.file_name().to_string_lossy().to_string();
-                let doc_count = std::fs::read_dir(entry.path()).ok()
-                    .map(|e| e.flatten().filter(|f| f.path().extension().map_or(false, |x| x == "md")).count())
+                let doc_count = std::fs::read_dir(entry.path())
+                    .ok()
+                    .map(|e| {
+                        e.flatten()
+                            .filter(|f| f.path().extension().map_or(false, |x| x == "md"))
+                            .count()
+                    })
                     .unwrap_or(0);
                 spaces.push(json!({"name": name, "docs": doc_count}));
             }
@@ -133,8 +143,14 @@ pub fn space_create(name: &str) -> Value {
 pub fn doc_list(space: &str, status_filter: &str) -> Value {
     let sd = spaces_dir();
     let search_dirs: Vec<PathBuf> = if space.is_empty() {
-        std::fs::read_dir(&sd).ok()
-            .map(|e| e.flatten().filter(|f| f.path().is_dir()).map(|f| f.path()).collect())
+        std::fs::read_dir(&sd)
+            .ok()
+            .map(|e| {
+                e.flatten()
+                    .filter(|f| f.path().is_dir())
+                    .map(|f| f.path())
+                    .collect()
+            })
             .unwrap_or_default()
     } else {
         vec![sd.join(space)]
@@ -142,22 +158,36 @@ pub fn doc_list(space: &str, status_filter: &str) -> Value {
 
     let mut docs = vec![];
     for space_dir in &search_dirs {
-        if !space_dir.exists() { continue; }
+        if !space_dir.exists() {
+            continue;
+        }
         let sp = space_dir.file_name().unwrap().to_string_lossy().to_string();
         if let Ok(entries) = std::fs::read_dir(space_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().map_or(true, |e| e != "md") { continue; }
+                if path.extension().map_or(true, |e| e != "md") {
+                    continue;
+                }
                 let name = path.file_stem().unwrap().to_string_lossy().to_string();
                 let mut meta = load_meta(&sp, &name);
                 is_locked(&mut meta, ""); // refresh lock status
-                let effective_status = if meta["locked_by"].is_string() { "locked" }
-                    else { meta["status"].as_str().unwrap_or("draft") };
-                if !status_filter.is_empty() && effective_status != status_filter { continue; }
+                let effective_status = if meta["locked_by"].is_string() {
+                    "locked"
+                } else {
+                    meta["status"].as_str().unwrap_or("draft")
+                };
+                if !status_filter.is_empty() && effective_status != status_filter {
+                    continue;
+                }
 
                 let prop_dir = proposal_dir(&sp, &name);
-                let proposals = std::fs::read_dir(&prop_dir).ok()
-                    .map(|e| e.flatten().filter(|f| f.path().extension().map_or(false, |x| x == "md")).count())
+                let proposals = std::fs::read_dir(&prop_dir)
+                    .ok()
+                    .map(|e| {
+                        e.flatten()
+                            .filter(|f| f.path().extension().map_or(false, |x| x == "md"))
+                            .count()
+                    })
                     .unwrap_or(0);
 
                 let content = std::fs::read_to_string(&path).unwrap_or_default();
@@ -194,10 +224,20 @@ pub fn doc_read(space: &str, name: &str, include_meta: bool) -> Value {
             let mut proposals = vec![];
             if let Ok(entries) = std::fs::read_dir(&pdir) {
                 for entry in entries.flatten() {
-                    if entry.path().extension().map_or(true, |e| e != "md") { continue; }
-                    let id = entry.path().file_stem().unwrap().to_string_lossy().to_string();
+                    if entry.path().extension().map_or(true, |e| e != "md") {
+                        continue;
+                    }
+                    let id = entry
+                        .path()
+                        .file_stem()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string();
                     let preview: String = std::fs::read_to_string(entry.path())
-                        .unwrap_or_default().chars().take(200).collect();
+                        .unwrap_or_default()
+                        .chars()
+                        .take(200)
+                        .collect();
                     proposals.push(json!({"id": id, "preview": preview}));
                 }
             }
@@ -253,7 +293,11 @@ pub fn crc32(s: &str) -> u32 {
     for byte in s.bytes() {
         hash ^= byte as u32;
         for _ in 0..8 {
-            hash = if hash & 1 != 0 { (hash >> 1) ^ 0xEDB8_8320 } else { hash >> 1 };
+            hash = if hash & 1 != 0 {
+                (hash >> 1) ^ 0xEDB8_8320
+            } else {
+                hash >> 1
+            };
         }
     }
     !hash
@@ -268,10 +312,15 @@ pub fn doc_propose(space: &str, name: &str, content: &str, summary: &str, agent_
     let _ = std::fs::create_dir_all(&pdir);
 
     let ts = Local::now().format("%Y%m%d_%H%M%S").to_string();
-    let proposal_id = if agent_id.is_empty() { ts.clone() } else { format!("{}_{}", ts, agent_id) };
+    let proposal_id = if agent_id.is_empty() {
+        ts.clone()
+    } else {
+        format!("{}_{}", ts, agent_id)
+    };
     let prop_file = pdir.join(format!("{}.md", proposal_id));
 
-    let header = format!(
+    let header =
+        format!(
         "<!-- PROPOSAL: {} -->\n<!-- Summary: {} -->\n<!-- Agent: {} -->\n<!-- Date: {} -->\n\n",
         proposal_id, summary, agent_id, now_iso()
     );
@@ -296,16 +345,28 @@ pub fn doc_approve(space: &str, name: &str, proposal_id: &str) -> Value {
     }
 
     let (prop_file, actual_id) = if proposal_id == "latest" || proposal_id.is_empty() {
-        let mut files: Vec<_> = std::fs::read_dir(&pdir).ok()
-            .map(|e| e.flatten().filter(|f| f.path().extension().map_or(false, |x| x == "md")).map(|f| f.path()).collect())
+        let mut files: Vec<_> = std::fs::read_dir(&pdir)
+            .ok()
+            .map(|e| {
+                e.flatten()
+                    .filter(|f| f.path().extension().map_or(false, |x| x == "md"))
+                    .map(|f| f.path())
+                    .collect()
+            })
             .unwrap_or_default();
         files.sort();
         match files.last() {
-            Some(f) => (f.clone(), f.file_stem().unwrap().to_string_lossy().to_string()),
+            Some(f) => (
+                f.clone(),
+                f.file_stem().unwrap().to_string_lossy().to_string(),
+            ),
             None => return json!({"error": "No proposals found"}),
         }
     } else {
-        (pdir.join(format!("{}.md", proposal_id)), proposal_id.to_string())
+        (
+            pdir.join(format!("{}.md", proposal_id)),
+            proposal_id.to_string(),
+        )
     };
 
     if !prop_file.exists() {
@@ -333,10 +394,17 @@ pub fn doc_approve(space: &str, name: &str, proposal_id: &str) -> Value {
     let mut meta = load_meta(space, name);
     meta["status"] = json!("approved");
     meta["updated_at"] = json!(now_iso());
-    let remaining = std::fs::read_dir(&pdir).ok()
-        .map(|e| e.flatten().filter(|f| f.path().extension().map_or(false, |x| x == "md")).count())
+    let remaining = std::fs::read_dir(&pdir)
+        .ok()
+        .map(|e| {
+            e.flatten()
+                .filter(|f| f.path().extension().map_or(false, |x| x == "md"))
+                .count()
+        })
         .unwrap_or(0);
-    if remaining > 0 { meta["status"] = json!("review"); }
+    if remaining > 0 {
+        meta["status"] = json!("review");
+    }
     save_meta(space, name, &meta);
 
     json!({"approved": actual_id, "doc": format!("{}/{}", space, name), "status": meta["status"], "remaining_proposals": remaining})
@@ -354,8 +422,13 @@ pub fn doc_reject(space: &str, name: &str, proposal_id: &str, reason: &str) -> V
     if let Some(comments) = meta["comments"].as_array_mut() {
         comments.push(json!({"author": "system", "text": format!("Proposal {} rejected. {}", proposal_id, reason), "timestamp": now_iso()}));
     }
-    let remaining = std::fs::read_dir(&pdir).ok()
-        .map(|e| e.flatten().filter(|f| f.path().extension().map_or(false, |x| x == "md")).count())
+    let remaining = std::fs::read_dir(&pdir)
+        .ok()
+        .map(|e| {
+            e.flatten()
+                .filter(|f| f.path().extension().map_or(false, |x| x == "md"))
+                .count()
+        })
         .unwrap_or(0);
     if remaining == 0 && meta["status"].as_str() == Some("review") {
         meta["status"] = json!("draft");
@@ -375,7 +448,11 @@ pub fn doc_lock(space: &str, name: &str, locked_by: &str) -> Value {
     if is_locked(&mut meta, "") {
         return json!({"error": "Already locked", "locked_by": meta["locked_by"], "locked_at": meta["locked_at"]});
     }
-    let locker = if locked_by.is_empty() { "human" } else { locked_by };
+    let locker = if locked_by.is_empty() {
+        "human"
+    } else {
+        locked_by
+    };
     meta["locked_by"] = json!(locker);
     meta["locked_at"] = json!(now_iso());
     save_meta(space, name, &meta);
@@ -442,8 +519,14 @@ pub fn doc_status(space: &str, name: &str, status: &str) -> Value {
 pub fn doc_search(query: &str, space: &str) -> Value {
     let sd = spaces_dir();
     let search_dirs: Vec<PathBuf> = if space.is_empty() {
-        std::fs::read_dir(&sd).ok()
-            .map(|e| e.flatten().filter(|f| f.path().is_dir()).map(|f| f.path()).collect())
+        std::fs::read_dir(&sd)
+            .ok()
+            .map(|e| {
+                e.flatten()
+                    .filter(|f| f.path().is_dir())
+                    .map(|f| f.path())
+                    .collect()
+            })
             .unwrap_or_default()
     } else {
         vec![sd.join(space)]
@@ -452,21 +535,39 @@ pub fn doc_search(query: &str, space: &str) -> Value {
     let query_lower = query.to_lowercase();
     let mut results = vec![];
     for space_dir in &search_dirs {
-        if !space_dir.exists() { continue; }
+        if !space_dir.exists() {
+            continue;
+        }
         let sp = space_dir.file_name().unwrap().to_string_lossy().to_string();
         if let Ok(entries) = std::fs::read_dir(space_dir) {
             for entry in entries.flatten() {
-                if entry.path().extension().map_or(true, |e| e != "md") { continue; }
+                if entry.path().extension().map_or(true, |e| e != "md") {
+                    continue;
+                }
                 let content = std::fs::read_to_string(entry.path()).unwrap_or_default();
-                if !content.to_lowercase().contains(&query_lower) { continue; }
-                let matches: Vec<Value> = content.lines().enumerate()
+                if !content.to_lowercase().contains(&query_lower) {
+                    continue;
+                }
+                let matches: Vec<Value> = content
+                    .lines()
+                    .enumerate()
                     .filter(|(_, line)| line.to_lowercase().contains(&query_lower))
                     .take(5)
                     .map(|(i, line)| json!({"line": i + 1, "text": &line[..line.len().min(100)]}))
                     .collect();
-                let total = content.lines().filter(|l| l.to_lowercase().contains(&query_lower)).count();
-                let name = entry.path().file_stem().unwrap().to_string_lossy().to_string();
-                results.push(json!({"space": sp, "name": name, "matches": matches, "total_matches": total}));
+                let total = content
+                    .lines()
+                    .filter(|l| l.to_lowercase().contains(&query_lower))
+                    .count();
+                let name = entry
+                    .path()
+                    .file_stem()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string();
+                results.push(
+                    json!({"space": sp, "name": name, "matches": matches, "total_matches": total}),
+                );
             }
         }
     }
@@ -477,8 +578,14 @@ pub fn doc_search(query: &str, space: &str) -> Value {
 pub fn doc_directives(space: &str) -> Value {
     let sd = spaces_dir();
     let search_dirs: Vec<PathBuf> = if space.is_empty() {
-        std::fs::read_dir(&sd).ok()
-            .map(|e| e.flatten().filter(|f| f.path().is_dir()).map(|f| f.path()).collect())
+        std::fs::read_dir(&sd)
+            .ok()
+            .map(|e| {
+                e.flatten()
+                    .filter(|f| f.path().is_dir())
+                    .map(|f| f.path())
+                    .collect()
+            })
             .unwrap_or_default()
     } else {
         vec![sd.join(space)]
@@ -486,15 +593,24 @@ pub fn doc_directives(space: &str) -> Value {
 
     let mut all = vec![];
     for space_dir in &search_dirs {
-        if !space_dir.exists() { continue; }
+        if !space_dir.exists() {
+            continue;
+        }
         let sp = space_dir.file_name().unwrap().to_string_lossy().to_string();
         if let Ok(entries) = std::fs::read_dir(space_dir) {
             for entry in entries.flatten() {
-                if entry.path().extension().map_or(true, |e| e != "md") { continue; }
+                if entry.path().extension().map_or(true, |e| e != "md") {
+                    continue;
+                }
                 let content = std::fs::read_to_string(entry.path()).unwrap_or_default();
                 let directives = scan_directives(&content);
                 if !directives.is_empty() {
-                    let doc = entry.path().file_stem().unwrap().to_string_lossy().to_string();
+                    let doc = entry
+                        .path()
+                        .file_stem()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string();
                     for mut d in directives {
                         d["space"] = json!(&sp);
                         d["doc"] = json!(&doc);
@@ -514,8 +630,13 @@ pub fn doc_history(space: &str, name: &str, limit: u32) -> Value {
         return json!({"error": format!("Doc not found: {}/{}", space, name)});
     }
     let output = std::process::Command::new("git")
-        .args(["log", &format!("--max-count={}", limit), "--pretty=format:%H|%ai|%s",
-            "--follow", &format!("spaces/{}/{}.md", space, name)])
+        .args([
+            "log",
+            &format!("--max-count={}", limit),
+            "--pretty=format:%H|%ai|%s",
+            "--follow",
+            &format!("spaces/{}/{}.md", space, name),
+        ])
         .current_dir(config::collab_root())
         .output();
 
@@ -532,7 +653,9 @@ pub fn doc_history(space: &str, name: &str, limit: u32) -> Value {
             }).collect();
             json!({"doc": format!("{}/{}", space, name), "history": history})
         }
-        _ => json!({"doc": format!("{}/{}", space, name), "history": [], "note": "Not a git repo or no history"}),
+        _ => {
+            json!({"doc": format!("{}/{}", space, name), "history": [], "note": "Not a git repo or no history"})
+        }
     }
 }
 
@@ -546,9 +669,13 @@ pub fn doc_delete(space: &str, name: &str, confirm: bool) -> Value {
     }
     let _ = std::fs::remove_file(&dp);
     let mp = meta_path(space, name);
-    if mp.exists() { let _ = std::fs::remove_file(&mp); }
+    if mp.exists() {
+        let _ = std::fs::remove_file(&mp);
+    }
     let pdir = proposal_dir(space, name);
-    if pdir.exists() { let _ = std::fs::remove_dir_all(&pdir); }
+    if pdir.exists() {
+        let _ = std::fs::remove_dir_all(&pdir);
+    }
     json!({"deleted": format!("{}/{}", space, name)})
 }
 

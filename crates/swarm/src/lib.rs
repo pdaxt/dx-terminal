@@ -294,7 +294,12 @@ fn is_port_in_use(port: u16) -> (bool, Option<String>) {
 
 fn is_pane_active(pane_id: &str) -> bool {
     if let Ok(output) = Command::new("tmux")
-        .args(["list-panes", "-a", "-F", "#{session_name}:#{window_index}.#{pane_index}"])
+        .args([
+            "list-panes",
+            "-a",
+            "-F",
+            "#{session_name}:#{window_index}.#{pane_index}",
+        ])
         .output()
     {
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -315,7 +320,12 @@ fn gen_short_id(seed: &str) -> String {
 /// Collect all active tmux panes in one call.
 fn active_panes() -> Vec<String> {
     if let Ok(output) = Command::new("tmux")
-        .args(["list-panes", "-a", "-F", "#{session_name}:#{window_index}.#{pane_index}"])
+        .args([
+            "list-panes",
+            "-a",
+            "-F",
+            "#{session_name}:#{window_index}.#{pane_index}",
+        ])
         .output()
     {
         if output.status.success() {
@@ -363,8 +373,9 @@ impl SwarmDb {
 
     fn init_conn(conn: Connection) -> Result<Self, String> {
         conn.execute_batch(
-            "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;"
-        ).map_err(|e| format!("DB pragma: {}", e))?;
+            "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;",
+        )
+        .map_err(|e| format!("DB pragma: {}", e))?;
         conn.execute_batch(COORDINATION_SCHEMA)
             .map_err(|e| format!("DB schema: {}", e))?;
         Ok(SwarmDb { conn })
@@ -375,16 +386,26 @@ impl SwarmDb {
     // ========================================================================
 
     /// Allocate a port for a service. Returns existing allocation if service already has one.
-    pub fn port_allocate(&self, service: &str, pane_id: &str, preferred: Option<u16>, description: &str) -> Value {
+    pub fn port_allocate(
+        &self,
+        service: &str,
+        pane_id: &str,
+        preferred: Option<u16>,
+        description: &str,
+    ) -> Value {
         let tx = match self.conn.unchecked_transaction() {
             Ok(t) => t,
             Err(e) => return json!({"error": format!("Transaction: {}", e)}),
         };
 
         // Check if service already has a port
-        let existing: Option<i64> = tx.query_row(
-            "SELECT port FROM ports WHERE service = ?1", params![service], |r| r.get(0)
-        ).ok();
+        let existing: Option<i64> = tx
+            .query_row(
+                "SELECT port FROM ports WHERE service = ?1",
+                params![service],
+                |r| r.get(0),
+            )
+            .ok();
 
         if let Some(port) = existing {
             let (in_use, pid) = is_port_in_use(port as u16);
@@ -416,7 +437,9 @@ impl SwarmDb {
         if let Some(pref) = preferred {
             if !allocated_ports.contains(&(pref as i64)) {
                 let (in_use, _) = is_port_in_use(pref);
-                if !in_use { port = Some(pref); }
+                if !in_use {
+                    port = Some(pref);
+                }
             }
         }
 
@@ -446,10 +469,18 @@ impl SwarmDb {
 
     /// Release a port allocation.
     pub fn port_release(&self, port: u16) -> Value {
-        let service: Option<String> = self.conn.query_row(
-            "SELECT service FROM ports WHERE port = ?1", params![port as i64], |r| r.get(0)
-        ).ok();
-        let rows = self.conn.execute("DELETE FROM ports WHERE port = ?1", params![port as i64]).unwrap_or(0);
+        let service: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT service FROM ports WHERE port = ?1",
+                params![port as i64],
+                |r| r.get(0),
+            )
+            .ok();
+        let rows = self
+            .conn
+            .execute("DELETE FROM ports WHERE port = ?1", params![port as i64])
+            .unwrap_or(0);
         if rows > 0 {
             json!({"status": "released", "port": port, "service": service})
         } else {
@@ -459,13 +490,20 @@ impl SwarmDb {
 
     /// List all allocated ports.
     pub fn port_list(&self) -> Value {
-        let mut stmt = match self.conn.prepare("SELECT port, service, pane_id FROM ports") {
+        let mut stmt = match self
+            .conn
+            .prepare("SELECT port, service, pane_id FROM ports")
+        {
             Ok(s) => s,
             Err(e) => return json!({"error": format!("Query: {}", e)}),
         };
         let mut result = vec![];
         if let Ok(rows) = stmt.query_map([], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
         }) {
             for row in rows.flatten() {
                 let (port, service, pane_id) = row;
@@ -482,7 +520,9 @@ impl SwarmDb {
     /// Look up the port allocated to a service.
     pub fn port_get(&self, service: &str) -> Value {
         let row: Result<i64, _> = self.conn.query_row(
-            "SELECT port FROM ports WHERE service = ?1", params![service], |r| r.get(0)
+            "SELECT port FROM ports WHERE service = ?1",
+            params![service],
+            |r| r.get(0),
         );
         match row {
             Ok(port) => {
@@ -498,7 +538,13 @@ impl SwarmDb {
     // ========================================================================
 
     /// Register an agent. Upserts on pane_id. Returns other agents on same project.
-    pub fn agent_register(&self, pane_id: &str, project: &str, task: &str, files: &[String]) -> Value {
+    pub fn agent_register(
+        &self,
+        pane_id: &str,
+        project: &str,
+        task: &str,
+        files: &[String],
+    ) -> Value {
         let now = now_iso();
         let files_json = serde_json::to_string(files).unwrap_or_else(|_| "[]".into());
         let session_id = uuid::Uuid::new_v4().to_string();
@@ -532,19 +578,26 @@ impl SwarmDb {
 
     /// Update an agent's task and optionally its file list.
     pub fn agent_update(&self, pane_id: &str, task: &str, files: Option<&[String]>) -> Value {
-        let rows = if let Some(f) = files {
-            let files_json = serde_json::to_string(f).unwrap_or_else(|_| "[]".into());
-            self.conn.execute(
+        let rows =
+            if let Some(f) = files {
+                let files_json = serde_json::to_string(f).unwrap_or_else(|_| "[]".into());
+                self.conn.execute(
                 "UPDATE agents SET task = ?1, files = ?2, last_update = ?3 WHERE pane_id = ?4",
                 params![task, files_json, now_iso(), pane_id]
             ).unwrap_or(0)
+            } else {
+                self.conn
+                    .execute(
+                        "UPDATE agents SET task = ?1, last_update = ?2 WHERE pane_id = ?3",
+                        params![task, now_iso(), pane_id],
+                    )
+                    .unwrap_or(0)
+            };
+        if rows > 0 {
+            json!({"status": "updated"})
         } else {
-            self.conn.execute(
-                "UPDATE agents SET task = ?1, last_update = ?2 WHERE pane_id = ?3",
-                params![task, now_iso(), pane_id]
-            ).unwrap_or(0)
-        };
-        if rows > 0 { json!({"status": "updated"}) } else { json!({"status": "not_found"}) }
+            json!({"status": "not_found"})
+        }
     }
 
     /// List all registered agents, optionally filtered by project.
@@ -561,9 +614,10 @@ impl SwarmDb {
             Err(e) => return json!({"error": format!("Query: {}", e)}),
         };
 
-        let extract = |r: &rusqlite::Row| -> rusqlite::Result<(String, String, String, String, String)> {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
-        };
+        let extract =
+            |r: &rusqlite::Row| -> rusqlite::Result<(String, String, String, String, String)> {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            };
         let rows_result = if let Some(p) = project {
             stmt.query_map(params![p], extract)
         } else {
@@ -588,16 +642,21 @@ impl SwarmDb {
     pub fn agent_deregister(&self, pane_id: &str) -> Value {
         let now = now_iso();
 
-        let session_id: Option<String> = self.conn.query_row(
-            "SELECT session_id FROM agents WHERE pane_id = ?1", params![pane_id], |r| r.get(0)
-        ).ok();
+        let session_id: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT session_id FROM agents WHERE pane_id = ?1",
+                params![pane_id],
+                |r| r.get(0),
+            )
+            .ok();
 
         if let Some(ref sid) = session_id {
             let _ = self.conn.execute(
                 "UPDATE sessions SET ended_at = ?1, status = 'ended', \
                  duration_secs = CAST((julianday(?1) - julianday(started_at)) * 86400 AS INTEGER) \
                  WHERE session_id = ?2 AND status = 'active'",
-                params![now, sid]
+                params![now, sid],
             );
         }
 
@@ -606,11 +665,23 @@ impl SwarmDb {
             params![now, pane_id]
         ).unwrap_or(0);
 
-        let _ = self.conn.execute("DELETE FROM file_locks WHERE pane_id = ?1", params![pane_id]);
-        let _ = self.conn.execute("DELETE FROM ports WHERE pane_id = ?1", params![pane_id]);
-        let _ = self.conn.execute("DELETE FROM git_branches WHERE pane_id = ?1", params![pane_id]);
+        let _ = self.conn.execute(
+            "DELETE FROM file_locks WHERE pane_id = ?1",
+            params![pane_id],
+        );
+        let _ = self
+            .conn
+            .execute("DELETE FROM ports WHERE pane_id = ?1", params![pane_id]);
+        let _ = self.conn.execute(
+            "DELETE FROM git_branches WHERE pane_id = ?1",
+            params![pane_id],
+        );
 
-        if rows > 0 { json!({"status": "deregistered"}) } else { json!({"status": "not_found"}) }
+        if rows > 0 {
+            json!({"status": "deregistered"})
+        } else {
+            json!({"status": "not_found"})
+        }
     }
 
     // ========================================================================
@@ -635,11 +706,15 @@ impl SwarmDb {
         if let Some(s) = status {
             let _ = self.conn.execute(
                 "UPDATE agents SET status = ?1 WHERE pane_id = ?2",
-                params![s, pane_id]
+                params![s, pane_id],
             );
         }
 
-        if rows > 0 { json!({"status": "ok", "heartbeat": now}) } else { json!({"error": "agent not found or not active"}) }
+        if rows > 0 {
+            json!({"status": "ok", "heartbeat": now})
+        } else {
+            json!({"error": "agent not found or not active"})
+        }
     }
 
     /// Start a new tracking session for an agent.
@@ -653,7 +728,7 @@ impl SwarmDb {
         );
         let _ = self.conn.execute(
             "UPDATE agents SET session_id = ?1, last_heartbeat = ?2 WHERE pane_id = ?3",
-            params![session_id, now, pane_id]
+            params![session_id, now, pane_id],
         );
 
         json!({"session_id": session_id, "started_at": now})
@@ -662,14 +737,21 @@ impl SwarmDb {
     /// End a tracking session with summary.
     pub fn session_end(&self, session_id: &str, summary: &str) -> Value {
         let now = now_iso();
-        let rows = self.conn.execute(
-            "UPDATE sessions SET ended_at = ?1, status = 'ended', summary = ?2, \
+        let rows = self
+            .conn
+            .execute(
+                "UPDATE sessions SET ended_at = ?1, status = 'ended', summary = ?2, \
              duration_secs = CAST((julianday(?1) - julianday(started_at)) * 86400 AS INTEGER) \
              WHERE session_id = ?3 AND status = 'active'",
-            params![now, summary, session_id]
-        ).unwrap_or(0);
+                params![now, summary, session_id],
+            )
+            .unwrap_or(0);
 
-        if rows > 0 { json!({"status": "ended", "ended_at": now}) } else { json!({"error": "session not found or already ended"}) }
+        if rows > 0 {
+            json!({"status": "ended", "ended_at": now})
+        } else {
+            json!({"error": "session not found or already ended"})
+        }
     }
 
     /// List all active agents (simple view).
@@ -704,12 +786,19 @@ impl SwarmDb {
     /// Force-steal a lock with justification.
     pub fn lock_steal(&self, pane_id: &str, file_path: &str, reason: &str) -> Value {
         let now = now_iso();
-        let prev: Option<(String, String)> = self.conn.query_row(
-            "SELECT pane_id, reason FROM file_locks WHERE file_path = ?1",
-            params![file_path], |r| Ok((r.get(0)?, r.get(1)?))
-        ).ok();
+        let prev: Option<(String, String)> = self
+            .conn
+            .query_row(
+                "SELECT pane_id, reason FROM file_locks WHERE file_path = ?1",
+                params![file_path],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok();
 
-        let _ = self.conn.execute("DELETE FROM file_locks WHERE file_path = ?1", params![file_path]);
+        let _ = self.conn.execute(
+            "DELETE FROM file_locks WHERE file_path = ?1",
+            params![file_path],
+        );
         let _ = self.conn.execute(
             "INSERT INTO file_locks (file_path, pane_id, reason, acquired_at) VALUES (?1, ?2, ?3, ?4)",
             params![file_path, pane_id, reason, now]
@@ -738,9 +827,10 @@ impl SwarmDb {
              WHERE a.status = 'active'"
         };
         if let Ok(mut stmt) = self.conn.prepare(query) {
-            let extract = |r: &rusqlite::Row| -> rusqlite::Result<(String, String, String, String)> {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
-            };
+            let extract =
+                |r: &rusqlite::Row| -> rusqlite::Result<(String, String, String, String)> {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+                };
             let rows = if let Some(p) = project {
                 stmt.query_map(params![p], extract)
             } else {
@@ -748,7 +838,9 @@ impl SwarmDb {
             };
             if let Ok(rows) = rows {
                 for row in rows.flatten() {
-                    conflicts.push(json!({"file": row.0, "holder": row.1, "reason": row.2, "project": row.3}));
+                    conflicts.push(
+                        json!({"file": row.0, "holder": row.1, "reason": row.2, "project": row.3}),
+                    );
                 }
             }
         }
@@ -779,7 +871,8 @@ impl SwarmDb {
             }
         }
 
-        let overlaps: Vec<Value> = file_agents.iter()
+        let overlaps: Vec<Value> = file_agents
+            .iter()
             .filter(|(_, agents)| agents.len() > 1)
             .map(|(f, agents)| json!({"file": f, "agents": agents}))
             .collect();
@@ -796,10 +889,13 @@ impl SwarmDb {
 
         let mut blocked = vec![];
         for f in files {
-            let conflict: Option<(String, String)> = tx.query_row(
-                "SELECT pane_id, reason FROM file_locks WHERE file_path = ?1 AND pane_id != ?2",
-                params![f, pane_id], |r| Ok((r.get(0)?, r.get(1)?))
-            ).ok();
+            let conflict: Option<(String, String)> = tx
+                .query_row(
+                    "SELECT pane_id, reason FROM file_locks WHERE file_path = ?1 AND pane_id != ?2",
+                    params![f, pane_id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .ok();
             if let Some((owner, lock_reason)) = conflict {
                 blocked.push(json!({"file": f, "locked_by": owner, "reason": lock_reason}));
             }
@@ -814,7 +910,7 @@ impl SwarmDb {
                 "INSERT INTO file_locks (file_path, pane_id, reason, acquired_at) \
                  VALUES (?1, ?2, ?3, ?4) \
                  ON CONFLICT(file_path) DO UPDATE SET pane_id=?2, reason=?3, acquired_at=?4",
-                params![f, pane_id, reason, now]
+                params![f, pane_id, reason, now],
             );
         }
         let _ = tx.commit();
@@ -826,19 +922,32 @@ impl SwarmDb {
         let mut released = vec![];
 
         if files.is_empty() {
-            if let Ok(mut stmt) = self.conn.prepare("SELECT file_path FROM file_locks WHERE pane_id = ?1") {
+            if let Ok(mut stmt) = self
+                .conn
+                .prepare("SELECT file_path FROM file_locks WHERE pane_id = ?1")
+            {
                 if let Ok(rows) = stmt.query_map(params![pane_id], |r| r.get::<_, String>(0)) {
-                    for row in rows.flatten() { released.push(row); }
+                    for row in rows.flatten() {
+                        released.push(row);
+                    }
                 }
             }
-            let _ = self.conn.execute("DELETE FROM file_locks WHERE pane_id = ?1", params![pane_id]);
+            let _ = self.conn.execute(
+                "DELETE FROM file_locks WHERE pane_id = ?1",
+                params![pane_id],
+            );
         } else {
             for f in files {
-                let rows = self.conn.execute(
-                    "DELETE FROM file_locks WHERE file_path = ?1 AND pane_id = ?2",
-                    params![f, pane_id]
-                ).unwrap_or(0);
-                if rows > 0 { released.push(f.clone()); }
+                let rows = self
+                    .conn
+                    .execute(
+                        "DELETE FROM file_locks WHERE file_path = ?1 AND pane_id = ?2",
+                        params![f, pane_id],
+                    )
+                    .unwrap_or(0);
+                if rows > 0 {
+                    released.push(f.clone());
+                }
             }
         }
         json!({"status": "released", "files": released})
@@ -848,10 +957,14 @@ impl SwarmDb {
     pub fn lock_check(&self, files: &[String]) -> Value {
         let mut locked = vec![];
         for f in files {
-            let row: Option<(String, String)> = self.conn.query_row(
-                "SELECT pane_id, reason FROM file_locks WHERE file_path = ?1",
-                params![f], |r| Ok((r.get(0)?, r.get(1)?))
-            ).ok();
+            let row: Option<(String, String)> = self
+                .conn
+                .query_row(
+                    "SELECT pane_id, reason FROM file_locks WHERE file_path = ?1",
+                    params![f],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .ok();
             if let Some((owner, reason)) = row {
                 locked.push(json!({"file": f, "locked_by": owner, "reason": reason}));
             }
@@ -864,7 +977,13 @@ impl SwarmDb {
     // ========================================================================
 
     /// Claim a git branch for exclusive use.
-    pub fn git_claim_branch(&self, pane_id: &str, branch: &str, repo: &str, purpose: &str) -> Value {
+    pub fn git_claim_branch(
+        &self,
+        pane_id: &str,
+        branch: &str,
+        repo: &str,
+        purpose: &str,
+    ) -> Value {
         let key = format!("{}:{}", repo, branch);
 
         let tx = match self.conn.unchecked_transaction() {
@@ -872,10 +991,13 @@ impl SwarmDb {
             Err(e) => return json!({"error": format!("Transaction: {}", e)}),
         };
 
-        let existing: Option<(String, String)> = tx.query_row(
-            "SELECT pane_id, purpose FROM git_branches WHERE repo_branch = ?1",
-            params![key], |r| Ok((r.get(0)?, r.get(1)?))
-        ).ok();
+        let existing: Option<(String, String)> = tx
+            .query_row(
+                "SELECT pane_id, purpose FROM git_branches WHERE repo_branch = ?1",
+                params![key],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok();
 
         if let Some((owner, owner_purpose)) = existing {
             if owner != pane_id && is_pane_active(&owner) {
@@ -887,7 +1009,7 @@ impl SwarmDb {
             "INSERT INTO git_branches (repo_branch, pane_id, purpose, claimed_at) \
              VALUES (?1, ?2, ?3, ?4) \
              ON CONFLICT(repo_branch) DO UPDATE SET pane_id=?2, purpose=?3, claimed_at=?4",
-            params![key, pane_id, purpose, now_iso()]
+            params![key, pane_id, purpose, now_iso()],
         );
         let _ = tx.commit();
         json!({"status": "claimed", "branch": branch})
@@ -896,14 +1018,21 @@ impl SwarmDb {
     /// Release a git branch claim.
     pub fn git_release_branch(&self, pane_id: &str, branch: &str, repo: &str) -> Value {
         let key = format!("{}:{}", repo, branch);
-        let owner: Option<String> = self.conn.query_row(
-            "SELECT pane_id FROM git_branches WHERE repo_branch = ?1",
-            params![key], |r| r.get(0)
-        ).ok();
+        let owner: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT pane_id FROM git_branches WHERE repo_branch = ?1",
+                params![key],
+                |r| r.get(0),
+            )
+            .ok();
 
         match owner {
             Some(ref o) if o == pane_id => {
-                let _ = self.conn.execute("DELETE FROM git_branches WHERE repo_branch = ?1", params![key]);
+                let _ = self.conn.execute(
+                    "DELETE FROM git_branches WHERE repo_branch = ?1",
+                    params![key],
+                );
                 json!({"status": "released"})
             }
             Some(_) => json!({"status": "not_owner"}),
@@ -914,15 +1043,24 @@ impl SwarmDb {
     /// List all claimed branches, optionally filtered by repo.
     pub fn git_list_branches(&self, repo: Option<&str>) -> Value {
         let mut result = vec![];
-        if let Ok(mut stmt) = self.conn.prepare("SELECT repo_branch, pane_id, purpose FROM git_branches") {
+        if let Ok(mut stmt) = self
+            .conn
+            .prepare("SELECT repo_branch, pane_id, purpose FROM git_branches")
+        {
             if let Ok(rows) = stmt.query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
             }) {
                 for row in rows.flatten() {
                     let (key, owner, purpose) = row;
                     if let Some((r, b)) = key.rsplit_once(':') {
                         if let Some(filter) = repo {
-                            if r != filter { continue; }
+                            if r != filter {
+                                continue;
+                            }
                         }
                         result.push(json!({
                             "repo": r, "branch": b,
@@ -941,25 +1079,32 @@ impl SwarmDb {
         let mut conflicts = vec![];
 
         for f in files {
-            let row: Option<String> = self.conn.query_row(
-                "SELECT pane_id FROM file_locks WHERE file_path = ?1 AND pane_id != ?2",
-                params![f, pane_id], |r| r.get(0)
-            ).ok();
+            let row: Option<String> = self
+                .conn
+                .query_row(
+                    "SELECT pane_id FROM file_locks WHERE file_path = ?1 AND pane_id != ?2",
+                    params![f, pane_id],
+                    |r| r.get(0),
+                )
+                .ok();
             if let Some(owner) = row {
                 conflicts.push(json!({"type": "file_lock", "file": f, "owner": owner}));
             }
         }
 
-        if let Ok(mut stmt) = self.conn.prepare(
-            "SELECT pane_id, files FROM agents WHERE pane_id != ?1"
-        ) {
+        if let Ok(mut stmt) = self
+            .conn
+            .prepare("SELECT pane_id, files FROM agents WHERE pane_id != ?1")
+        {
             if let Ok(rows) = stmt.query_map(params![pane_id], |r| {
                 Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
             }) {
                 for row in rows.flatten() {
                     let (other_pane, files_str) = row;
-                    let agent_files: Vec<String> = serde_json::from_str(&files_str).unwrap_or_default();
-                    let overlap: Vec<&String> = files.iter()
+                    let agent_files: Vec<String> =
+                        serde_json::from_str(&files_str).unwrap_or_default();
+                    let overlap: Vec<&String> = files
+                        .iter()
                         .filter(|f| agent_files.iter().any(|af| af == *f))
                         .collect();
                     if !overlap.is_empty() {
@@ -983,16 +1128,22 @@ impl SwarmDb {
             Err(e) => return json!({"error": format!("Transaction: {}", e)}),
         };
 
-        let existing: Option<(String, String)> = tx.query_row(
-            "SELECT pane_id, started_at FROM builds_active WHERE project = ?1",
-            params![project], |r| Ok((r.get(0)?, r.get(1)?))
-        ).ok();
+        let existing: Option<(String, String)> = tx
+            .query_row(
+                "SELECT pane_id, started_at FROM builds_active WHERE project = ?1",
+                params![project],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok();
 
         if let Some((owner, started)) = existing {
             if is_pane_active(&owner) {
                 return json!({"status": "busy", "owner": owner, "started": started});
             }
-            let _ = tx.execute("DELETE FROM builds_active WHERE project = ?1", params![project]);
+            let _ = tx.execute(
+                "DELETE FROM builds_active WHERE project = ?1",
+                params![project],
+            );
         }
 
         let _ = tx.execute(
@@ -1004,16 +1155,25 @@ impl SwarmDb {
     }
 
     /// Release build claim, recording result in history.
-    pub fn build_release(&self, pane_id: &str, project: &str, success: bool, output: &str) -> Value {
+    pub fn build_release(
+        &self,
+        pane_id: &str,
+        project: &str,
+        success: bool,
+        output: &str,
+    ) -> Value {
         let tx = match self.conn.unchecked_transaction() {
             Ok(t) => t,
             Err(e) => return json!({"error": format!("Transaction: {}", e)}),
         };
 
-        let active: Option<(String, String, String)> = tx.query_row(
-            "SELECT pane_id, build_type, started_at FROM builds_active WHERE project = ?1",
-            params![project], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-        ).ok();
+        let active: Option<(String, String, String)> = tx
+            .query_row(
+                "SELECT pane_id, build_type, started_at FROM builds_active WHERE project = ?1",
+                params![project],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .ok();
 
         match active {
             Some((owner, bt, started)) if owner == pane_id => {
@@ -1026,9 +1186,12 @@ impl SwarmDb {
                     "DELETE FROM builds_history WHERE id IN (\
                         SELECT id FROM builds_history ORDER BY id ASC \
                         LIMIT MAX(0, (SELECT COUNT(*) FROM builds_history) - ?1))",
-                    params![MAX_BUILD_HISTORY]
+                    params![MAX_BUILD_HISTORY],
                 );
-                let _ = tx.execute("DELETE FROM builds_active WHERE project = ?1", params![project]);
+                let _ = tx.execute(
+                    "DELETE FROM builds_active WHERE project = ?1",
+                    params![project],
+                );
                 let _ = tx.commit();
                 json!({"status": "released"})
             }
@@ -1039,10 +1202,14 @@ impl SwarmDb {
 
     /// Check if a project currently has an active build.
     pub fn build_status(&self, project: &str) -> Value {
-        let row: Option<(String, String)> = self.conn.query_row(
-            "SELECT pane_id, started_at FROM builds_active WHERE project = ?1",
-            params![project], |r| Ok((r.get(0)?, r.get(1)?))
-        ).ok();
+        let row: Option<(String, String)> = self
+            .conn
+            .query_row(
+                "SELECT pane_id, started_at FROM builds_active WHERE project = ?1",
+                params![project],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok();
         match row {
             Some((owner, started)) => json!({"building": true, "owner": owner, "started": started}),
             None => json!({"building": false}),
@@ -1055,15 +1222,17 @@ impl SwarmDb {
             "SELECT pane_id, build_type, started_at, completed_at, success, output \
              FROM builds_history WHERE project = ?1 ORDER BY id DESC LIMIT 1",
             params![project],
-            |r| Ok(json!({
-                "pane_id": r.get::<_, String>(0)?,
-                "build_type": r.get::<_, String>(1)?,
-                "started_at": r.get::<_, String>(2)?,
-                "completed_at": r.get::<_, String>(3)?,
-                "success": r.get::<_, i32>(4)? != 0,
-                "output": r.get::<_, String>(5)?,
-                "project": project
-            }))
+            |r| {
+                Ok(json!({
+                    "pane_id": r.get::<_, String>(0)?,
+                    "build_type": r.get::<_, String>(1)?,
+                    "started_at": r.get::<_, String>(2)?,
+                    "completed_at": r.get::<_, String>(3)?,
+                    "success": r.get::<_, i32>(4)? != 0,
+                    "output": r.get::<_, String>(5)?,
+                    "project": project
+                }))
+            },
         );
         match row {
             Ok(build) => json!({"found": true, "build": build}),
@@ -1076,7 +1245,14 @@ impl SwarmDb {
     // ========================================================================
 
     /// Add a task to the inter-agent task queue.
-    pub fn task_add(&self, project: &str, title: &str, description: &str, priority: &str, added_by: &str) -> Value {
+    pub fn task_add(
+        &self,
+        project: &str,
+        title: &str,
+        description: &str,
+        priority: &str,
+        added_by: &str,
+    ) -> Value {
         let task_id = gen_short_id(title);
         let now = now_iso();
         match self.conn.execute(
@@ -1110,15 +1286,27 @@ impl SwarmDb {
 
         let task_row = if let Some(p) = project {
             tx.query_row(query, params![p], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?,
-                    r.get::<_, String>(3)?, r.get::<_, String>(4)?, r.get::<_, String>(5)?,
-                    r.get::<_, String>(6)?))
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, String>(5)?,
+                    r.get::<_, String>(6)?,
+                ))
             })
         } else {
             tx.query_row(query, [], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?,
-                    r.get::<_, String>(3)?, r.get::<_, String>(4)?, r.get::<_, String>(5)?,
-                    r.get::<_, String>(6)?))
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, String>(5)?,
+                    r.get::<_, String>(6)?,
+                ))
             })
         };
 
@@ -1146,10 +1334,15 @@ impl SwarmDb {
 
     /// Mark a claimed task as completed.
     pub fn task_complete(&self, task_id: &str, pane_id: &str, result: &str) -> Value {
-        let owner: Option<String> = self.conn.query_row(
-            "SELECT claimed_by FROM tasks WHERE id = ?1",
-            params![task_id], |r| r.get(0)
-        ).ok().flatten();
+        let owner: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT claimed_by FROM tasks WHERE id = ?1",
+                params![task_id],
+                |r| r.get(0),
+            )
+            .ok()
+            .flatten();
 
         match owner {
             None => json!({"status": "not_found"}),
@@ -1196,7 +1389,8 @@ impl SwarmDb {
             Err(e) => return json!({"error": format!("Query: {}", e)}),
         };
 
-        let params_refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter()
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> = param_values
+            .iter()
             .map(|v| v as &dyn rusqlite::types::ToSql)
             .collect();
 
@@ -1216,7 +1410,9 @@ impl SwarmDb {
                 "result": r.get::<_, Option<String>>(11)?
             }))
         }) {
-            for row in rows.flatten() { result.push(row); }
+            for row in rows.flatten() {
+                result.push(row);
+            }
         }
         json!({"tasks": result})
     }
@@ -1226,7 +1422,15 @@ impl SwarmDb {
     // ========================================================================
 
     /// Add a knowledge base entry. Ring-buffer trimmed to 500 entries.
-    pub fn kb_add(&self, pane_id: &str, project: &str, category: &str, title: &str, content: &str, files: &[String]) -> Value {
+    pub fn kb_add(
+        &self,
+        pane_id: &str,
+        project: &str,
+        category: &str,
+        title: &str,
+        content: &str,
+        files: &[String],
+    ) -> Value {
         let entry_id = gen_short_id(title);
         let files_json = serde_json::to_string(files).unwrap_or_else(|_| "[]".into());
         let now = now_iso();
@@ -1240,7 +1444,7 @@ impl SwarmDb {
             "DELETE FROM kb_entries WHERE id IN (\
                 SELECT id FROM kb_entries ORDER BY added_at ASC \
                 LIMIT MAX(0, (SELECT COUNT(*) FROM kb_entries) - ?1))",
-            params![MAX_KB_ENTRIES]
+            params![MAX_KB_ENTRIES],
         );
         json!({"status": "added", "entry_id": entry_id})
     }
@@ -1271,7 +1475,8 @@ impl SwarmDb {
             Ok(s) => s,
             Err(e) => return json!({"error": format!("Query: {}", e)}),
         };
-        let params_refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter()
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> = param_values
+            .iter()
             .map(|v| v as &dyn rusqlite::types::ToSql)
             .collect();
 
@@ -1326,7 +1531,9 @@ impl SwarmDb {
         };
 
         if let Ok(rows) = rows_result {
-            for row in rows.flatten() { entries.push(row); }
+            for row in rows.flatten() {
+                entries.push(row);
+            }
         }
         json!({"entries": entries})
     }
@@ -1344,7 +1551,7 @@ impl SwarmDb {
             "DELETE FROM messages WHERE id IN (\
                 SELECT id FROM messages ORDER BY id ASC \
                 LIMIT MAX(0, (SELECT COUNT(*) FROM messages) - ?1))",
-            params![MAX_MESSAGES]
+            params![MAX_MESSAGES],
         );
     }
 
@@ -1371,13 +1578,16 @@ impl SwarmDb {
              FROM messages \
              WHERE from_pane != ?1 AND (to_pane = 'all' OR to_pane = ?1) \
              AND read_by NOT LIKE ?2 \
-             ORDER BY id ASC"
+             ORDER BY id ASC",
         ) {
             if let Ok(rows) = stmt.query_map(params![pane_id, like_pattern], |r| {
                 Ok((
-                    r.get::<_, i64>(0)?, r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?, r.get::<_, String>(3)?,
-                    r.get::<_, String>(4)?, r.get::<_, String>(5)?,
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, String>(5)?,
                     r.get::<_, String>(6)?,
                 ))
             }) {
@@ -1389,13 +1599,15 @@ impl SwarmDb {
                     }));
 
                     if mark_read {
-                        let mut read_by: Vec<String> = serde_json::from_str(&read_by_str).unwrap_or_default();
+                        let mut read_by: Vec<String> =
+                            serde_json::from_str(&read_by_str).unwrap_or_default();
                         if !read_by.contains(&pane_id.to_string()) {
                             read_by.push(pane_id.to_string());
-                            let new_read_by = serde_json::to_string(&read_by).unwrap_or_else(|_| "[]".into());
+                            let new_read_by =
+                                serde_json::to_string(&read_by).unwrap_or_else(|_| "[]".into());
                             let _ = self.conn.execute(
                                 "UPDATE messages SET read_by = ?1 WHERE id = ?2",
-                                params![new_read_by, id]
+                                params![new_read_by, id],
                             );
                         }
                     }
@@ -1410,7 +1622,13 @@ impl SwarmDb {
     // ========================================================================
 
     /// Send a signal from an agent to the control plane.
-    pub fn signal_send(&self, pane_id: &str, signal_type: &str, message: &str, pipeline_id: Option<&str>) -> Value {
+    pub fn signal_send(
+        &self,
+        pane_id: &str,
+        signal_type: &str,
+        message: &str,
+        pipeline_id: Option<&str>,
+    ) -> Value {
         match self.conn.execute(
             "INSERT INTO agent_signals (pane_id, signal_type, message, pipeline_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![pane_id, signal_type, message, pipeline_id, now_iso()],
@@ -1439,7 +1657,9 @@ impl SwarmDb {
                     "created_at": r.get::<_, String>(5)?,
                 }))
             }) {
-                for row in rows.flatten() { signals.push(row); }
+                for row in rows.flatten() {
+                    signals.push(row);
+                }
             }
         }
         json!({"signals": signals, "count": signals.len()})
@@ -1447,7 +1667,10 @@ impl SwarmDb {
 
     /// Acknowledge a signal.
     pub fn signal_acknowledge(&self, signal_id: i64) -> Value {
-        match self.conn.execute("UPDATE agent_signals SET acknowledged = 1 WHERE id = ?1", params![signal_id]) {
+        match self.conn.execute(
+            "UPDATE agent_signals SET acknowledged = 1 WHERE id = ?1",
+            params![signal_id],
+        ) {
             Ok(n) => json!({"status": "acknowledged", "id": signal_id, "updated": n}),
             Err(e) => json!({"error": format!("{}", e)}),
         }
@@ -1455,7 +1678,13 @@ impl SwarmDb {
 
     /// Count unacknowledged signals.
     pub fn signal_count_unack(&self) -> usize {
-        self.conn.query_row("SELECT COUNT(*) FROM agent_signals WHERE acknowledged = 0", [], |r| r.get::<_, usize>(0)).unwrap_or(0)
+        self.conn
+            .query_row(
+                "SELECT COUNT(*) FROM agent_signals WHERE acknowledged = 0",
+                [],
+                |r| r.get::<_, usize>(0),
+            )
+            .unwrap_or(0)
     }
 
     /// Get unacknowledged signals grouped by pane.
@@ -1495,8 +1724,11 @@ impl SwarmDb {
         // Clean ports
         let mut stale_ports = vec![];
         if let Ok(mut stmt) = tx.prepare("SELECT port, pane_id FROM ports") {
-            let collected: Vec<_> = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
-                .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
+            let collected: Vec<_> = stmt
+                .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
+                .into_iter()
+                .flat_map(|rows| rows.flatten().collect::<Vec<_>>())
+                .collect();
             for (port, pane_id) in collected {
                 let (in_use, _) = is_port_in_use(port as u16);
                 if !in_use && !active.contains(&pane_id) {
@@ -1512,17 +1744,26 @@ impl SwarmDb {
         // Clean agents
         let mut stale_agents = vec![];
         if let Ok(mut stmt) = tx.prepare("SELECT pane_id FROM agents") {
-            let collected: Vec<_> = stmt.query_map([], |r| r.get::<_, String>(0))
-                .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
+            let collected: Vec<_> = stmt
+                .query_map([], |r| r.get::<_, String>(0))
+                .into_iter()
+                .flat_map(|rows| rows.flatten().collect::<Vec<_>>())
+                .collect();
             for row in collected {
-                if !active.contains(&row) { stale_agents.push(row); }
+                if !active.contains(&row) {
+                    stale_agents.push(row);
+                }
             }
         }
         let mut lock_count = 0i64;
         for pane_id in &stale_agents {
-            let n: i64 = tx.query_row(
-                "SELECT COUNT(*) FROM file_locks WHERE pane_id = ?1", params![pane_id], |r| r.get(0)
-            ).unwrap_or(0);
+            let n: i64 = tx
+                .query_row(
+                    "SELECT COUNT(*) FROM file_locks WHERE pane_id = ?1",
+                    params![pane_id],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
             lock_count += n;
         }
         for pane_id in &stale_agents {
@@ -1531,13 +1772,17 @@ impl SwarmDb {
         cleaned["agents"] = json!(stale_agents.len());
         cleaned["locks"] = json!(lock_count);
 
-        let orphan_locks: i64 = tx.query_row(
-            "SELECT COUNT(*) FROM file_locks WHERE pane_id NOT IN (SELECT pane_id FROM agents)",
-            [], |r| r.get(0)
-        ).unwrap_or(0);
+        let orphan_locks: i64 = tx
+            .query_row(
+                "SELECT COUNT(*) FROM file_locks WHERE pane_id NOT IN (SELECT pane_id FROM agents)",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
         if orphan_locks > 0 {
             let _ = tx.execute(
-                "DELETE FROM file_locks WHERE pane_id NOT IN (SELECT pane_id FROM agents)", []
+                "DELETE FROM file_locks WHERE pane_id NOT IN (SELECT pane_id FROM agents)",
+                [],
             );
             cleaned["locks"] = json!(lock_count + orphan_locks);
         }
@@ -1545,28 +1790,44 @@ impl SwarmDb {
         // Clean git branches
         let mut stale_branches = vec![];
         if let Ok(mut stmt) = tx.prepare("SELECT repo_branch, pane_id FROM git_branches") {
-            let collected: Vec<_> = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
-                .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
+            let collected: Vec<_> = stmt
+                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .into_iter()
+                .flat_map(|rows| rows.flatten().collect::<Vec<_>>())
+                .collect();
             for row in collected {
-                if !active.contains(&row.1) { stale_branches.push(row.0); }
+                if !active.contains(&row.1) {
+                    stale_branches.push(row.0);
+                }
             }
         }
         for key in &stale_branches {
-            let _ = tx.execute("DELETE FROM git_branches WHERE repo_branch = ?1", params![key]);
+            let _ = tx.execute(
+                "DELETE FROM git_branches WHERE repo_branch = ?1",
+                params![key],
+            );
         }
         cleaned["branches"] = json!(stale_branches.len());
 
         // Clean active builds
         let mut stale_builds = vec![];
         if let Ok(mut stmt) = tx.prepare("SELECT project, pane_id FROM builds_active") {
-            let collected: Vec<_> = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
-                .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
+            let collected: Vec<_> = stmt
+                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .into_iter()
+                .flat_map(|rows| rows.flatten().collect::<Vec<_>>())
+                .collect();
             for row in collected {
-                if !active.contains(&row.1) { stale_builds.push(row.0); }
+                if !active.contains(&row.1) {
+                    stale_builds.push(row.0);
+                }
             }
         }
         for project in &stale_builds {
-            let _ = tx.execute("DELETE FROM builds_active WHERE project = ?1", params![project]);
+            let _ = tx.execute(
+                "DELETE FROM builds_active WHERE project = ?1",
+                params![project],
+            );
         }
         cleaned["builds"] = json!(stale_builds.len());
 
@@ -1582,8 +1843,11 @@ impl SwarmDb {
     pub fn status_overview(&self, project: Option<&str>) -> Value {
         let mut port_list = vec![];
         if let Ok(mut stmt) = self.conn.prepare("SELECT port, service FROM ports") {
-            let collected: Vec<_> = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
-                .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
+            let collected: Vec<_> = stmt
+                .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
+                .into_iter()
+                .flat_map(|rows| rows.flatten().collect::<Vec<_>>())
+                .collect();
             for row in collected {
                 let (active, _) = is_port_in_use(row.0 as u16);
                 port_list.push(json!({"port": row.0, "service": row.1, "active": active}));
@@ -1616,18 +1880,31 @@ impl SwarmDb {
             }
         }
 
-        let lock_count: i64 = self.conn.query_row("SELECT COUNT(*) FROM file_locks", [], |r| r.get(0)).unwrap_or(0);
+        let lock_count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM file_locks", [], |r| r.get(0))
+            .unwrap_or(0);
 
         let mut active_builds = vec![];
         if let Ok(mut stmt) = self.conn.prepare("SELECT project FROM builds_active") {
-            let collected: Vec<_> = stmt.query_map([], |r| r.get::<_, String>(0))
-                .into_iter().flat_map(|rows| rows.flatten().collect::<Vec<_>>()).collect();
-            for row in collected { active_builds.push(row); }
+            let collected: Vec<_> = stmt
+                .query_map([], |r| r.get::<_, String>(0))
+                .into_iter()
+                .flat_map(|rows| rows.flatten().collect::<Vec<_>>())
+                .collect();
+            for row in collected {
+                active_builds.push(row);
+            }
         }
 
-        let pending_tasks: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM tasks WHERE status = 'pending'", [], |r| r.get(0)
-        ).unwrap_or(0);
+        let pending_tasks: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM tasks WHERE status = 'pending'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
 
         json!({
             "ports": port_list, "agents": agent_list,
@@ -1750,8 +2027,22 @@ mod tests {
     #[test]
     fn test_kb_add_search() {
         let db = test_db();
-        db.kb_add("p1", "proj", "code_location", "Auth flow", "OAuth in /lib/auth.ts", &[]);
-        db.kb_add("p1", "proj", "bug", "CSS issue", "Flexbox alignment broken", &[]);
+        db.kb_add(
+            "p1",
+            "proj",
+            "code_location",
+            "Auth flow",
+            "OAuth in /lib/auth.ts",
+            &[],
+        );
+        db.kb_add(
+            "p1",
+            "proj",
+            "bug",
+            "CSS issue",
+            "Flexbox alignment broken",
+            &[],
+        );
 
         let r = db.kb_search("OAuth", None, None);
         assert_eq!(r["results"].as_array().unwrap().len(), 1);

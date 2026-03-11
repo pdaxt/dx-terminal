@@ -90,19 +90,22 @@ async fn audit_cycle() {
     let mut audited = 0;
 
     for proj in &reg.projects {
-        if audited >= 5 { break; }
+        if audited >= 5 {
+            break;
+        }
 
         // Run audit in a blocking task since it does filesystem I/O
         let path = proj.path.clone();
         let name = proj.name.clone();
-        let result = tokio::task::spawn_blocking(move || {
-            crate::audit::audit_full(&path)
-        }).await;
+        let result = tokio::task::spawn_blocking(move || crate::audit::audit_full(&path)).await;
 
         match result {
             Ok(report) => {
                 let grade = report.get("grade").and_then(|v| v.as_str()).unwrap_or("?");
-                let total = report.get("total_findings").and_then(|v| v.as_i64()).unwrap_or(0);
+                let total = report
+                    .get("total_findings")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
                 tracing::info!("Audit cycle: {} grade={} findings={}", name, grade, total);
             }
             Err(e) => {

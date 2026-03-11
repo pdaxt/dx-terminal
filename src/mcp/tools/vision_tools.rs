@@ -20,10 +20,19 @@ pub fn vision_work(project: Option<&str>, description: &str) -> String {
 }
 
 pub fn vision_add_feature(
-    project: Option<&str>, goal_id: &str, title: &str, description: &str,
+    project: Option<&str>,
+    goal_id: &str,
+    title: &str,
+    description: &str,
     acceptance_criteria: Vec<String>,
 ) -> String {
-    vision::add_feature(&resolve_project_path(project), goal_id, title, description, acceptance_criteria)
+    vision::add_feature(
+        &resolve_project_path(project),
+        goal_id,
+        title,
+        description,
+        acceptance_criteria,
+    )
 }
 
 pub fn vision_discovery_start(project: Option<&str>, feature_id: &str) -> String {
@@ -70,7 +79,12 @@ pub fn vision_acceptance_verify(
     )
 }
 
-pub fn vision_add_question(project: Option<&str>, feature_id: &str, question: &str, blocking: Option<bool>) -> String {
+pub fn vision_add_question(
+    project: Option<&str>,
+    feature_id: &str,
+    question: &str,
+    blocking: Option<bool>,
+) -> String {
     vision::add_question_with_blocking(
         &resolve_project_path(project),
         feature_id,
@@ -79,33 +93,84 @@ pub fn vision_add_question(project: Option<&str>, feature_id: &str, question: &s
     )
 }
 
-pub fn vision_research_doc_upsert(project: Option<&str>, feature_id: &str, content: &str) -> String {
-    vision::upsert_feature_doc(&resolve_project_path(project), feature_id, "research", content)
+pub fn vision_research_doc_upsert(
+    project: Option<&str>,
+    feature_id: &str,
+    content: &str,
+) -> String {
+    vision::upsert_feature_doc(
+        &resolve_project_path(project),
+        feature_id,
+        "research",
+        content,
+    )
 }
 
-pub fn vision_discovery_doc_upsert(project: Option<&str>, feature_id: &str, content: &str) -> String {
-    vision::upsert_feature_doc(&resolve_project_path(project), feature_id, "discovery", content)
+pub fn vision_discovery_doc_upsert(
+    project: Option<&str>,
+    feature_id: &str,
+    content: &str,
+) -> String {
+    vision::upsert_feature_doc(
+        &resolve_project_path(project),
+        feature_id,
+        "discovery",
+        content,
+    )
 }
 
 pub fn vision_answer(
-    project: Option<&str>, feature_id: &str, question_id: &str,
-    answer: &str, rationale: &str, alternatives: Vec<String>,
+    project: Option<&str>,
+    feature_id: &str,
+    question_id: &str,
+    answer: &str,
+    rationale: &str,
+    alternatives: Vec<String>,
 ) -> String {
-    vision::answer_question(&resolve_project_path(project), feature_id, question_id, answer, rationale, alternatives)
+    vision::answer_question(
+        &resolve_project_path(project),
+        feature_id,
+        question_id,
+        answer,
+        rationale,
+        alternatives,
+    )
 }
 
 pub fn vision_add_task(
-    project: Option<&str>, feature_id: &str, title: &str, description: &str,
+    project: Option<&str>,
+    feature_id: &str,
+    title: &str,
+    description: &str,
     branch: Option<&str>,
 ) -> String {
-    vision::add_task(&resolve_project_path(project), feature_id, title, description, branch)
+    vision::add_task(
+        &resolve_project_path(project),
+        feature_id,
+        title,
+        description,
+        branch,
+    )
 }
 
 pub fn vision_update_task(
-    project: Option<&str>, feature_id: &str, task_id: &str,
-    status: &str, branch: Option<&str>, pr: Option<&str>, commit: Option<&str>,
+    project: Option<&str>,
+    feature_id: &str,
+    task_id: &str,
+    status: &str,
+    branch: Option<&str>,
+    pr: Option<&str>,
+    commit: Option<&str>,
 ) -> String {
-    vision::update_task_status(&resolve_project_path(project), feature_id, task_id, status, branch, pr, commit)
+    vision::update_task_status(
+        &resolve_project_path(project),
+        feature_id,
+        task_id,
+        status,
+        branch,
+        pr,
+        commit,
+    )
 }
 
 pub fn vision_update_feature(project: Option<&str>, feature_id: &str, status: &str) -> String {
@@ -132,10 +197,27 @@ pub fn vision_init(project: &str, name: &str, mission: &str, repo: &str) -> Stri
     vision::init_vision(project, name, mission, repo)
 }
 
-pub fn vision_add_goal(project: Option<&str>, id: &str, title: &str, description: &str, priority: u8) -> String {
-    vision::add_goal(&resolve_project_path(project), id, title, description, priority)
+pub fn vision_add_goal(
+    project: Option<&str>,
+    id: &str,
+    title: &str,
+    description: &str,
+    priority: u8,
+) -> String {
+    vision::add_goal(
+        &resolve_project_path(project),
+        id,
+        title,
+        description,
+        priority,
+    )
 }
 
 pub fn vision_update_goal(project: Option<&str>, goal_id: &str, status: &str) -> String {
-    vision::update_goal_status(&resolve_project_path(project), goal_id, status, &format!("Status changed to {}", status))
+    vision::update_goal_status(
+        &resolve_project_path(project),
+        goal_id,
+        status,
+        &format!("Status changed to {}", status),
+    )
 }

@@ -64,7 +64,12 @@ pub fn current_branch(root: &Path) -> Option<String> {
 /// Get ahead/behind counts relative to remote tracking branch
 fn get_ahead_behind(root: &Path, branch: &str) -> (usize, usize) {
     let output = Command::new("git")
-        .args(["rev-list", "--left-right", "--count", &format!("{}...origin/{}", branch, branch)])
+        .args([
+            "rev-list",
+            "--left-right",
+            "--count",
+            &format!("{}...origin/{}", branch, branch),
+        ])
         .current_dir(root)
         .output();
 
@@ -161,17 +166,27 @@ fn generate_commit_message(dirty_files: &[String], _trigger_files: &[PathBuf]) -
     let has_vision = dirty_files.iter().any(|f| f.contains(".vision/"));
     let has_src = dirty_files.iter().any(|f| f.contains("src/"));
     let has_assets = dirty_files.iter().any(|f| f.contains("assets/"));
-    let has_config = dirty_files.iter().any(|f| {
-        f.contains("Cargo.toml") || f.contains("package.json") || f.contains("CLAUDE.md")
-    });
+    let has_config = dirty_files
+        .iter()
+        .any(|f| f.contains("Cargo.toml") || f.contains("package.json") || f.contains("CLAUDE.md"));
     let has_hooks = dirty_files.iter().any(|f| f.contains(".claude/"));
 
     let mut parts = Vec::new();
-    if has_vision { parts.push("vision"); }
-    if has_src { parts.push("src"); }
-    if has_assets { parts.push("assets"); }
-    if has_config { parts.push("config"); }
-    if has_hooks { parts.push("hooks"); }
+    if has_vision {
+        parts.push("vision");
+    }
+    if has_src {
+        parts.push("src");
+    }
+    if has_assets {
+        parts.push("assets");
+    }
+    if has_config {
+        parts.push("config");
+    }
+    if has_hooks {
+        parts.push("hooks");
+    }
 
     let scope = if parts.is_empty() {
         "sync".to_string()
@@ -180,5 +195,10 @@ fn generate_commit_message(dirty_files: &[String], _trigger_files: &[PathBuf]) -
     };
 
     let count = dirty_files.len();
-    format!("chore({}): auto-sync {} file{}", scope, count, if count == 1 { "" } else { "s" })
+    format!(
+        "chore({}): auto-sync {} file{}",
+        scope,
+        count,
+        if count == 1 { "" } else { "s" }
+    )
 }

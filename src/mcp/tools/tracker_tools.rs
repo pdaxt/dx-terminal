@@ -135,8 +135,12 @@ pub fn process_start(req: &ProcessStartRequest) -> String {
 /// Update a process step
 pub fn process_update(req: &ProcessUpdateRequest) -> String {
     crate::tracker::process_update(
-        &req.space, &req.process_id, req.step_index, req.done.unwrap_or(true),
-    ).to_string()
+        &req.space,
+        &req.process_id,
+        req.step_index,
+        req.done.unwrap_or(true),
+    )
+    .to_string()
 }
 
 /// List processes in a space

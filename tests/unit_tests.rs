@@ -176,7 +176,7 @@ fn test_shell_prompt_detection() {
         false
     }
 
-    assert!(check_shell_prompt("some output\npran@mac ~$ "));  // Trailing space trimmed, still matches '$'
+    assert!(check_shell_prompt("some output\npran@mac ~$ ")); // Trailing space trimmed, still matches '$'
     assert!(check_shell_prompt("$"));
     assert!(check_shell_prompt("Claude exited with code 0"));
     assert!(check_shell_prompt("pran@mac ~ % "));
@@ -188,8 +188,13 @@ fn test_shell_prompt_detection() {
 fn test_error_detection() {
     fn check_errors(output: &str) -> Option<String> {
         let patterns = [
-            "Error:", "FATAL:", "panic:", "Traceback",
-            "rate limit", "hit your limit", "SIGTERM",
+            "Error:",
+            "FATAL:",
+            "panic:",
+            "Traceback",
+            "rate limit",
+            "hit your limit",
+            "SIGTERM",
         ];
         for pat in &patterns {
             if output.contains(pat) {
@@ -199,9 +204,18 @@ fn test_error_detection() {
         None
     }
 
-    assert_eq!(check_errors("Error: something broke"), Some("Error:".to_string()));
-    assert_eq!(check_errors("FATAL: out of memory"), Some("FATAL:".to_string()));
-    assert_eq!(check_errors("You've hit your limit"), Some("hit your limit".to_string()));
+    assert_eq!(
+        check_errors("Error: something broke"),
+        Some("Error:".to_string())
+    );
+    assert_eq!(
+        check_errors("FATAL: out of memory"),
+        Some("FATAL:".to_string())
+    );
+    assert_eq!(
+        check_errors("You've hit your limit"),
+        Some("hit your limit".to_string())
+    );
     assert_eq!(check_errors("all good here"), None);
 }
 
@@ -218,7 +232,11 @@ fn test_capacity_defaults() {
     // Zero division safety
     let acu_total = 0.0_f64;
     let acu_used = 5.0_f64;
-    let pct = if acu_total > 0.0 { (acu_used / acu_total * 100.0) as u32 } else { 0 };
+    let pct = if acu_total > 0.0 {
+        (acu_used / acu_total * 100.0) as u32
+    } else {
+        0
+    };
     assert_eq!(pct, 0);
 }
 
@@ -324,10 +342,22 @@ fn test_pipeline_id_serialization() {
 
     // Serialize back
     let serialized = serde_json::to_string_pretty(&task).unwrap();
-    assert!(serialized.contains("pipeline_id"), "pipeline_id must be in serialized output");
-    assert!(serialized.contains("pipe_123_abcd"), "pipeline_id value must be in serialized output");
-    assert!(serialized.contains("tmux_target"), "tmux_target must be in serialized output");
-    assert!(serialized.contains("claude6:11.0"), "tmux_target value must be in serialized output");
+    assert!(
+        serialized.contains("pipeline_id"),
+        "pipeline_id must be in serialized output"
+    );
+    assert!(
+        serialized.contains("pipe_123_abcd"),
+        "pipeline_id value must be in serialized output"
+    );
+    assert!(
+        serialized.contains("tmux_target"),
+        "tmux_target must be in serialized output"
+    );
+    assert!(
+        serialized.contains("claude6:11.0"),
+        "tmux_target value must be in serialized output"
+    );
 
     // Roundtrip
     let task2: QueueTask = serde_json::from_str(&serialized).unwrap();
@@ -395,7 +425,8 @@ fn test_queue_roundtrip_with_pipeline_id() {
                 "space": null,
                 "pipeline_id": "pipe_999_beef",
                 "tmux_target": null
-            })).unwrap(),
+            }))
+            .unwrap(),
             serde_json::from_value(serde_json::json!({
                 "id": "t_2",
                 "project": "dx-terminal",
@@ -417,20 +448,33 @@ fn test_queue_roundtrip_with_pipeline_id() {
                 "space": null,
                 "pipeline_id": "pipe_999_beef",
                 "tmux_target": null
-            })).unwrap(),
+            }))
+            .unwrap(),
         ],
     };
 
     // Serialize full queue
     let json = serde_json::to_string_pretty(&queue).unwrap();
-    assert!(json.contains("pipeline_id"), "pipeline_id must survive queue serialization");
-    assert!(json.contains("pipe_999_beef"), "pipeline_id value must survive");
+    assert!(
+        json.contains("pipeline_id"),
+        "pipeline_id must survive queue serialization"
+    );
+    assert!(
+        json.contains("pipe_999_beef"),
+        "pipeline_id value must survive"
+    );
 
     // Deserialize back
     let queue2: TaskQueue = serde_json::from_str(&json).unwrap();
     assert_eq!(queue2.tasks.len(), 2);
-    assert_eq!(queue2.tasks[0].pipeline_id.as_deref(), Some("pipe_999_beef"));
-    assert_eq!(queue2.tasks[1].pipeline_id.as_deref(), Some("pipe_999_beef"));
+    assert_eq!(
+        queue2.tasks[0].pipeline_id.as_deref(),
+        Some("pipe_999_beef")
+    );
+    assert_eq!(
+        queue2.tasks[1].pipeline_id.as_deref(),
+        Some("pipe_999_beef")
+    );
 }
 
 // ── VDD: Vision-Driven Development tests ──
@@ -453,7 +497,13 @@ fn test_vdd_feature_lifecycle() {
     assert!(result.contains("added"));
 
     // Add a feature
-    let result = add_feature(path, "G1", "WebSocket streaming", "Real-time data via WS", vec!["Sub-second latency".into()]);
+    let result = add_feature(
+        path,
+        "G1",
+        "WebSocket streaming",
+        "Real-time data via WS",
+        vec!["Sub-second latency".into()],
+    );
     assert!(result.contains("F1.1"));
 
     // Add questions
@@ -461,11 +511,24 @@ fn test_vdd_feature_lifecycle() {
     assert!(result.contains("Q1.1.1"));
 
     // Answer question
-    let result = answer_question(path, "F1.1", "Q1.1.1", "WebSocket", "Bidirectional needed", vec!["SSE".into()]);
+    let result = answer_question(
+        path,
+        "F1.1",
+        "Q1.1.1",
+        "WebSocket",
+        "Bidirectional needed",
+        vec!["SSE".into()],
+    );
     assert!(result.contains("D1.1.1"));
 
     // Add task
-    let result = add_task(path, "F1.1", "Build WS handler", "Implement axum WS", Some("feat/ws-handler"));
+    let result = add_task(
+        path,
+        "F1.1",
+        "Build WS handler",
+        "Implement axum WS",
+        Some("feat/ws-handler"),
+    );
     assert!(result.contains("T1.1.1"));
 
     // Update task status
@@ -520,7 +583,10 @@ fn test_vdd_recursive_sub_vision() {
 
     // Verify parent feature has sub_vision link
     let vision = load_vision(path).unwrap();
-    assert_eq!(vision.features[0].sub_vision.as_deref(), Some(".vision/features/F1.1.json"));
+    assert_eq!(
+        vision.features[0].sub_vision.as_deref(),
+        Some(".vision/features/F1.1.json")
+    );
 
     // Cleanup
     let _ = std::fs::remove_dir_all(&dir);

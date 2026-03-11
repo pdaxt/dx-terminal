@@ -3,11 +3,11 @@ pub mod replicator;
 pub mod sse;
 pub mod ws;
 
-use std::sync::Arc;
 use axum::{
-    Router,
     routing::{get, post},
+    Router,
 };
+use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 
 use crate::app::App;
@@ -47,7 +47,10 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/analytics/digest", get(api::get_analytics_digest))
         .route("/api/analytics/alerts", get(api::get_analytics_alerts))
         .route("/api/analytics/quality", get(api::get_analytics_quality))
-        .route("/api/analytics/leaderboard", get(api::get_analytics_leaderboard))
+        .route(
+            "/api/analytics/leaderboard",
+            get(api::get_analytics_leaderboard),
+        )
         .route("/api/analytics/overview", get(api::get_analytics_overview))
         // Build environments
         .route("/api/builds", get(api::get_builds))
@@ -65,24 +68,48 @@ pub fn build_router(app: Arc<App>) -> Router {
         // VDD: Vision-Driven Development
         .route("/api/vision/tree", get(api::get_vision_tree))
         .route("/api/vision/drill", get(api::get_vision_drill))
-        .route("/api/vision/feature/readiness", get(api::get_vision_feature_readiness))
-        .route("/api/vision/discovery/readiness", get(api::get_vision_discovery_readiness))
-        .route("/api/vision/discovery/start", post(api::start_vision_discovery))
-        .route("/api/vision/discovery/complete", post(api::complete_vision_discovery))
+        .route(
+            "/api/vision/feature/readiness",
+            get(api::get_vision_feature_readiness),
+        )
+        .route(
+            "/api/vision/discovery/readiness",
+            get(api::get_vision_discovery_readiness),
+        )
+        .route(
+            "/api/vision/discovery/start",
+            post(api::start_vision_discovery),
+        )
+        .route(
+            "/api/vision/discovery/complete",
+            post(api::complete_vision_discovery),
+        )
         .route("/api/vision/feature", post(api::add_vision_feature))
         .route("/api/vision/acceptance", post(api::add_vision_acceptance))
-        .route("/api/vision/acceptance/update", post(api::update_vision_acceptance))
-        .route("/api/vision/acceptance/verify", post(api::verify_vision_acceptance))
+        .route(
+            "/api/vision/acceptance/update",
+            post(api::update_vision_acceptance),
+        )
+        .route(
+            "/api/vision/acceptance/verify",
+            post(api::verify_vision_acceptance),
+        )
         .route("/api/vision/question", post(api::add_vision_question))
         .route("/api/vision/answer", post(api::answer_vision_question))
         .route("/api/vision/task", post(api::add_vision_task))
         .route("/api/vision/task/status", post(api::update_vision_task))
-        .route("/api/vision/feature/status", post(api::update_vision_feature_status))
+        .route(
+            "/api/vision/feature/status",
+            post(api::update_vision_feature_status),
+        )
         .route("/api/vision/git-sync", post(api::git_sync_vision))
         .route("/api/vision/work", post(api::assess_vision_work))
         // VDD Research & Discovery Docs
         .route("/api/vision/docs", get(api::list_vision_docs))
-        .route("/api/vision/doc", get(api::get_vision_doc).post(api::upsert_vision_doc))
+        .route(
+            "/api/vision/doc",
+            get(api::get_vision_doc).post(api::upsert_vision_doc),
+        )
         .route("/api/vision/notify", post(api::notify_vision_change))
         // Confluence-style Wiki page
         .route("/wiki", get(api::wiki_page))

@@ -1,16 +1,13 @@
+use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::PathBuf;
 use std::time::Duration;
-use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::sync::mpsc;
 
 use super::SyncConfig;
 
 /// Run the file watcher in a blocking thread.
 /// Watches configured directories and sends batches of changed paths via channel.
-pub fn run_watcher(
-    config: SyncConfig,
-    tx: mpsc::Sender<Vec<PathBuf>>,
-) -> anyhow::Result<()> {
+pub fn run_watcher(config: SyncConfig, tx: mpsc::Sender<Vec<PathBuf>>) -> anyhow::Result<()> {
     let (event_tx, event_rx) = std::sync::mpsc::channel::<Result<Event, notify::Error>>();
 
     let mut watcher = RecommendedWatcher::new(
@@ -85,7 +82,7 @@ fn should_ignore(path: &PathBuf, patterns: &[String]) -> bool {
     for pattern in patterns {
         if pattern.ends_with('/') {
             // Directory pattern
-            if path_str.contains(pattern) || path_str.contains(&pattern[..pattern.len()-1]) {
+            if path_str.contains(pattern) || path_str.contains(&pattern[..pattern.len() - 1]) {
                 return true;
             }
         } else if pattern.starts_with("*.") {

@@ -1,5 +1,5 @@
-use std::collections::{HashMap, VecDeque};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, VecDeque};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DxTerminalState {
@@ -115,8 +115,12 @@ pub struct DxTerminalConfig {
 fn default_markers() -> Vec<String> {
     vec!["---DONE---".into(), "TASK COMPLETE".into()]
 }
-fn default_stuck() -> u64 { 5 }
-fn default_role() -> String { "developer".into() }
+fn default_stuck() -> u64 {
+    5
+}
+fn default_role() -> String {
+    "developer".into()
+}
 
 impl Default for DxTerminalConfig {
     fn default() -> Self {

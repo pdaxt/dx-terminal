@@ -1,25 +1,30 @@
 //! Pane lifecycle: spawn, kill, restart, reassign, assign, assign_adhoc, collect, complete.
 
-use std::path::PathBuf;
-use crate::app::App;
-use crate::config;
-use crate::claude;
-use crate::tracker;
-use crate::capacity;
-use crate::state;
-use crate::state::types::PaneState;
-use crate::workspace;
-use crate::queue;
-use crate::machine;
-use crate::tmux;
 use super::super::types::*;
 use super::helpers::*;
+use crate::app::App;
+use crate::capacity;
+use crate::claude;
+use crate::config;
+use crate::machine;
+use crate::queue;
+use crate::state;
+use crate::state::types::PaneState;
+use crate::tmux;
+use crate::tracker;
+use crate::workspace;
+use std::path::PathBuf;
 
 /// Execute os_spawn logic — allocates PTY and spawns Claude agent
 pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     let pane_num = match config::resolve_pane(&req.pane) {
         Some(n) => n,
-        None => return json_err(&format!("Invalid pane: {}. Use 1-9 or theme name.", req.pane)),
+        None => {
+            return json_err(&format!(
+                "Invalid pane: {}. Use 1-9 or theme name.",
+                req.pane
+            ))
+        }
     };
 
     let role = req.role.unwrap_or_else(|| "developer".into());
@@ -43,11 +48,18 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
 
     // Validate CWD exists — fall back to project_path to avoid posix_spawn ENOENT
     if !std::path::Path::new(&spawn_cwd).exists() {
-        tracing::warn!("spawn_cwd does not exist: {}, falling back to project_path: {}", spawn_cwd, project_path);
+        tracing::warn!(
+            "spawn_cwd does not exist: {}, falling back to project_path: {}",
+            spawn_cwd,
+            project_path
+        );
         spawn_cwd = project_path.clone();
         // If project_path also doesn't exist, fail early with clear error
         if !std::path::Path::new(&spawn_cwd).exists() {
-            return json_err(&format!("Neither workspace nor project path exists: {}", spawn_cwd));
+            return json_err(&format!(
+                "Neither workspace nor project path exists: {}",
+                spawn_cwd
+            ));
         }
     }
 
@@ -72,12 +84,26 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         ("MACHINE_MAC".to_string(), machine_id.mac.clone()),
     ];
 
-    let task_prompt = format!("{}\n\n{}", task, if prompt.is_empty() { "" } else { &prompt });
+    let task_prompt = format!(
+        "{}\n\n{}",
+        task,
+        if prompt.is_empty() { "" } else { &prompt }
+    );
     let autonomous = req.autonomous.unwrap_or(true);
 
     // Spawn via tmux — creates a visible window the user can attach to
-    let window_name = format!("dx-{}-{}", pane_num, config::theme_name(pane_num).to_lowercase());
-    let tmux_result = tmux::spawn_agent(&window_name, &spawn_cwd, &task_prompt, &env_vars, autonomous);
+    let window_name = format!(
+        "dx-{}-{}",
+        pane_num,
+        config::theme_name(pane_num).to_lowercase()
+    );
+    let tmux_result = tmux::spawn_agent(
+        &window_name,
+        &spawn_cwd,
+        &task_prompt,
+        &env_vars,
+        autonomous,
+    );
 
     let (tmux_status, tmux_target) = match &tmux_result {
         Ok(agent) => ("tmux_spawned".to_string(), Some(agent.target.clone())),
@@ -111,16 +137,25 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         tmux_target: tmux_target.clone(),
     };
     app.state.set_pane(pane_num, pane_state).await;
-    app.state.event_bus.send(crate::state::events::StateEvent::PaneSpawned {
-        pane: pane_num,
-        project: project_name.clone(),
-        role: role.clone(),
-    });
-    app.state.log_activity(
-        pane_num,
-        "spawn",
-        &format!("Spawned {} on {}: {}", role, project_name, truncate(&task, 40)),
-    ).await;
+    app.state
+        .event_bus
+        .send(crate::state::events::StateEvent::PaneSpawned {
+            pane: pane_num,
+            project: project_name.clone(),
+            role: role.clone(),
+        });
+    app.state
+        .log_activity(
+            pane_num,
+            "spawn",
+            &format!(
+                "Spawned {} on {}: {}",
+                role,
+                project_name,
+                truncate(&task, 40)
+            ),
+        )
+        .await;
 
     update_agents_json(pane_num, &project_name, &task);
 
@@ -133,7 +168,12 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     );
 
     if let Some(ref branch) = ws_branch {
-        let _ = crate::multi_agent::git_claim_branch(&pane_id_str(pane_num), branch, &project_name, &task);
+        let _ = crate::multi_agent::git_claim_branch(
+            &pane_id_str(pane_num),
+            branch,
+            &project_name,
+            &task,
+        );
     }
 
     serde_json::json!({
@@ -151,7 +191,8 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         "machine_ip": machine_id.ip,
         "machine_hostname": machine_id.hostname,
         "machine_mac": machine_id.mac,
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Execute os_kill logic — kills PTY process and cleans up state
@@ -196,7 +237,8 @@ pub async fn kill(app: &App, req: KillRequest) -> String {
     }
 
     if let Some(ref branch) = branch_name {
-        let _ = crate::multi_agent::git_release_branch(&pane_id_str(pane_num), branch, &project_name);
+        let _ =
+            crate::multi_agent::git_release_branch(&pane_id_str(pane_num), branch, &project_name);
     }
 
     // Deregister from coordination system + release all file locks
@@ -221,11 +263,15 @@ pub async fn kill(app: &App, req: KillRequest) -> String {
     pane_state.machine_mac = None;
     pane_state.tmux_target = None;
     app.state.set_pane(pane_num, pane_state).await;
-    app.state.event_bus.send(crate::state::events::StateEvent::PaneKilled {
-        pane: pane_num,
-        reason: reason.clone(),
-    });
-    app.state.log_activity(pane_num, "kill", &format!("Killed: {}", reason)).await;
+    app.state
+        .event_bus
+        .send(crate::state::events::StateEvent::PaneKilled {
+            pane: pane_num,
+            reason: reason.clone(),
+        });
+    app.state
+        .log_activity(pane_num, "kill", &format!("Killed: {}", reason))
+        .await;
 
     remove_from_agents_json(pane_num);
 
@@ -236,7 +282,8 @@ pub async fn kill(app: &App, req: KillRequest) -> String {
         "kill_method": kill_status,
         "git": git_info,
         "output_log": output_log,
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Execute os_restart logic
@@ -248,26 +295,37 @@ pub async fn restart(app: &App, req: RestartRequest) -> String {
 
     let pane_data = app.state.get_pane(pane_num).await;
     if pane_data.project == "--" || pane_data.project.is_empty() {
-        return json_err(&format!("Pane {} has no previous config to restart", pane_num));
+        return json_err(&format!(
+            "Pane {} has no previous config to restart",
+            pane_num
+        ));
     }
 
-    let _ = kill(app, KillRequest {
-        pane: pane_num.to_string(),
-        reason: Some("restart".into()),
-    }).await;
-
-    spawn(app, SpawnRequest {
-        pane: pane_num.to_string(),
-        project: if pane_data.project_path.is_empty() {
-            pane_data.project
-        } else {
-            pane_data.project_path
+    let _ = kill(
+        app,
+        KillRequest {
+            pane: pane_num.to_string(),
+            reason: Some("restart".into()),
         },
-        role: Some(pane_data.role),
-        task: Some(pane_data.task),
-        prompt: None,
-        autonomous: None,
-    }).await
+    )
+    .await;
+
+    spawn(
+        app,
+        SpawnRequest {
+            pane: pane_num.to_string(),
+            project: if pane_data.project_path.is_empty() {
+                pane_data.project
+            } else {
+                pane_data.project_path
+            },
+            role: Some(pane_data.role),
+            task: Some(pane_data.task),
+            prompt: None,
+            autonomous: None,
+        },
+    )
+    .await
 }
 
 /// Execute os_reassign logic — sends new task to running agent via PTY
@@ -305,7 +363,11 @@ pub async fn reassign(app: &App, req: ReassignRequest) -> String {
         // Send via tmux if available, otherwise PTY fallback
         if let Some(ref target) = pane_data.tmux_target {
             if let Err(e) = tmux::send_command(target, &msg) {
-                tracing::warn!("Failed to send reassign via tmux to pane {}: {}", pane_num, e);
+                tracing::warn!(
+                    "Failed to send reassign via tmux to pane {}: {}",
+                    pane_num,
+                    e
+                );
             }
         } else {
             let send_result = {
@@ -313,17 +375,26 @@ pub async fn reassign(app: &App, req: ReassignRequest) -> String {
                 pty.send_line(pane_num, &msg)
             };
             if let Err(e) = send_result {
-                tracing::warn!("Failed to send reassign message to pane {}: {}", pane_num, e);
+                tracing::warn!(
+                    "Failed to send reassign message to pane {}: {}",
+                    pane_num,
+                    e
+                );
             }
         }
     }
 
     app.state.set_pane(pane_num, pane_data.clone()).await;
-    app.state.log_activity(
-        pane_num,
-        "reassign",
-        &format!("Reassigned: {}", truncate(req.task.as_deref().unwrap_or("config change"), 40)),
-    ).await;
+    app.state
+        .log_activity(
+            pane_num,
+            "reassign",
+            &format!(
+                "Reassigned: {}",
+                truncate(req.task.as_deref().unwrap_or("config change"), 40)
+            ),
+        )
+        .await;
 
     update_agents_json(pane_num, &pane_data.project, &pane_data.task);
 
@@ -335,7 +406,8 @@ pub async fn reassign(app: &App, req: ReassignRequest) -> String {
             "role": pane_data.role,
             "task": pane_data.task,
         }
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Execute os_assign logic
@@ -347,23 +419,42 @@ pub async fn assign(app: &App, req: AssignRequest) -> String {
 
     let issue = match tracker::find_issue(&req.space, &req.issue_id) {
         Some(i) => i,
-        None => return json_err(&format!("Issue {} not found in space {}", req.issue_id, req.space)),
+        None => {
+            return json_err(&format!(
+                "Issue {} not found in space {}",
+                req.issue_id, req.space
+            ))
+        }
     };
 
-    let project_path = app.state.get_space_project_path(&req.space).await
+    let project_path = app
+        .state
+        .get_space_project_path(&req.space)
+        .await
         .unwrap_or_else(|| format!("{}/Projects/{}", config::home_dir().display(), req.space));
 
     let state_snap = app.state.get_state_snapshot().await;
-    let role = issue.get("role").and_then(|v| v.as_str())
+    let role = issue
+        .get("role")
+        .and_then(|v| v.as_str())
         .unwrap_or(&state_snap.config.default_role)
         .to_string();
 
     let title = issue.get("title").and_then(|v| v.as_str()).unwrap_or("");
     let task = format!("[{}] {}", req.issue_id, title);
-    let description = issue.get("description").and_then(|v| v.as_str()).unwrap_or("");
-    let priority = issue.get("priority").and_then(|v| v.as_str()).unwrap_or("medium");
+    let description = issue
+        .get("description")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let priority = issue
+        .get("priority")
+        .and_then(|v| v.as_str())
+        .unwrap_or("medium");
     let issue_type = issue.get("type").and_then(|v| v.as_str()).unwrap_or("task");
-    let est_acu = issue.get("estimated_acu").map(|v| v.to_string()).unwrap_or("not set".into());
+    let est_acu = issue
+        .get("estimated_acu")
+        .map(|v| v.to_string())
+        .unwrap_or("not set".into());
 
     let prompt = format!(
         "You have been assigned issue {}: {}\n\nPriority: {}\nType: {}\n\nDescription:\n{}\n\nAcceptance criteria: Complete this issue and update its status when done.\nEstimated ACU: {}",
@@ -371,20 +462,28 @@ pub async fn assign(app: &App, req: AssignRequest) -> String {
     );
 
     let theme = config::theme_name(pane_num);
-    let _ = tracker::update_issue(&req.space, &req.issue_id, &serde_json::json!({
-        "status": "in_progress",
-        "assignee": theme.to_lowercase(),
-        "updated_at": state::now(),
-    }));
+    let _ = tracker::update_issue(
+        &req.space,
+        &req.issue_id,
+        &serde_json::json!({
+            "status": "in_progress",
+            "assignee": theme.to_lowercase(),
+            "updated_at": state::now(),
+        }),
+    );
 
-    let _result = spawn(app, SpawnRequest {
-        pane: pane_num.to_string(),
-        project: project_path,
-        role: Some(role.clone()),
-        task: Some(task),
-        prompt: Some(prompt),
-        autonomous: None,
-    }).await;
+    let _result = spawn(
+        app,
+        SpawnRequest {
+            pane: pane_num.to_string(),
+            project: project_path,
+            role: Some(role.clone()),
+            task: Some(task),
+            prompt: Some(prompt),
+            autonomous: None,
+        },
+    )
+    .await;
 
     let mut pane_data = app.state.get_pane(pane_num).await;
     pane_data.issue_id = Some(req.issue_id.clone());
@@ -397,7 +496,8 @@ pub async fn assign(app: &App, req: AssignRequest) -> String {
         "issue": req.issue_id,
         "title": title,
         "role": role,
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Execute os_assign_adhoc logic
@@ -421,14 +521,18 @@ pub async fn assign_adhoc(app: &App, req: AssignAdhocRequest) -> String {
         }
     };
 
-    spawn(app, SpawnRequest {
-        pane: pane_num.to_string(),
-        project,
-        role: req.role.or(Some("developer".into())),
-        task: Some(req.task),
-        prompt: None,
-        autonomous: None,
-    }).await
+    spawn(
+        app,
+        SpawnRequest {
+            pane: pane_num.to_string(),
+            project,
+            role: req.role.or(Some("developer".into())),
+            task: Some(req.task),
+            prompt: None,
+            autonomous: None,
+        },
+    )
+    .await
 }
 
 /// Execute os_collect logic — reads tmux output (or PTY fallback)
@@ -456,13 +560,16 @@ pub async fn collect(app: &App, req: CollectRequest) -> String {
     if let Some(ref target) = pane_data.tmux_target {
         let t = target.clone();
         let output = tokio::task::spawn_blocking(move || tmux::capture_output(&t))
-            .await.unwrap_or_default();
+            .await
+            .unwrap_or_default();
         let t2 = target.clone();
         let done = tokio::task::spawn_blocking(move || tmux::check_done(&t2))
-            .await.unwrap_or(false);
+            .await
+            .unwrap_or(false);
         let t3 = target.clone();
         let error = tokio::task::spawn_blocking(move || tmux::check_error(&t3))
-            .await.unwrap_or(None);
+            .await
+            .unwrap_or(None);
 
         let line_count = output.lines().count();
         let display_output = truncate(&output, 3000);
@@ -485,7 +592,8 @@ pub async fn collect(app: &App, req: CollectRequest) -> String {
             "output": display_output,
             "line_count": line_count,
             "git": git_info,
-        }).to_string();
+        })
+        .to_string();
     }
 
     // Fallback: try PTY
@@ -531,7 +639,8 @@ pub async fn collect(app: &App, req: CollectRequest) -> String {
             "output": display_output,
             "line_count": line_count,
             "git": git_info,
-        }).to_string()
+        })
+        .to_string()
     } else {
         let done = pane_data.status == "done" || pane_data.status == "idle";
         serde_json::json!({
@@ -547,7 +656,8 @@ pub async fn collect(app: &App, req: CollectRequest) -> String {
             "output": format!("[No agent] Pane {} - Status: {}", pane_num, pane_data.status),
             "line_count": 0,
             "git": git_info,
-        }).to_string()
+        })
+        .to_string()
     }
 }
 
@@ -559,17 +669,28 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
     };
 
     let mut pane_data = app.state.get_pane(pane_num).await;
-    let summary = req.summary.clone().unwrap_or_else(|| extract_result(app, pane_num));
+    let summary = req
+        .summary
+        .clone()
+        .unwrap_or_else(|| extract_result(app, pane_num));
 
     // Micro-helper: calculate ACU spent
-    let acu = pane_data.started_at.as_deref().map(calculate_acu).unwrap_or(0.0);
+    let acu = pane_data
+        .started_at
+        .as_deref()
+        .map(calculate_acu)
+        .unwrap_or(0.0);
 
     if let (Some(issue_id), Some(space)) = (&pane_data.issue_id, &pane_data.space) {
-        let _ = tracker::update_issue(space, issue_id, &serde_json::json!({
-            "status": "done",
-            "actual_acu": acu,
-            "updated_at": state::now(),
-        }));
+        let _ = tracker::update_issue(
+            space,
+            issue_id,
+            &serde_json::json!({
+                "status": "done",
+                "actual_acu": acu,
+                "updated_at": state::now(),
+            }),
+        );
     }
 
     let review_needed = matches!(pane_data.role.as_str(), "frontend" | "backend" | "devops");
@@ -592,7 +713,15 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
             let started = pane_data.started_at.as_deref().unwrap_or("");
             attach_code_to_issue(space, issue_id, ws, base, started);
         }
-        let result = finalize_git(ws, branch, &pane_data.project_path, pane_num, &pane_data.task, &summary, acu);
+        let result = finalize_git(
+            ws,
+            branch,
+            &pane_data.project_path,
+            pane_num,
+            &pane_data.task,
+            &summary,
+            acu,
+        );
         git_info = result.info;
     }
 
@@ -608,11 +737,18 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
             result_text,
             summary,
             pane_data.branch_name.as_deref().unwrap_or("none"),
-            git_info.get("pr").and_then(|v| v.as_str()).unwrap_or("none"),
+            git_info
+                .get("pr")
+                .and_then(|v| v.as_str())
+                .unwrap_or("none"),
         );
         let _ = crate::multi_agent::kb_add(
-            &pid, &pane_data.project, "agent_handoff",
-            &qt.id, &handoff_content, &[],
+            &pid,
+            &pane_data.project,
+            "agent_handoff",
+            &qt.id,
+            &handoff_content,
+            &[],
         );
     }
 
@@ -625,7 +761,11 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
     }
 
     if let Some(ref branch) = pane_data.branch_name {
-        let _ = crate::multi_agent::git_release_branch(&pane_id_str(pane_num), branch, &pane_data.project);
+        let _ = crate::multi_agent::git_release_branch(
+            &pane_id_str(pane_num),
+            branch,
+            &pane_data.project,
+        );
     }
 
     // Deregister from coordination system + release all file locks
@@ -651,7 +791,13 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
     pane_data.machine_mac = None;
     pane_data.tmux_target = None;
     app.state.set_pane(pane_num, pane_data.clone()).await;
-    app.state.log_activity(pane_num, "complete", &format!("Done: {} ({} ACU)", task_display, acu)).await;
+    app.state
+        .log_activity(
+            pane_num,
+            "complete",
+            &format!("Done: {} ({} ACU)", task_display, acu),
+        )
+        .await;
 
     serde_json::json!({
         "status": "completed",
@@ -660,16 +806,14 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
         "issue_id": pane_data.issue_id,
         "summary": summary,
         "git": git_info,
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Resolve "claude" to an absolute path. Checks common locations + which.
 pub fn resolve_claude_binary() -> String {
     // Check common locations first (fastest)
-    let candidates = [
-        "/opt/homebrew/bin/claude",
-        "/usr/local/bin/claude",
-    ];
+    let candidates = ["/opt/homebrew/bin/claude", "/usr/local/bin/claude"];
     for path in &candidates {
         if std::path::Path::new(path).exists() {
             return path.to_string();

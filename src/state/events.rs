@@ -39,9 +39,19 @@ pub enum StateEvent {
     },
 
     // --- Legacy lifecycle (still emitted for SSE compat) ---
-    PaneSpawned { pane: u8, project: String, role: String },
-    PaneKilled { pane: u8, reason: String },
-    PaneStatusChanged { pane: u8, status: String },
+    PaneSpawned {
+        pane: u8,
+        project: String,
+        role: String,
+    },
+    PaneKilled {
+        pane: u8,
+        reason: String,
+    },
+    PaneStatusChanged {
+        pane: u8,
+        status: String,
+    },
 
     // --- Terminal output ---
     /// Incremental terminal output chunk for a pane
@@ -68,10 +78,18 @@ pub enum StateEvent {
         task_id: String,
     },
     /// Legacy compat
-    QueueChanged { action: String, task_id: String, task: String },
+    QueueChanged {
+        action: String,
+        task_id: String,
+        task: String,
+    },
 
     // --- Activity log ---
-    LogAppended { pane: u8, event: String, summary: String },
+    LogAppended {
+        pane: u8,
+        event: String,
+        summary: String,
+    },
 
     // --- Vision ---
     VisionChanged {

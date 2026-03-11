@@ -34,7 +34,10 @@ pub fn vision_socket_dir() -> PathBuf {
 }
 
 pub fn vision_socket_path_for_pid(pid: u32) -> PathBuf {
-    vision_socket_dir().join(format!("{}{}{}", VISION_SOCKET_PREFIX, pid, VISION_SOCKET_SUFFIX))
+    vision_socket_dir().join(format!(
+        "{}{}{}",
+        VISION_SOCKET_PREFIX, pid, VISION_SOCKET_SUFFIX
+    ))
 }
 
 pub fn vision_socket_path() -> PathBuf {
@@ -73,7 +76,12 @@ pub fn prepare_outbound_event(payload: Value) -> Option<String> {
             ts_ms: now,
             payload: payload.clone(),
         });
-        retain_recent_entries(&mut entries, now, VISION_REPLAY_MAX_AGE_MS, VISION_REPLAY_MAX_COUNT);
+        retain_recent_entries(
+            &mut entries,
+            now,
+            VISION_REPLAY_MAX_AGE_MS,
+            VISION_REPLAY_MAX_COUNT,
+        );
         write_replay_entries(&path, &entries)?;
         serde_json::to_string(&payload)
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
@@ -129,7 +137,11 @@ async fn run_local_ipc(app: Arc<App>, runtime_id: String) -> anyhow::Result<()> 
     }
 }
 
-async fn handle_connection(mut stream: UnixStream, app: Arc<App>, runtime_id: String) -> anyhow::Result<()> {
+async fn handle_connection(
+    mut stream: UnixStream,
+    app: Arc<App>,
+    runtime_id: String,
+) -> anyhow::Result<()> {
     let mut buf = Vec::new();
     stream.read_to_end(&mut buf).await?;
     if buf.is_empty() {
@@ -161,7 +173,12 @@ fn replay_recent_events(app: &App, runtime_id: &str) {
     let path = vision_replay_log_path();
     let entries = with_exclusive_lock(&lock_path_for(&path), || {
         let mut entries = load_replay_entries(&path);
-        retain_recent_entries(&mut entries, now_ms(), VISION_REPLAY_MAX_AGE_MS, VISION_REPLAY_MAX_COUNT);
+        retain_recent_entries(
+            &mut entries,
+            now_ms(),
+            VISION_REPLAY_MAX_AGE_MS,
+            VISION_REPLAY_MAX_COUNT,
+        );
         write_replay_entries(&path, &entries)?;
         Ok(entries)
     })
@@ -183,7 +200,11 @@ fn replay_recent_events(app: &App, runtime_id: &str) {
             .or_else(|| entry.payload.get("path"))
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let result = entry.payload.get("result").and_then(|v| v.as_str()).unwrap_or("");
+        let result = entry
+            .payload
+            .get("result")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let feature_id = entry.payload.get("feature_id").and_then(|v| v.as_str());
         if !project_path.is_empty() && !result.is_empty() {
             crate::vision_events::emit_from_result(app, project_path, result, feature_id);
@@ -213,11 +234,20 @@ fn write_replay_entries(path: &std::path::Path, entries: &[ReplayEnvelope]) -> s
         .filter_map(|entry| serde_json::to_string(entry).ok())
         .collect::<Vec<_>>()
         .join("\n");
-    let content = if content.is_empty() { content } else { format!("{}\n", content) };
+    let content = if content.is_empty() {
+        content
+    } else {
+        format!("{}\n", content)
+    };
     atomic_write(path, &content)
 }
 
-fn retain_recent_entries(entries: &mut Vec<ReplayEnvelope>, now_ms: u64, max_age_ms: u64, max_count: usize) {
+fn retain_recent_entries(
+    entries: &mut Vec<ReplayEnvelope>,
+    now_ms: u64,
+    max_age_ms: u64,
+    max_count: usize,
+) {
     entries.retain(|entry| now_ms.saturating_sub(entry.ts_ms) <= max_age_ms);
     if entries.len() > max_count {
         let keep_from = entries.len() - max_count;
@@ -233,7 +263,10 @@ fn now_ms() -> u64 {
 }
 
 fn lock_path_for(path: &Path) -> PathBuf {
-    let name = path.file_name().and_then(|name| name.to_str()).unwrap_or("ipc");
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("ipc");
     path.with_file_name(format!("{}{}", name, LOCK_SUFFIX))
 }
 
@@ -261,7 +294,10 @@ fn atomic_write(path: &Path, content: &str) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("ipc");
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("ipc");
     let tmp = path.with_file_name(format!("{}.tmp-{}", file_name, std::process::id()));
     std::fs::write(&tmp, content)?;
     std::fs::rename(&tmp, path)
@@ -270,9 +306,18 @@ fn atomic_write(path: &Path, content: &str) -> io::Result<()> {
 fn runtime_cursor_path(runtime_id: &str) -> PathBuf {
     let safe: String = runtime_id
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
-    vision_socket_dir().join(format!("{}{}{}", VISION_CURSOR_PREFIX, safe, VISION_CURSOR_SUFFIX))
+    vision_socket_dir().join(format!(
+        "{}{}{}",
+        VISION_CURSOR_PREFIX, safe, VISION_CURSOR_SUFFIX
+    ))
 }
 
 fn read_cursor(runtime_id: &str) -> u64 {
@@ -335,10 +380,26 @@ mod tests {
     fn retain_recent_entries_filters_old_and_caps_count() {
         let now = 10_000;
         let mut entries = vec![
-            ReplayEnvelope { seq: 1, ts_ms: 1_000, payload: serde_json::json!({"i":1}) },
-            ReplayEnvelope { seq: 2, ts_ms: 8_000, payload: serde_json::json!({"i":2}) },
-            ReplayEnvelope { seq: 3, ts_ms: 9_000, payload: serde_json::json!({"i":3}) },
-            ReplayEnvelope { seq: 4, ts_ms: 9_500, payload: serde_json::json!({"i":4}) },
+            ReplayEnvelope {
+                seq: 1,
+                ts_ms: 1_000,
+                payload: serde_json::json!({"i":1}),
+            },
+            ReplayEnvelope {
+                seq: 2,
+                ts_ms: 8_000,
+                payload: serde_json::json!({"i":2}),
+            },
+            ReplayEnvelope {
+                seq: 3,
+                ts_ms: 9_000,
+                payload: serde_json::json!({"i":3}),
+            },
+            ReplayEnvelope {
+                seq: 4,
+                ts_ms: 9_500,
+                payload: serde_json::json!({"i":4}),
+            },
         ];
 
         retain_recent_entries(&mut entries, now, 2_500, 2);
@@ -364,8 +425,7 @@ mod tests {
                         "result": r#"{"status":"ok"}"#,
                     }))
                     .unwrap();
-                    serde_json::from_str::<Value>(&body)
-                        .unwrap()["replay_seq"]
+                    serde_json::from_str::<Value>(&body).unwrap()["replay_seq"]
                         .as_u64()
                         .unwrap()
                 }));

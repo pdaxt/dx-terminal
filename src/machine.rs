@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 use crate::config;
 
@@ -98,10 +98,15 @@ pub fn machine_info(pane: Option<u8>) -> Value {
         }
     } else {
         let machines = list_all();
-        let items: Vec<Value> = machines.iter().map(|m| json!({
-            "pane": m.pane, "ip": m.ip, "hostname": m.hostname,
-            "mac": m.mac, "theme": m.theme,
-        })).collect();
+        let items: Vec<Value> = machines
+            .iter()
+            .map(|m| {
+                json!({
+                    "pane": m.pane, "ip": m.ip, "hostname": m.hostname,
+                    "mac": m.mac, "theme": m.theme,
+                })
+            })
+            .collect();
         json!({"count": items.len(), "machines": items})
     }
 }
@@ -110,10 +115,15 @@ pub fn machine_info(pane: Option<u8>) -> Value {
 pub fn machine_list() -> Value {
     let machines = list_all();
     let count = config::pane_count();
-    let items: Vec<Value> = machines.iter().map(|m| json!({
-        "pane": m.pane, "ip": m.ip, "hostname": m.hostname,
-        "mac": m.mac, "theme": m.theme, "registered_at": m.registered_at,
-    })).collect();
+    let items: Vec<Value> = machines
+        .iter()
+        .map(|m| {
+            json!({
+                "pane": m.pane, "ip": m.ip, "hostname": m.hostname,
+                "mac": m.mac, "theme": m.theme, "registered_at": m.registered_at,
+            })
+        })
+        .collect();
     json!({
         "count": items.len(),
         "machines": items,

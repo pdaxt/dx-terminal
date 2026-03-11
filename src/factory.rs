@@ -152,29 +152,84 @@ Final review: {{task}}
 const TMPL_FULL: PipelineTemplate = PipelineTemplate {
     name: "full",
     stages: &[
-        StageTemplate { name: "dev", role: "developer", parallel_with: &[], prompt: PROMPT_DEV },
-        StageTemplate { name: "qa", role: "qa", parallel_with: &["security"], prompt: PROMPT_QA },
-        StageTemplate { name: "security", role: "security", parallel_with: &["qa"], prompt: PROMPT_SECURITY },
-        StageTemplate { name: "review", role: "reviewer", parallel_with: &[], prompt: PROMPT_REVIEW },
+        StageTemplate {
+            name: "dev",
+            role: "developer",
+            parallel_with: &[],
+            prompt: PROMPT_DEV,
+        },
+        StageTemplate {
+            name: "qa",
+            role: "qa",
+            parallel_with: &["security"],
+            prompt: PROMPT_QA,
+        },
+        StageTemplate {
+            name: "security",
+            role: "security",
+            parallel_with: &["qa"],
+            prompt: PROMPT_SECURITY,
+        },
+        StageTemplate {
+            name: "review",
+            role: "reviewer",
+            parallel_with: &[],
+            prompt: PROMPT_REVIEW,
+        },
     ],
 };
 
 const TMPL_QUICK: PipelineTemplate = PipelineTemplate {
     name: "quick",
     stages: &[
-        StageTemplate { name: "dev", role: "developer", parallel_with: &[], prompt: PROMPT_DEV },
-        StageTemplate { name: "qa", role: "qa", parallel_with: &[], prompt: PROMPT_QA },
+        StageTemplate {
+            name: "dev",
+            role: "developer",
+            parallel_with: &[],
+            prompt: PROMPT_DEV,
+        },
+        StageTemplate {
+            name: "qa",
+            role: "qa",
+            parallel_with: &[],
+            prompt: PROMPT_QA,
+        },
     ],
 };
 
 const TMPL_SECURE: PipelineTemplate = PipelineTemplate {
     name: "secure",
     stages: &[
-        StageTemplate { name: "dev", role: "developer", parallel_with: &[], prompt: PROMPT_DEV },
-        StageTemplate { name: "qa", role: "qa", parallel_with: &["security", "pentest"], prompt: PROMPT_QA },
-        StageTemplate { name: "security", role: "security", parallel_with: &["qa", "pentest"], prompt: PROMPT_SECURITY },
-        StageTemplate { name: "pentest", role: "security", parallel_with: &["qa", "security"], prompt: PROMPT_PENTEST },
-        StageTemplate { name: "review", role: "reviewer", parallel_with: &[], prompt: PROMPT_REVIEW },
+        StageTemplate {
+            name: "dev",
+            role: "developer",
+            parallel_with: &[],
+            prompt: PROMPT_DEV,
+        },
+        StageTemplate {
+            name: "qa",
+            role: "qa",
+            parallel_with: &["security", "pentest"],
+            prompt: PROMPT_QA,
+        },
+        StageTemplate {
+            name: "security",
+            role: "security",
+            parallel_with: &["qa", "pentest"],
+            prompt: PROMPT_SECURITY,
+        },
+        StageTemplate {
+            name: "pentest",
+            role: "security",
+            parallel_with: &["qa", "security"],
+            prompt: PROMPT_PENTEST,
+        },
+        StageTemplate {
+            name: "review",
+            role: "reviewer",
+            parallel_with: &[],
+            prompt: PROMPT_REVIEW,
+        },
     ],
 };
 
@@ -185,10 +240,13 @@ pub fn template_names() -> Vec<&'static str> {
 }
 
 pub fn template_info() -> Vec<(&'static str, Vec<&'static str>)> {
-    ALL_TEMPLATES.iter().map(|t| {
-        let stages: Vec<&str> = t.stages.iter().map(|s| s.name).collect();
-        (t.name, stages)
-    }).collect()
+    ALL_TEMPLATES
+        .iter()
+        .map(|t| {
+            let stages: Vec<&str> = t.stages.iter().map(|s| s.name).collect();
+            (t.name, stages)
+        })
+        .collect()
 }
 
 // ============================================================
@@ -202,13 +260,16 @@ pub fn create_pipeline(
     template_name: &str,
     priority: u8,
 ) -> Result<(String, Vec<String>)> {
-    let template = ALL_TEMPLATES.iter()
+    let template = ALL_TEMPLATES
+        .iter()
         .find(|t| t.name == template_name)
-        .ok_or_else(|| anyhow::anyhow!(
-            "Unknown template '{}'. Available: {}",
-            template_name,
-            template_names().join(", ")
-        ))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Unknown template '{}'. Available: {}",
+                template_name,
+                template_names().join(", ")
+            )
+        })?;
 
     // Resolve project path for prompt enrichment
     let project_path = scanner::project_by_name(project)
@@ -224,7 +285,8 @@ pub fn create_pipeline(
         let mut group_ids: Vec<String> = Vec::new();
 
         for stage in group {
-            let prompt = stage.prompt
+            let prompt = stage
+                .prompt
                 .replace("{{task}}", description)
                 .replace("{{project}}", project)
                 .replace("{{project_path}}", &project_path);
@@ -248,8 +310,16 @@ pub fn create_pipeline(
         prev_group_ids = group_ids;
     }
 
-    log_pipeline_event(&pipeline_id, "created",
-        &format!("template={}, stages={}, project={}", template_name, task_ids.len(), project));
+    log_pipeline_event(
+        &pipeline_id,
+        "created",
+        &format!(
+            "template={}, stages={}, project={}",
+            template_name,
+            task_ids.len(),
+            project
+        ),
+    );
 
     Ok((pipeline_id, task_ids))
 }
@@ -286,7 +356,10 @@ fn build_stage_groups<'a>(stages: &'a [StageTemplate]) -> Vec<Vec<&'a StageTempl
 
 fn gen_pipeline_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
     let hash: u32 = (ts as u32).wrapping_mul(2654435761);
     format!("pipe_{}_{:04x}", ts % 10_000_000, hash % 0xFFFF)
 }
@@ -298,45 +371,79 @@ fn gen_pipeline_id() -> String {
 /// List all pipelines, derived from queue tasks grouped by pipeline_id.
 /// Build a PipelineView from a list of tasks sharing a pipeline_id.
 fn build_pipeline_view(id: String, tasks: &[&queue::QueueTask]) -> PipelineView {
-    let stages: Vec<StageView> = tasks.iter().map(|t| {
-        let name = t.task.strip_prefix('[')
-            .and_then(|s| s.split(']').next())
-            .unwrap_or("?")
-            .to_string();
-        let summary = t.result.as_ref().map(|r| r.chars().take(60).collect());
-        StageView {
-            name,
-            role: t.role.clone(),
-            task_id: t.id.clone(),
-            status: format!("{:?}", t.status).to_lowercase(),
-            pane: t.pane,
-            summary,
-        }
-    }).collect();
+    let stages: Vec<StageView> = tasks
+        .iter()
+        .map(|t| {
+            let name = t
+                .task
+                .strip_prefix('[')
+                .and_then(|s| s.split(']').next())
+                .unwrap_or("?")
+                .to_string();
+            let summary = t.result.as_ref().map(|r| r.chars().take(60).collect());
+            StageView {
+                name,
+                role: t.role.clone(),
+                task_id: t.id.clone(),
+                status: format!("{:?}", t.status).to_lowercase(),
+                pane: t.pane,
+                summary,
+            }
+        })
+        .collect();
 
     let project = tasks.first().map(|t| t.project.clone()).unwrap_or_default();
-    let description = tasks.first()
-        .map(|t| t.task.split(']').last().unwrap_or(&t.task).trim().to_string())
+    let description = tasks
+        .first()
+        .map(|t| {
+            t.task
+                .split(']')
+                .last()
+                .unwrap_or(&t.task)
+                .trim()
+                .to_string()
+        })
         .unwrap_or_default();
-    let created_at = tasks.first().map(|t| t.added_at.clone()).unwrap_or_default();
+    let created_at = tasks
+        .first()
+        .map(|t| t.added_at.clone())
+        .unwrap_or_default();
 
     let status = if tasks.iter().any(|t| t.status == queue::QueueStatus::Failed) {
         "failed"
     } else if tasks.iter().all(|t| t.status == queue::QueueStatus::Done) {
         "done"
-    } else if tasks.iter().any(|t| t.status == queue::QueueStatus::Running) {
+    } else if tasks
+        .iter()
+        .any(|t| t.status == queue::QueueStatus::Running)
+    {
         "running"
     } else {
         "pending"
-    }.to_string();
+    }
+    .to_string();
 
     let stage_names: Vec<&str> = stages.iter().map(|s| s.name.as_str()).collect();
-    let template = if stage_names.iter().any(|n| *n == "pentest") { "secure" }
-        else if stage_names.iter().any(|n| *n == "review") { "full" }
-        else if stage_names.len() <= 2 { "quick" }
-        else { "custom" }.to_string();
+    let template = if stage_names.iter().any(|n| *n == "pentest") {
+        "secure"
+    } else if stage_names.iter().any(|n| *n == "review") {
+        "full"
+    } else if stage_names.len() <= 2 {
+        "quick"
+    } else {
+        "custom"
+    }
+    .to_string();
 
-    PipelineView { id, project, description, template, created_at, status, stages }
+    PipelineView {
+        id,
+        project,
+        description,
+        template,
+        created_at,
+        status,
+        stages,
+    }
 }
 
 pub fn list_pipelines() -> Vec<PipelineView> {
@@ -349,7 +456,8 @@ pub fn list_pipelines() -> Vec<PipelineView> {
         }
     }
 
-    let mut pipelines: Vec<PipelineView> = map.into_iter()
+    let mut pipelines: Vec<PipelineView> = map
+        .into_iter()
         .map(|(pid, tasks)| build_pipeline_view(pid, &tasks))
         .collect();
 
@@ -360,7 +468,9 @@ pub fn list_pipelines() -> Vec<PipelineView> {
 /// Get a single pipeline by ID. Direct lookup — only loads tasks for this pipeline.
 pub fn get_pipeline(pipeline_id: &str) -> Option<PipelineView> {
     let q = queue::load_queue();
-    let tasks: Vec<&queue::QueueTask> = q.tasks.iter()
+    let tasks: Vec<&queue::QueueTask> = q
+        .tasks
+        .iter()
         .filter(|t| t.pipeline_id.as_deref() == Some(pipeline_id))
         .collect();
 
@@ -385,13 +495,15 @@ pub fn cancel_pipeline(pipeline_id: &str) -> Result<CancelResult> {
             queue::QueueStatus::Pending | queue::QueueStatus::Blocked => {
                 task.status = queue::QueueStatus::Failed;
                 task.last_error = Some("Pipeline cancelled".to_string());
-                task.completed_at = Some(chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string());
+                task.completed_at =
+                    Some(chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string());
                 cancelled += 1;
             }
             queue::QueueStatus::Running => {
                 task.status = queue::QueueStatus::Failed;
                 task.last_error = Some("Pipeline cancelled".to_string());
-                task.completed_at = Some(chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string());
+                task.completed_at =
+                    Some(chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string());
                 if let Some(pane) = task.pane {
                     running_panes.push(pane);
                 }
@@ -402,8 +514,11 @@ pub fn cancel_pipeline(pipeline_id: &str) -> Result<CancelResult> {
     }
 
     queue::save_queue(&q)?;
-    log_pipeline_event(pipeline_id, "cancelled",
-        &format!("cancelled={}, killed_panes={:?}", cancelled, running_panes));
+    log_pipeline_event(
+        pipeline_id,
+        "cancelled",
+        &format!("cancelled={}, killed_panes={:?}", cancelled, running_panes),
+    );
 
     Ok(CancelResult {
         pipeline_id: pipeline_id.to_string(),
@@ -426,7 +541,9 @@ pub fn retry_pipeline(pipeline_id: &str) -> Result<RetryResult> {
     let mut task_ids: Vec<String> = Vec::new();
 
     for task in q.tasks.iter_mut() {
-        if task.pipeline_id.as_deref() != Some(pipeline_id) { continue; }
+        if task.pipeline_id.as_deref() != Some(pipeline_id) {
+            continue;
+        }
         if task.status == queue::QueueStatus::Failed {
             task.status = queue::QueueStatus::Pending;
             task.retry_count += 1;
@@ -445,9 +562,17 @@ pub fn retry_pipeline(pipeline_id: &str) -> Result<RetryResult> {
     }
 
     queue::save_queue(&q)?;
-    log_pipeline_event(pipeline_id, "retry", &format!("Retried {} failed stages", retried));
+    log_pipeline_event(
+        pipeline_id,
+        "retry",
+        &format!("Retried {} failed stages", retried),
+    );
 
-    Ok(RetryResult { pipeline_id: pipeline_id.to_string(), retried_tasks: retried, task_ids })
+    Ok(RetryResult {
+        pipeline_id: pipeline_id.to_string(),
+        retried_tasks: retried,
+        task_ids,
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -484,7 +609,11 @@ pub fn log_pipeline_event(pipeline_id: &str, event: &str, detail: &str) {
 
     if let Ok(line) = serde_json::to_string(&entry) {
         use std::io::Write;
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&log_file) {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_file)
+        {
             let _ = writeln!(f, "{}", line);
         }
     }
@@ -497,7 +626,8 @@ pub fn get_pipeline_events(pipeline_id: &str) -> Vec<PipelineEvent> {
         .join(format!("{}.jsonl", pipeline_id));
 
     match std::fs::read_to_string(&log_file) {
-        Ok(content) => content.lines()
+        Ok(content) => content
+            .lines()
             .filter_map(|line| serde_json::from_str(line).ok())
             .collect(),
         Err(_) => Vec::new(),
@@ -519,12 +649,18 @@ pub fn detect_project(description: &str) -> Option<(String, f32)> {
         let mut score: u32 = 0;
         let name_lower = project.name.to_lowercase();
 
-        if lower.contains(&name_lower) { score += 100; }
+        if lower.contains(&name_lower) {
+            score += 100;
+        }
         for word in lower.split_whitespace() {
-            if word.len() >= 3 && name_lower.contains(word) { score += 50; }
+            if word.len() >= 3 && name_lower.contains(word) {
+                score += 50;
+            }
         }
         for tech in &project.tech {
-            if lower.contains(&tech.to_lowercase()) { score += 30; }
+            if lower.contains(&tech.to_lowercase()) {
+                score += 30;
+            }
         }
 
         if score > 0 {
@@ -533,7 +669,9 @@ pub fn detect_project(description: &str) -> Option<(String, f32)> {
     }
 
     scores.sort_by(|a, b| b.1.cmp(&a.1));
-    scores.first().map(|(name, score)| (name.clone(), (*score as f32 / 150.0).min(1.0)))
+    scores
+        .first()
+        .map(|(name, score)| (name.clone(), (*score as f32 / 150.0).min(1.0)))
 }
 
 // ============================================================
@@ -581,14 +719,18 @@ pub fn run_gate(pipeline_id: &str) -> Result<GateResult> {
     // Run build check
     if let Some(ref cmd) = project_info.build_cmd {
         let check = run_check(project_path, cmd);
-        if !check.success { result.passed = false; }
+        if !check.success {
+            result.passed = false;
+        }
         result.build = Some(check);
     }
 
     // Run test check
     if let Some(ref cmd) = project_info.test_cmd {
         let check = run_check(project_path, cmd);
-        if !check.success { result.passed = false; }
+        if !check.success {
+            result.passed = false;
+        }
         result.test = Some(check);
     }
 
@@ -600,19 +742,25 @@ pub fn run_gate(pipeline_id: &str) -> Result<GateResult> {
     }
 
     // Save gate result
-    let gate_path = std::path::PathBuf::from(
-        crate::config::dx_root().join("gates")
-    );
+    let gate_path = std::path::PathBuf::from(crate::config::dx_root().join("gates"));
     let _ = std::fs::create_dir_all(&gate_path);
     let gate_file = gate_path.join(format!("{}.json", pipeline_id));
-    let _ = std::fs::write(&gate_file, serde_json::to_string_pretty(&result).unwrap_or_default());
+    let _ = std::fs::write(
+        &gate_file,
+        serde_json::to_string_pretty(&result).unwrap_or_default(),
+    );
 
-    log_pipeline_event(pipeline_id, "gate",
-        &format!("passed={}, build={}, test={}, lint={}",
+    log_pipeline_event(
+        pipeline_id,
+        "gate",
+        &format!(
+            "passed={}, build={}, test={}, lint={}",
             result.passed,
             result.build.as_ref().map(|c| c.success).unwrap_or(true),
             result.test.as_ref().map(|c| c.success).unwrap_or(true),
-            result.lint.as_ref().map(|c| c.success).unwrap_or(true)));
+            result.lint.as_ref().map(|c| c.success).unwrap_or(true)
+        ),
+    );
 
     Ok(result)
 }
@@ -650,17 +798,32 @@ fn run_check(project_path: &str, command: &str) -> GateCheck {
         match child.try_wait() {
             Ok(Some(status)) => {
                 let duration_ms = start.elapsed().as_millis() as u64;
-                let stdout = child.stdout.take()
-                    .map(|mut s| { let mut b = Vec::new(); std::io::Read::read_to_end(&mut s, &mut b).ok(); b })
+                let stdout = child
+                    .stdout
+                    .take()
+                    .map(|mut s| {
+                        let mut b = Vec::new();
+                        std::io::Read::read_to_end(&mut s, &mut b).ok();
+                        b
+                    })
                     .unwrap_or_default();
-                let stderr = child.stderr.take()
-                    .map(|mut s| { let mut b = Vec::new(); std::io::Read::read_to_end(&mut s, &mut b).ok(); b })
+                let stderr = child
+                    .stderr
+                    .take()
+                    .map(|mut s| {
+                        let mut b = Vec::new();
+                        std::io::Read::read_to_end(&mut s, &mut b).ok();
+                        b
+                    })
                     .unwrap_or_default();
                 let combined: String = format!(
                     "{}{}",
                     String::from_utf8_lossy(&stdout),
                     String::from_utf8_lossy(&stderr),
-                ).chars().take(2000).collect();
+                )
+                .chars()
+                .take(2000)
+                .collect();
 
                 return GateCheck {
                     command: command.to_string(),
@@ -676,7 +839,10 @@ fn run_check(project_path: &str, command: &str) -> GateCheck {
                     return GateCheck {
                         command: command.to_string(),
                         success: false,
-                        output: format!("TIMEOUT: command exceeded {}s limit", GATE_TIMEOUT.as_secs()),
+                        output: format!(
+                            "TIMEOUT: command exceeded {}s limit",
+                            GATE_TIMEOUT.as_secs()
+                        ),
                         duration_ms: start.elapsed().as_millis() as u64,
                     };
                 }
@@ -718,20 +884,31 @@ pub fn coordination_context(pipeline_id: &str, pane: u8, role: &str) -> String {
 
     let mut lines = Vec::new();
     lines.push(format!("## Pipeline Coordination ({})", pipeline_id));
-    lines.push(format!("You are the {} agent in pipeline '{}'.", role, pipeline.template));
+    lines.push(format!(
+        "You are the {} agent in pipeline '{}'.",
+        role, pipeline.template
+    ));
     lines.push(format!("Project: {}", pipeline.project));
     lines.push(String::new());
 
     // Show other agents in the pipeline
-    let other_stages: Vec<&StageView> = pipeline.stages.iter()
+    let other_stages: Vec<&StageView> = pipeline
+        .stages
+        .iter()
         .filter(|s| s.pane != Some(pane))
         .collect();
 
     if !other_stages.is_empty() {
         lines.push("### Other Agents in This Pipeline".to_string());
         for stage in &other_stages {
-            let pane_str = stage.pane.map(|p| format!(" (pane {})", p)).unwrap_or_default();
-            lines.push(format!("- {} [{}]{}: {}", stage.name, stage.status, pane_str, stage.role));
+            let pane_str = stage
+                .pane
+                .map(|p| format!(" (pane {})", p))
+                .unwrap_or_default();
+            lines.push(format!(
+                "- {} [{}]{}: {}",
+                stage.name, stage.status, pane_str, stage.role
+            ));
         }
         lines.push(String::new());
     }
@@ -740,30 +917,49 @@ pub fn coordination_context(pipeline_id: &str, pane: u8, role: &str) -> String {
     lines.push("### Coordination Rules".to_string());
     match role {
         "developer" => {
-            lines.push("- You are the primary builder. QA and security agents will review your work.".to_string());
+            lines.push(
+                "- You are the primary builder. QA and security agents will review your work."
+                    .to_string(),
+            );
             lines.push("- Use `lock_acquire` before editing critical files.".to_string());
             lines.push("- Use `kb_add` to document key decisions, API contracts, and architecture choices.".to_string());
-            lines.push("- Commit with clear messages — QA/security agents will read your git log.".to_string());
+            lines.push(
+                "- Commit with clear messages — QA/security agents will read your git log."
+                    .to_string(),
+            );
         }
         "qa" => {
             lines.push("- DO NOT modify the developer's code unless fixing a test.".to_string());
-            lines.push("- Check `kb_search` for architecture decisions before questioning implementation.".to_string());
+            lines.push(
+                "- Check `kb_search` for architecture decisions before questioning implementation."
+                    .to_string(),
+            );
             lines.push("- Use `lock_acquire` before creating new test files.".to_string());
             lines.push("- Report findings via `kb_add` category='qa_finding'.".to_string());
-            lines.push("- If you find bugs, create tracker issues, don't fix them yourself.".to_string());
+            lines.push(
+                "- If you find bugs, create tracker issues, don't fix them yourself.".to_string(),
+            );
         }
         "security" => {
             lines.push("- DO NOT modify any code. Report only.".to_string());
-            lines.push("- Check `kb_search` for known decisions before flagging as vulnerability.".to_string());
+            lines.push(
+                "- Check `kb_search` for known decisions before flagging as vulnerability."
+                    .to_string(),
+            );
             lines.push("- Report findings via `kb_add` category='security_finding'.".to_string());
-            lines.push("- Create tracker issues for CRITICAL and HIGH severity findings.".to_string());
+            lines.push(
+                "- Create tracker issues for CRITICAL and HIGH severity findings.".to_string(),
+            );
             lines.push("- Classify severity: CRITICAL / HIGH / MEDIUM / LOW / INFO.".to_string());
         }
         "reviewer" => {
             lines.push("- Review all KB entries from dev, QA, and security agents.".to_string());
             lines.push("- Check git log for all changes in this pipeline.".to_string());
             lines.push("- Create PR if not already done. Merge if all checks pass.".to_string());
-            lines.push("- If issues found, create tracker issues and mark pipeline as needs_review.".to_string());
+            lines.push(
+                "- If issues found, create tracker issues and mark pipeline as needs_review."
+                    .to_string(),
+            );
         }
         _ => {}
     }
@@ -774,7 +970,9 @@ pub fn coordination_context(pipeline_id: &str, pane: u8, role: &str) -> String {
     lines.push("- `lock_acquire(files=[...])` — Lock files before editing".to_string());
     lines.push("- `lock_release(files=[...])` — Release locks when done".to_string());
     lines.push("- `lock_check(files=[...])` — Check if files are locked".to_string());
-    lines.push("- `kb_add(category, title, content)` — Share knowledge with other agents".to_string());
+    lines.push(
+        "- `kb_add(category, title, content)` — Share knowledge with other agents".to_string(),
+    );
     lines.push("- `kb_search(query)` — Find knowledge from other agents".to_string());
     lines.push("- `msg_send(to_pane, message)` — Direct message another agent".to_string());
     lines.push("- `conflict_scan()` — Check for git conflicts".to_string());
@@ -803,7 +1001,8 @@ pub fn conflict_scan(pipeline_id: &str) -> serde_json::Value {
 
     if let Ok(out) = output {
         let status = String::from_utf8_lossy(&out.stdout);
-        let modified_files: Vec<&str> = status.lines()
+        let modified_files: Vec<&str> = status
+            .lines()
             .filter(|l| l.starts_with(" M") || l.starts_with("M ") || l.starts_with("MM"))
             .map(|l| l[3..].trim())
             .collect();
@@ -870,26 +1069,38 @@ pub fn retry_stage(pipeline_id: &str, stage_name: &str) -> Result<String> {
     let mut q = queue::load_queue();
 
     // Find the task matching this pipeline + stage
-    let task_id = q.tasks.iter()
+    let task_id = q
+        .tasks
+        .iter()
         .find(|t| {
-            t.pipeline_id.as_deref() == Some(pipeline_id) &&
-            t.task.starts_with(&format!("[{}]", stage_name))
+            t.pipeline_id.as_deref() == Some(pipeline_id)
+                && t.task.starts_with(&format!("[{}]", stage_name))
         })
         .map(|t| t.id.clone())
-        .ok_or_else(|| anyhow::anyhow!("Stage '{}' not found in pipeline '{}'", stage_name, pipeline_id))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Stage '{}' not found in pipeline '{}'",
+                stage_name,
+                pipeline_id
+            )
+        })?;
 
     // Reset this task and all cascade-failed dependents
     let mut reset_ids = vec![task_id.clone()];
     loop {
-        let new_ids: Vec<String> = q.tasks.iter()
+        let new_ids: Vec<String> = q
+            .tasks
+            .iter()
             .filter(|t| {
-                t.status == queue::QueueStatus::Failed &&
-                t.depends_on.iter().any(|d| reset_ids.contains(d)) &&
-                !reset_ids.contains(&t.id)
+                t.status == queue::QueueStatus::Failed
+                    && t.depends_on.iter().any(|d| reset_ids.contains(d))
+                    && !reset_ids.contains(&t.id)
             })
             .map(|t| t.id.clone())
             .collect();
-        if new_ids.is_empty() { break; }
+        if new_ids.is_empty() {
+            break;
+        }
         reset_ids.extend(new_ids);
     }
 
@@ -905,7 +1116,11 @@ pub fn retry_stage(pipeline_id: &str, stage_name: &str) -> Result<String> {
     }
     queue::save_queue(&q)?;
 
-    Ok(format!("Reset {} tasks (stage '{}' + dependents)", reset_ids.len(), stage_name))
+    Ok(format!(
+        "Reset {} tasks (stage '{}' + dependents)",
+        reset_ids.len(),
+        stage_name
+    ))
 }
 
 // ============================================================
@@ -933,7 +1148,9 @@ pub struct InboxRequest {
     pub error: Option<String>,
 }
 
-fn default_inbox_status() -> String { "pending".into() }
+fn default_inbox_status() -> String {
+    "pending".into()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FactoryInbox {
@@ -999,7 +1216,8 @@ pub fn process_inbox() -> Vec<serde_json::Value> {
                     req.status = "failed".into();
                     req.error = Some(format!(
                         "Low confidence ({:.0}%) match to '{}'. Be more specific.",
-                        confidence * 100.0, project
+                        confidence * 100.0,
+                        project
                     ));
                     changed = true;
                     actions.push(serde_json::json!({
@@ -1021,9 +1239,10 @@ pub fn process_inbox() -> Vec<serde_json::Value> {
                             "project": project,
                             "confidence": format!("{:.0}%", confidence * 100.0),
                         });
-                        req.tasks = task_ids.iter().map(|id| {
-                            serde_json::json!({"task_id": id})
-                        }).collect();
+                        req.tasks = task_ids
+                            .iter()
+                            .map(|id| serde_json::json!({"task_id": id}))
+                            .collect();
                         changed = true;
                         actions.push(serde_json::json!({
                             "action": "inbox_pipeline_created",
@@ -1053,14 +1272,18 @@ pub fn process_inbox() -> Vec<serde_json::Value> {
                         match pipeline.status.as_str() {
                             "done" => {
                                 req.status = "complete".into();
-                                req.tasks = pipeline.stages.iter().map(|s| {
-                                    serde_json::json!({
-                                        "task_id": s.task_id,
-                                        "stage": s.name,
-                                        "role": s.role,
-                                        "status": s.status,
+                                req.tasks = pipeline
+                                    .stages
+                                    .iter()
+                                    .map(|s| {
+                                        serde_json::json!({
+                                            "task_id": s.task_id,
+                                            "stage": s.name,
+                                            "role": s.role,
+                                            "status": s.status,
+                                        })
                                     })
-                                }).collect();
+                                    .collect();
                                 changed = true;
                                 actions.push(serde_json::json!({
                                     "action": "inbox_complete",
@@ -1071,15 +1294,19 @@ pub fn process_inbox() -> Vec<serde_json::Value> {
                             "failed" => {
                                 req.status = "failed".into();
                                 req.error = Some("Pipeline failed".into());
-                                req.tasks = pipeline.stages.iter().map(|s| {
-                                    serde_json::json!({
-                                        "task_id": s.task_id,
-                                        "stage": s.name,
-                                        "role": s.role,
-                                        "status": s.status,
-                                        "summary": s.summary,
+                                req.tasks = pipeline
+                                    .stages
+                                    .iter()
+                                    .map(|s| {
+                                        serde_json::json!({
+                                            "task_id": s.task_id,
+                                            "stage": s.name,
+                                            "role": s.role,
+                                            "status": s.status,
+                                            "summary": s.summary,
+                                        })
                                     })
-                                }).collect();
+                                    .collect();
                                 changed = true;
                                 actions.push(serde_json::json!({
                                     "action": "inbox_failed",
@@ -1089,15 +1316,19 @@ pub fn process_inbox() -> Vec<serde_json::Value> {
                             }
                             _ => {
                                 // Still running — update task statuses for TUI display
-                                let new_tasks: Vec<serde_json::Value> = pipeline.stages.iter().map(|s| {
-                                    serde_json::json!({
-                                        "task_id": s.task_id,
-                                        "stage": s.name,
-                                        "role": s.role,
-                                        "status": s.status,
-                                        "pane": s.pane,
+                                let new_tasks: Vec<serde_json::Value> = pipeline
+                                    .stages
+                                    .iter()
+                                    .map(|s| {
+                                        serde_json::json!({
+                                            "task_id": s.task_id,
+                                            "stage": s.name,
+                                            "role": s.role,
+                                            "status": s.status,
+                                            "pane": s.pane,
+                                        })
                                     })
-                                }).collect();
+                                    .collect();
                                 if serde_json::to_string(&new_tasks).unwrap_or_default()
                                     != serde_json::to_string(&req.tasks).unwrap_or_default()
                                 {
@@ -1171,10 +1402,12 @@ mod tests {
 
     #[test]
     fn test_pipeline_id_uniqueness() {
-        let ids: Vec<String> = (0..100).map(|_| {
-            std::thread::sleep(std::time::Duration::from_millis(1));
-            gen_pipeline_id()
-        }).collect();
+        let ids: Vec<String> = (0..100)
+            .map(|_| {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                gen_pipeline_id()
+            })
+            .collect();
         let unique: HashSet<&str> = ids.iter().map(|s| s.as_str()).collect();
         // At least 90% unique (timing jitter may cause rare collisions)
         assert!(unique.len() > 90, "Only {} unique out of 100", unique.len());
@@ -1254,7 +1487,8 @@ mod tests {
     fn test_stage_view_status_extraction() {
         // Simulate what list_pipelines does to extract stage name from task label
         let task_text = "[dev] Add OAuth login";
-        let name = task_text.strip_prefix('[')
+        let name = task_text
+            .strip_prefix('[')
             .and_then(|s| s.split(']').next())
             .unwrap_or("?");
         assert_eq!(name, "dev");
@@ -1267,7 +1501,8 @@ mod tests {
     fn test_stage_view_malformed_label() {
         // Edge case: task label without brackets
         let task_text = "plain task";
-        let name = task_text.strip_prefix('[')
+        let name = task_text
+            .strip_prefix('[')
             .and_then(|s| s.split(']').next())
             .unwrap_or("?");
         assert_eq!(name, "?");
@@ -1283,11 +1518,26 @@ mod tests {
     #[test]
     fn test_prompt_template_placeholders() {
         // Verify all prompt templates have the expected placeholders
-        let prompts = [PROMPT_DEV, PROMPT_QA, PROMPT_SECURITY, PROMPT_PENTEST, PROMPT_REVIEW];
+        let prompts = [
+            PROMPT_DEV,
+            PROMPT_QA,
+            PROMPT_SECURITY,
+            PROMPT_PENTEST,
+            PROMPT_REVIEW,
+        ];
         for prompt in &prompts {
-            assert!(prompt.contains("{{task}}"), "Missing {{{{task}}}} in prompt");
-            assert!(prompt.contains("{{project}}"), "Missing {{{{project}}}} in prompt");
-            assert!(prompt.contains("{{project_path}}"), "Missing {{{{project_path}}}} in prompt");
+            assert!(
+                prompt.contains("{{task}}"),
+                "Missing {{{{task}}}} in prompt"
+            );
+            assert!(
+                prompt.contains("{{project}}"),
+                "Missing {{{{project}}}} in prompt"
+            );
+            assert!(
+                prompt.contains("{{project_path}}"),
+                "Missing {{{{project_path}}}} in prompt"
+            );
         }
     }
 
@@ -1295,8 +1545,18 @@ mod tests {
     fn test_all_stages_have_prompts() {
         for tmpl in ALL_TEMPLATES {
             for stage in tmpl.stages {
-                assert!(!stage.prompt.is_empty(), "Stage '{}' in template '{}' has empty prompt", stage.name, tmpl.name);
-                assert!(!stage.role.is_empty(), "Stage '{}' in template '{}' has empty role", stage.name, tmpl.name);
+                assert!(
+                    !stage.prompt.is_empty(),
+                    "Stage '{}' in template '{}' has empty prompt",
+                    stage.name,
+                    tmpl.name
+                );
+                assert!(
+                    !stage.role.is_empty(),
+                    "Stage '{}' in template '{}' has empty role",
+                    stage.name,
+                    tmpl.name
+                );
             }
         }
     }
@@ -1307,12 +1567,21 @@ mod tests {
             for stage in tmpl.stages {
                 for parallel_name in stage.parallel_with {
                     let partner = tmpl.stages.iter().find(|s| s.name == *parallel_name);
-                    assert!(partner.is_some(),
-                        "Stage '{}' references non-existent parallel partner '{}'", stage.name, parallel_name);
+                    assert!(
+                        partner.is_some(),
+                        "Stage '{}' references non-existent parallel partner '{}'",
+                        stage.name,
+                        parallel_name
+                    );
                     let partner = partner.unwrap();
-                    assert!(partner.parallel_with.contains(&stage.name),
+                    assert!(
+                        partner.parallel_with.contains(&stage.name),
                         "Stage '{}' lists '{}' as parallel, but '{}' doesn't list '{}' back",
-                        stage.name, parallel_name, parallel_name, stage.name);
+                        stage.name,
+                        parallel_name,
+                        parallel_name,
+                        stage.name
+                    );
                 }
             }
         }
@@ -1376,8 +1645,26 @@ mod tests {
         std::env::set_var("DX_ROOT", tmp.path());
 
         // Create tasks with pipeline_id
-        let t1 = queue::add_task_with_pipeline("p", "dev", "[dev] build", "go", 1, vec![], Some("retry_test".into())).unwrap();
-        let _t2 = queue::add_task_with_pipeline("p", "qa", "[qa] test", "go", 1, vec![t1.id.clone()], Some("retry_test".into())).unwrap();
+        let t1 = queue::add_task_with_pipeline(
+            "p",
+            "dev",
+            "[dev] build",
+            "go",
+            1,
+            vec![],
+            Some("retry_test".into()),
+        )
+        .unwrap();
+        let _t2 = queue::add_task_with_pipeline(
+            "p",
+            "qa",
+            "[qa] test",
+            "go",
+            1,
+            vec![t1.id.clone()],
+            Some("retry_test".into()),
+        )
+        .unwrap();
 
         // Fail both
         queue::mark_failed(&t1.id, "build error").unwrap();
@@ -1403,7 +1690,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("DX_ROOT", tmp.path());
 
-        queue::add_task_with_pipeline("p", "dev", "t", "go", 1, vec![], Some("no_fail".into())).unwrap();
+        queue::add_task_with_pipeline("p", "dev", "t", "go", 1, vec![], Some("no_fail".into()))
+            .unwrap();
 
         let result = retry_pipeline("no_fail");
         assert!(result.is_err()); // No failed stages to retry

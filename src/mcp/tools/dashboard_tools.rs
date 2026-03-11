@@ -27,8 +27,11 @@ pub fn dash_leaderboard(days: i64, project: Option<&str>) -> String {
 /// Chronological event stream
 pub fn dash_timeline(req: &DashTimelineRequest) -> String {
     crate::dashboard::dash_timeline(
-        req.project.as_deref(), req.pane_id.as_deref(), req.limit.unwrap_or(50),
-    ).to_string()
+        req.project.as_deref(),
+        req.pane_id.as_deref(),
+        req.limit.unwrap_or(50),
+    )
+    .to_string()
 }
 
 /// Alerts: dead agents, high error rates, failed tests

@@ -8,8 +8,8 @@
 //! - build-4: Neon Noir (violet / magenta / pink)
 //! - build-5: Molten (gold / amber / flame)
 
-use std::process::Command;
 use serde::{Deserialize, Serialize};
+use std::process::Command;
 
 const MAX_BUILDS: u8 = 5;
 const PROJECTS_DIR: &str = "/Users/pran/Projects";
@@ -100,13 +100,11 @@ fn get_sessions() -> Vec<String> {
         .output();
 
     match output {
-        Ok(o) if o.status.success() => {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .filter(|s| s.starts_with("dx-build"))
-                .map(|s| s.to_string())
-                .collect()
-        }
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .filter(|s| s.starts_with("dx-build"))
+            .map(|s| s.to_string())
+            .collect(),
         _ => vec![],
     }
 }
@@ -118,7 +116,13 @@ fn style_pane(pane_id: &str, build_num: u8, pane_num: u8) {
 
     // Set pane colors
     let _ = Command::new("tmux")
-        .args(["select-pane", "-t", pane_id, "-P", &format!("bg={},fg={}", colors.bg, colors.fg)])
+        .args([
+            "select-pane",
+            "-t",
+            pane_id,
+            "-P",
+            &format!("bg={},fg={}", colors.bg, colors.fg),
+        ])
         .output();
 
     // Set zsh prompt and clear
@@ -138,16 +142,20 @@ fn style_pane(pane_id: &str, build_num: u8, pane_num: u8) {
 /// Style all panes in a build window for a given session
 fn style_build(session: &str, window: &str, build_num: u8) -> usize {
     let output = Command::new("tmux")
-        .args(["list-panes", "-t", &format!("{}:{}", session, window), "-F", "#{pane_id}"])
+        .args([
+            "list-panes",
+            "-t",
+            &format!("{}:{}", session, window),
+            "-F",
+            "#{pane_id}",
+        ])
         .output();
 
     let pane_ids: Vec<String> = match output {
-        Ok(o) if o.status.success() => {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .map(|s| s.to_string())
-                .collect()
-        }
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(|s| s.to_string())
+            .collect(),
         _ => return 0,
     };
 
@@ -161,7 +169,10 @@ fn style_build(session: &str, window: &str, build_num: u8) -> usize {
 /// Create a build window in all dx-build sessions (or restyle if exists)
 pub fn create_build(build_num: u8) -> Result<Vec<String>, String> {
     if build_num < 1 || build_num > MAX_BUILDS {
-        return Err(format!("Build number must be 1-{}. Got: {}", MAX_BUILDS, build_num));
+        return Err(format!(
+            "Build number must be 1-{}. Got: {}",
+            MAX_BUILDS, build_num
+        ));
     }
 
     let sessions = get_sessions();
@@ -187,24 +198,60 @@ pub fn create_build(build_num: u8) -> Result<Vec<String>, String> {
 
         if exists {
             let count = style_build(session, &window_name, build_num);
-            results.push(format!("{}:{} — restyled ({} panes)", session, window_name, count));
+            results.push(format!(
+                "{}:{} — restyled ({} panes)",
+                session, window_name, count
+            ));
         } else {
             // Create window with 3 vertical panes
             let _ = Command::new("tmux")
-                .args(["new-window", "-t", session, "-n", &window_name, "-c", PROJECTS_DIR])
+                .args([
+                    "new-window",
+                    "-t",
+                    session,
+                    "-n",
+                    &window_name,
+                    "-c",
+                    PROJECTS_DIR,
+                ])
                 .output();
             let _ = Command::new("tmux")
-                .args(["split-window", "-t", &format!("{}:{}", session, window_name), "-h", "-c", PROJECTS_DIR])
+                .args([
+                    "split-window",
+                    "-t",
+                    &format!("{}:{}", session, window_name),
+                    "-h",
+                    "-c",
+                    PROJECTS_DIR,
+                ])
                 .output();
             let _ = Command::new("tmux")
-                .args(["split-window", "-t", &format!("{}:{}", session, window_name), "-h", "-c", PROJECTS_DIR])
+                .args([
+                    "split-window",
+                    "-t",
+                    &format!("{}:{}", session, window_name),
+                    "-h",
+                    "-c",
+                    PROJECTS_DIR,
+                ])
                 .output();
             let _ = Command::new("tmux")
-                .args(["select-layout", "-t", &format!("{}:{}", session, window_name), "even-horizontal"])
+                .args([
+                    "select-layout",
+                    "-t",
+                    &format!("{}:{}", session, window_name),
+                    "even-horizontal",
+                ])
                 .output();
 
             let count = style_build(session, &window_name, build_num);
-            results.push(format!("{}:{} — created {} ({})", session, window_name, theme_name(build_num), count));
+            results.push(format!(
+                "{}:{} — created {} ({})",
+                session,
+                window_name,
+                theme_name(build_num),
+                count
+            ));
         }
     }
 
@@ -227,18 +274,17 @@ pub fn restyle_all() -> Result<Vec<String>, String> {
         .output();
 
     let windows: Vec<String> = match output {
-        Ok(o) if o.status.success() => {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .filter(|l| l.starts_with("build-"))
-                .map(|s| s.to_string())
-                .collect()
-        }
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .filter(|l| l.starts_with("build-"))
+            .map(|s| s.to_string())
+            .collect(),
         _ => return Err("Failed to list windows.".to_string()),
     };
 
     for window in &windows {
-        let num: u8 = window.strip_prefix("build-")
+        let num: u8 = window
+            .strip_prefix("build-")
             .and_then(|n| n.parse().ok())
             .unwrap_or(0);
         if num < 1 || num > MAX_BUILDS {
@@ -248,7 +294,12 @@ pub fn restyle_all() -> Result<Vec<String>, String> {
         for session in &sessions {
             style_build(session, window, num);
         }
-        results.push(format!("{} ({}) — restyled across {} sessions", window, theme_name(num), sessions.len()));
+        results.push(format!(
+            "{} ({}) — restyled across {} sessions",
+            window,
+            theme_name(num),
+            sessions.len()
+        ));
     }
 
     Ok(results)
@@ -269,30 +320,34 @@ pub fn build_status() -> Vec<BuildInfo> {
 
         // Check if window exists
         let output = Command::new("tmux")
-            .args(["list-panes", "-t", &format!("{}:{}", first_session, window_name), "-F", "#{pane_id}|#{pane_current_command}|#{pane_current_path}"])
+            .args([
+                "list-panes",
+                "-t",
+                &format!("{}:{}", first_session, window_name),
+                "-F",
+                "#{pane_id}|#{pane_current_command}|#{pane_current_path}",
+            ])
             .output();
 
         let panes: Vec<BuildPane> = match output {
-            Ok(o) if o.status.success() => {
-                String::from_utf8_lossy(&o.stdout)
-                    .lines()
-                    .enumerate()
-                    .filter_map(|(i, line)| {
-                        let parts: Vec<&str> = line.splitn(3, '|').collect();
-                        if parts.len() >= 3 {
-                            Some(BuildPane {
-                                pane_id: parts[0].to_string(),
-                                pane_index: (i + 1) as u8,
-                                colors: palette(n, (i + 1) as u8),
-                                cwd: parts[2].to_string(),
-                                command: parts[1].to_string(),
-                            })
-                        } else {
-                            None
-                        }
-                    })
-                    .collect()
-            }
+            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .enumerate()
+                .filter_map(|(i, line)| {
+                    let parts: Vec<&str> = line.splitn(3, '|').collect();
+                    if parts.len() >= 3 {
+                        Some(BuildPane {
+                            pane_id: parts[0].to_string(),
+                            pane_index: (i + 1) as u8,
+                            colors: palette(n, (i + 1) as u8),
+                            cwd: parts[2].to_string(),
+                            command: parts[1].to_string(),
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
             _ => continue,
         };
 
@@ -329,7 +384,12 @@ pub fn rename_build(old_num: u8, new_name: &str) -> Result<Vec<String>, String> 
 
     for session in &sessions {
         let output = Command::new("tmux")
-            .args(["rename-window", "-t", &format!("{}:{}", session, old_window), new_name])
+            .args([
+                "rename-window",
+                "-t",
+                &format!("{}:{}", session, old_window),
+                new_name,
+            ])
             .output();
 
         if output.map(|o| o.status.success()).unwrap_or(false) {

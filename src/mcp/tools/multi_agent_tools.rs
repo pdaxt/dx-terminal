@@ -9,8 +9,12 @@ use super::super::types::*;
 /// Allocate a port for a service
 pub fn port_allocate(req: &PortAllocateRequest) -> String {
     crate::multi_agent::port_allocate(
-        &req.service, &req.pane_id, req.preferred, &req.description.clone().unwrap_or_default(),
-    ).to_string()
+        &req.service,
+        &req.pane_id,
+        req.preferred,
+        &req.description.clone().unwrap_or_default(),
+    )
+    .to_string()
 }
 
 /// Release an allocated port
@@ -56,8 +60,11 @@ pub fn agent_deregister(pane_id: &str) -> String {
 /// Acquire file locks
 pub fn lock_acquire(req: &LockAcquireRequest) -> String {
     crate::multi_agent::lock_acquire(
-        &req.pane_id, &req.files, &req.reason.clone().unwrap_or_default(),
-    ).to_string()
+        &req.pane_id,
+        &req.files,
+        &req.reason.clone().unwrap_or_default(),
+    )
+    .to_string()
 }
 
 /// Release file locks
@@ -81,8 +88,12 @@ pub fn lock_steal(pane_id: &str, file_path: &str, reason: &str) -> String {
 /// Claim a git branch for exclusive use
 pub fn git_claim_branch(req: &GitClaimBranchRequest) -> String {
     crate::multi_agent::git_claim_branch(
-        &req.pane_id, &req.branch, &req.repo, &req.purpose.clone().unwrap_or_default(),
-    ).to_string()
+        &req.pane_id,
+        &req.branch,
+        &req.repo,
+        &req.purpose.clone().unwrap_or_default(),
+    )
+    .to_string()
 }
 
 /// Release a claimed git branch
@@ -105,15 +116,22 @@ pub fn git_pre_commit_check(pane_id: &str, repo: &str, files: &[String]) -> Stri
 /// Claim exclusive build access
 pub fn build_claim(req: &BuildClaimRequest) -> String {
     crate::multi_agent::build_claim(
-        &req.pane_id, &req.project, &req.build_type.clone().unwrap_or_else(|| "default".into()),
-    ).to_string()
+        &req.pane_id,
+        &req.project,
+        &req.build_type.clone().unwrap_or_else(|| "default".into()),
+    )
+    .to_string()
 }
 
 /// Release build claim
 pub fn build_release(req: &BuildReleaseRequest) -> String {
     crate::multi_agent::build_release(
-        &req.pane_id, &req.project, req.success, &req.output.clone().unwrap_or_default(),
-    ).to_string()
+        &req.pane_id,
+        &req.project,
+        req.success,
+        &req.output.clone().unwrap_or_default(),
+    )
+    .to_string()
 }
 
 /// Check build status
@@ -131,9 +149,13 @@ pub fn build_get_last(project: &str) -> String {
 /// Add a shared inter-agent task
 pub fn task_add(req: &MaTaskAddRequest) -> String {
     crate::multi_agent::task_add(
-        &req.project, &req.title, &req.description.clone().unwrap_or_default(),
-        &req.priority.clone().unwrap_or_else(|| "medium".into()), &req.added_by,
-    ).to_string()
+        &req.project,
+        &req.title,
+        &req.description.clone().unwrap_or_default(),
+        &req.priority.clone().unwrap_or_else(|| "medium".into()),
+        &req.added_by,
+    )
+    .to_string()
 }
 
 /// Claim next pending task
@@ -144,8 +166,11 @@ pub fn task_claim(pane_id: &str, project: Option<&str>) -> String {
 /// Complete a task
 pub fn task_complete(req: &MaTaskCompleteRequest) -> String {
     crate::multi_agent::task_complete(
-        &req.task_id, &req.pane_id, &req.result.clone().unwrap_or_default(),
-    ).to_string()
+        &req.task_id,
+        &req.pane_id,
+        &req.result.clone().unwrap_or_default(),
+    )
+    .to_string()
 }
 
 /// List inter-agent tasks
@@ -159,8 +184,14 @@ pub fn task_list(status: Option<&str>, project: Option<&str>) -> String {
 pub fn kb_add(req: &KbAddRequest) -> String {
     let files = req.files.clone().unwrap_or_default();
     crate::multi_agent::kb_add(
-        &req.pane_id, &req.project, &req.category, &req.title, &req.content, &files,
-    ).to_string()
+        &req.pane_id,
+        &req.project,
+        &req.category,
+        &req.title,
+        &req.content,
+        &files,
+    )
+    .to_string()
 }
 
 /// Search KB
@@ -178,8 +209,11 @@ pub fn kb_list(project: Option<&str>, limit: usize) -> String {
 /// Broadcast a message to all agents
 pub fn msg_broadcast(req: &MsgBroadcastRequest) -> String {
     crate::multi_agent::msg_broadcast(
-        &req.from_pane, &req.message, &req.priority.clone().unwrap_or_else(|| "info".into()),
-    ).to_string()
+        &req.from_pane,
+        &req.message,
+        &req.priority.clone().unwrap_or_else(|| "info".into()),
+    )
+    .to_string()
 }
 
 /// Send a direct message

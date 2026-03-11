@@ -15,26 +15,29 @@ pub fn build_status() -> String {
     let builds = build::build_status();
     let sessions = build::session_count();
 
-    let build_list: Vec<serde_json::Value> = builds.iter().map(|b| {
-        json!({
-            "number": b.number,
-            "name": b.name,
-            "theme": b.theme,
-            "theme_desc": build::theme_desc(b.number),
-            "pane_count": b.pane_count,
-            "panes": b.panes.iter().map(|p| json!({
-                "index": p.pane_index,
-                "pane_id": p.pane_id,
-                "command": p.command,
-                "cwd": p.cwd,
-                "colors": {
-                    "bg": p.colors.bg,
-                    "fg": p.colors.fg,
-                    "zsh_color": p.colors.zsh_color,
-                }
-            })).collect::<Vec<_>>(),
+    let build_list: Vec<serde_json::Value> = builds
+        .iter()
+        .map(|b| {
+            json!({
+                "number": b.number,
+                "name": b.name,
+                "theme": b.theme,
+                "theme_desc": build::theme_desc(b.number),
+                "pane_count": b.pane_count,
+                "panes": b.panes.iter().map(|p| json!({
+                    "index": p.pane_index,
+                    "pane_id": p.pane_id,
+                    "command": p.command,
+                    "cwd": p.cwd,
+                    "colors": {
+                        "bg": p.colors.bg,
+                        "fg": p.colors.fg,
+                        "zsh_color": p.colors.zsh_color,
+                    }
+                })).collect::<Vec<_>>(),
+            })
         })
-    }).collect();
+        .collect();
 
     json!({
         "builds": build_list,
@@ -42,7 +45,8 @@ pub fn build_status() -> String {
         "total_panes": builds.iter().map(|b| b.pane_count).sum::<usize>(),
         "sessions": sessions,
         "max_builds": 5,
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Create or restyle a build environment
@@ -54,7 +58,8 @@ pub fn build_create(number: Option<u8>) -> String {
             if next > 5 {
                 return json!({
                     "error": "Max 5 builds supported. Use rename to relabel existing builds."
-                }).to_string();
+                })
+                .to_string();
             }
             next
         }
@@ -67,7 +72,8 @@ pub fn build_create(number: Option<u8>) -> String {
             "theme": build::theme_name(num),
             "theme_desc": build::theme_desc(num),
             "results": results,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => json!({"error": e}).to_string(),
     }
 }
@@ -78,7 +84,8 @@ pub fn build_restyle() -> String {
         Ok(results) => json!({
             "status": "restyled",
             "results": results,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => json!({"error": e}).to_string(),
     }
 }
@@ -99,7 +106,8 @@ pub fn build_rename(build_num: u8, new_name: String) -> String {
             "from": format!("build-{}", build_num),
             "to": new_name,
             "results": results,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => json!({"error": e}).to_string(),
     }
 }

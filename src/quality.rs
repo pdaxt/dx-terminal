@@ -1,14 +1,30 @@
+use crate::multi_agent::{coordination_db, now_iso};
 use rusqlite::params;
 use serde_json::{json, Value};
-use crate::multi_agent::{coordination_db, now_iso};
 
-pub fn log_test(pane_id: &str, project: &str, command: Option<&str>, success: bool,
-                total: Option<i64>, passed: Option<i64>, failed: Option<i64>, skipped: Option<i64>,
-                duration_ms: Option<i64>, output: Option<&str>) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
-    let session_id: Option<String> = conn.query_row(
-        "SELECT session_id FROM agents WHERE pane_id = ?1", params![pane_id], |r| r.get(0),
-    ).ok();
+pub fn log_test(
+    pane_id: &str,
+    project: &str,
+    command: Option<&str>,
+    success: bool,
+    total: Option<i64>,
+    passed: Option<i64>,
+    failed: Option<i64>,
+    skipped: Option<i64>,
+    duration_ms: Option<i64>,
+    output: Option<&str>,
+) -> Value {
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
+    let session_id: Option<String> = conn
+        .query_row(
+            "SELECT session_id FROM agents WHERE pane_id = ?1",
+            params![pane_id],
+            |r| r.get(0),
+        )
+        .ok();
     let now = now_iso();
 
     let _ = conn.execute(
@@ -21,12 +37,25 @@ pub fn log_test(pane_id: &str, project: &str, command: Option<&str>, success: bo
     json!({"status": "logged", "event_type": "test", "success": success})
 }
 
-pub fn log_build(pane_id: &str, project: &str, command: Option<&str>, success: bool,
-                 duration_ms: Option<i64>, output: Option<&str>) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
-    let session_id: Option<String> = conn.query_row(
-        "SELECT session_id FROM agents WHERE pane_id = ?1", params![pane_id], |r| r.get(0),
-    ).ok();
+pub fn log_build(
+    pane_id: &str,
+    project: &str,
+    command: Option<&str>,
+    success: bool,
+    duration_ms: Option<i64>,
+    output: Option<&str>,
+) -> Value {
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
+    let session_id: Option<String> = conn
+        .query_row(
+            "SELECT session_id FROM agents WHERE pane_id = ?1",
+            params![pane_id],
+            |r| r.get(0),
+        )
+        .ok();
     let now = now_iso();
 
     let _ = conn.execute(
@@ -37,12 +66,27 @@ pub fn log_build(pane_id: &str, project: &str, command: Option<&str>, success: b
     json!({"status": "logged", "event_type": "build", "success": success})
 }
 
-pub fn log_lint(pane_id: &str, project: &str, command: Option<&str>, success: bool,
-                total: Option<i64>, errors: Option<i64>, warnings: Option<i64>, output: Option<&str>) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
-    let session_id: Option<String> = conn.query_row(
-        "SELECT session_id FROM agents WHERE pane_id = ?1", params![pane_id], |r| r.get(0),
-    ).ok();
+pub fn log_lint(
+    pane_id: &str,
+    project: &str,
+    command: Option<&str>,
+    success: bool,
+    total: Option<i64>,
+    errors: Option<i64>,
+    warnings: Option<i64>,
+    output: Option<&str>,
+) -> Value {
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
+    let session_id: Option<String> = conn
+        .query_row(
+            "SELECT session_id FROM agents WHERE pane_id = ?1",
+            params![pane_id],
+            |r| r.get(0),
+        )
+        .ok();
     let now = now_iso();
 
     let _ = conn.execute(
@@ -54,12 +98,25 @@ pub fn log_lint(pane_id: &str, project: &str, command: Option<&str>, success: bo
     json!({"status": "logged", "event_type": "lint", "success": success})
 }
 
-pub fn log_deploy(pane_id: &str, project: &str, target: Option<&str>, success: bool,
-                  duration_ms: Option<i64>, output: Option<&str>) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
-    let session_id: Option<String> = conn.query_row(
-        "SELECT session_id FROM agents WHERE pane_id = ?1", params![pane_id], |r| r.get(0),
-    ).ok();
+pub fn log_deploy(
+    pane_id: &str,
+    project: &str,
+    target: Option<&str>,
+    success: bool,
+    duration_ms: Option<i64>,
+    output: Option<&str>,
+) -> Value {
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
+    let session_id: Option<String> = conn
+        .query_row(
+            "SELECT session_id FROM agents WHERE pane_id = ?1",
+            params![pane_id],
+            |r| r.get(0),
+        )
+        .ok();
     let now = now_iso();
 
     let _ = conn.execute(
@@ -71,7 +128,10 @@ pub fn log_deploy(pane_id: &str, project: &str, target: Option<&str>, success: b
 }
 
 pub fn quality_report(project: &str, days: i64) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let sql = format!(
         "SELECT event_type, COUNT(*) as cnt, SUM(success) as passes, AVG(duration_ms) as avg_dur
          FROM quality_events WHERE project = ?1 AND timestamp > datetime('now', '-{days} days')
@@ -89,14 +149,19 @@ pub fn quality_report(project: &str, days: i64) -> Value {
                 "avg_duration_ms": r.get::<_, Option<f64>>(3)?,
             }))
         }) {
-            for row in rows.flatten() { events.push(row); }
+            for row in rows.flatten() {
+                events.push(row);
+            }
         }
     }
     json!({"project": project, "period_days": days, "events": events})
 }
 
 pub fn quality_gate(project: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
 
     let last_test: Option<(bool, String)> = conn.query_row(
         "SELECT success, timestamp FROM quality_events WHERE project = ?1 AND event_type = 'test' ORDER BY timestamp DESC LIMIT 1",
@@ -121,7 +186,10 @@ pub fn quality_gate(project: &str) -> Value {
 }
 
 pub fn regressions(project: &str, days: i64) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
     let half = days / 2;
 
     let recent: (i64, i64) = conn.query_row(
@@ -134,8 +202,16 @@ pub fn regressions(project: &str, days: i64) -> Value {
         params![project], |r| Ok((r.get(0)?, r.get(1)?)),
     ).unwrap_or((0, 0));
 
-    let recent_rate = if recent.0 > 0 { recent.1 as f64 / recent.0 as f64 } else { 1.0 };
-    let older_rate = if older.0 > 0 { older.1 as f64 / older.0 as f64 } else { 1.0 };
+    let recent_rate = if recent.0 > 0 {
+        recent.1 as f64 / recent.0 as f64
+    } else {
+        1.0
+    };
+    let older_rate = if older.0 > 0 {
+        older.1 as f64 / older.0 as f64
+    } else {
+        1.0
+    };
     let regression = older_rate - recent_rate;
 
     json!({
@@ -148,7 +224,10 @@ pub fn regressions(project: &str, days: i64) -> Value {
 }
 
 pub fn project_health(project: &str) -> Value {
-    let conn = match coordination_db() { Ok(c) => c, Err(e) => return json!({"error": e}) };
+    let conn = match coordination_db() {
+        Ok(c) => c,
+        Err(e) => return json!({"error": e}),
+    };
 
     let test_rate: f64 = conn.query_row(
         "SELECT COALESCE(AVG(CAST(success AS REAL)), 1.0) FROM quality_events WHERE project = ?1 AND event_type = 'test' AND timestamp > datetime('now', '-7 days')",

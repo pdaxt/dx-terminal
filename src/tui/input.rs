@@ -201,15 +201,13 @@ pub fn create_add_screen_form() -> FormState {
 pub fn create_remove_screen_form() -> FormState {
     FormState {
         title: "Remove Screen".into(),
-        fields: vec![
-            FormField {
-                label: "Screen".into(),
-                value: String::new(),
-                cursor: 0,
-                required: true,
-                placeholder: "screen ID or name".into(),
-            },
-        ],
+        fields: vec![FormField {
+            label: "Screen".into(),
+            value: String::new(),
+            cursor: 0,
+            required: true,
+            placeholder: "screen ID or name".into(),
+        }],
         focused: 0,
         kind: FormKind::RemoveScreen,
     }
@@ -217,7 +215,9 @@ pub fn create_remove_screen_form() -> FormState {
 
 /// Check if all required fields have values
 pub fn form_is_valid(form: &FormState) -> bool {
-    form.fields.iter().all(|f| !f.required || !f.value.trim().is_empty())
+    form.fields
+        .iter()
+        .all(|f| !f.required || !f.value.trim().is_empty())
 }
 
 /// Convert a completed form into a TuiCommand
@@ -228,20 +228,35 @@ pub fn form_to_command(form: &FormState) -> Option<TuiCommand> {
             let project = form.fields[1].value.trim().to_string();
             let role = non_empty(&form.fields[2].value);
             let task = non_empty(&form.fields[3].value);
-            Some(TuiCommand::Spawn { pane, project, role, task })
+            Some(TuiCommand::Spawn {
+                pane,
+                project,
+                role,
+                task,
+            })
         }
         FormKind::QueueAdd => {
             let project = form.fields[0].value.trim().to_string();
             let task = form.fields[1].value.trim().to_string();
             let role = non_empty(&form.fields[2].value);
             let priority = form.fields[3].value.trim().parse::<u8>().ok();
-            Some(TuiCommand::QueueAdd { project, task, role, priority })
+            Some(TuiCommand::QueueAdd {
+                project,
+                task,
+                role,
+                priority,
+            })
         }
         FormKind::FeatureCreate => {
             let space = form.fields[0].value.trim().to_string();
             let title = form.fields[1].value.trim().to_string();
             let priority = non_empty(&form.fields[2].value);
-            Some(TuiCommand::FeatureCreate { space, title, issue_type: "feature".into(), priority })
+            Some(TuiCommand::FeatureCreate {
+                space,
+                title,
+                issue_type: "feature".into(),
+                priority,
+            })
         }
         FormKind::Orchestrate => {
             let request = form.fields[0].value.trim().to_string();
@@ -252,17 +267,28 @@ pub fn form_to_command(form: &FormState) -> Option<TuiCommand> {
             let project = non_empty(&form.fields[0].value);
             let request = form.fields[1].value.trim().to_string();
             let template = non_empty(&form.fields[2].value);
-            Some(TuiCommand::FactoryGo { project, request, template })
+            Some(TuiCommand::FactoryGo {
+                project,
+                request,
+                template,
+            })
         }
         FormKind::AddScreen => {
             let name = non_empty(&form.fields[0].value);
             let layout = non_empty(&form.fields[1].value);
             let panes = form.fields[2].value.trim().parse::<u8>().ok();
-            Some(TuiCommand::AddScreen { name, layout, panes })
+            Some(TuiCommand::AddScreen {
+                name,
+                layout,
+                panes,
+            })
         }
         FormKind::RemoveScreen => {
             let screen_ref = form.fields[0].value.trim().to_string();
-            Some(TuiCommand::RemoveScreen { screen_ref, force: false })
+            Some(TuiCommand::RemoveScreen {
+                screen_ref,
+                force: false,
+            })
         }
     }
 }
@@ -429,12 +455,23 @@ pub fn parse_command(input: &str) -> Option<TuiCommand> {
         }
         // :screen add [name] — add a new screen
         Some("screen") if parts.len() >= 2 && parts[1] == "add" => {
-            let name = if parts.len() >= 3 { Some(parts[2].to_string()) } else { None };
-            return Some(TuiCommand::AddScreen { name, layout: None, panes: None });
+            let name = if parts.len() >= 3 {
+                Some(parts[2].to_string())
+            } else {
+                None
+            };
+            return Some(TuiCommand::AddScreen {
+                name,
+                layout: None,
+                panes: None,
+            });
         }
         // :screen rm <name> — remove a screen
         Some("screen") if parts.len() >= 3 && (parts[1] == "rm" || parts[1] == "remove") => {
-            return Some(TuiCommand::RemoveScreen { screen_ref: parts[2].to_string(), force: false });
+            return Some(TuiCommand::RemoveScreen {
+                screen_ref: parts[2].to_string(),
+                force: false,
+            });
         }
         Some("qf") if parts.len() >= 3 => {
             let ids: Vec<String> = parts[2].split(',').map(|s| s.trim().to_string()).collect();
@@ -448,7 +485,9 @@ pub fn parse_command(input: &str) -> Option<TuiCommand> {
 
     // Universal MCP dispatch — first word is tool name, rest is key=value args
     let tool = parts.first()?.to_string();
-    if tool.is_empty() { return None; }
+    if tool.is_empty() {
+        return None;
+    }
 
     let args = if parts.len() > 1 {
         let rest = if parts.len() == 3 {
@@ -472,11 +511,16 @@ fn parse_args(input: &str) -> serde_json::Value {
 
     while chars.peek().is_some() {
         // Skip whitespace
-        while chars.peek().map_or(false, |c| c.is_whitespace()) { chars.next(); }
+        while chars.peek().map_or(false, |c| c.is_whitespace()) {
+            chars.next();
+        }
 
         // Read key
         let mut key = String::new();
-        while chars.peek().map_or(false, |c| *c != '=' && !c.is_whitespace()) {
+        while chars
+            .peek()
+            .map_or(false, |c| *c != '=' && !c.is_whitespace())
+        {
             key.push(chars.next().unwrap());
         }
 
@@ -525,5 +569,9 @@ fn parse_args(input: &str) -> serde_json::Value {
 
 fn non_empty(s: &str) -> Option<String> {
     let trimmed = s.trim();
-    if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }

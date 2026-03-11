@@ -101,7 +101,7 @@ pub enum ArchStatus {
 pub struct VisionChange {
     pub timestamp: String,
     pub change_type: ChangeType,
-    pub field: String,      // what changed: "mission", "goal:G1", "milestone:M2", etc.
+    pub field: String, // what changed: "mission", "goal:G1", "milestone:M2", etc.
     pub old_value: String,
     pub new_value: String,
     pub reason: String,
@@ -122,20 +122,20 @@ pub enum ChangeType {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GitHubConfig {
-    pub repo: String,          // "owner/repo"
+    pub repo: String, // "owner/repo"
     pub sync_enabled: bool,
     pub wiki_page: Option<String>,
     pub project_board: Option<u64>,
     #[serde(default)]
-    pub labels: Vec<String>,   // labels to apply to vision-related issues
+    pub labels: Vec<String>, // labels to apply to vision-related issues
 }
 
 // ─── VDD: Feature/Question/Decision/Task ────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Feature {
-    pub id: String,                        // "F1.1"
-    pub goal_id: String,                   // links to parent goal
+    pub id: String,      // "F1.1"
+    pub goal_id: String, // links to parent goal
     pub title: String,
     pub description: String,
     pub status: FeatureStatus,
@@ -154,9 +154,9 @@ pub struct Feature {
     #[serde(default)]
     pub acceptance_items: Vec<AcceptanceCriterion>,
     #[serde(default)]
-    pub sub_vision: Option<String>,        // path to sub-vision file (recursive)
+    pub sub_vision: Option<String>, // path to sub-vision file (recursive)
     #[serde(default)]
-    pub parent_vision: Option<String>,     // link up the tree
+    pub parent_vision: Option<String>, // link up the tree
     #[serde(default)]
     pub created_at: String,
     #[serde(default)]
@@ -239,7 +239,7 @@ impl Default for AcceptanceStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Question {
-    pub id: String,                        // "Q1.1.1"
+    pub id: String, // "Q1.1.1"
     pub text: String,
     pub status: QuestionStatus,
     #[serde(default = "default_true")]
@@ -250,7 +250,7 @@ pub struct Question {
     #[serde(default)]
     pub answered_at: Option<String>,
     #[serde(default)]
-    pub decision_id: Option<String>,       // links to the decision it produced
+    pub decision_id: Option<String>, // links to the decision it produced
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -264,9 +264,9 @@ pub enum QuestionStatus {
 /// Named VisionDecision to avoid conflict with ArchDecision
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VisionDecision {
-    pub id: String,                        // "D1.1.1"
+    pub id: String, // "D1.1.1"
     #[serde(default)]
-    pub question_id: Option<String>,       // which question this answers
+    pub question_id: Option<String>, // which question this answers
     pub decision: String,
     pub rationale: String,
     pub date: String,
@@ -276,20 +276,20 @@ pub struct VisionDecision {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VisionTask {
-    pub id: String,                        // "T1.1.1"
+    pub id: String, // "T1.1.1"
     pub feature_id: String,
     pub title: String,
     #[serde(default)]
     pub description: String,
     pub status: TaskStatus,
     #[serde(default)]
-    pub branch: Option<String>,            // Git branch name
+    pub branch: Option<String>, // Git branch name
     #[serde(default)]
-    pub pr: Option<String>,                // PR number/URL
+    pub pr: Option<String>, // PR number/URL
     #[serde(default)]
-    pub commit: Option<String>,            // merge commit
+    pub commit: Option<String>, // merge commit
     #[serde(default)]
-    pub assignee: Option<String>,          // pane ID or agent name
+    pub assignee: Option<String>, // pane ID or agent name
     #[serde(default)]
     pub created_at: String,
     #[serde(default)]
@@ -324,7 +324,9 @@ fn feature_state_from_status(status: &FeatureStatus) -> FeatureState {
     match status {
         FeatureStatus::Planned => FeatureState::Planned,
         FeatureStatus::Done => FeatureState::Complete,
-        FeatureStatus::Specifying | FeatureStatus::Building | FeatureStatus::Testing => FeatureState::Active,
+        FeatureStatus::Specifying | FeatureStatus::Building | FeatureStatus::Testing => {
+            FeatureState::Active
+        }
     }
 }
 
@@ -344,20 +346,29 @@ fn acceptance_id(feature_id: &str, idx: usize) -> String {
 
 fn sync_acceptance_items(feature: &mut Feature) {
     if feature.acceptance_items.is_empty() && !feature.acceptance_criteria.is_empty() {
-        feature.acceptance_items = feature.acceptance_criteria.iter().enumerate().map(|(idx, text)| AcceptanceCriterion {
-            id: acceptance_id(&feature.id, idx),
-            text: text.clone(),
-            status: AcceptanceStatus::Draft,
-            verification_method: None,
-            evidence: vec![],
-            verified_at: None,
-            verified_by: None,
-            verification_source: None,
-        }).collect();
+        feature.acceptance_items = feature
+            .acceptance_criteria
+            .iter()
+            .enumerate()
+            .map(|(idx, text)| AcceptanceCriterion {
+                id: acceptance_id(&feature.id, idx),
+                text: text.clone(),
+                status: AcceptanceStatus::Draft,
+                verification_method: None,
+                evidence: vec![],
+                verified_at: None,
+                verified_by: None,
+                verification_source: None,
+            })
+            .collect();
     }
 
     if !feature.acceptance_items.is_empty() {
-        feature.acceptance_criteria = feature.acceptance_items.iter().map(|item| item.text.clone()).collect();
+        feature.acceptance_criteria = feature
+            .acceptance_items
+            .iter()
+            .map(|item| item.text.clone())
+            .collect();
     }
 }
 
@@ -395,10 +406,14 @@ fn set_feature_lifecycle(feature: &mut Feature, phase: FeaturePhase, state: Feat
 
 fn task_counts(feature: &Feature) -> (usize, usize, usize) {
     let total = feature.tasks.len();
-    let complete = feature.tasks.iter()
+    let complete = feature
+        .tasks
+        .iter()
         .filter(|t| t.status == TaskStatus::Done || t.status == TaskStatus::Verified)
         .count();
-    let verified = feature.tasks.iter()
+    let verified = feature
+        .tasks
+        .iter()
         .filter(|t| t.status == TaskStatus::Verified)
         .count();
     (total, complete, verified)
@@ -411,10 +426,14 @@ fn feature_doc_exists(project_path: &str, feature_id: &str, doc_type: &str) -> b
 }
 
 fn feature_readiness_value(project_path: &str, feature: &Feature) -> serde_json::Value {
-    let open_questions = feature.questions.iter()
+    let open_questions = feature
+        .questions
+        .iter()
         .filter(|q| q.status == QuestionStatus::Open)
         .count();
-    let blocking_open_questions = feature.questions.iter()
+    let blocking_open_questions = feature
+        .questions
+        .iter()
         .filter(|q| q.status == QuestionStatus::Open && q.blocking)
         .count();
     let non_blocking_open_questions = open_questions.saturating_sub(blocking_open_questions);
@@ -422,10 +441,14 @@ fn feature_readiness_value(project_path: &str, feature: &Feature) -> serde_json:
     let has_discovery_doc = feature_doc_exists(project_path, &feature.id, "discovery");
     let has_discovery_artifact = has_research_doc || has_discovery_doc;
     let acceptance_count = feature.acceptance_items.len();
-    let acceptance_verified = feature.acceptance_items.iter()
+    let acceptance_verified = feature
+        .acceptance_items
+        .iter()
         .filter(|item| item.status == AcceptanceStatus::Verified)
         .count();
-    let acceptance_failed = feature.acceptance_items.iter()
+    let acceptance_failed = feature
+        .acceptance_items
+        .iter()
         .filter(|item| item.status == AcceptanceStatus::Failed)
         .count();
     let (task_total, task_complete, task_verified) = task_counts(feature);
@@ -435,7 +458,10 @@ fn feature_readiness_value(project_path: &str, feature: &Feature) -> serde_json:
         build_blockers.push("discovery artifact missing".to_string());
     }
     if blocking_open_questions > 0 {
-        build_blockers.push(format!("{} blocking discovery question(s)", blocking_open_questions));
+        build_blockers.push(format!(
+            "{} blocking discovery question(s)",
+            blocking_open_questions
+        ));
     }
     if acceptance_count == 0 {
         build_blockers.push("acceptance criteria missing".to_string());
@@ -526,7 +552,12 @@ fn reconcile_feature_lifecycle(project_path: &str, feature: &mut Feature) {
         return;
     }
 
-    if ready_for_build && matches!(feature.phase, FeaturePhase::Planned | FeaturePhase::Discovery) {
+    if ready_for_build
+        && matches!(
+            feature.phase,
+            FeaturePhase::Planned | FeaturePhase::Discovery
+        )
+    {
         set_feature_lifecycle(feature, FeaturePhase::Build, FeatureState::Active);
     }
 }
@@ -577,10 +608,9 @@ pub fn save_vision(project_path: &str, vision: &Vision) -> Result<(), String> {
         normalize_feature(feature);
     }
 
-    let json = serde_json::to_string_pretty(&normalized)
-        .map_err(|e| format!("serialize: {}", e))?;
-    std::fs::write(vision_file(project_path), json)
-        .map_err(|e| format!("write: {}", e))?;
+    let json =
+        serde_json::to_string_pretty(&normalized).map_err(|e| format!("serialize: {}", e))?;
+    std::fs::write(vision_file(project_path), json).map_err(|e| format!("write: {}", e))?;
 
     // Also write .gitignore to NOT ignore vision
     let gitignore = dir.join(".gitignore");
@@ -597,7 +627,11 @@ fn append_history(project_path: &str, change: &VisionChange) {
     let _ = std::fs::create_dir_all(vision_dir(project_path));
     if let Ok(json) = serde_json::to_string(change) {
         use std::io::Write;
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
             let _ = writeln!(f, "{}", json);
         }
     }
@@ -610,7 +644,8 @@ pub fn init_vision(project_path: &str, project_name: &str, mission: &str, repo: 
         return serde_json::json!({
             "status": "exists",
             "message": "Vision already exists. Use vision_update to modify."
-        }).to_string();
+        })
+        .to_string();
     }
 
     let vision = Vision {
@@ -639,7 +674,8 @@ pub fn init_vision(project_path: &str, project_name: &str, mission: &str, repo: 
             "project": project_name,
             "mission": mission,
             "github_repo": repo,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
 }
@@ -650,11 +686,18 @@ pub fn get_vision(project_path: &str) -> String {
         None => serde_json::json!({
             "error": "no_vision",
             "hint": "Run vision_init to create a vision for this project"
-        }).to_string(),
+        })
+        .to_string(),
     }
 }
 
-pub fn add_goal(project_path: &str, id: &str, title: &str, description: &str, priority: u8) -> String {
+pub fn add_goal(
+    project_path: &str,
+    id: &str,
+    title: &str,
+    description: &str,
+    priority: u8,
+) -> String {
     let mut vision = match load_vision(project_path) {
         Some(v) => v,
         None => return serde_json::json!({"error": "no_vision"}).to_string(),
@@ -697,8 +740,12 @@ pub fn add_goal(project_path: &str, id: &str, title: &str, description: &str, pr
 }
 
 pub fn add_milestone(
-    project_path: &str, id: &str, title: &str, description: &str,
-    target_date: Option<&str>, goal_ids: Vec<String>,
+    project_path: &str,
+    id: &str,
+    title: &str,
+    description: &str,
+    target_date: Option<&str>,
+    goal_ids: Vec<String>,
 ) -> String {
     let mut vision = match load_vision(project_path) {
         Some(v) => v,
@@ -743,8 +790,12 @@ pub fn add_milestone(
 }
 
 pub fn add_arch_decision(
-    project_path: &str, id: &str, title: &str, decision: &str,
-    rationale: &str, alternatives: Vec<String>,
+    project_path: &str,
+    id: &str,
+    title: &str,
+    decision: &str,
+    rationale: &str,
+    alternatives: Vec<String>,
 ) -> String {
     let mut vision = match load_vision(project_path) {
         Some(v) => v,
@@ -784,7 +835,12 @@ pub fn add_arch_decision(
     }
 }
 
-pub fn update_goal_status(project_path: &str, goal_id: &str, new_status: &str, reason: &str) -> String {
+pub fn update_goal_status(
+    project_path: &str,
+    goal_id: &str,
+    new_status: &str,
+    reason: &str,
+) -> String {
     let mut vision = match load_vision(project_path) {
         Some(v) => v,
         None => return serde_json::json!({"error": "no_vision"}).to_string(),
@@ -822,7 +878,10 @@ pub fn update_goal_status(project_path: &str, goal_id: &str, new_status: &str, r
     append_history(project_path, &change);
 
     match save_vision(project_path, &vision) {
-        Ok(()) => serde_json::json!({"status": "updated", "goal": goal_id, "new_status": new_status}).to_string(),
+        Ok(()) => {
+            serde_json::json!({"status": "updated", "goal": goal_id, "new_status": new_status})
+                .to_string()
+        }
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
 }
@@ -835,7 +894,11 @@ pub fn update_mission(project_path: &str, new_mission: &str, reason: &str) -> St
 
     let change = VisionChange {
         timestamp: now(),
-        change_type: if reason.contains("pivot") { ChangeType::Pivot } else { ChangeType::Modified },
+        change_type: if reason.contains("pivot") {
+            ChangeType::Pivot
+        } else {
+            ChangeType::Modified
+        },
         field: "mission".to_string(),
         old_value: vision.mission.clone(),
         new_value: new_mission.to_string(),
@@ -863,19 +926,29 @@ pub fn vision_summary(project_path: &str) -> String {
     };
 
     let goals_by_status = |s: &GoalStatus| vision.goals.iter().filter(|g| &g.status == s).count();
-    let active_milestones: Vec<_> = vision.milestones.iter()
+    let active_milestones: Vec<_> = vision
+        .milestones
+        .iter()
         .filter(|m| m.status == MilestoneStatus::Active)
-        .map(|m| serde_json::json!({
-            "id": m.id, "title": m.title, "progress": m.progress_pct,
-            "target": m.target_date,
-        }))
+        .map(|m| {
+            serde_json::json!({
+                "id": m.id, "title": m.title, "progress": m.progress_pct,
+                "target": m.target_date,
+            })
+        })
         .collect();
 
-    let recent_changes: Vec<_> = vision.changes.iter().rev().take(5)
-        .map(|c| serde_json::json!({
-            "time": c.timestamp, "field": c.field,
-            "type": c.change_type, "reason": c.reason,
-        }))
+    let recent_changes: Vec<_> = vision
+        .changes
+        .iter()
+        .rev()
+        .take(5)
+        .map(|c| {
+            serde_json::json!({
+                "time": c.timestamp, "field": c.field,
+                "type": c.change_type, "reason": c.reason,
+            })
+        })
         .collect();
 
     serde_json::json!({
@@ -900,7 +973,8 @@ pub fn vision_summary(project_path: &str) -> String {
             "sync": vision.github.sync_enabled,
         },
         "updated_at": vision.updated_at,
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Get recent changes as a diff-style view.
@@ -915,7 +989,8 @@ pub fn vision_diff(project_path: &str, last_n: usize) -> String {
         "project": vision.project,
         "change_count": changes.len(),
         "changes": changes,
-    }).to_string()
+    })
+    .to_string()
 }
 
 // ─── GitHub Sync ────────────────────────────────────────────────────────────
@@ -931,7 +1006,8 @@ pub fn github_sync(project_path: &str) -> String {
         return serde_json::json!({
             "error": "github_not_configured",
             "hint": "Set github.repo and github.sync_enabled in vision"
-        }).to_string();
+        })
+        .to_string();
     }
 
     let repo = &vision.github.repo;
@@ -943,9 +1019,14 @@ pub fn github_sync(project_path: &str) -> String {
             let due = ms.target_date.as_deref().unwrap_or("");
             let cmd = format!(
                 "gh api repos/{}/milestones -f title='{}' -f description='{}' -f state=open {}",
-                repo, ms.title.replace('\'', "'\\''"),
+                repo,
+                ms.title.replace('\'', "'\\''"),
                 ms.description.replace('\'', "'\\''"),
-                if due.is_empty() { String::new() } else { format!("-f due_on='{}T00:00:00Z'", due) }
+                if due.is_empty() {
+                    String::new()
+                } else {
+                    format!("-f due_on='{}T00:00:00Z'", due)
+                }
             );
             let output = run_gh(&cmd);
             results.push(serde_json::json!({
@@ -972,7 +1053,8 @@ pub fn github_sync(project_path: &str) -> String {
             );
             let cmd = format!(
                 "gh issue create -R {} --title '[Vision] {}' --body '{}' --label '{},vision-goal'",
-                repo, goal.title.replace('\'', "'\\''"),
+                repo,
+                goal.title.replace('\'', "'\\''"),
                 body.replace('\'', "'\\''"),
                 labels,
             );
@@ -997,7 +1079,8 @@ pub fn github_sync(project_path: &str) -> String {
         "status": "synced",
         "repo": repo,
         "actions": results,
-    }).to_string()
+    })
+    .to_string()
 }
 
 fn generate_wiki_markdown(vision: &Vision) -> String {
@@ -1015,28 +1098,37 @@ fn generate_wiki_markdown(vision: &Vision) -> String {
     md.push_str("## Goals\n\n");
     md.push_str("| ID | Goal | Priority | Status |\n|---|---|---|---|\n");
     for g in &vision.goals {
-        md.push_str(&format!("| {} | {} | P{} | {:?} |\n", g.id, g.title, g.priority, g.status));
+        md.push_str(&format!(
+            "| {} | {} | P{} | {:?} |\n",
+            g.id, g.title, g.priority, g.status
+        ));
     }
 
     md.push_str("\n## Milestones\n\n");
     for m in &vision.milestones {
-        md.push_str(&format!("### {} — {} ({:?})\n\n{}\n\nProgress: {}%\n\n",
-            m.id, m.title, m.status, m.description, m.progress_pct));
+        md.push_str(&format!(
+            "### {} — {} ({:?})\n\n{}\n\nProgress: {}%\n\n",
+            m.id, m.title, m.status, m.description, m.progress_pct
+        ));
     }
 
     if !vision.architecture.is_empty() {
         md.push_str("## Architecture Decisions\n\n");
         for a in &vision.architecture {
-            md.push_str(&format!("### ADR-{}: {}\n\n**Decision:** {}\n\n**Rationale:** {}\n\n**Status:** {:?}\n\n",
-                a.id, a.title, a.decision, a.rationale, a.status));
+            md.push_str(&format!(
+                "### ADR-{}: {}\n\n**Decision:** {}\n\n**Rationale:** {}\n\n**Status:** {:?}\n\n",
+                a.id, a.title, a.decision, a.rationale, a.status
+            ));
         }
     }
 
     if !vision.changes.is_empty() {
         md.push_str("## Recent Changes\n\n");
         for c in vision.changes.iter().rev().take(10) {
-            md.push_str(&format!("- **{}** `{}` {:?}: {} → {} ({})\n",
-                c.timestamp, c.field, c.change_type, c.old_value, c.new_value, c.reason));
+            md.push_str(&format!(
+                "- **{}** `{}` {:?}: {} → {} ({})\n",
+                c.timestamp, c.field, c.change_type, c.old_value, c.new_value, c.reason
+            ));
         }
     }
 
@@ -1074,7 +1166,8 @@ pub fn list_visions() -> String {
     serde_json::json!({
         "visions": visions,
         "count": visions.len(),
-    }).to_string()
+    })
+    .to_string()
 }
 
 // ─── VDD: Feature CRUD ──────────────────────────────────────────────────────
@@ -1083,11 +1176,18 @@ fn features_dir(project_path: &str) -> PathBuf {
     vision_dir(project_path).join("features")
 }
 
-fn feature_doc_path(project_path: &str, doc_type: &str, feature_id: &str) -> Result<(PathBuf, String), String> {
+fn feature_doc_path(
+    project_path: &str,
+    doc_type: &str,
+    feature_id: &str,
+) -> Result<(PathBuf, String), String> {
     match doc_type {
         "research" | "discovery" => {
             let relative = format!(".vision/{}/{}.md", doc_type, feature_id);
-            Ok((vision_dir(project_path).join(format!("{}/{}.md", doc_type, feature_id)), relative))
+            Ok((
+                vision_dir(project_path).join(format!("{}/{}.md", doc_type, feature_id)),
+                relative,
+            ))
         }
         _ => Err(format!("invalid_doc_type: {}", doc_type)),
     }
@@ -1095,7 +1195,10 @@ fn feature_doc_path(project_path: &str, doc_type: &str, feature_id: &str) -> Res
 
 /// Add a feature under a goal.
 pub fn add_feature(
-    project_path: &str, goal_id: &str, title: &str, description: &str,
+    project_path: &str,
+    goal_id: &str,
+    title: &str,
+    description: &str,
     acceptance_criteria: Vec<String>,
 ) -> String {
     let mut vision = match load_vision(project_path) {
@@ -1109,7 +1212,11 @@ pub fn add_feature(
     }
 
     // Generate feature ID: count existing features for this goal + 1
-    let existing = vision.features.iter().filter(|f| f.goal_id == goal_id).count();
+    let existing = vision
+        .features
+        .iter()
+        .filter(|f| f.goal_id == goal_id)
+        .count();
     let feature_num = existing + 1;
     let id = format!("F{}.{}", goal_id.trim_start_matches('G'), feature_num);
     let has_acceptance = !acceptance_criteria.is_empty();
@@ -1119,22 +1226,38 @@ pub fn add_feature(
         goal_id: goal_id.to_string(),
         title: title.to_string(),
         description: description.to_string(),
-        status: if has_acceptance { FeatureStatus::Specifying } else { FeatureStatus::Planned },
-        phase: if has_acceptance { FeaturePhase::Discovery } else { FeaturePhase::Planned },
-        state: if has_acceptance { FeatureState::Active } else { FeatureState::Planned },
+        status: if has_acceptance {
+            FeatureStatus::Specifying
+        } else {
+            FeatureStatus::Planned
+        },
+        phase: if has_acceptance {
+            FeaturePhase::Discovery
+        } else {
+            FeaturePhase::Planned
+        },
+        state: if has_acceptance {
+            FeatureState::Active
+        } else {
+            FeatureState::Planned
+        },
         questions: vec![],
         decisions: vec![],
         tasks: vec![],
-        acceptance_items: acceptance_criteria.iter().enumerate().map(|(idx, text)| AcceptanceCriterion {
-            id: acceptance_id(&id, idx),
-            text: text.clone(),
-            status: AcceptanceStatus::Draft,
-            verification_method: None,
-            evidence: vec![],
-            verified_at: None,
-            verified_by: None,
-            verification_source: None,
-        }).collect(),
+        acceptance_items: acceptance_criteria
+            .iter()
+            .enumerate()
+            .map(|(idx, text)| AcceptanceCriterion {
+                id: acceptance_id(&id, idx),
+                text: text.clone(),
+                status: AcceptanceStatus::Draft,
+                verification_method: None,
+                evidence: vec![],
+                verified_at: None,
+                verified_by: None,
+                verification_source: None,
+            })
+            .collect(),
         acceptance_criteria,
         sub_vision: None,
         parent_vision: None,
@@ -1163,12 +1286,18 @@ pub fn add_feature(
             "status": "added",
             "feature": id,
             "goal": goal_id,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
 }
 
-pub fn upsert_feature_doc(project_path: &str, feature_id: &str, doc_type: &str, content: &str) -> String {
+pub fn upsert_feature_doc(
+    project_path: &str,
+    feature_id: &str,
+    doc_type: &str,
+    content: &str,
+) -> String {
     let mut vision = match load_vision(project_path) {
         Some(v) => v,
         None => return serde_json::json!({"error": "no_vision"}).to_string(),
@@ -1176,12 +1305,17 @@ pub fn upsert_feature_doc(project_path: &str, feature_id: &str, doc_type: &str, 
 
     let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
         Some(f) => f,
-        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+        None => {
+            return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string()
+        }
     };
 
     let (doc_path, relative_path) = match feature_doc_path(project_path, doc_type, feature_id) {
         Ok(paths) => paths,
-        Err(e) => return serde_json::json!({"error": e, "options": ["research", "discovery"]}).to_string(),
+        Err(e) => {
+            return serde_json::json!({"error": e, "options": ["research", "discovery"]})
+                .to_string()
+        }
     };
 
     if let Some(parent) = doc_path.parent() {
@@ -1206,9 +1340,17 @@ pub fn upsert_feature_doc(project_path: &str, feature_id: &str, doc_type: &str, 
 
     let change = VisionChange {
         timestamp: now(),
-        change_type: if existed { ChangeType::Modified } else { ChangeType::Added },
+        change_type: if existed {
+            ChangeType::Modified
+        } else {
+            ChangeType::Added
+        },
         field: format!("{}_doc:{}", doc_type, feature_id),
-        old_value: if existed { "existing".to_string() } else { String::new() },
+        old_value: if existed {
+            "existing".to_string()
+        } else {
+            String::new()
+        },
         new_value: relative_path.clone(),
         reason: format!("{} doc upserted", doc_type),
         triggered_by: "user".to_string(),
@@ -1225,7 +1367,8 @@ pub fn upsert_feature_doc(project_path: &str, feature_id: &str, doc_type: &str, 
             "path": relative_path,
             "phase": feature_phase,
             "state": feature_state,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
 }
@@ -1238,7 +1381,9 @@ pub fn start_discovery(project_path: &str, feature_id: &str) -> String {
 
     let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
         Some(f) => f,
-        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+        None => {
+            return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string()
+        }
     };
 
     if feature.phase == FeaturePhase::Discovery {
@@ -1247,7 +1392,8 @@ pub fn start_discovery(project_path: &str, feature_id: &str) -> String {
             "feature": feature_id,
             "phase": feature.phase,
             "state": feature.state,
-        }).to_string();
+        })
+        .to_string();
     }
 
     if feature.phase != FeaturePhase::Planned {
@@ -1257,7 +1403,8 @@ pub fn start_discovery(project_path: &str, feature_id: &str) -> String {
             "phase": feature.phase,
             "state": feature.state,
             "reason": "feature_not_in_planned_phase",
-        }).to_string();
+        })
+        .to_string();
     }
 
     let old_phase = serde_json::to_string(&feature.phase).unwrap_or_default();
@@ -1285,7 +1432,8 @@ pub fn start_discovery(project_path: &str, feature_id: &str) -> String {
             "feature": feature_id,
             "phase": "discovery",
             "state": "active",
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
 }
@@ -1303,7 +1451,9 @@ pub fn add_acceptance_criterion(project_path: &str, feature_id: &str, criterion:
 
     let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
         Some(f) => f,
-        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+        None => {
+            return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string()
+        }
     };
 
     if feature.acceptance_items.iter().any(|c| c.text == criterion) {
@@ -1312,7 +1462,8 @@ pub fn add_acceptance_criterion(project_path: &str, feature_id: &str, criterion:
             "feature": feature_id,
             "criterion": criterion,
             "reason": "criterion_exists",
-        }).to_string();
+        })
+        .to_string();
     }
 
     if feature.phase == FeaturePhase::Planned {
@@ -1360,7 +1511,8 @@ pub fn add_acceptance_criterion(project_path: &str, feature_id: &str, criterion:
             "count": acceptance_count,
             "phase": feature_phase,
             "state": feature_state,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
 }
@@ -1379,12 +1531,21 @@ pub fn update_acceptance_criterion(
 
     let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
         Some(f) => f,
-        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+        None => {
+            return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string()
+        }
     };
 
-    let item_idx = match feature.acceptance_items.iter().position(|item| item.id == criterion_id) {
+    let item_idx = match feature
+        .acceptance_items
+        .iter()
+        .position(|item| item.id == criterion_id)
+    {
         Some(idx) => idx,
-        None => return serde_json::json!({"error": "criterion_not_found", "id": criterion_id}).to_string(),
+        None => {
+            return serde_json::json!({"error": "criterion_not_found", "id": criterion_id})
+                .to_string()
+        }
     };
 
     if let Some(next_text) = text.map(str::trim).filter(|text| !text.is_empty()) {
@@ -1397,7 +1558,9 @@ pub fn update_acceptance_criterion(
             Some(method.to_string())
         };
         if feature.acceptance_items[item_idx].status == AcceptanceStatus::Draft
-            && feature.acceptance_items[item_idx].verification_method.is_some()
+            && feature.acceptance_items[item_idx]
+                .verification_method
+                .is_some()
         {
             feature.acceptance_items[item_idx].status = AcceptanceStatus::Mapped;
         }
@@ -1409,7 +1572,9 @@ pub fn update_acceptance_criterion(
     vision.updated_at = now();
     let item_text = feature.acceptance_items[item_idx].text.clone();
     let item_status = feature.acceptance_items[item_idx].status.clone();
-    let item_method = feature.acceptance_items[item_idx].verification_method.clone();
+    let item_method = feature.acceptance_items[item_idx]
+        .verification_method
+        .clone();
 
     let change = VisionChange {
         timestamp: now(),
@@ -1432,7 +1597,8 @@ pub fn update_acceptance_criterion(
             "criterion": item_text,
             "criterion_status": item_status,
             "verification_method": item_method,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
 }
@@ -1453,7 +1619,9 @@ pub fn verify_acceptance_criterion(
 
     let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
         Some(f) => f,
-        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+        None => {
+            return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string()
+        }
     };
 
     let parsed_status = match status {
@@ -1461,28 +1629,42 @@ pub fn verify_acceptance_criterion(
         "verified" => AcceptanceStatus::Verified,
         "failed" => AcceptanceStatus::Failed,
         "draft" => AcceptanceStatus::Draft,
-        _ => return serde_json::json!({
-            "error": "invalid_status",
-            "options": ["draft", "mapped", "verified", "failed"]
-        }).to_string(),
+        _ => {
+            return serde_json::json!({
+                "error": "invalid_status",
+                "options": ["draft", "mapped", "verified", "failed"]
+            })
+            .to_string()
+        }
     };
 
-    let item_idx = match feature.acceptance_items.iter().position(|item| item.id == criterion_id) {
+    let item_idx = match feature
+        .acceptance_items
+        .iter()
+        .position(|item| item.id == criterion_id)
+    {
         Some(idx) => idx,
-        None => return serde_json::json!({"error": "criterion_not_found", "id": criterion_id}).to_string(),
+        None => {
+            return serde_json::json!({"error": "criterion_not_found", "id": criterion_id})
+                .to_string()
+        }
     };
 
     feature.acceptance_items[item_idx].status = parsed_status.clone();
     feature.acceptance_items[item_idx].evidence = evidence;
-    feature.acceptance_items[item_idx].verified_at = if parsed_status == AcceptanceStatus::Verified || parsed_status == AcceptanceStatus::Failed {
+    feature.acceptance_items[item_idx].verified_at = if parsed_status == AcceptanceStatus::Verified
+        || parsed_status == AcceptanceStatus::Failed
+    {
         Some(now())
     } else {
         None
     };
-    feature.acceptance_items[item_idx].verified_by =
-        verified_by.map(|s| s.to_string()).filter(|s| !s.trim().is_empty());
-    feature.acceptance_items[item_idx].verification_source =
-        verification_source.map(|s| s.to_string()).filter(|s| !s.trim().is_empty());
+    feature.acceptance_items[item_idx].verified_by = verified_by
+        .map(|s| s.to_string())
+        .filter(|s| !s.trim().is_empty());
+    feature.acceptance_items[item_idx].verification_source = verification_source
+        .map(|s| s.to_string())
+        .filter(|s| !s.trim().is_empty());
 
     sync_acceptance_items(feature);
     reconcile_feature_lifecycle(project_path, feature);
@@ -1492,7 +1674,9 @@ pub fn verify_acceptance_criterion(
     let item_evidence = feature.acceptance_items[item_idx].evidence.clone();
     let item_verified_at = feature.acceptance_items[item_idx].verified_at.clone();
     let item_verified_by = feature.acceptance_items[item_idx].verified_by.clone();
-    let item_verification_source = feature.acceptance_items[item_idx].verification_source.clone();
+    let item_verification_source = feature.acceptance_items[item_idx]
+        .verification_source
+        .clone();
 
     let change = VisionChange {
         timestamp: now(),
@@ -1518,7 +1702,8 @@ pub fn verify_acceptance_criterion(
             "verified_at": item_verified_at,
             "verified_by": item_verified_by,
             "verification_source": item_verification_source,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
 }
@@ -1528,7 +1713,12 @@ pub fn add_question(project_path: &str, feature_id: &str, text: &str) -> String 
     add_question_with_blocking(project_path, feature_id, text, true)
 }
 
-pub fn add_question_with_blocking(project_path: &str, feature_id: &str, text: &str, blocking: bool) -> String {
+pub fn add_question_with_blocking(
+    project_path: &str,
+    feature_id: &str,
+    text: &str,
+    blocking: bool,
+) -> String {
     let mut vision = match load_vision(project_path) {
         Some(v) => v,
         None => return serde_json::json!({"error": "no_vision"}).to_string(),
@@ -1536,7 +1726,9 @@ pub fn add_question_with_blocking(project_path: &str, feature_id: &str, text: &s
 
     let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
         Some(f) => f,
-        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+        None => {
+            return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string()
+        }
     };
 
     let q_num = feature.questions.len() + 1;
@@ -1569,15 +1761,20 @@ pub fn add_question_with_blocking(project_path: &str, feature_id: &str, text: &s
             "question": id,
             "feature": feature_id,
             "blocking": blocking,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
 }
 
 /// Answer a question and record a decision.
 pub fn answer_question(
-    project_path: &str, feature_id: &str, question_id: &str,
-    answer: &str, rationale: &str, alternatives: Vec<String>,
+    project_path: &str,
+    feature_id: &str,
+    question_id: &str,
+    answer: &str,
+    rationale: &str,
+    alternatives: Vec<String>,
 ) -> String {
     let mut vision = match load_vision(project_path) {
         Some(v) => v,
@@ -1586,12 +1783,17 @@ pub fn answer_question(
 
     let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
         Some(f) => f,
-        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+        None => {
+            return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string()
+        }
     };
 
     let question = match feature.questions.iter_mut().find(|q| q.id == question_id) {
         Some(q) => q,
-        None => return serde_json::json!({"error": "question_not_found", "id": question_id}).to_string(),
+        None => {
+            return serde_json::json!({"error": "question_not_found", "id": question_id})
+                .to_string()
+        }
     };
 
     // Create decision
@@ -1637,14 +1839,18 @@ pub fn answer_question(
             "question": question_id,
             "decision": decision_id,
             "feature": feature_id,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
 }
 
 /// Add a task to a feature.
 pub fn add_task(
-    project_path: &str, feature_id: &str, title: &str, description: &str,
+    project_path: &str,
+    feature_id: &str,
+    title: &str,
+    description: &str,
     branch: Option<&str>,
 ) -> String {
     let mut vision = match load_vision(project_path) {
@@ -1654,7 +1860,9 @@ pub fn add_task(
 
     let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
         Some(f) => f,
-        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+        None => {
+            return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string()
+        }
     };
 
     let t_num = feature.tasks.len() + 1;
@@ -1677,8 +1885,13 @@ pub fn add_task(
     feature.tasks.push(task);
 
     // Move to building if it was specifying and all questions answered
-    let all_answered = feature.questions.iter().all(|q| q.status == QuestionStatus::Answered);
-    if (feature.status == FeatureStatus::Specifying || feature.status == FeatureStatus::Planned) && all_answered {
+    let all_answered = feature
+        .questions
+        .iter()
+        .all(|q| q.status == QuestionStatus::Answered);
+    if (feature.status == FeatureStatus::Specifying || feature.status == FeatureStatus::Planned)
+        && all_answered
+    {
         set_feature_lifecycle(feature, FeaturePhase::Build, FeatureState::Active);
     }
     reconcile_feature_lifecycle(project_path, feature);
@@ -1690,15 +1903,21 @@ pub fn add_task(
             "status": "added",
             "task": id,
             "feature": feature_id,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
 }
 
 /// Update task status, optionally linking a branch or PR.
 pub fn update_task_status(
-    project_path: &str, feature_id: &str, task_id: &str,
-    new_status: &str, branch: Option<&str>, pr: Option<&str>, commit: Option<&str>,
+    project_path: &str,
+    feature_id: &str,
+    task_id: &str,
+    new_status: &str,
+    branch: Option<&str>,
+    pr: Option<&str>,
+    commit: Option<&str>,
 ) -> String {
     let mut vision = match load_vision(project_path) {
         Some(v) => v,
@@ -1707,7 +1926,9 @@ pub fn update_task_status(
 
     let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
         Some(f) => f,
-        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+        None => {
+            return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string()
+        }
     };
 
     let task = match feature.tasks.iter_mut().find(|t| t.id == task_id) {
@@ -1726,14 +1947,26 @@ pub fn update_task_status(
 
     let old_status = serde_json::to_string(&task.status).unwrap_or_default();
     task.status = parsed;
-    if let Some(b) = branch { task.branch = Some(b.to_string()); }
-    if let Some(p) = pr { task.pr = Some(p.to_string()); }
-    if let Some(c) = commit { task.commit = Some(c.to_string()); }
+    if let Some(b) = branch {
+        task.branch = Some(b.to_string());
+    }
+    if let Some(p) = pr {
+        task.pr = Some(p.to_string());
+    }
+    if let Some(c) = commit {
+        task.commit = Some(c.to_string());
+    }
     task.updated_at = now();
 
     // Auto-update feature status based on task completion
-    let all_done = feature.tasks.iter().all(|t| t.status == TaskStatus::Done || t.status == TaskStatus::Verified);
-    let any_in_progress = feature.tasks.iter().any(|t| t.status == TaskStatus::InProgress);
+    let all_done = feature
+        .tasks
+        .iter()
+        .all(|t| t.status == TaskStatus::Done || t.status == TaskStatus::Verified);
+    let any_in_progress = feature
+        .tasks
+        .iter()
+        .any(|t| t.status == TaskStatus::InProgress);
     if all_done && !feature.tasks.is_empty() {
         set_feature_lifecycle(feature, FeaturePhase::Test, FeatureState::Active);
     } else if any_in_progress && feature.status != FeatureStatus::Building {
@@ -1765,7 +1998,8 @@ pub fn update_task_status(
             "task_status": new_status,
             "feature": feature_id,
             "feature_status": feature_status,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
 }
@@ -1825,13 +2059,12 @@ pub fn drill_down(project_path: &str, goal_id: &str) -> String {
         },
         "features": features,
         "feature_count": features.len(),
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Create a sub-vision file for a feature (recursive vision).
-pub fn create_sub_vision(
-    project_path: &str, feature_id: &str, mission: &str,
-) -> String {
+pub fn create_sub_vision(project_path: &str, feature_id: &str, mission: &str) -> String {
     let mut vision = match load_vision(project_path) {
         Some(v) => v,
         None => return serde_json::json!({"error": "no_vision"}).to_string(),
@@ -1839,11 +2072,14 @@ pub fn create_sub_vision(
 
     let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
         Some(f) => f,
-        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+        None => {
+            return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string()
+        }
     };
 
     if feature.sub_vision.is_some() {
-        return serde_json::json!({"error": "sub_vision_exists", "feature": feature_id}).to_string();
+        return serde_json::json!({"error": "sub_vision_exists", "feature": feature_id})
+            .to_string();
     }
 
     // Create the sub-vision file
@@ -1885,7 +2121,8 @@ pub fn create_sub_vision(
             "status": "created",
             "sub_vision": relative_path,
             "feature": feature_id,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
 }
@@ -1951,9 +2188,15 @@ pub fn vision_tree(project_path: &str) -> String {
     }).collect();
 
     let total_features = vision.features.len();
-    let done_features = vision.features.iter().filter(|f| f.status == FeatureStatus::Done).count();
+    let done_features = vision
+        .features
+        .iter()
+        .filter(|f| f.status == FeatureStatus::Done)
+        .count();
     let total_tasks: usize = vision.features.iter().map(|f| f.tasks.len()).sum();
-    let done_tasks: usize = vision.features.iter()
+    let done_tasks: usize = vision
+        .features
+        .iter()
         .flat_map(|f| f.tasks.iter())
         .filter(|t| t.status == TaskStatus::Done || t.status == TaskStatus::Verified)
         .count();
@@ -1987,7 +2230,9 @@ pub fn feature_readiness(project_path: &str, feature_id: &str) -> String {
 
     let feature = match vision.features.iter().find(|f| f.id == feature_id) {
         Some(f) => f,
-        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+        None => {
+            return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string()
+        }
     };
 
     serde_json::json!({
@@ -1999,7 +2244,8 @@ pub fn feature_readiness(project_path: &str, feature_id: &str) -> String {
         "state": feature.state,
         "acceptance_items": feature.acceptance_items,
         "readiness": feature_readiness_value(project_path, feature),
-    }).to_string()
+    })
+    .to_string()
 }
 
 pub fn discovery_ready_check(project_path: &str, feature_id: &str) -> String {
@@ -2010,7 +2256,9 @@ pub fn discovery_ready_check(project_path: &str, feature_id: &str) -> String {
 
     let feature = match vision.features.iter().find(|f| f.id == feature_id) {
         Some(f) => f,
-        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+        None => {
+            return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string()
+        }
     };
 
     let readiness = feature_readiness_value(project_path, feature);
@@ -2025,7 +2273,8 @@ pub fn discovery_ready_check(project_path: &str, feature_id: &str) -> String {
         "ready": ready,
         "checks": readiness["discovery"].clone(),
         "blockers": readiness["blockers"]["build"].clone(),
-    }).to_string()
+    })
+    .to_string()
 }
 
 pub fn complete_discovery(project_path: &str, feature_id: &str) -> String {
@@ -2036,7 +2285,9 @@ pub fn complete_discovery(project_path: &str, feature_id: &str) -> String {
 
     let feature_idx = match vision.features.iter().position(|f| f.id == feature_id) {
         Some(idx) => idx,
-        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+        None => {
+            return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string()
+        }
     };
 
     let readiness = feature_readiness_value(project_path, &vision.features[feature_idx]);
@@ -2049,17 +2300,22 @@ pub fn complete_discovery(project_path: &str, feature_id: &str) -> String {
             "phase": vision.features[feature_idx].phase,
             "blockers": blockers,
             "checks": readiness["discovery"].clone(),
-        }).to_string();
+        })
+        .to_string();
     }
 
     let feature = &mut vision.features[feature_idx];
-    if feature.phase == FeaturePhase::Build || feature.phase == FeaturePhase::Test || feature.phase == FeaturePhase::Done {
+    if feature.phase == FeaturePhase::Build
+        || feature.phase == FeaturePhase::Test
+        || feature.phase == FeaturePhase::Done
+    {
         return serde_json::json!({
             "status": "noop",
             "feature": feature_id,
             "phase": feature.phase,
             "state": feature.state,
-        }).to_string();
+        })
+        .to_string();
     }
 
     let old_phase = serde_json::to_string(&feature.phase).unwrap_or_default();
@@ -2086,7 +2342,8 @@ pub fn complete_discovery(project_path: &str, feature_id: &str) -> String {
             "feature": feature_id,
             "phase": "build",
             "state": "active",
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
 }
@@ -2104,11 +2361,15 @@ pub fn assess_work(project_path: &str, description: &str) -> String {
     let words: Vec<&str> = desc_lower.split_whitespace().collect();
 
     // Score each goal by keyword overlap
-    let mut scored: Vec<(&Goal, usize)> = vision.goals.iter().map(|g| {
-        let goal_text = format!("{} {} {:?}", g.title, g.description, g.metrics).to_lowercase();
-        let score = words.iter().filter(|w| goal_text.contains(*w)).count();
-        (g, score)
-    }).collect();
+    let mut scored: Vec<(&Goal, usize)> = vision
+        .goals
+        .iter()
+        .map(|g| {
+            let goal_text = format!("{} {} {:?}", g.title, g.description, g.metrics).to_lowercase();
+            let score = words.iter().filter(|w| goal_text.contains(*w)).count();
+            (g, score)
+        })
+        .collect();
 
     scored.sort_by(|a, b| b.1.cmp(&a.1));
 
@@ -2117,11 +2378,15 @@ pub fn assess_work(project_path: &str, description: &str) -> String {
     if let Some((goal, score)) = best {
         if *score > 0 {
             // Find existing features for this goal
-            let existing_features: Vec<_> = vision.features.iter()
+            let existing_features: Vec<_> = vision
+                .features
+                .iter()
                 .filter(|f| f.goal_id == goal.id)
-                .map(|f| serde_json::json!({
-                    "id": f.id, "title": f.title, "status": f.status,
-                }))
+                .map(|f| {
+                    serde_json::json!({
+                        "id": f.id, "title": f.title, "status": f.status,
+                    })
+                })
                 .collect();
 
             // Check if any existing feature matches
@@ -2150,7 +2415,8 @@ pub fn assess_work(project_path: &str, description: &str) -> String {
                     "Create new feature under this goal"
                 },
                 "description": description,
-            }).to_string();
+            })
+            .to_string();
         }
     }
 
@@ -2161,7 +2427,8 @@ pub fn assess_work(project_path: &str, description: &str) -> String {
             "id": g.id, "title": g.title, "status": g.status,
         })).collect::<Vec<_>>(),
         "description": description,
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Sync task statuses from Git — check branch/PR status via gh CLI.
@@ -2185,21 +2452,28 @@ pub fn sync_git_status(project_path: &str) -> String {
             // Check branch existence
             if let Some(ref branch) = task.branch {
                 let branch_check = run_gh(&format!(
-                    "gh api repos/{}/branches/{} --jq '.name' 2>/dev/null", repo, branch
+                    "gh api repos/{}/branches/{} --jq '.name' 2>/dev/null",
+                    repo, branch
                 ));
-                let branch_exists = !branch_check.trim().is_empty() && !branch_check.contains("error");
+                let branch_exists =
+                    !branch_check.trim().is_empty() && !branch_check.contains("error");
 
                 // Check for open PR
                 let pr_check = run_gh(&format!(
                     "gh pr list -R {} --head {} --state all --json number,state --jq '.[0]' 2>/dev/null", repo, branch
                 ));
 
-                if pr_check.contains("\"state\":\"MERGED\"") || pr_check.contains("\"state\":\"merged\"") {
+                if pr_check.contains("\"state\":\"MERGED\"")
+                    || pr_check.contains("\"state\":\"merged\"")
+                {
                     if task.status != TaskStatus::Done && task.status != TaskStatus::Verified {
                         task.status = TaskStatus::Done;
                         changed = true;
                     }
-                } else if !pr_check.trim().is_empty() && !pr_check.contains("error") && pr_check.contains("number") {
+                } else if !pr_check.trim().is_empty()
+                    && !pr_check.contains("error")
+                    && pr_check.contains("number")
+                {
                     // PR exists and is open — in progress
                     if task.status == TaskStatus::Planned {
                         task.status = TaskStatus::InProgress;
@@ -2234,8 +2508,14 @@ pub fn sync_git_status(project_path: &str) -> String {
 
         // Cascade: update feature status
         if !feature.tasks.is_empty() {
-            let all_done = feature.tasks.iter().all(|t| t.status == TaskStatus::Done || t.status == TaskStatus::Verified);
-            let any_in_progress = feature.tasks.iter().any(|t| t.status == TaskStatus::InProgress);
+            let all_done = feature
+                .tasks
+                .iter()
+                .all(|t| t.status == TaskStatus::Done || t.status == TaskStatus::Verified);
+            let any_in_progress = feature
+                .tasks
+                .iter()
+                .any(|t| t.status == TaskStatus::InProgress);
             if all_done {
                 set_feature_lifecycle(feature, FeaturePhase::Test, FeatureState::Active);
             } else if any_in_progress {
@@ -2253,7 +2533,8 @@ pub fn sync_git_status(project_path: &str) -> String {
             "status": "synced",
             "updates": update_count,
             "details": updates,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
 }
@@ -2267,7 +2548,9 @@ pub fn update_feature_status(project_path: &str, feature_id: &str, new_status: &
 
     let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
         Some(f) => f,
-        None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
+        None => {
+            return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string()
+        }
     };
 
     let parsed: FeatureStatus = match new_status {
@@ -2283,7 +2566,9 @@ pub fn update_feature_status(project_path: &str, feature_id: &str, new_status: &
     let next_state = match parsed {
         FeatureStatus::Planned => FeatureState::Planned,
         FeatureStatus::Done => FeatureState::Complete,
-        FeatureStatus::Specifying | FeatureStatus::Building | FeatureStatus::Testing => FeatureState::Active,
+        FeatureStatus::Specifying | FeatureStatus::Building | FeatureStatus::Testing => {
+            FeatureState::Active
+        }
     };
     set_feature_lifecycle(feature, feature_phase_from_status(&parsed), next_state);
     feature.updated_at = now();
@@ -2307,7 +2592,8 @@ pub fn update_feature_status(project_path: &str, feature_id: &str, new_status: &
             "status": "updated",
             "feature": feature_id,
             "new_status": new_status,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
 }
@@ -2357,8 +2643,16 @@ mod tests {
 
         // Files should be named by feature_id, not goal_id
         let features_dir = dir.path().join(".vision/features");
-        assert!(features_dir.join(format!("{}.json", f1_id)).exists(), "Missing {}.json", f1_id);
-        assert!(features_dir.join(format!("{}.json", f2_id)).exists(), "Missing {}.json", f2_id);
+        assert!(
+            features_dir.join(format!("{}.json", f1_id)).exists(),
+            "Missing {}.json",
+            f1_id
+        );
+        assert!(
+            features_dir.join(format!("{}.json", f2_id)).exists(),
+            "Missing {}.json",
+            f2_id
+        );
     }
 
     #[test]
@@ -2374,7 +2668,12 @@ mod tests {
 
         for status in &["specifying", "building", "testing", "done"] {
             let result = update_feature_status(path, fid, status);
-            assert!(!result.contains("error"), "Failed setting {}: {}", status, result);
+            assert!(
+                !result.contains("error"),
+                "Failed setting {}: {}",
+                status,
+                result
+            );
             let v = load_vision(path).unwrap();
             let f = v.features.iter().find(|f| f.id == *fid).unwrap();
             let expected: FeatureStatus = match *status {
@@ -2457,7 +2756,11 @@ mod tests {
             "updated_at": "2026-03-12T00:00:00Z"
         });
 
-        std::fs::write(vision_file(path), serde_json::to_string_pretty(&legacy).unwrap()).unwrap();
+        std::fs::write(
+            vision_file(path),
+            serde_json::to_string_pretty(&legacy).unwrap(),
+        )
+        .unwrap();
 
         let vision = load_vision(path).unwrap();
         let feature = &vision.features[0];
@@ -2477,29 +2780,45 @@ mod tests {
 
         add_question(path, "F1.1", "What protocol?");
 
-        let discovery: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        let discovery: serde_json::Value =
+            serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
         assert_eq!(discovery["phase"], "discovery");
         assert_eq!(discovery["state"], "active");
         assert_eq!(discovery["readiness"]["ready_for_build"], false);
-        assert_eq!(discovery["readiness"]["counts"]["has_discovery_artifact"], false);
+        assert_eq!(
+            discovery["readiness"]["counts"]["has_discovery_artifact"],
+            false
+        );
 
-        answer_question(path, "F1.1", "Q1.1.1", "WebSocket", "Need bidirectional", vec![]);
+        answer_question(
+            path,
+            "F1.1",
+            "Q1.1.1",
+            "WebSocket",
+            "Need bidirectional",
+            vec![],
+        );
         upsert_feature_doc(path, "F1.1", "discovery", "# Discovery");
         add_task(path, "F1.1", "Build it", "Implement feature", None);
 
-        let build: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        let build: serde_json::Value =
+            serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
         assert_eq!(build["phase"], "build");
         assert_eq!(build["readiness"]["ready_for_build"], true);
         assert_eq!(build["readiness"]["ready_for_test"], false);
 
         update_task_status(path, "F1.1", "T1.1.1", "verified", None, None, None);
 
-        let test_ready: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        let test_ready: serde_json::Value =
+            serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
         assert_eq!(test_ready["phase"], "test");
         assert_eq!(test_ready["readiness"]["ready_for_test"], true);
         assert_eq!(test_ready["readiness"]["ready_for_done"], false);
 
-        let criterion_id = test_ready["acceptance_items"][0]["id"].as_str().unwrap().to_string();
+        let criterion_id = test_ready["acceptance_items"][0]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
         verify_acceptance_criterion(
             path,
             "F1.1",
@@ -2510,7 +2829,8 @@ mod tests {
             Some("agent"),
         );
 
-        let done_ready: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        let done_ready: serde_json::Value =
+            serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
         assert_eq!(done_ready["phase"], "done");
         assert_eq!(done_ready["readiness"]["ready_for_done"], true);
     }
@@ -2542,12 +2862,14 @@ mod tests {
         add_question(path, "F1.1", "Blocking question?");
         upsert_feature_doc(path, "F1.1", "discovery", "# Discovery");
 
-        let before: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        let before: serde_json::Value =
+            serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
         assert_eq!(before["phase"], "discovery");
 
         answer_question(path, "F1.1", "Q1.1.1", "Answer", "Resolved", vec![]);
 
-        let after: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        let after: serde_json::Value =
+            serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
         assert_eq!(after["phase"], "build");
         assert_eq!(after["readiness"]["ready_for_build"], true);
     }
@@ -2563,7 +2885,8 @@ mod tests {
         upsert_feature_doc(path, "F1.1", "research", "# Research");
         add_question_with_blocking(path, "F1.1", "Optional follow-up?", false);
 
-        let check: serde_json::Value = serde_json::from_str(&discovery_ready_check(path, "F1.1")).unwrap();
+        let check: serde_json::Value =
+            serde_json::from_str(&discovery_ready_check(path, "F1.1")).unwrap();
         assert_eq!(check["ready"], true);
         assert_eq!(check["checks"]["blocking_open_questions"], 0);
         assert_eq!(check["checks"]["non_blocking_open_questions"], 1);
@@ -2579,17 +2902,24 @@ mod tests {
         add_feature(path, "G1", "Feature", "desc", vec!["criterion".to_string()]);
 
         add_question(path, "F1.1", "Blocking question?");
-        let initial: serde_json::Value = serde_json::from_str(&discovery_ready_check(path, "F1.1")).unwrap();
+        let initial: serde_json::Value =
+            serde_json::from_str(&discovery_ready_check(path, "F1.1")).unwrap();
         assert_eq!(initial["ready"], false);
-        assert!(initial["blockers"].as_array().unwrap().iter().any(|b| b.as_str() == Some("discovery artifact missing")));
+        assert!(initial["blockers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b.as_str() == Some("discovery artifact missing")));
 
         upsert_feature_doc(path, "F1.1", "discovery", "# Discovery");
-        let with_doc: serde_json::Value = serde_json::from_str(&discovery_ready_check(path, "F1.1")).unwrap();
+        let with_doc: serde_json::Value =
+            serde_json::from_str(&discovery_ready_check(path, "F1.1")).unwrap();
         assert_eq!(with_doc["ready"], false);
         assert_eq!(with_doc["checks"]["blocking_open_questions"], 1);
 
         answer_question(path, "F1.1", "Q1.1.1", "Answer", "Resolved", vec![]);
-        let resolved: serde_json::Value = serde_json::from_str(&discovery_ready_check(path, "F1.1")).unwrap();
+        let resolved: serde_json::Value =
+            serde_json::from_str(&discovery_ready_check(path, "F1.1")).unwrap();
         assert_eq!(resolved["ready"], true);
     }
 
@@ -2601,14 +2931,17 @@ mod tests {
         add_goal(path, "G1", "Goal", "desc", 1);
         add_feature(path, "G1", "Feature", "desc", vec!["criterion".to_string()]);
 
-        let blocked: serde_json::Value = serde_json::from_str(&complete_discovery(path, "F1.1")).unwrap();
+        let blocked: serde_json::Value =
+            serde_json::from_str(&complete_discovery(path, "F1.1")).unwrap();
         assert_eq!(blocked["status"], "blocked");
 
         upsert_feature_doc(path, "F1.1", "discovery", "# Discovery");
-        let auto: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        let auto: serde_json::Value =
+            serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
         assert_eq!(auto["phase"], "build");
 
-        let advanced: serde_json::Value = serde_json::from_str(&complete_discovery(path, "F1.1")).unwrap();
+        let advanced: serde_json::Value =
+            serde_json::from_str(&complete_discovery(path, "F1.1")).unwrap();
         assert_eq!(advanced["status"], "noop");
         assert_eq!(advanced["phase"], "build");
 
@@ -2626,11 +2959,13 @@ mod tests {
         add_goal(path, "G1", "Goal", "desc", 1);
         add_feature(path, "G1", "Feature", "desc", vec![]);
 
-        let started: serde_json::Value = serde_json::from_str(&start_discovery(path, "F1.1")).unwrap();
+        let started: serde_json::Value =
+            serde_json::from_str(&start_discovery(path, "F1.1")).unwrap();
         assert_eq!(started["status"], "started");
         assert_eq!(started["phase"], "discovery");
 
-        let again: serde_json::Value = serde_json::from_str(&start_discovery(path, "F1.1")).unwrap();
+        let again: serde_json::Value =
+            serde_json::from_str(&start_discovery(path, "F1.1")).unwrap();
         assert_eq!(again["status"], "noop");
 
         let vision = load_vision(path).unwrap();
@@ -2647,16 +2982,22 @@ mod tests {
         add_goal(path, "G1", "Goal", "desc", 1);
         add_feature(path, "G1", "Feature", "desc", vec![]);
 
-        let added: serde_json::Value = serde_json::from_str(
-            &add_acceptance_criterion(path, "F1.1", "Sub-second updates"),
-        ).unwrap();
+        let added: serde_json::Value = serde_json::from_str(&add_acceptance_criterion(
+            path,
+            "F1.1",
+            "Sub-second updates",
+        ))
+        .unwrap();
         assert_eq!(added["status"], "added");
         assert_eq!(added["phase"], "discovery");
         assert_eq!(added["count"], 1);
 
-        let duplicate: serde_json::Value = serde_json::from_str(
-            &add_acceptance_criterion(path, "F1.1", "Sub-second updates"),
-        ).unwrap();
+        let duplicate: serde_json::Value = serde_json::from_str(&add_acceptance_criterion(
+            path,
+            "F1.1",
+            "Sub-second updates",
+        ))
+        .unwrap();
         assert_eq!(duplicate["status"], "noop");
 
         let vision = load_vision(path).unwrap();
@@ -2712,7 +3053,11 @@ mod tests {
             "updated_at": "2026-03-12T00:00:00Z"
         });
 
-        std::fs::write(vision_file(path), serde_json::to_string_pretty(&legacy).unwrap()).unwrap();
+        std::fs::write(
+            vision_file(path),
+            serde_json::to_string_pretty(&legacy).unwrap(),
+        )
+        .unwrap();
 
         let vision = load_vision(path).unwrap();
         let feature = vision.features.iter().find(|f| f.id == "F1.1").unwrap();
@@ -2727,36 +3072,41 @@ mod tests {
         let path = dir.path().to_str().unwrap();
         init_test_vision(dir.path());
         add_goal(path, "G1", "Goal", "desc", 1);
-        add_feature(path, "G1", "Feature", "desc", vec!["Initial criterion".to_string()]);
+        add_feature(
+            path,
+            "G1",
+            "Feature",
+            "desc",
+            vec!["Initial criterion".to_string()],
+        );
 
-        let updated: serde_json::Value = serde_json::from_str(
-            &update_acceptance_criterion(
-                path,
-                "F1.1",
-                "AC1.1.1",
-                Some("Updated criterion"),
-                Some("integration_test"),
-            ),
-        ).unwrap();
+        let updated: serde_json::Value = serde_json::from_str(&update_acceptance_criterion(
+            path,
+            "F1.1",
+            "AC1.1.1",
+            Some("Updated criterion"),
+            Some("integration_test"),
+        ))
+        .unwrap();
         assert_eq!(updated["status"], "updated");
         assert_eq!(updated["criterion_status"], "mapped");
 
-        let verified: serde_json::Value = serde_json::from_str(
-            &verify_acceptance_criterion(
-                path,
-                "F1.1",
-                "AC1.1.1",
-                "verified",
-                vec!["tests::integration::ws_streaming".to_string()],
-                Some("gemini-worker"),
-                Some("agent"),
-            ),
-        ).unwrap();
+        let verified: serde_json::Value = serde_json::from_str(&verify_acceptance_criterion(
+            path,
+            "F1.1",
+            "AC1.1.1",
+            "verified",
+            vec!["tests::integration::ws_streaming".to_string()],
+            Some("gemini-worker"),
+            Some("agent"),
+        ))
+        .unwrap();
         assert_eq!(verified["criterion_status"], "verified");
         assert_eq!(verified["verified_by"], "gemini-worker");
         assert_eq!(verified["verification_source"], "agent");
 
-        let feature: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        let feature: serde_json::Value =
+            serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
         assert_eq!(feature["acceptance_items"][0]["text"], "Updated criterion");
         assert_eq!(feature["acceptance_items"][0]["status"], "verified");
     }
@@ -2790,7 +3140,11 @@ mod tests {
         // This was the root cause bug — InProgress missing from MilestoneStatus
         let json = r#"{"status":"in_progress","id":"M1","title":"Test","description":"","target_date":"2026-01-01","goals":[]}"#;
         let m: Result<Milestone, _> = serde_json::from_str(json);
-        assert!(m.is_ok(), "InProgress milestone should parse: {:?}", m.err());
+        assert!(
+            m.is_ok(),
+            "InProgress milestone should parse: {:?}",
+            m.err()
+        );
         assert!(matches!(m.unwrap().status, MilestoneStatus::InProgress));
     }
 }

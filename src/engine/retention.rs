@@ -5,34 +5,52 @@ pub fn prune() -> Result<(), String> {
     let conn = coordination_db()?;
 
     // tool_calls: 30 days
-    let tc = conn.execute(
-        "DELETE FROM tool_calls WHERE timestamp < datetime('now', '-30 days')", [],
-    ).map_err(|e| e.to_string())?;
+    let tc = conn
+        .execute(
+            "DELETE FROM tool_calls WHERE timestamp < datetime('now', '-30 days')",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
 
     // file_operations: 14 days
-    let fo = conn.execute(
-        "DELETE FROM file_operations WHERE timestamp < datetime('now', '-14 days')", [],
-    ).map_err(|e| e.to_string())?;
+    let fo = conn
+        .execute(
+            "DELETE FROM file_operations WHERE timestamp < datetime('now', '-14 days')",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
 
     // token_usage: 90 days
-    let tu = conn.execute(
-        "DELETE FROM token_usage WHERE timestamp < datetime('now', '-90 days')", [],
-    ).map_err(|e| e.to_string())?;
+    let tu = conn
+        .execute(
+            "DELETE FROM token_usage WHERE timestamp < datetime('now', '-90 days')",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
 
     // messages: 7 days old
-    let msg = conn.execute(
-        "DELETE FROM messages WHERE timestamp < datetime('now', '-7 days')", [],
-    ).map_err(|e| e.to_string())?;
+    let msg = conn
+        .execute(
+            "DELETE FROM messages WHERE timestamp < datetime('now', '-7 days')",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
 
     // quality_events: 90 days
-    let qe = conn.execute(
-        "DELETE FROM quality_events WHERE timestamp < datetime('now', '-90 days')", [],
-    ).map_err(|e| e.to_string())?;
+    let qe = conn
+        .execute(
+            "DELETE FROM quality_events WHERE timestamp < datetime('now', '-90 days')",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
 
     // git_commits: 180 days
-    let gc = conn.execute(
-        "DELETE FROM git_commits WHERE timestamp < datetime('now', '-180 days')", [],
-    ).map_err(|e| e.to_string())?;
+    let gc = conn
+        .execute(
+            "DELETE FROM git_commits WHERE timestamp < datetime('now', '-180 days')",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
 
     // Dead/deregistered agents: 30 days
     let da = conn.execute(

@@ -34,7 +34,9 @@ pub enum ScreenLayout {
 }
 
 impl Default for ScreenLayout {
-    fn default() -> Self { Self::EvenHorizontal }
+    fn default() -> Self {
+        Self::EvenHorizontal
+    }
 }
 
 impl ScreenLayout {
@@ -184,10 +186,13 @@ impl ScreenManager {
     pub fn remove_screen(&self, screen_ref: &str) -> Result<Screen, String> {
         let mut cfg = self.config.write().map_err(|e| e.to_string())?;
 
-        let idx = cfg.screens.iter().position(|s| {
-            s.id.to_string() == screen_ref
-                || s.name.to_lowercase() == screen_ref.to_lowercase()
-        }).ok_or_else(|| format!("Screen '{}' not found", screen_ref))?;
+        let idx = cfg
+            .screens
+            .iter()
+            .position(|s| {
+                s.id.to_string() == screen_ref || s.name.to_lowercase() == screen_ref.to_lowercase()
+            })
+            .ok_or_else(|| format!("Screen '{}' not found", screen_ref))?;
 
         // Don't allow removing the last screen
         if cfg.screens.len() <= 1 {
@@ -217,28 +222,44 @@ impl ScreenManager {
 
     /// Get total pane count across all screens
     pub fn total_panes(&self) -> u8 {
-        self.config.read().unwrap().screens.iter()
+        self.config
+            .read()
+            .unwrap()
+            .screens
+            .iter()
             .map(|s| s.panes.len() as u8)
             .sum()
     }
 
     /// Find which screen a pane belongs to
     pub fn screen_for_pane(&self, pane: u8) -> Option<Screen> {
-        self.config.read().unwrap().screens.iter()
+        self.config
+            .read()
+            .unwrap()
+            .screens
+            .iter()
             .find(|s| s.panes.contains(&pane))
             .cloned()
     }
 
     /// Get a specific screen by ID
     pub fn get_screen(&self, id: u8) -> Option<Screen> {
-        self.config.read().unwrap().screens.iter()
+        self.config
+            .read()
+            .unwrap()
+            .screens
+            .iter()
             .find(|s| s.id == id)
             .cloned()
     }
 
     /// Get all pane numbers
     pub fn all_panes(&self) -> Vec<u8> {
-        self.config.read().unwrap().screens.iter()
+        self.config
+            .read()
+            .unwrap()
+            .screens
+            .iter()
             .flat_map(|s| s.panes.iter().copied())
             .collect()
     }
@@ -263,7 +284,16 @@ impl ScreenManager {
     ) -> Option<u32> {
         // Create the window
         let output = Command::new("tmux")
-            .args(["new-window", "-t", session, "-n", name, "-P", "-F", "#{window_index}"])
+            .args([
+                "new-window",
+                "-t",
+                session,
+                "-n",
+                name,
+                "-P",
+                "-F",
+                "#{window_index}",
+            ])
             .output()
             .ok()?;
 
@@ -305,16 +335,20 @@ impl ScreenManager {
     /// Get screen summary as JSON
     pub fn summary(&self) -> serde_json::Value {
         let cfg = self.config.read().unwrap();
-        let screens: Vec<serde_json::Value> = cfg.screens.iter().map(|s| {
-            serde_json::json!({
-                "id": s.id,
-                "name": s.name,
-                "panes": s.panes,
-                "layout": s.layout,
-                "pane_count": s.panes.len(),
-                "tmux_window": s.tmux_window,
+        let screens: Vec<serde_json::Value> = cfg
+            .screens
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "id": s.id,
+                    "name": s.name,
+                    "panes": s.panes,
+                    "layout": s.layout,
+                    "pane_count": s.panes.len(),
+                    "tmux_window": s.tmux_window,
+                })
             })
-        }).collect();
+            .collect();
 
         serde_json::json!({
             "screens": screens,
@@ -351,11 +385,13 @@ mod tests {
         let mgr = ScreenManager::new(dir.path().to_path_buf());
         mgr.init_default("test");
 
-        let screen = mgr.add_screen(
-            Some("Dev Screen".to_string()),
-            Some("grid2x2".to_string()),
-            None,
-        ).unwrap();
+        let screen = mgr
+            .add_screen(
+                Some("Dev Screen".to_string()),
+                Some("grid2x2".to_string()),
+                None,
+            )
+            .unwrap();
 
         assert_eq!(screen.id, 4);
         assert_eq!(screen.panes, vec![10, 11, 12, 13]);
@@ -404,7 +440,10 @@ mod tests {
         assert_eq!(ScreenLayout::from_str("grid"), ScreenLayout::Grid2x2);
         assert_eq!(ScreenLayout::from_str("2x2"), ScreenLayout::Grid2x2);
         assert_eq!(ScreenLayout::from_str("v"), ScreenLayout::EvenVertical);
-        assert_eq!(ScreenLayout::from_str("unknown"), ScreenLayout::EvenHorizontal);
+        assert_eq!(
+            ScreenLayout::from_str("unknown"),
+            ScreenLayout::EvenHorizontal
+        );
     }
 
     #[test]
@@ -436,7 +475,8 @@ mod tests {
         {
             let mgr = ScreenManager::new(path.clone());
             mgr.init_default("test");
-            mgr.add_screen(Some("Extra".to_string()), None, None).unwrap();
+            mgr.add_screen(Some("Extra".to_string()), None, None)
+                .unwrap();
         }
 
         // Reload

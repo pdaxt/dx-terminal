@@ -1,17 +1,17 @@
 //! DX Terminal Coord: Multi-agent coordination, file locks, messaging, knowledge base, collaboration.
 //! 53 tools.
 
-use std::sync::Arc;
+use crate::app::App;
+use crate::mcp::tools;
+use crate::mcp::types::*;
 use rmcp::{
-    ServerHandler, ServiceExt,
-    model::{CallToolResult, Content, ServerCapabilities, ServerInfo},
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
+    model::{CallToolResult, Content, ServerCapabilities, ServerInfo},
     tool, tool_handler, tool_router,
     transport::stdio,
+    ServerHandler, ServiceExt,
 };
-use crate::app::App;
-use crate::mcp::types::*;
-use crate::mcp::tools;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct DxCoordService {
@@ -30,7 +30,9 @@ impl DxCoordService {
 
     // === MULTI-AGENT COORDINATION (37 tools) ===
 
-    #[tool(description = "Allocate a port for a service. Finds free port in 3001-3099 range, checks for conflicts.")]
+    #[tool(
+        description = "Allocate a port for a service. Finds free port in 3001-3099 range, checks for conflicts."
+    )]
     async fn port_allocate(
         &self,
         Parameters(req): Parameters<PortAllocateRequest>,
@@ -63,7 +65,9 @@ impl DxCoordService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Register an agent in a pane. Returns other agents on same project for coordination.")]
+    #[tool(
+        description = "Register an agent in a pane. Returns other agents on same project for coordination."
+    )]
     async fn agent_register(
         &self,
         Parameters(req): Parameters<AgentRegisterRequest>,
@@ -99,7 +103,9 @@ impl DxCoordService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Acquire file locks to prevent concurrent edits. Returns blocked status if files locked by others.")]
+    #[tool(
+        description = "Acquire file locks to prevent concurrent edits. Returns blocked status if files locked by others."
+    )]
     async fn lock_acquire(
         &self,
         Parameters(req): Parameters<LockAcquireRequest>,
@@ -126,7 +132,9 @@ impl DxCoordService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Claim a git branch for exclusive use. Prevents other agents from using the same branch.")]
+    #[tool(
+        description = "Claim a git branch for exclusive use. Prevents other agents from using the same branch."
+    )]
     async fn git_claim_branch(
         &self,
         Parameters(req): Parameters<GitClaimBranchRequest>,
@@ -140,7 +148,8 @@ impl DxCoordService {
         &self,
         Parameters(req): Parameters<GitReleaseBranchRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::multi_agent_tools::git_release_branch(&req.pane_id, &req.branch, &req.repo);
+        let result =
+            tools::multi_agent_tools::git_release_branch(&req.pane_id, &req.branch, &req.repo);
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -158,7 +167,8 @@ impl DxCoordService {
         &self,
         Parameters(req): Parameters<GitPreCommitCheckRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::multi_agent_tools::git_pre_commit_check(&req.pane_id, &req.repo, &req.files);
+        let result =
+            tools::multi_agent_tools::git_pre_commit_check(&req.pane_id, &req.repo, &req.files);
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -198,7 +208,9 @@ impl DxCoordService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Add an inter-agent task to the shared queue (not the DX Terminal auto-cycle queue).")]
+    #[tool(
+        description = "Add an inter-agent task to the shared queue (not the DX Terminal auto-cycle queue)."
+    )]
     async fn ma_task_add(
         &self,
         Parameters(req): Parameters<MaTaskAddRequest>,
@@ -230,7 +242,8 @@ impl DxCoordService {
         &self,
         Parameters(req): Parameters<MaTaskListRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::multi_agent_tools::task_list(req.status.as_deref(), req.project.as_deref());
+        let result =
+            tools::multi_agent_tools::task_list(req.status.as_deref(), req.project.as_deref());
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -243,12 +256,18 @@ impl DxCoordService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Search the knowledge base by query, optionally filtered by project and category.")]
+    #[tool(
+        description = "Search the knowledge base by query, optionally filtered by project and category."
+    )]
     async fn kb_search(
         &self,
         Parameters(req): Parameters<KbSearchRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::multi_agent_tools::kb_search(&req.query, req.project.as_deref(), req.category.as_deref());
+        let result = tools::multi_agent_tools::kb_search(
+            &req.query,
+            req.project.as_deref(),
+            req.category.as_deref(),
+        );
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -257,7 +276,8 @@ impl DxCoordService {
         &self,
         Parameters(req): Parameters<KbListRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::multi_agent_tools::kb_list(req.project.as_deref(), req.limit.unwrap_or(20));
+        let result =
+            tools::multi_agent_tools::kb_list(req.project.as_deref(), req.limit.unwrap_or(20));
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -270,7 +290,9 @@ impl DxCoordService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Send a direct message to a specific agent. Message is pushed to their PTY in real-time.")]
+    #[tool(
+        description = "Send a direct message to a specific agent. Message is pushed to their PTY in real-time."
+    )]
     async fn msg_send(
         &self,
         Parameters(req): Parameters<MsgSendRequest>,
@@ -294,19 +316,30 @@ impl DxCoordService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Signal the control pane that you need attention. Types: need_help, blocked, found_issue, completed, failed. Appears as alert badge in TUI.")]
+    #[tool(
+        description = "Signal the control pane that you need attention. Types: need_help, blocked, found_issue, completed, failed. Appears as alert badge in TUI."
+    )]
     async fn os_signal(
         &self,
         Parameters(req): Parameters<SignalRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = crate::multi_agent::signal_send(&req.pane_id, &req.signal_type, &req.message, req.pipeline_id.as_deref());
-        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+        let result = crate::multi_agent::signal_send(
+            &req.pane_id,
+            &req.signal_type,
+            &req.message,
+            req.pipeline_id.as_deref(),
+        );
+        Ok(CallToolResult::success(vec![Content::text(
+            result.to_string(),
+        )]))
     }
 
     #[tool(description = "List agent signals (alerts). Shows unacknowledged by default.")]
     async fn os_signal_list(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let result = crate::multi_agent::signal_list(true);
-        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+        Ok(CallToolResult::success(vec![Content::text(
+            result.to_string(),
+        )]))
     }
 
     #[tool(description = "Acknowledge (dismiss) a signal by ID.")]
@@ -315,10 +348,14 @@ impl DxCoordService {
         Parameters(req): Parameters<SignalAckRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let result = crate::multi_agent::signal_acknowledge(req.signal_id);
-        Ok(CallToolResult::success(vec![Content::text(result.to_string())]))
+        Ok(CallToolResult::success(vec![Content::text(
+            result.to_string(),
+        )]))
     }
 
-    #[tool(description = "Clean up stale entries: ports, agents, locks, branches, builds from inactive panes.")]
+    #[tool(
+        description = "Clean up stale entries: ports, agents, locks, branches, builds from inactive panes."
+    )]
     async fn cleanup_all(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let result = tools::multi_agent_tools::cleanup_all();
         Ok(CallToolResult::success(vec![Content::text(result)]))
@@ -350,7 +387,9 @@ impl DxCoordService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "List documents. Filter by space and/or status (draft, review, approved, locked).")]
+    #[tool(
+        description = "List documents. Filter by space and/or status (draft, review, approved, locked)."
+    )]
     async fn doc_list(
         &self,
         Parameters(req): Parameters<DocListRequest>,
@@ -377,7 +416,9 @@ impl DxCoordService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Edit a document. Fails if locked by another agent — use doc_propose instead.")]
+    #[tool(
+        description = "Edit a document. Fails if locked by another agent — use doc_propose instead."
+    )]
     async fn doc_edit(
         &self,
         Parameters(req): Parameters<DocEditRequest>,
@@ -386,7 +427,9 @@ impl DxCoordService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Propose changes to a document for human review. Use when doc is locked or review is wanted.")]
+    #[tool(
+        description = "Propose changes to a document for human review. Use when doc is locked or review is wanted."
+    )]
     async fn doc_propose(
         &self,
         Parameters(req): Parameters<DocProposeRequest>,
@@ -413,7 +456,9 @@ impl DxCoordService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Lock a document. Prevents direct editing — agents must use doc_propose. Auto-expires after 30 min.")]
+    #[tool(
+        description = "Lock a document. Prevents direct editing — agents must use doc_propose. Auto-expires after 30 min."
+    )]
     async fn doc_lock(
         &self,
         Parameters(req): Parameters<DocLockRequest>,
@@ -431,7 +476,9 @@ impl DxCoordService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Add a comment to a document. For feedback, questions, or directive responses.")]
+    #[tool(
+        description = "Add a comment to a document. For feedback, questions, or directive responses."
+    )]
     async fn doc_comment(
         &self,
         Parameters(req): Parameters<DocCommentRequest>,
@@ -463,11 +510,14 @@ impl DxCoordService {
         &self,
         Parameters(req): Parameters<DocSearchRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::collab_tools::doc_search(&req.query, &req.space.clone().unwrap_or_default());
+        let result =
+            tools::collab_tools::doc_search(&req.query, &req.space.clone().unwrap_or_default());
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(description = "Find all <!-- @claude: ... --> directives — tasks/questions from humans for Claude.")]
+    #[tool(
+        description = "Find all <!-- @claude: ... --> directives — tasks/questions from humans for Claude."
+    )]
     async fn doc_directives(
         &self,
         Parameters(req): Parameters<DocDirectivesRequest>,
@@ -481,7 +531,8 @@ impl DxCoordService {
         &self,
         Parameters(req): Parameters<DocHistoryRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::collab_tools::doc_history(&req.space, &req.name, req.limit.unwrap_or(10));
+        let result =
+            tools::collab_tools::doc_history(&req.space, &req.name, req.limit.unwrap_or(10));
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -490,7 +541,8 @@ impl DxCoordService {
         &self,
         Parameters(req): Parameters<DocDeleteRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::collab_tools::doc_delete(&req.space, &req.name, req.confirm.unwrap_or(false));
+        let result =
+            tools::collab_tools::doc_delete(&req.space, &req.name, req.confirm.unwrap_or(false));
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -499,7 +551,6 @@ impl DxCoordService {
         let result = tools::collab_tools::collab_init();
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
-
 }
 
 #[tool_handler]

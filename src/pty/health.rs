@@ -1,5 +1,5 @@
-use super::PtyManager;
 use super::output;
+use super::PtyManager;
 
 /// Minimum output lines required to consider a non-running agent as "done" vs "crashed"
 const MIN_OUTPUT_LINES_FOR_DONE: usize = 5;
@@ -39,14 +39,19 @@ pub fn check_pane(pty_mgr: &PtyManager, pane: u8, markers: &[String]) -> PaneHea
 
             // Process not running: distinguish "completed" from "crashed"
             // A process that exits with < MIN_OUTPUT_LINES is considered crashed
-            let crashed = !running && line_count < MIN_OUTPUT_LINES_FOR_DONE
-                && done_marker.is_none() && !shell;
+            let crashed = !running
+                && line_count < MIN_OUTPUT_LINES_FOR_DONE
+                && done_marker.is_none()
+                && !shell;
 
             // Check output errors first, then crash detection, then non-zero exit code
             let error = if let Some(e) = output::check_errors(&last_out) {
                 Some(e)
             } else if crashed {
-                Some(format!("agent crashed (only {} output lines, exit={:?})", line_count, exit_code))
+                Some(format!(
+                    "agent crashed (only {} output lines, exit={:?})",
+                    line_count, exit_code
+                ))
             } else if !running && exit_code.map_or(false, |c| c != 0 && c != -1) {
                 Some(format!("process exited with code {}", exit_code.unwrap()))
             } else {
