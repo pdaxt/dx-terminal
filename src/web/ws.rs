@@ -276,11 +276,25 @@ async fn build_full_snapshot(app: &App) -> Value {
 /// e.g. "/Users/pran/Projects" → "Projects"
 fn project_from_cwd(cwd: &str) -> String {
     let path = std::path::Path::new(cwd);
-    // If it's a direct child of ~/Projects, use the folder name
-    // If it IS ~/Projects, use "Projects" (root workspace)
+    let home = std::env::var("HOME").unwrap_or_default();
+    let projects_dir = format!("{}/Projects", home);
+
+    // If cwd IS ~/Projects (not a subdirectory), return "--" (no specific project)
+    if cwd == projects_dir || cwd == home {
+        return "--".to_string();
+    }
+
+    // Strip ~/Projects/ prefix and take the first component (the project folder)
+    if let Ok(rel) = path.strip_prefix(&projects_dir) {
+        if let Some(first) = rel.components().next() {
+            return first.as_os_str().to_string_lossy().to_string();
+        }
+    }
+
+    // Fallback: last path component
     path.file_name()
         .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| cwd.to_string())
+        .unwrap_or_else(|| "--".to_string())
 }
 
 /// Forward state events from EventBus → WebSocket

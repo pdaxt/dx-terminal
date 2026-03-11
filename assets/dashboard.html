@@ -1054,77 +1054,106 @@ function addChatMsg(pane,type,text){
 async function renderPaneContext(paneNum){
   const el=document.getElementById('context-panel');
   if(!el)return;
-  el.innerHTML='<div style="color:var(--dim)">Loading context...</div>';
+  el.innerHTML='<div style="color:var(--dim);padding:12px">Loading context...</div>';
   const ctx=await fetchJSON(`/api/pane/${paneNum}/context`);
-  if(!ctx){el.innerHTML='<div style="color:var(--dim)">No context available</div>';return;}
+  if(!ctx){el.innerHTML='<div style="color:var(--dim);padding:12px">No context available</div>';return;}
   let html='';
-  // Project header
-  html+=`<div style="margin-bottom:12px">`;
-  html+=`<div style="font-size:14px;font-weight:700;color:var(--text)">${ctx.project||'Unknown Project'}</div>`;
-  if(ctx.cwd)html+=`<div style="font-size:9px;color:var(--dim);font-family:var(--mono);margin-top:2px">${ctx.cwd}</div>`;
-  if(ctx.task)html+=`<div style="margin-top:6px;padding:6px 8px;background:var(--surface2);border-radius:4px;font-size:10px;color:var(--text);border-left:2px solid var(--blue)"><b>Current Task:</b> ${ctx.task}</div>`;
+
+  // Project header with path
+  html+=`<div style="margin-bottom:12px;padding:10px 12px;background:linear-gradient(135deg,rgba(59,130,246,.08),transparent);border:1px solid rgba(59,130,246,.15);border-radius:8px">`;
+  html+=`<div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:2px">${escHtml(ctx.project||'Unknown')}</div>`;
+  if(ctx.cwd)html+=`<div style="font-size:9px;color:var(--dim);font-family:var(--mono)">${escHtml(ctx.cwd)}</div>`;
   html+=`</div>`;
-  // Vision
+
+  // Current task
+  if(ctx.task){
+    html+=`<div style="margin-bottom:12px;padding:8px 10px;background:var(--surface2);border-radius:6px;border-left:3px solid var(--blue)">`;
+    html+=`<div style="font-size:9px;font-weight:600;color:var(--dim);margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px">Current Task</div>`;
+    html+=`<div style="font-size:10px;color:var(--text);line-height:1.4">${escHtml(ctx.task)}</div>`;
+    html+=`</div>`;
+  }
+
+  // VDD Vision
   if(ctx.vision){
     const v=ctx.vision;
-    html+=`<div style="margin-bottom:12px;padding:8px;background:rgba(59,130,246,.05);border:1px solid rgba(59,130,246,.15);border-radius:6px">`;
-    html+=`<div style="font-size:11px;font-weight:600;color:var(--blue);margin-bottom:4px">Vision: ${v.project||ctx.project}</div>`;
-    html+=`<div style="font-size:10px;color:var(--text);margin-bottom:8px">${v.mission||''}</div>`;
-    // Goals
+    html+=`<div style="margin-bottom:12px">`;
+    html+=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">`;
+    html+=`<span style="font-size:11px;font-weight:700;color:var(--blue)">VDD Vision</span>`;
+    if(v.wiki_url)html+=`<a href="${v.wiki_url}" target="_blank" style="font-size:9px;color:var(--dim);text-decoration:none;margin-left:auto">Wiki &#8599;</a>`;
+    html+=`</div>`;
+    if(v.mission)html+=`<div style="font-size:10px;color:var(--text);margin-bottom:8px;font-style:italic;opacity:.8">${escHtml(v.mission)}</div>`;
+
+    // Goals as progress bar
     if(v.goals&&v.goals.length){
-      html+=`<div style="font-size:10px;font-weight:600;color:var(--dim);margin-bottom:4px">Goals</div>`;
+      const done=v.goals.filter(g=>g.status==='achieved').length;
+      const pct=Math.round(done/v.goals.length*100);
+      html+=`<div style="margin-bottom:8px">`;
+      html+=`<div style="display:flex;justify-content:space-between;font-size:9px;margin-bottom:3px"><span style="color:var(--dim);font-weight:600">Goals</span><span style="color:var(--green)">${done}/${v.goals.length} (${pct}%)</span></div>`;
+      html+=`<div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden"><div style="width:${pct}%;height:100%;background:var(--green);border-radius:2px"></div></div>`;
+      html+=`</div>`;
       v.goals.forEach(g=>{
         const col=g.status==='achieved'?'var(--green)':g.status==='in_progress'?'var(--blue)':'var(--dim)';
-        const icon=g.status==='achieved'?'&#10003;':'&#9679;';
-        html+=`<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px;font-size:10px">`;
-        html+=`<span style="color:${col};font-size:8px">${icon}</span>`;
-        html+=`<span style="color:var(--dim);min-width:22px">${g.id}</span>`;
-        html+=`<span style="color:var(--text);flex:1">${g.title}</span>`;
-        html+=`<span style="font-size:8px;padding:1px 5px;border-radius:8px;background:${col}15;color:${col}">${g.status}</span>`;
+        const icon=g.status==='achieved'?'&#10003;':g.status==='in_progress'?'&#9654;':'&#9675;';
+        html+=`<div style="display:flex;gap:6px;align-items:center;margin-bottom:2px;font-size:10px;padding:2px 0">`;
+        html+=`<span style="color:${col};font-size:9px;width:12px;text-align:center">${icon}</span>`;
+        html+=`<span style="color:var(--dim);min-width:24px;font-size:9px;font-family:var(--mono)">${g.id}</span>`;
+        html+=`<span style="color:var(--text);flex:1">${escHtml(g.title)}</span>`;
         html+=`</div>`;
       });
     }
-    html+=`</div>`;
+
     // Features
     if(v.features&&v.features.length){
-      html+=`<div style="font-size:10px;font-weight:600;color:var(--dim);margin-bottom:4px">Features</div>`;
+      html+=`<div style="font-size:9px;font-weight:600;color:var(--dim);margin:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">Features</div>`;
       v.features.forEach(f=>{
-        const col=f.status==='done'?'var(--green)':f.status==='build'?'var(--yellow)':f.status==='test'?'var(--purple)':'var(--dim)';
+        const col=f.status==='done'?'var(--green)':f.status==='build'?'var(--yellow)':f.status==='test'?'var(--purple)':f.status==='review'?'var(--orange)':'var(--dim)';
         html+=`<div style="margin-bottom:8px;padding:6px 8px;background:var(--surface2);border-radius:4px;border-left:2px solid ${col}">`;
         html+=`<div style="display:flex;justify-content:space-between;align-items:center">`;
-        html+=`<span style="font-size:10px;font-weight:600;color:var(--text)">${f.id}: ${f.title}</span>`;
-        html+=`<span style="font-size:8px;padding:1px 5px;border-radius:8px;background:${col}15;color:${col}">${f.status}</span>`;
+        html+=`<span style="font-size:10px;font-weight:600;color:var(--text)">${escHtml(f.id+': '+(f.title||''))}</span>`;
+        html+=`<span style="font-size:8px;padding:1px 5px;border-radius:8px;background:${col}15;color:${col};text-transform:uppercase">${f.status}</span>`;
         html+=`</div>`;
-        // Tasks
         if(f.tasks&&f.tasks.length){
           html+=`<div style="margin-top:4px">`;
           f.tasks.forEach(t=>{
             const tc=t.status==='done'?'var(--green)':'var(--dim)';
             const check=t.status==='done'?'&#10003;':'&#9675;';
-            html+=`<div style="font-size:9px;color:var(--text);margin:2px 0;display:flex;gap:4px"><span style="color:${tc}">${check}</span> ${t.title}</div>`;
+            html+=`<div style="font-size:9px;color:var(--text);margin:2px 0;display:flex;gap:4px"><span style="color:${tc}">${check}</span> ${escHtml(t.title||'')}</div>`;
           });
           html+=`</div>`;
         }
-        // Acceptance criteria
         if(f.acceptance_criteria&&f.acceptance_criteria.length){
-          html+=`<div style="margin-top:4px;font-size:9px;color:var(--dim)"><b>Acceptance:</b></div>`;
+          html+=`<details style="margin-top:4px"><summary style="font-size:9px;color:var(--dim);cursor:pointer">Acceptance Criteria (${f.acceptance_criteria.length})</summary>`;
           f.acceptance_criteria.forEach(c=>{
-            html+=`<div style="font-size:9px;color:var(--dim);margin:1px 0 1px 8px">&#8226; ${c}</div>`;
+            html+=`<div style="font-size:9px;color:var(--dim);margin:1px 0 1px 8px">&#8226; ${escHtml(c)}</div>`;
           });
+          html+=`</details>`;
         }
         html+=`</div>`;
       });
     }
-    // Wiki link
-    html+=`<div style="margin-top:8px;text-align:center">`;
-    html+=`<a href="${v.wiki_url||'/wiki'}" target="_blank" style="font-size:10px;padding:4px 12px;color:var(--blue);border:1px solid var(--blue);border-radius:4px;text-decoration:none">Open Full Wiki &#8599;</a>`;
-    html+=`</div>`;
-  } else {
-    html+=`<div style="padding:12px;background:var(--surface2);border-radius:6px;text-align:center">`;
-    html+=`<div style="font-size:11px;color:var(--dim)">No VDD vision found for this project</div>`;
-    html+=`<div style="font-size:9px;color:var(--dim);margin-top:4px">Run <code>/vision init</code> to set up Vision-Driven Development</div>`;
     html+=`</div>`;
   }
+
+  // CLAUDE.md preview
+  if(ctx.has_claude_md&&ctx.claude_md_preview){
+    html+=`<details style="margin-bottom:12px" ${ctx.vision?'':'open'}>`;
+    html+=`<summary style="font-size:9px;font-weight:600;color:var(--dim);cursor:pointer;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">CLAUDE.md</summary>`;
+    html+=`<div style="padding:8px;background:var(--surface2);border-radius:6px;font-size:9px;color:var(--text);font-family:var(--mono);white-space:pre-wrap;max-height:300px;overflow-y:auto;line-height:1.4">${escHtml(ctx.claude_md_preview)}</div>`;
+    html+=`</details>`;
+  }
+
+  // No VDD state
+  if(!ctx.vision&&!ctx.has_claude_md){
+    html+=`<div style="padding:16px;background:var(--surface2);border-radius:8px;text-align:center">`;
+    html+=`<div style="font-size:12px;color:var(--dim);margin-bottom:4px">No project documentation found</div>`;
+    html+=`<div style="font-size:9px;color:var(--dim)">Add <code style="background:rgba(255,255,255,.05);padding:1px 4px;border-radius:3px">CLAUDE.md</code> or run <code style="background:rgba(255,255,255,.05);padding:1px 4px;border-radius:3px">/vision init</code></div>`;
+    html+=`</div>`;
+  } else if(!ctx.vision&&ctx.has_claude_md){
+    html+=`<div style="padding:8px;background:rgba(59,130,246,.05);border:1px solid rgba(59,130,246,.1);border-radius:6px;text-align:center;font-size:9px;color:var(--dim)">`;
+    html+=`Run <code style="background:rgba(255,255,255,.05);padding:1px 4px;border-radius:3px">/vision init</code> to enable VDD tracking`;
+    html+=`</div>`;
+  }
+
   el.innerHTML=html;
 }
 
