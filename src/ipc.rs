@@ -9,8 +9,46 @@ use tokio::net::{UnixListener, UnixStream};
 use crate::app::App;
 use crate::config;
 
+const VISION_SOCKET_PREFIX: &str = "vision-events-";
+const VISION_SOCKET_SUFFIX: &str = ".sock";
+
+pub fn vision_socket_dir() -> PathBuf {
+    config::dx_root().join("ipc")
+}
+
+pub fn vision_socket_path_for_pid(pid: u32) -> PathBuf {
+    vision_socket_dir().join(format!("{}{}{}", VISION_SOCKET_PREFIX, pid, VISION_SOCKET_SUFFIX))
+}
+
 pub fn vision_socket_path() -> PathBuf {
-    config::dx_root().join("vision-events.sock")
+    vision_socket_path_for_pid(std::process::id())
+}
+
+pub fn discover_vision_socket_paths() -> Vec<PathBuf> {
+    let mut sockets = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(vision_socket_dir()) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if is_vision_socket_path(&path) {
+                sockets.push(path);
+            }
+        }
+    }
+    sockets.sort();
+    sockets
+}
+
+fn is_vision_socket_path(path: &std::path::Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| {
+            name.starts_with(VISION_SOCKET_PREFIX)
+                && name.ends_with(VISION_SOCKET_SUFFIX)
+                && name[VISION_SOCKET_PREFIX.len()..name.len() - VISION_SOCKET_SUFFIX.len()]
+                    .chars()
+                    .all(|c| c.is_ascii_digit())
+        })
+        .unwrap_or(false)
 }
 
 pub fn start_local_ipc(app: Arc<App>) {
@@ -28,15 +66,7 @@ async fn run_local_ipc(app: Arc<App>) -> anyhow::Result<()> {
     }
 
     if socket_path.exists() {
-        match UnixStream::connect(&socket_path).await {
-            Ok(_) => {
-                tracing::info!("local IPC listener already active at {}", socket_path.display());
-                return Ok(());
-            }
-            Err(_) => {
-                let _ = std::fs::remove_file(&socket_path);
-            }
-        }
+        let _ = std::fs::remove_file(&socket_path);
     }
 
     let listener = UnixListener::bind(&socket_path)
@@ -84,7 +114,15 @@ mod tests {
     #[test]
     fn socket_path_lives_under_dx_root() {
         let path = vision_socket_path();
-        assert!(path.ends_with("vision-events.sock"));
+        assert!(path.starts_with(vision_socket_dir()));
+        assert!(is_vision_socket_path(&path));
         assert!(path.starts_with(config::dx_root()));
+    }
+
+    #[test]
+    fn socket_path_is_namespaced_by_pid() {
+        let path = vision_socket_path_for_pid(4242);
+        assert!(path.ends_with("vision-events-4242.sock"));
+        assert!(is_vision_socket_path(&path));
     }
 }
