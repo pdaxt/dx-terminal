@@ -1556,6 +1556,14 @@ function handleWSMessage(msg){
 
     case 'vision_changed':
       // Structured VDD delta from replicator
+      {
+        const signature=[msg.project||'',msg.feature_id||'',msg.phase||'',msg.state||'',JSON.stringify(msg.readiness||{})].join('|');
+        const now=Date.now();
+        if(lastVisionEvent&&lastVisionEvent.signature===signature&&now-lastVisionEvent.at<1500){
+          break;
+        }
+        lastVisionEvent={signature,at:now};
+      }
       if(!selectedVisionProject||selectedVisionProject===msg.project){
         renderVision();renderVddDocs();
       }
@@ -1877,6 +1885,7 @@ async function renderVision(){
 }
 let selectedVisionProject=null;
 let activeVddDoc=null;
+let lastVisionEvent=null;
 function visionStatusPill(status){
   const colors={achieved:'var(--green)',done:'var(--green)',verified:'var(--green)',
     in_progress:'var(--blue)',building:'var(--blue)',build:'var(--blue)',
