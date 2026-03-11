@@ -84,6 +84,25 @@ Queue and factory execute work.
 
 The integration point is explicit linkage, not implicit inference.
 
+### Provider-neutral by design
+
+VDD 2.0 must not depend on one model vendor.
+
+The same workflow should work for:
+
+- Claude
+- ChatGPT
+- Gemini
+- humans
+- pipelines
+
+That means:
+
+- no provider-specific state in the canonical VDD schema
+- actor and source fields should be generic
+- evidence should be referenced by neutral IDs, paths, or URLs
+- hooks and runtime integrations may adapt to specific providers, but VDD state must stay provider-agnostic
+
 ## High-level architecture
 
 VDD 2.0 has four cooperating layers:

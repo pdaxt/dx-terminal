@@ -1356,31 +1356,33 @@ pub fn update_acceptance_criterion(
         None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
     };
 
-    let item = match feature.acceptance_items.iter_mut().find(|item| item.id == criterion_id) {
-        Some(item) => item,
+    let item_idx = match feature.acceptance_items.iter().position(|item| item.id == criterion_id) {
+        Some(idx) => idx,
         None => return serde_json::json!({"error": "criterion_not_found", "id": criterion_id}).to_string(),
     };
 
     if let Some(next_text) = text.map(str::trim).filter(|text| !text.is_empty()) {
-        item.text = next_text.to_string();
+        feature.acceptance_items[item_idx].text = next_text.to_string();
     }
     if let Some(method) = verification_method.map(str::trim) {
-        item.verification_method = if method.is_empty() {
+        feature.acceptance_items[item_idx].verification_method = if method.is_empty() {
             None
         } else {
             Some(method.to_string())
         };
-        if item.status == AcceptanceStatus::Draft && item.verification_method.is_some() {
-            item.status = AcceptanceStatus::Mapped;
+        if feature.acceptance_items[item_idx].status == AcceptanceStatus::Draft
+            && feature.acceptance_items[item_idx].verification_method.is_some()
+        {
+            feature.acceptance_items[item_idx].status = AcceptanceStatus::Mapped;
         }
     }
 
     sync_acceptance_items(feature);
     feature.updated_at = now();
     vision.updated_at = now();
-    let item_text = item.text.clone();
-    let item_status = item.status.clone();
-    let item_method = item.verification_method.clone();
+    let item_text = feature.acceptance_items[item_idx].text.clone();
+    let item_status = feature.acceptance_items[item_idx].status.clone();
+    let item_method = feature.acceptance_items[item_idx].verification_method.clone();
 
     let change = VisionChange {
         timestamp: now(),
@@ -1427,11 +1429,6 @@ pub fn verify_acceptance_criterion(
         None => return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string(),
     };
 
-    let item = match feature.acceptance_items.iter_mut().find(|item| item.id == criterion_id) {
-        Some(item) => item,
-        None => return serde_json::json!({"error": "criterion_not_found", "id": criterion_id}).to_string(),
-    };
-
     let parsed_status = match status {
         "mapped" => AcceptanceStatus::Mapped,
         "verified" => AcceptanceStatus::Verified,
@@ -1443,24 +1440,31 @@ pub fn verify_acceptance_criterion(
         }).to_string(),
     };
 
-    item.status = parsed_status.clone();
-    item.evidence = evidence;
-    item.verified_at = if parsed_status == AcceptanceStatus::Verified || parsed_status == AcceptanceStatus::Failed {
+    let item_idx = match feature.acceptance_items.iter().position(|item| item.id == criterion_id) {
+        Some(idx) => idx,
+        None => return serde_json::json!({"error": "criterion_not_found", "id": criterion_id}).to_string(),
+    };
+
+    feature.acceptance_items[item_idx].status = parsed_status.clone();
+    feature.acceptance_items[item_idx].evidence = evidence;
+    feature.acceptance_items[item_idx].verified_at = if parsed_status == AcceptanceStatus::Verified || parsed_status == AcceptanceStatus::Failed {
         Some(now())
     } else {
         None
     };
-    item.verified_by = verified_by.map(|s| s.to_string()).filter(|s| !s.trim().is_empty());
-    item.verification_source = verification_source.map(|s| s.to_string()).filter(|s| !s.trim().is_empty());
+    feature.acceptance_items[item_idx].verified_by =
+        verified_by.map(|s| s.to_string()).filter(|s| !s.trim().is_empty());
+    feature.acceptance_items[item_idx].verification_source =
+        verification_source.map(|s| s.to_string()).filter(|s| !s.trim().is_empty());
 
     sync_acceptance_items(feature);
     feature.updated_at = now();
     vision.updated_at = now();
-    let item_text = item.text.clone();
-    let item_evidence = item.evidence.clone();
-    let item_verified_at = item.verified_at.clone();
-    let item_verified_by = item.verified_by.clone();
-    let item_verification_source = item.verification_source.clone();
+    let item_text = feature.acceptance_items[item_idx].text.clone();
+    let item_evidence = feature.acceptance_items[item_idx].evidence.clone();
+    let item_verified_at = feature.acceptance_items[item_idx].verified_at.clone();
+    let item_verified_by = feature.acceptance_items[item_idx].verified_by.clone();
+    let item_verification_source = feature.acceptance_items[item_idx].verification_source.clone();
 
     let change = VisionChange {
         timestamp: now(),
