@@ -1123,7 +1123,7 @@ async function renderPaneContext(paneNum){
         html+=`<span style="display:flex;gap:4px;align-items:center">${vddPhaseBadge(phase)}${vddStatePill(state)}</span>`;
         html+=`</div>`;
         html+=vddPipelineBar(phase);
-        html+=renderReadinessSummary(f);
+        html+=renderReadinessSummary(f,{indent:0});
         if(f.tasks&&f.tasks.length){
           html+=`<div style="margin-top:4px">`;
           f.tasks.forEach(t=>{
@@ -1134,7 +1134,7 @@ async function renderPaneContext(paneNum){
           });
           html+=`</div>`;
         }
-        html+=renderAcceptanceList(f.acceptance_items||[]);
+        html+=renderAcceptanceList(f.acceptance_items||[],{indent:0});
         html+=`</div>`;
       });
     }
@@ -1814,8 +1814,8 @@ async function openVddDoc(project,featureId){
     phase,
     readiness: doc.readiness||{},
     acceptance_items: doc.acceptance_items||[],
-  });
-  html+=renderAcceptanceList(doc.acceptance_items||[]);
+  },{indent:0});
+  html+=renderAcceptanceList(doc.acceptance_items||[],{indent:0});
   // Research doc
   if(doc.research&&doc.research.html){
     html+=`<div style="border-left:3px solid var(--purple);padding-left:12px;margin-bottom:16px">
@@ -1909,7 +1909,10 @@ function nextVddGate(phase){
   if(normalized==='test') return 'done';
   return null;
 }
-function renderReadinessSummary(feature){
+function renderReadinessSummary(feature,options){
+  const opts=options||{};
+  const indent=typeof opts.indent==='number'?opts.indent:22;
+  const margin=indent>0?`5px 0 0 ${indent}px`:'8px 0 0 0';
   const readiness=feature&&feature.readiness?feature.readiness:{};
   const counts=readiness.counts||{};
   const phase=normalizeVddPhase(feature&& (feature.phase||feature.status));
@@ -1934,7 +1937,7 @@ function renderReadinessSummary(feature){
   if(typeof counts.has_discovery_artifact==='boolean'){
     facts.push(counts.has_discovery_artifact?'discovery docs present':'discovery docs missing');
   }
-  let html=`<div style="margin:5px 0 0 22px;padding:6px 8px;background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:6px">`;
+  let html=`<div style="margin:${margin};padding:6px 8px;background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:6px">`;
   if(gate){
     const readyKey=`ready_for_${gate}`;
     const ready=!!readiness[readyKey];
@@ -1957,11 +1960,13 @@ function renderReadinessSummary(feature){
   html+=`</div>`;
   return html;
 }
-function renderAcceptanceList(items){
+function renderAcceptanceList(items,options){
+  const opts=options||{};
+  const indent=typeof opts.indent==='number'?opts.indent:0;
   const list=Array.isArray(items)?items:[];
   if(!list.length) return '';
   const counts=acceptanceCounts(list);
-  return `<details style="margin-top:6px"><summary style="font-size:9px;color:var(--dim);cursor:pointer">Acceptance (${counts.verified}/${counts.total} verified)</summary>
+  return `<details style="margin:${indent>0?`6px 0 0 ${indent}px`:'6px 0 0 0'}"><summary style="font-size:9px;color:var(--dim);cursor:pointer">Acceptance (${counts.verified}/${counts.total} verified)</summary>
     ${list.slice(0,6).map(item=>{
       const status=(item&&item.status)||'draft';
       const colors={draft:'var(--dim)',mapped:'var(--blue)',verified:'var(--green)',failed:'var(--red)'};
@@ -2066,7 +2071,7 @@ async function renderVisionCockpit(project){
         if(fExpanded){
           // Progress bar
           if(tasks.length) treeHtml+=`<div style="margin-left:22px;margin-bottom:4px">${visionProgressBar(fPct,'200px')}</div>`;
-          treeHtml+=renderReadinessSummary(f);
+          treeHtml+=renderReadinessSummary(f,{indent:22});
           // Open questions indicator
           if(oq>0){
             const blocking=counts.blocking_open_questions||0;
@@ -2076,7 +2081,7 @@ async function renderVisionCockpit(project){
             if(nonBlocking>0) questionLabel+=` · ${nonBlocking} non-blocking`;
             treeHtml+=`<div style="margin-left:22px;font-size:9px;color:var(--yellow);margin-bottom:3px">${questionLabel}</div>`;
           }
-          treeHtml+=renderAcceptanceList(f.acceptance_items||[]);
+          treeHtml+=renderAcceptanceList(f.acceptance_items||[],{indent:22});
           // Tasks
           for(const t of tasks){
             const tColor=t.status==='done'||t.status==='verified'?'var(--green)':t.status==='in_progress'?'var(--blue)':t.status==='blocked'?'var(--red)':'var(--dim)';
