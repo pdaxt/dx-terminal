@@ -26,6 +26,7 @@ mod screen;
 mod tmux;
 mod session_stream;
 mod build;
+mod ipc;
 mod vision;
 mod vision_events;
 mod design_tokens;
@@ -73,6 +74,7 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
     let application = Arc::new(app::App::new());
+    ipc::start_local_ipc(Arc::clone(&application));
 
     // Clean up stale worktrees from previous crashed sessions
     if let Ok(cleaned) = workspace::cleanup_stale_worktrees() {

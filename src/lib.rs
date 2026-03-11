@@ -26,6 +26,7 @@ pub mod screen;
 pub mod tmux;
 pub mod session_stream;
 pub mod build;
+pub mod ipc;
 pub mod vision;
 pub mod vision_events;
 pub mod design_tokens;
