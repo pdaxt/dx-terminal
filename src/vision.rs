@@ -1150,7 +1150,7 @@ pub fn create_sub_vision(
     // Create the sub-vision file
     let dir = features_dir(project_path);
     let _ = std::fs::create_dir_all(&dir);
-    let filename = format!("{}.json", feature.goal_id);
+    let filename = format!("{}.json", feature_id);
     let sub_path = dir.join(&filename);
     let relative_path = format!(".vision/features/{}", filename);
 
