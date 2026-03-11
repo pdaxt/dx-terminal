@@ -529,7 +529,7 @@
       "goal_id": "G6",
       "title": "Open Source Documentation",
       "description": "Write README and docs for GitHub launch — hero README with architecture diagram, quick start, feature showcase",
-      "status": "build",
+      "status": "done",
       "questions": [
         {
           "id": "Q6.1.1",
@@ -557,7 +557,7 @@
           "feature_id": "F6.1",
           "title": "Write GitHub README with feature showcase",
           "description": "Hero README with architecture overview, feature grid, quick start guide, dashboard screenshot, MCP tools summary",
-          "status": "planned",
+          "status": "done",
           "branch": null, "pr": null, "commit": null, "assignee": null,
           "created_at": "2026-03-11T04:10:00Z", "updated_at": "2026-03-11T04:10:00Z"
         },
@@ -566,7 +566,7 @@
           "feature_id": "F6.1",
           "title": "Add CONTRIBUTING.md and LICENSE",
           "description": "Contributing guide for developers + MIT license",
-          "status": "planned",
+          "status": "done",
           "branch": null, "pr": null, "commit": null, "assignee": null,
           "created_at": "2026-03-11T04:10:00Z", "updated_at": "2026-03-11T04:10:00Z"
         }
