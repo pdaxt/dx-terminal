@@ -152,6 +152,8 @@ pub struct Feature {
     #[serde(default)]
     pub acceptance_criteria: Vec<String>,
     #[serde(default)]
+    pub acceptance_items: Vec<AcceptanceCriterion>,
+    #[serde(default)]
     pub sub_vision: Option<String>,        // path to sub-vision file (recursive)
     #[serde(default)]
     pub parent_vision: Option<String>,     // link up the tree
@@ -199,6 +201,35 @@ pub enum FeatureState {
 impl Default for FeatureState {
     fn default() -> Self {
         Self::Planned
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcceptanceCriterion {
+    pub id: String,
+    pub text: String,
+    #[serde(default)]
+    pub status: AcceptanceStatus,
+    #[serde(default)]
+    pub verification_method: Option<String>,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+    #[serde(default)]
+    pub verified_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum AcceptanceStatus {
+    Draft,
+    Mapped,
+    Verified,
+    Failed,
+}
+
+impl Default for AcceptanceStatus {
+    fn default() -> Self {
+        Self::Draft
     }
 }
 
