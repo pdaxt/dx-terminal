@@ -382,10 +382,16 @@ async fn forward_events(
                         "seq": seq,
                         "action": action, "task_id": task_id, "task": task,
                     }),
-                    StateEvent::VisionChanged { project, summary } => json!({
+                    StateEvent::VisionChanged { project, summary, feature_id, feature_title, phase, state, readiness } => json!({
                         "type": "vision_changed",
                         "seq": seq,
-                        "project": project, "summary": summary,
+                        "project": project,
+                        "summary": summary,
+                        "feature_id": feature_id,
+                        "feature_title": feature_title,
+                        "phase": phase,
+                        "state": state,
+                        "readiness": readiness,
                     }),
                     StateEvent::SyncStatusChanged { project, data } => json!({
                         "type": "sync_status",
