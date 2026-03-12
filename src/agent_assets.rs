@@ -2,28 +2,60 @@ use serde_json::{json, Value};
 use std::path::Path;
 use walkdir::WalkDir;
 
+const PROVIDER_DIRS: &[(&str, &str)] = &[
+    ("claude", ".claude"),
+    ("codex", ".codex"),
+    ("gemini", ".gemini"),
+];
+
 pub fn collect_automation_assets(project_root: &str) -> Value {
     collect_automation_assets_with_home(Path::new(project_root), &crate::config::home_dir())
 }
 
 fn collect_automation_assets_with_home(project_root: &Path, home_root: &Path) -> Value {
-    let project_commands = collect_command_assets(
-        &project_root.join(".claude").join("commands"),
-        "claude",
-        "project",
-    );
-    let user_commands = collect_command_assets(
-        &home_root.join(".claude").join("commands"),
-        "claude",
-        "user",
-    );
-    let project_skills = collect_skill_assets(
-        &project_root.join(".codex").join("skills"),
-        "codex",
-        "project",
-    );
-    let user_skills =
-        collect_skill_assets(&home_root.join(".codex").join("skills"), "codex", "user");
+    let mut project_commands = Vec::new();
+    let mut user_commands = Vec::new();
+    let mut project_skills = Vec::new();
+    let mut user_skills = Vec::new();
+    let mut command_providers = serde_json::Map::new();
+    let mut skill_providers = serde_json::Map::new();
+
+    for (provider, dir_name) in PROVIDER_DIRS {
+        let provider_project_commands =
+            collect_command_assets(&project_root.join(dir_name).join("commands"), provider, "project");
+        let provider_user_commands =
+            collect_command_assets(&home_root.join(dir_name).join("commands"), provider, "user");
+        let provider_project_skills =
+            collect_skill_assets(&project_root.join(dir_name).join("skills"), provider, "project");
+        let provider_user_skills =
+            collect_skill_assets(&home_root.join(dir_name).join("skills"), provider, "user");
+
+        project_commands.extend(provider_project_commands.iter().cloned());
+        user_commands.extend(provider_user_commands.iter().cloned());
+        project_skills.extend(provider_project_skills.iter().cloned());
+        user_skills.extend(provider_user_skills.iter().cloned());
+
+        command_providers.insert(
+            (*provider).to_string(),
+            json!({
+                "project": provider_project_commands,
+                "user": provider_user_commands,
+            }),
+        );
+        skill_providers.insert(
+            (*provider).to_string(),
+            json!({
+                "project": provider_project_skills,
+                "user": provider_user_skills,
+            }),
+        );
+    }
+
+    project_commands.sort_by(compare_asset_name);
+    user_commands.sort_by(compare_asset_name);
+    project_skills.sort_by(compare_asset_name);
+    user_skills.sort_by(compare_asset_name);
+
     let external_mcps = crate::external_mcp::load_external_descriptors()
         .into_iter()
         .map(|descriptor| {
@@ -39,10 +71,12 @@ fn collect_automation_assets_with_home(project_root: &Path, home_root: &Path) ->
         "commands": {
             "project": project_commands,
             "user": user_commands,
+            "providers": command_providers,
         },
         "skills": {
             "project": project_skills,
             "user": user_skills,
+            "providers": skill_providers,
         },
         "external_mcps": external_mcps,
         "counts": {
@@ -51,8 +85,82 @@ fn collect_automation_assets_with_home(project_root: &Path, home_root: &Path) ->
             "project_skills": project_skills.len(),
             "user_skills": user_skills.len(),
             "external_mcps": external_mcps.len(),
+            "commands_by_provider": counts_by_provider(
+                json!({
+                    "claude": {
+                        "project": project_commands_for_provider(&command_providers, "claude"),
+                        "user": user_commands_for_provider(&command_providers, "claude"),
+                    },
+                    "codex": {
+                        "project": project_commands_for_provider(&command_providers, "codex"),
+                        "user": user_commands_for_provider(&command_providers, "codex"),
+                    },
+                    "gemini": {
+                        "project": project_commands_for_provider(&command_providers, "gemini"),
+                        "user": user_commands_for_provider(&command_providers, "gemini"),
+                    }
+                }),
+            ),
+            "skills_by_provider": counts_by_provider(
+                json!({
+                    "claude": {
+                        "project": project_commands_for_provider(&skill_providers, "claude"),
+                        "user": user_commands_for_provider(&skill_providers, "claude"),
+                    },
+                    "codex": {
+                        "project": project_commands_for_provider(&skill_providers, "codex"),
+                        "user": user_commands_for_provider(&skill_providers, "codex"),
+                    },
+                    "gemini": {
+                        "project": project_commands_for_provider(&skill_providers, "gemini"),
+                        "user": user_commands_for_provider(&skill_providers, "gemini"),
+                    }
+                }),
+            ),
         }
     })
+}
+
+fn project_commands_for_provider(
+    providers: &serde_json::Map<String, Value>,
+    provider: &str,
+) -> usize {
+    providers
+        .get(provider)
+        .and_then(|value| value.get("project"))
+        .and_then(|value| value.as_array())
+        .map(|items| items.len())
+        .unwrap_or(0)
+}
+
+fn user_commands_for_provider(
+    providers: &serde_json::Map<String, Value>,
+    provider: &str,
+) -> usize {
+    providers
+        .get(provider)
+        .and_then(|value| value.get("user"))
+        .and_then(|value| value.as_array())
+        .map(|items| items.len())
+        .unwrap_or(0)
+}
+
+fn counts_by_provider(value: Value) -> Value {
+    let Some(providers) = value.as_object() else {
+        return json!({});
+    };
+
+    let mut counts = serde_json::Map::new();
+    for (provider, scopes) in providers {
+        counts.insert(
+            provider.clone(),
+            json!({
+                "project": scopes.get("project").and_then(|entry| entry.as_u64()).unwrap_or(0),
+                "user": scopes.get("user").and_then(|entry| entry.as_u64()).unwrap_or(0),
+            }),
+        );
+    }
+    Value::Object(counts)
 }
 
 fn collect_command_assets(dir: &Path, provider: &str, scope: &str) -> Vec<Value> {
@@ -163,20 +271,29 @@ mod tests {
         let home = tempdir().unwrap();
 
         let project_command_dir = project.path().join(".claude").join("commands");
+        let project_codex_command_dir = project.path().join(".codex").join("commands");
         let project_skill_dir = project
             .path()
             .join(".codex")
             .join("skills")
             .join("reviewer");
         let user_skill_dir = home.path().join(".codex").join("skills").join("builder");
+        let user_gemini_command_dir = home.path().join(".gemini").join("commands");
 
         std::fs::create_dir_all(&project_command_dir).unwrap();
+        std::fs::create_dir_all(&project_codex_command_dir).unwrap();
         std::fs::create_dir_all(&project_skill_dir).unwrap();
         std::fs::create_dir_all(&user_skill_dir).unwrap();
+        std::fs::create_dir_all(&user_gemini_command_dir).unwrap();
 
         std::fs::write(
             project_command_dir.join("handoff.md"),
             "# Handoff\nProject handoff command",
+        )
+        .unwrap();
+        std::fs::write(
+            project_codex_command_dir.join("review.md"),
+            "# Review\nCodex project command",
         )
         .unwrap();
         std::fs::write(
@@ -185,12 +302,21 @@ mod tests {
         )
         .unwrap();
         std::fs::write(user_skill_dir.join("SKILL.md"), "Builder skill").unwrap();
+        std::fs::write(
+            user_gemini_command_dir.join("triage.md"),
+            "# Triage\nGemini command",
+        )
+        .unwrap();
 
         let assets = collect_automation_assets_with_home(project.path(), home.path());
 
-        assert_eq!(assets["counts"]["project_commands"], json!(1));
+        assert_eq!(assets["counts"]["project_commands"], json!(2));
+        assert_eq!(assets["counts"]["user_commands"], json!(1));
         assert_eq!(assets["counts"]["project_skills"], json!(1));
         assert_eq!(assets["counts"]["user_skills"], json!(1));
+        assert_eq!(assets["counts"]["commands_by_provider"]["claude"]["project"], json!(1));
+        assert_eq!(assets["counts"]["commands_by_provider"]["codex"]["project"], json!(1));
+        assert_eq!(assets["counts"]["commands_by_provider"]["gemini"]["user"], json!(1));
         assert_eq!(assets["commands"]["project"][0]["name"], json!("handoff"));
         assert_eq!(assets["skills"]["project"][0]["name"], json!("reviewer"));
         assert_eq!(
