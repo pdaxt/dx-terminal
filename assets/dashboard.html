@@ -1193,15 +1193,15 @@ async function renderExecutionHub(){
           <div class="exec-project">${escHtml(brief.project||project)}</div>
           <div class="exec-mission">${escHtml((brief.mission||'No project mission yet').toString())}</div>
         </div>
-        <a class="exec-link" href="${escHtml(brief.wiki_url||'/wiki')}" target="_blank">Open Wiki</a>
+        <a class="exec-link" href="${escHtml(brief.wiki_url||'/wiki')}" target="_blank">Open Handbook</a>
       </div>
       ${renderFocusStrip(project)}
       <div class="exec-kpis">
-        <div class="exec-kpi"><div class="label">Runtimes</div><div class="value">${brief.runtime_count||0}</div><div class="meta">${brief.worktree_count||0} isolated worktrees</div></div>
-        <div class="exec-kpi"><div class="label">Documentation</div><div class="value">${docs.vision_doc_count||0}</div><div class="meta">${docs.guidance_doc_count||0} guidance docs</div></div>
-        <div class="exec-kpi"><div class="label">Automation</div><div class="value">${automationCounts.external_mcps||0}</div><div class="meta">${automationCounts.project_skills||0} skills · ${automationCounts.project_commands||0} commands</div></div>
-        <div class="exec-kpi"><div class="label">Git Sync</div><div class="value">${git&&git.branch?escHtml(git.branch):'--'}</div><div class="meta">${escHtml(gitState)}</div></div>
-        <div class="exec-kpi"><div class="label">Docs Health</div><div class="value">${docHealth.status==='synced'?'Synced':docHealth.status==='blocked'?'Blocked':'Attention'}</div><div class="meta">${dirtyDocs.length||missingFeatureDocs.length||missingAcceptance.length||0} active doc issues</div></div>
+        <div class="exec-kpi"><div class="label">Work Lanes</div><div class="value">${brief.runtime_count||0}</div><div class="meta">${brief.worktree_count||0} isolated worktrees</div></div>
+        <div class="exec-kpi"><div class="label">Handbook Docs</div><div class="value">${docs.vision_doc_count||0}</div><div class="meta">${docs.guidance_doc_count||0} guidance docs</div></div>
+        <div class="exec-kpi"><div class="label">Automation Assets</div><div class="value">${automationCounts.external_mcps||0}</div><div class="meta">${automationCounts.project_skills||0} skills · ${automationCounts.project_commands||0} commands</div></div>
+        <div class="exec-kpi"><div class="label">Git State</div><div class="value">${git&&git.branch?escHtml(git.branch):'--'}</div><div class="meta">${escHtml(gitState)}</div></div>
+        <div class="exec-kpi"><div class="label">Sync Health</div><div class="value">${docHealth.status==='synced'?'Synced':docHealth.status==='blocked'?'Blocked':'Attention'}</div><div class="meta">${dirtyDocs.length||missingFeatureDocs.length||missingAcceptance.length||0} active handbook issues</div></div>
       </div>
       <div class="exec-phase-strip">
         ${['planned','discovery','build','test','done'].map(phase=>`<span class="exec-phase-chip">${phase}<strong>${executionPhaseCount(phaseCounts,phase)}</strong></span>`).join('')}
@@ -1210,7 +1210,7 @@ async function renderExecutionHub(){
         ${readyFeatures.length?readyFeatures.map(feature=>`<div class="exec-row">
           <div class="exec-row-top"><span class="exec-row-title">${escHtml(feature.feature_id||'')}</span><span class="exec-row-tags">${vddPhaseBadge(feature.phase||'planned')}<span class="doc-pill">${escHtml((feature.next_gate||'next').toString())} ready</span></span></div>
           <div class="exec-row-meta">${escHtml((feature.title||'').toString())}</div>
-        </div>`).join(''):'<div class="empty-note">No feature is fully gate-ready yet.</div>'}
+        </div>`).join(''):'<div class="empty-note">Nothing is ready to advance yet.</div>'}
         ${blockingFeatures.length?blockingFeatures.map(feature=>`<div class="exec-row">
           <div class="exec-row-top"><span class="exec-row-title">${escHtml(feature.feature_id||'')}</span><span class="exec-row-tags">${vddPhaseBadge(feature.phase||'planned')}<span class="doc-pill">${escHtml((feature.next_gate||'next').toString())} blocked</span></span></div>
           <div class="exec-row-meta">${escHtml((feature.title||'').toString())}${feature.blockers&&feature.blockers.length?` · ${feature.blockers.slice(0,3).map(b=>escHtml(String(b))).join(' · ')}`:''}</div>
@@ -1236,14 +1236,14 @@ async function renderExecutionHub(){
       <div class="exec-row-meta">${escHtml((runtime.task||runtime.window_name||runtime.cwd||'').toString())}</div>
       <div class="exec-row-meta">${escHtml(meta)}</div>
     </div>`;
-  }).join(''):'<div class="empty-note">No active runtimes for this project.</div>';
+  }).join(''):'<div class="empty-note">No people or agent runtimes are active in this project right now.</div>';
 
   docsEl.innerHTML=`
     <div class="doc-health-banner">
       <div class="doc-health-top">
         <div>
-          <div class="automation-title">Filesystem, Git, and Dashboard Sync</div>
-          <div class="automation-sub">${escHtml((docHealth.summary||'Documentation sync status unavailable.').toString())}</div>
+          <div class="automation-title">Handbook, Git, and Dashboard Sync</div>
+          <div class="automation-sub">${escHtml((docHealth.summary||'Handbook sync status unavailable.').toString())}</div>
         </div>
         ${healthPill(docHealth.status)}
       </div>
@@ -1300,7 +1300,7 @@ async function renderExecutionHub(){
             <div class="doc-line-path">${escHtml((doc.relative_path||doc.file||'').toString())}</div>
           </div>
           <div class="exec-row-tags">${docGitBadge(doc)}</div>
-        </div>`).join(''):'<div class="empty-note">No feature research docs yet.</div>'}
+        </div>`).join(''):'<div class="empty-note">No feature research or discovery notes are attached yet.</div>'}
       </div>
       ${dirtyDocs.length?`<div class="exec-row">
         <div class="exec-row-top">
@@ -1331,8 +1331,8 @@ async function renderExecutionHub(){
       <div class="automation-block">
         <div class="automation-head">
           <div>
-            <div class="automation-title">External MCP Bridge</div>
-            <div class="automation-sub">Configured external MCP servers are bridged into dx. Inspection is on-demand so the dashboard does not auto-start them on every refresh.</div>
+            <div class="automation-title">Connected Automation Tools</div>
+            <div class="automation-sub">Configured external MCP servers are available through dx. Tool inspection is on-demand so the dashboard does not auto-start every integration on refresh.</div>
           </div>
           <span class="doc-pill shared">${externalMcps.length} registered</span>
         </div>
@@ -1341,7 +1341,7 @@ async function renderExecutionHub(){
             const active=selectedMcp===mcp.name;
             const cached=automationToolCache[automationCacheKey(project,mcp.name)];
             return `<button class="automation-chip ${active?'active':''} ${cached&&!(cached.error)?'is-running':''}" onclick="selectAutomationMcp(decodeURIComponent('${encodeURIComponent(mcp.name)}'))">${escHtml(mcp.name)}</button>`;
-          }).join(''):'<span class="automation-note">No external MCPs registered in the shared config.</span>'}
+          }).join(''):'<span class="automation-note">No external automation servers are registered in the shared config.</span>'}
         </div>
         ${selectedMcp?`<div class="automation-sub">Selected MCP: <strong style="color:var(--text)">${escHtml(selectedMcp)}</strong>${selectedToolInfo&&selectedToolInfo.tool_count?` · ${selectedToolInfo.tool_count} tools loaded`:''}</div>`:''}
         ${selectedToolLoading?'<div class="automation-note">Loading tool schema through the dx gateway...</div>':''}
@@ -1355,23 +1355,23 @@ async function renderExecutionHub(){
         <div class="automation-head">
           <div>
             <div class="automation-title">Skills & Workflows</div>
-            <div class="automation-sub">Provider-neutral skill inventory across project and user scopes. Codex is available today, and the contract already allows other providers to join without changing the dashboard.</div>
+            <div class="automation-sub">Reusable skills discovered across project and user scopes. The contract is provider-neutral, so Claude, Codex, Gemini, and future runtimes can share the same inventory.</div>
           </div>
           <span class="doc-pill codex">${projectSkills.length} project · ${userSkills.length} user</span>
         </div>
         ${renderProviderAssetSummary(skillProviders,'skills')}
-        ${renderAutomationItems(projectSkills.length?projectSkills:userSkills,'No project or user skills detected for this workspace.')}
+        ${renderAutomationItems(projectSkills.length?projectSkills:userSkills,'No project or user skills were detected for this workspace.')}
       </div>
       <div class="automation-block">
         <div class="automation-head">
           <div>
-            <div class="automation-title">Agent Command Packs</div>
+            <div class="automation-title">Command Packs</div>
             <div class="automation-sub">Reusable command markdown and prompt packs discovered across Claude, Codex, and Gemini directories at both project and user scope.</div>
           </div>
           <span class="doc-pill shared">${projectCommands.length} project · ${userCommands.length} user</span>
         </div>
         ${renderProviderAssetSummary(commandProviders,'command packs')}
-        ${renderAutomationItems(projectCommands.length?projectCommands:userCommands,'No project or user command packs detected for this workspace.')}
+        ${renderAutomationItems(projectCommands.length?projectCommands:userCommands,'No project or user command packs were detected for this workspace.')}
       </div>
     </div>`;
 }
