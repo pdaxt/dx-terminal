@@ -883,9 +883,9 @@ canvas{width:100%;display:block}
     <div class="alert-bar" id="alerts"></div>
     <div class="page-intro">
       <div class="intro-banner">
-        <div class="intro-kicker">How To Read This Page</div>
-        <div class="intro-title">Start with the story, then move into live work.</div>
-        <div class="intro-copy">DX Terminal is ordered from summary to detail so operators, delivery leads, engineers, and QA can understand the program before opening raw terminals. Read the brief first, confirm documentation and stage health, then inspect the live workstations.</div>
+        <div class="intro-kicker">Client Delivery Portal</div>
+        <div class="intro-title">From outcome to approved release in one operating surface.</div>
+        <div class="intro-copy">Clients should live in the portal, not in Slack threads, design files, and terminal screenshots. DX brings discovery, quick design directions, approvals, delivery stages, specialist work lanes, browser testing, documentation, and evidence into the same project story.</div>
         <div class="phase-legend">
           <span class="tone tone-planned">planned</span>
           <span class="tone tone-discovery">discovery</span>
@@ -893,118 +893,82 @@ canvas{width:100%;display:block}
           <span class="tone tone-test">test</span>
           <span class="tone tone-done">done</span>
         </div>
+        <div class="hero-stage-track">
+          <div class="hero-stage-step">
+            <div class="label">Step 1</div>
+            <div class="value">Frame the outcome</div>
+            <div class="meta">Capture the business goal, audience, references, and constraints in language a client understands.</div>
+          </div>
+          <div class="hero-stage-step">
+            <div class="label">Step 2</div>
+            <div class="value">Approve the direction</div>
+            <div class="meta">Generate quick concept options, explain the tradeoffs, and get approval before build accelerates.</div>
+          </div>
+          <div class="hero-stage-step">
+            <div class="label">Step 3</div>
+            <div class="value">Build and verify</div>
+            <div class="meta">Parallel runtimes work behind the portal while branches, worktrees, and browser lanes stay explicit.</div>
+          </div>
+          <div class="hero-stage-step">
+            <div class="label">Step 4</div>
+            <div class="value">Release with evidence</div>
+            <div class="meta">Testing, acceptance, documentation, and Git state all need to agree before work is called done.</div>
+          </div>
+        </div>
+        <div class="intro-spotlight" id="intro-spotlight">
+          <div class="loading">Loading project spotlight</div>
+        </div>
       </div>
       <div class="guide-strip">
         <div class="guide-card">
           <span class="guide-step">1</span>
-          <h3>Read what matters now</h3>
-          <p>Mission, focus, blockers, and readiness tell you what deserves attention before terminal output does.</p>
+          <h3>Start with the client brief</h3>
+          <p>Mission, current focus, stage, and next approval should make sense before anyone sees an engineering console.</p>
         </div>
         <div class="guide-card">
           <span class="guide-step">2</span>
-          <h3>Confirm handbook health</h3>
-          <p>Check whether research, acceptance, git, and dashboard state are aligned before moving work forward.</p>
+          <h3>Check trust before speed</h3>
+          <p>Handbook health tells you whether docs, Git, approvals, and dashboard state still describe the same reality.</p>
         </div>
         <div class="guide-card">
           <span class="guide-step">3</span>
-          <h3>Inspect live workstations</h3>
-          <p>Only after the brief is clear should you drill into panes, worktrees, browser lanes, and terminal history.</p>
+          <h3>Use the runtime network second</h3>
+          <p>The live lanes are the execution backplane. They matter, but only after the story, stage, and blockers are clear.</p>
+        </div>
+        <div class="guide-card">
+          <span class="guide-step">4</span>
+          <h3>Treat the handbook as memory</h3>
+          <p>Discovery notes, design rationale, architecture, history, and QA evidence should teach a new human what happened and why.</p>
         </div>
       </div>
+    </div>
+    <div class="section-anchor-row">
+      <a class="section-anchor" href="#execution-hub">Program Brief</a>
+      <a class="section-anchor" href="#vision-section">Delivery Plan</a>
+      <a class="section-anchor" href="#vdd-docs-section">Handbook</a>
+      <a class="section-anchor" href="#execution-network">Execution Network</a>
+      <a class="section-anchor" href="#operations-console">Operations Console</a>
     </div>
     <div class="gauge-row" id="gauges"><div class="loading">Loading</div></div>
     <div class="execution-grid" id="execution-hub" style="display:none">
       <div class="card">
-        <h2>What Matters Now</h2>
+        <h2>Program Brief</h2>
         <div id="project-brief"></div>
       </div>
       <div class="execution-stack">
         <div class="card">
-          <h2>Handbook & Sync Health</h2>
+          <h2>Approvals & Trust</h2>
           <div id="documentation-brief"></div>
         </div>
         <div class="card">
-          <h2>Active Work Lanes</h2>
+          <h2>Execution Network</h2>
           <div id="runtime-brief"></div>
         </div>
         <div class="card">
-          <h2>Automation & Skills</h2>
+          <h2>Automation Catalog</h2>
           <div id="automation-brief"></div>
         </div>
       </div>
-    </div>
-    <div class="section-head">Live Workstations <span class="count" id="pane-count">0/9</span></div>
-    <div class="pane-grid" id="panes"><div class="loading">Loading agents</div></div>
-
-    <div class="content-grid">
-      <div>
-        <div class="card">
-          <h2>Work Intake <button class="btn btn-green" onclick="toggleAdd()" style="font-size:9px;padding:2px 8px">+ Add</button></h2>
-          <div class="add-form" id="add-form">
-            <div><label>Project</label><input id="qa-project" placeholder="project-name" style="width:130px"></div>
-            <div><label>Task</label><input id="qa-task" placeholder="Task description" style="width:180px"></div>
-            <div><label>Role</label><select id="qa-role"><option>developer</option><option>frontend</option><option>backend</option><option>qa</option><option>devops</option></select></div>
-            <div><label>Priority</label><select id="qa-priority"><option value="1">P1</option><option value="2">P2</option><option value="3" selected>P3</option></select></div>
-            <button class="btn btn-blue" onclick="submitTask()">Queue</button>
-          </div>
-          <div id="queue-table"></div>
-        </div>
-      </div>
-      <div>
-        <div class="card">
-          <h2>Stage Board</h2>
-          <div class="kanban" id="kanban"></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="content-grid">
-      <div class="card">
-        <h2>Team Coverage</h2>
-        <div id="roles"></div>
-      </div>
-      <div class="card">
-        <h2>Recent Activity</h2>
-        <div class="log-list" id="logs"></div>
-      </div>
-    </div>
-
-    <!-- Analytics Row: Digest + Overview -->
-    <div class="content-grid" id="analytics-section">
-      <div class="card">
-        <h2>Delivery Digest</h2>
-        <div id="digest"></div>
-      </div>
-      <div class="card">
-        <h2>Delivery Snapshot</h2>
-        <div id="overview"></div>
-      </div>
-    </div>
-
-    <!-- Ports + MCP Routing -->
-    <div class="content-grid" id="infra-section">
-      <div class="card">
-        <h2>Browser & Service Ports</h2>
-        <div id="ports"></div>
-      </div>
-      <div class="card">
-        <h2>Release Readiness</h2>
-        <div id="quality-gate"></div>
-      </div>
-    </div>
-
-    <!-- Build Environments -->
-    <div class="card" id="builds-section">
-      <h2>Workbench Layouts <span class="count" id="build-count">0/5</span>
-        <button class="btn btn-blue" onclick="restyleBuilds()" style="font-size:9px;padding:2px 8px;margin-left:8px">Restyle All</button>
-      </h2>
-      <div class="build-grid" id="builds"></div>
-    </div>
-
-    <!-- Git Sync Status -->
-    <div class="card" id="sync-card">
-      <h2>Git & Mirror Status <span id="sync-indicator" style="font-size:9px;padding:2px 7px;border-radius:10px;margin-left:6px"></span></h2>
-      <div id="sync-status" style="font-size:11px;color:var(--dim)">Loading...</div>
     </div>
 
     <!-- Vision Cockpit -->
@@ -1034,7 +998,7 @@ canvas{width:100%;display:block}
     <!-- VDD Research & Discovery Docs (Confluence-like) -->
     <div class="col-2" id="vdd-docs-section" style="display:none">
       <div class="card">
-        <h2>Handbook Notes
+        <h2>Project Handbook
           <span id="vdd-docs-count" style="font-size:9px;padding:2px 7px;border-radius:10px;background:var(--surface2);color:var(--dim);margin-left:6px;font-weight:600"></span>
           <button class="btn btn-blue" onclick="closeVddDoc()" id="vdd-back-btn" style="font-size:9px;padding:2px 8px;margin-left:8px;display:none">Back</button>
         </h2>
@@ -1042,6 +1006,87 @@ canvas{width:100%;display:block}
         <div id="vdd-doc-list"></div>
         <!-- Doc viewer (Confluence-like rendered markdown) -->
         <div id="vdd-doc-viewer" style="display:none"></div>
+      </div>
+    </div>
+
+    <div class="section-head" id="execution-network">
+      <div class="section-head-main">
+        <h2>Execution Network</h2>
+        <p>These are the specialist lanes behind the portal. Each lane keeps a provider runtime, worktree or shared tree, browser lane, and terminal history attached to the same delivery story.</p>
+      </div>
+      <span class="count" id="pane-count">0/9</span>
+    </div>
+    <div class="pane-grid" id="panes"><div class="loading">Loading agents</div></div>
+
+    <div class="operator-shell" id="operations-console">
+      <div class="section-head">
+        <div class="section-head-main">
+          <h2>Operations Console</h2>
+          <p>Queue management, telemetry, browser ports, release readiness, build layouts, and Git sync live here for operators, engineers, QA, and delivery leads.</p>
+        </div>
+      </div>
+
+      <div class="operator-grid">
+        <div class="card">
+          <h2>Work Intake <button class="btn btn-green" onclick="toggleAdd()" style="font-size:9px;padding:2px 8px">+ Add</button></h2>
+          <div class="add-form" id="add-form">
+            <div><label>Project</label><input id="qa-project" placeholder="project-name" style="width:130px"></div>
+            <div><label>Task</label><input id="qa-task" placeholder="Task description" style="width:180px"></div>
+            <div><label>Role</label><select id="qa-role"><option>developer</option><option>frontend</option><option>backend</option><option>qa</option><option>devops</option></select></div>
+            <div><label>Priority</label><select id="qa-priority"><option value="1">P1</option><option value="2">P2</option><option value="3" selected>P3</option></select></div>
+            <button class="btn btn-blue" onclick="submitTask()">Queue</button>
+          </div>
+          <div id="queue-table"></div>
+        </div>
+        <div class="card">
+          <h2>Stage Board</h2>
+          <div class="kanban" id="kanban"></div>
+        </div>
+      </div>
+
+      <div class="operator-grid">
+        <div class="card">
+          <h2>Team Coverage</h2>
+          <div id="roles"></div>
+        </div>
+        <div class="card">
+          <h2>Recent Activity</h2>
+          <div class="log-list" id="logs"></div>
+        </div>
+      </div>
+
+      <div class="operator-grid" id="analytics-section">
+        <div class="card">
+          <h2>Delivery Digest</h2>
+          <div id="digest"></div>
+        </div>
+        <div class="card">
+          <h2>Delivery Snapshot</h2>
+          <div id="overview"></div>
+        </div>
+      </div>
+
+      <div class="operator-grid" id="infra-section">
+        <div class="card">
+          <h2>Browser & Service Ports</h2>
+          <div id="ports"></div>
+        </div>
+        <div class="card">
+          <h2>Release Readiness</h2>
+          <div id="quality-gate"></div>
+        </div>
+      </div>
+
+      <div class="card" id="builds-section">
+        <h2>Workbench Layouts <span class="count" id="build-count">0/5</span>
+          <button class="btn btn-blue" onclick="restyleBuilds()" style="font-size:9px;padding:2px 8px;margin-left:8px">Restyle All</button>
+        </h2>
+        <div class="build-grid" id="builds"></div>
+      </div>
+
+      <div class="card" id="sync-card">
+        <h2>Git & Mirror Status <span id="sync-indicator" style="font-size:9px;padding:2px 7px;border-radius:10px;margin-left:6px"></span></h2>
+        <div id="sync-status" style="font-size:11px;color:var(--dim)">Loading...</div>
       </div>
     </div>
 
