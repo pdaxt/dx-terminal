@@ -1001,7 +1001,7 @@ async function renderExecutionHub(){
         <div class="exec-kpi"><div class="label">Current Gate</div><div class="value">${(blockingFeatures.length?'Blocked':readyFeatures.length?'Ready':'Active')}</div><div class="meta">${blockingFeatures.length||readyFeatures.length||0} highlighted features</div></div>
       </div>
       <div class="exec-phase-strip">
-        ${['planned','discovery','build','test','done'].map(phase=>`<span class="exec-phase-chip">${phase}<strong>${phaseCounts[phase]||phaseCounts[{planned:'planned',discovery:'specifying',build:'building',test:'testing',done:'done'}[phase]]||0}</strong></span>`).join('')}
+        ${['planned','discovery','build','test','done'].map(phase=>`<span class="exec-phase-chip">${phase}<strong>${executionPhaseCount(phaseCounts,phase)}</strong></span>`).join('')}
       </div>
       <div class="exec-list">
         ${readyFeatures.length?readyFeatures.map(feature=>`<div class="exec-row">
@@ -2237,6 +2237,10 @@ function nextVddGate(phase){
   if(normalized==='build') return 'test';
   if(normalized==='test') return 'done';
   return null;
+}
+function executionPhaseCount(phaseCounts,phase){
+  const aliases={planned:['planned'],discovery:['discovery','specifying'],build:['build','building'],test:['test','testing'],done:['done']};
+  return (aliases[phase]||[phase]).reduce((sum,key)=>sum+(phaseCounts&&phaseCounts[key]?phaseCounts[key]:0),0);
 }
 function renderReadinessSummary(feature,options){
   const opts=options||{};
