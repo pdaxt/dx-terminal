@@ -1277,6 +1277,16 @@ pub struct VisionFocusRequest {
     pub source: Option<String>,
 }
 
+/// GET /api/vision/focus — Read the persisted active goal/feature focus for a project.
+pub async fn get_vision_focus(Query(q): Query<VisionQuery>) -> Json<Value> {
+    let path = resolve_project_path(&q);
+    Json(json!({
+        "project": q.project,
+        "path": path,
+        "focus": crate::vision_focus::read_project_focus(&path),
+    }))
+}
+
 /// GET /api/vision/docs?project=NAME — List all research/discovery docs
 pub async fn list_vision_docs(Query(q): Query<VisionQuery>) -> Json<Value> {
     let path = resolve_project_path(&q);
