@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
+use tokio::sync::watch;
+use tokio::time::MissedTickBehavior;
 
 use crate::app::App;
 use crate::config;
@@ -21,6 +23,8 @@ const VISION_CURSOR_SUFFIX: &str = ".json";
 const VISION_RUNTIME_PREFIX: &str = "vision-runtime-";
 const VISION_RUNTIME_SUFFIX: &str = ".json";
 const LOCK_SUFFIX: &str = ".lock";
+const VISION_RUNTIME_HEARTBEAT_MS: u64 = 5_000;
+const VISION_RUNTIME_STALE_MS: u64 = 15_000;
 const VISION_REPLAY_MAX_AGE_MS: u64 = 30_000;
 const VISION_REPLAY_MAX_COUNT: usize = 256;
 
@@ -35,7 +39,12 @@ struct ReplayEnvelope {
 struct RuntimeRegistration {
     runtime_id: String,
     pid: u32,
-    registered_at_ms: u64,
+    last_seen_ms: u64,
+}
+
+pub struct LocalIpcGuard {
+    runtime_id: String,
+    stop_tx: watch::Sender<bool>,
 }
 
 pub fn vision_socket_dir() -> PathBuf {
@@ -106,15 +115,33 @@ fn is_vision_socket_path(path: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
-pub fn start_local_ipc(app: Arc<App>, runtime_id: String) {
-    tokio::spawn(async move {
-        if let Err(err) = run_local_ipc(app, runtime_id).await {
-            tracing::warn!("local IPC listener unavailable: {}", err);
-        }
-    });
+impl Drop for LocalIpcGuard {
+    fn drop(&mut self) {
+        let _ = self.stop_tx.send(true);
+        deregister_runtime(&self.runtime_id);
+    }
 }
 
-async fn run_local_ipc(app: Arc<App>, runtime_id: String) -> anyhow::Result<()> {
+pub fn start_local_ipc(app: Arc<App>, runtime_id: String) -> LocalIpcGuard {
+    let (stop_tx, stop_rx) = watch::channel(false);
+    let guard = LocalIpcGuard {
+        runtime_id: runtime_id.clone(),
+        stop_tx,
+    };
+    tokio::spawn(async move {
+        if let Err(err) = run_local_ipc(app, runtime_id.clone(), stop_rx).await {
+            tracing::warn!("local IPC listener unavailable: {}", err);
+            deregister_runtime(&runtime_id);
+        }
+    });
+    guard
+}
+
+async fn run_local_ipc(
+    app: Arc<App>,
+    runtime_id: String,
+    mut stop_rx: watch::Receiver<bool>,
+) -> anyhow::Result<()> {
     let socket_path = vision_socket_path();
     if let Some(parent) = socket_path.parent() {
         std::fs::create_dir_all(parent).context("create ipc parent dir")?;
@@ -127,19 +154,43 @@ async fn run_local_ipc(app: Arc<App>, runtime_id: String) -> anyhow::Result<()> 
     let listener = UnixListener::bind(&socket_path)
         .with_context(|| format!("bind ipc socket {}", socket_path.display()))?;
     register_runtime(&runtime_id);
+    let heartbeat = tokio::spawn(runtime_heartbeat(runtime_id.clone(), stop_rx.clone()));
     tracing::info!("local IPC listener active at {}", socket_path.display());
     replay_recent_events(app.as_ref(), &runtime_id);
 
     loop {
-        let (stream, _) = listener.accept().await?;
-        let app = Arc::clone(&app);
-        let runtime_id = runtime_id.clone();
-        tokio::spawn(async move {
-            if let Err(err) = handle_connection(stream, app, runtime_id).await {
-                tracing::debug!("ipc connection failed: {}", err);
+        tokio::select! {
+            changed = stop_rx.changed() => {
+                if changed.is_ok() && *stop_rx.borrow() {
+                    break;
+                }
             }
-        });
+            accepted = listener.accept() => {
+                match accepted {
+                    Ok((stream, _)) => {
+                        let app = Arc::clone(&app);
+                        let runtime_id = runtime_id.clone();
+                        tokio::spawn(async move {
+                            if let Err(err) = handle_connection(stream, app, runtime_id).await {
+                                tracing::debug!("ipc connection failed: {}", err);
+                            }
+                        });
+                    }
+                    Err(err) => {
+                        heartbeat.abort();
+                        deregister_runtime(&runtime_id);
+                        let _ = std::fs::remove_file(&socket_path);
+                        return Err(err.into());
+                    }
+                }
+            }
+        }
     }
+
+    heartbeat.abort();
+    deregister_runtime(&runtime_id);
+    let _ = std::fs::remove_file(&socket_path);
+    Ok(())
 }
 
 async fn handle_connection(
@@ -303,6 +354,24 @@ fn atomic_write(path: &Path, content: &str) -> io::Result<()> {
     std::fs::rename(&tmp, path)
 }
 
+async fn runtime_heartbeat(runtime_id: String, mut stop_rx: watch::Receiver<bool>) {
+    let mut ticker = tokio::time::interval(std::time::Duration::from_millis(
+        VISION_RUNTIME_HEARTBEAT_MS,
+    ));
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+    loop {
+        tokio::select! {
+            changed = stop_rx.changed() => {
+                if changed.is_ok() && *stop_rx.borrow() {
+                    break;
+                }
+            }
+            _ = ticker.tick() => register_runtime(&runtime_id),
+        }
+    }
+}
+
 fn prune_replay_entries(entries: &mut Vec<ReplayEnvelope>, now_ms: u64) {
     let active_runtime_ids = active_runtime_ids();
     if active_runtime_ids.is_empty() {
@@ -328,7 +397,7 @@ fn register_runtime(runtime_id: &str) {
     let registration = RuntimeRegistration {
         runtime_id: runtime_id.to_string(),
         pid: std::process::id(),
-        registered_at_ms: now_ms(),
+        last_seen_ms: now_ms(),
     };
     let content = match serde_json::to_string(&registration) {
         Ok(content) => content,
@@ -337,8 +406,13 @@ fn register_runtime(runtime_id: &str) {
     let _ = atomic_write(&path, &content);
 }
 
+fn deregister_runtime(runtime_id: &str) {
+    let _ = std::fs::remove_file(runtime_registration_path(runtime_id));
+}
+
 fn active_runtime_ids() -> Vec<String> {
     let mut runtime_ids = Vec::new();
+    let now = now_ms();
     if let Ok(entries) = std::fs::read_dir(vision_socket_dir()) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -349,7 +423,10 @@ fn active_runtime_ids() -> Vec<String> {
                 .ok()
                 .and_then(|content| serde_json::from_str::<RuntimeRegistration>(&content).ok());
             match registration {
-                Some(registration) if pid_is_alive(registration.pid) => {
+                Some(registration)
+                    if pid_is_alive(registration.pid)
+                        && now.saturating_sub(registration.last_seen_ms) <= VISION_RUNTIME_STALE_MS =>
+                {
                     runtime_ids.push(registration.runtime_id);
                 }
                 _ => {
@@ -579,12 +656,12 @@ mod tests {
             let runtime_a = RuntimeRegistration {
                 runtime_id: "web-a".into(),
                 pid: std::process::id(),
-                registered_at_ms: now_ms(),
+                last_seen_ms: now_ms(),
             };
             let runtime_b = RuntimeRegistration {
                 runtime_id: "web-b".into(),
                 pid: std::process::id(),
-                registered_at_ms: now_ms(),
+                last_seen_ms: now_ms(),
             };
             atomic_write(
                 &runtime_registration_path(&runtime_a.runtime_id),
@@ -621,8 +698,8 @@ mod tests {
         with_temp_dx_root(|| {
             let stale = RuntimeRegistration {
                 runtime_id: "web-stale".into(),
-                pid: 999_999_999,
-                registered_at_ms: now_ms(),
+                pid: std::process::id(),
+                last_seen_ms: now_ms().saturating_sub(VISION_RUNTIME_STALE_MS + 1),
             };
             atomic_write(
                 &runtime_registration_path(&stale.runtime_id),
@@ -651,6 +728,16 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(remaining, vec![2]);
             assert!(!runtime_registration_path("web-stale").exists());
+        });
+    }
+
+    #[test]
+    fn deregister_runtime_removes_registration_file() {
+        with_temp_dx_root(|| {
+            register_runtime("web-demo");
+            assert!(runtime_registration_path("web-demo").exists());
+            deregister_runtime("web-demo");
+            assert!(!runtime_registration_path("web-demo").exists());
         });
     }
 }
