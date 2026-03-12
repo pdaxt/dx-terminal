@@ -1360,21 +1360,79 @@ function renderAutomationItems(items,emptyText){
   </div>`).join('')}</div>`;
 }
 
+function stageMeta(phase){
+  const key=normalizeVddPhase(phase);
+  const map={
+    planned:{label:'Planned',copy:'The outcome is known but needs clearer structure before execution.',tone:'planned'},
+    discovery:{label:'Discovery',copy:'Questions, references, acceptance, and design direction are still being resolved.',tone:'discovery'},
+    build:{label:'Build',copy:'Implementation is active in one or more specialist lanes.',tone:'build'},
+    test:{label:'Test',copy:'Verification, QA evidence, and acceptance confirmation are in progress.',tone:'test'},
+    done:{label:'Done',copy:'Implementation, evidence, and documentation are aligned.',tone:'done'}
+  };
+  return map[key]||map.planned;
+}
+
+function primaryDeliveryStage(phaseCounts,clientReviewFeatures){
+  if((clientReviewFeatures||[]).length)return 'discovery';
+  const order=['test','build','discovery','planned','done'];
+  return order.find(phase=>executionPhaseCount(phaseCounts,phase)>0)||'planned';
+}
+
+function deliveryConfidence(docHealth,blockingFeatures,missingFeatureDocs,missingAcceptance){
+  const issueCount=(blockingFeatures||[]).length+(missingFeatureDocs||[]).length+(missingAcceptance||[]).length;
+  if(docHealth&&docHealth.status==='blocked')return {label:'Low',copy:'Documentation or sync drift is blocking trust in delivery.'};
+  if(issueCount>4)return {label:'Fragile',copy:'Several blockers or documentation gaps still need attention.'};
+  if(issueCount>0)return {label:'Watch',copy:'The program is moving, but a few gaps still need closure.'};
+  if(docHealth&&docHealth.status==='synced')return {label:'Strong',copy:'Docs, Git, dashboard state, and delivery evidence are aligned.'};
+  return {label:'Moderate',copy:'The system is usable, but trust signals are not fully clean yet.'};
+}
+
+function renderPriorityRows(items,mode){
+  const list=Array.isArray(items)?items:[];
+  if(!list.length){
+    const empty=mode==='approval'
+      ? 'No client approval is waiting right now.'
+      : mode==='ready'
+      ? 'Nothing is ready to advance yet.'
+      : 'No blockers are currently recorded.';
+    return `<div class="empty-note">${empty}</div>`;
+  }
+  return list.map(feature=>{
+    const gate=(feature.next_gate||'next').toString();
+    const tag=mode==='approval'
+      ? `<span class="doc-pill shared">approval</span>`
+      : `<span class="doc-pill">${escHtml(gate)} ${mode==='blocked'?'blocked':'ready'}</span>`;
+    const blockerCopy=feature.blockers&&feature.blockers.length
+      ? ` · ${feature.blockers.slice(0,3).map(b=>escHtml(String(b))).join(' · ')}`
+      : '';
+    return `<div class="exec-row">
+      <div class="exec-row-top">
+        <span class="exec-row-title">${escHtml(feature.feature_id||'')}</span>
+        <span class="exec-row-tags">${vddPhaseBadge(feature.phase||'planned')}${tag}</span>
+      </div>
+      <div class="exec-row-meta">${escHtml((feature.title||'').toString())}${blockerCopy}</div>
+    </div>`;
+  }).join('');
+}
+
 async function renderExecutionHub(){
   const section=document.getElementById('execution-hub');
   const summaryEl=document.getElementById('project-brief');
   const runtimeEl=document.getElementById('runtime-brief');
   const docsEl=document.getElementById('documentation-brief');
   const automationEl=document.getElementById('automation-brief');
+  const introEl=document.getElementById('intro-spotlight');
   const project=activeProjectForHub();
   if(!project){
     section.style.display='none';
+    if(introEl)introEl.innerHTML='<div class="empty-note">Open a project to see the current delivery spotlight.</div>';
     return;
   }
 
   const brief=await fetchJSON(`/api/project/brief?project=${encodeURIComponent(project)}`);
   if(!brief||brief.error){
     section.style.display='none';
+    if(introEl)introEl.innerHTML='<div class="empty-note">Project spotlight unavailable.</div>';
     return;
   }
 
@@ -1400,6 +1458,7 @@ async function renderExecutionHub(){
   const phaseCounts=delivery.phase_counts||{};
   const git=brief.git||null;
   const gitState=!git?'No repo':git.dirty_files===0&&git.ahead===0?'Clean':`${git.dirty_files||0} dirty · ↑${git.ahead||0} ↓${git.behind||0}`;
+  const clientReviewFeatures=(delivery.client_review_features||[]).slice(0,3);
   const readyFeatures=(delivery.ready_features||[]).slice(0,3);
   const blockingFeatures=(delivery.blocking_features||[]).slice(0,3);
   const runtimes=brief.runtimes||[];
@@ -1411,6 +1470,37 @@ async function renderExecutionHub(){
   const selectedCacheKey=selectedMcp?automationCacheKey(project,selectedMcp):'';
   const selectedToolInfo=selectedCacheKey?automationToolCache[selectedCacheKey]:null;
   const selectedToolLoading=selectedCacheKey?automationToolLoading[selectedCacheKey]:false;
+  const activeStage=primaryDeliveryStage(phaseCounts,clientReviewFeatures);
+  const activeStageMeta=stageMeta(activeStage);
+  const confidence=deliveryConfidence(docHealth,blockingFeatures,missingFeatureDocs,missingAcceptance);
+  const focusLabel=brief.focus&&brief.focus.feature_id?brief.focus.feature_id:(brief.focus&&brief.focus.goal_id?brief.focus.goal_id:'No active feature');
+  const nextAction=clientReviewFeatures.length
+    ? `${clientReviewFeatures[0].feature_id} needs a design approval`
+    : readyFeatures.length
+    ? `${readyFeatures[0].feature_id} can move into ${readyFeatures[0].next_gate}`
+    : blockingFeatures.length
+    ? `${blockingFeatures[0].feature_id} is blocked at ${blockingFeatures[0].next_gate}`
+    : 'No immediate delivery action is recorded.';
+
+  if(introEl){
+    introEl.innerHTML=`<div class="spotlight-grid">
+      <div class="spotlight-card">
+        <div class="label">Active Focus</div>
+        <div class="value">${escHtml(focusLabel)}</div>
+        <div class="meta">${escHtml(nextAction)}</div>
+      </div>
+      <div class="spotlight-card">
+        <div class="label">Current Stage</div>
+        <div class="value">${escHtml(activeStageMeta.label)}</div>
+        <div class="meta">${escHtml(activeStageMeta.copy)}</div>
+      </div>
+      <div class="spotlight-card">
+        <div class="label">Specialist Network</div>
+        <div class="value">${brief.runtime_count||0} lane${(brief.runtime_count||0)===1?'':'s'}</div>
+        <div class="meta">${brief.worktree_count||0} isolated worktree${(brief.worktree_count||0)===1?'':'s'} · browser contract ${escHtml(String(runtimeContract.browser_port_base||46000))}+pane</div>
+      </div>
+    </div>`;
+  }
 
   summaryEl.innerHTML=`
     <div class="exec-hero">
@@ -1421,30 +1511,49 @@ async function renderExecutionHub(){
         </div>
         <a class="exec-link" href="${escHtml(brief.wiki_url||'/wiki')}" target="_blank">Open Handbook</a>
       </div>
+      <div class="exec-focus-banner">
+        <div class="label">Current Delivery Story</div>
+        <div class="value">${escHtml(activeStageMeta.label)} · ${escHtml(focusLabel)}</div>
+        <div class="meta">${escHtml(nextAction)}</div>
+      </div>
       ${renderFocusStrip(project)}
       <div class="exec-kpis">
+        <div class="exec-kpi"><div class="label">Approvals Waiting</div><div class="value">${clientReviewFeatures.length}</div><div class="meta">${clientReviewFeatures.length?'client decisions are blocking progress':'no client decision is waiting'}</div></div>
         <div class="exec-kpi"><div class="label">Work Lanes</div><div class="value">${brief.runtime_count||0}</div><div class="meta">${brief.worktree_count||0} isolated worktrees</div></div>
         <div class="exec-kpi"><div class="label">Handbook Docs</div><div class="value">${docs.vision_doc_count||0}</div><div class="meta">${docs.guidance_doc_count||0} guidance docs</div></div>
-        <div class="exec-kpi"><div class="label">Automation Assets</div><div class="value">${automationCounts.external_mcps||0}</div><div class="meta">${automationCounts.project_skills||0} skills · ${automationCounts.project_commands||0} commands</div></div>
+        <div class="exec-kpi"><div class="label">Release Confidence</div><div class="value">${escHtml(confidence.label)}</div><div class="meta">${escHtml(confidence.copy)}</div></div>
         <div class="exec-kpi"><div class="label">Git State</div><div class="value">${git&&git.branch?escHtml(git.branch):'--'}</div><div class="meta">${escHtml(gitState)}</div></div>
-        <div class="exec-kpi"><div class="label">Sync Health</div><div class="value">${docHealth.status==='synced'?'Synced':docHealth.status==='blocked'?'Blocked':'Attention'}</div><div class="meta">${dirtyDocs.length||missingFeatureDocs.length||missingAcceptance.length||0} active handbook issues</div></div>
       </div>
-      <div class="exec-phase-strip">
-        ${['planned','discovery','build','test','done'].map(phase=>`<span class="exec-phase-chip">${phase}<strong>${executionPhaseCount(phaseCounts,phase)}</strong></span>`).join('')}
+      <div class="journey-map">
+        ${['planned','discovery','build','test','done'].map(phase=>{
+          const meta=stageMeta(phase);
+          const count=executionPhaseCount(phaseCounts,phase);
+          return `<div class="journey-stage ${activeStage===phase?'active':''}">
+            <div class="label">${escHtml(meta.label)}</div>
+            <div class="value">${count}</div>
+            <div class="meta">${escHtml(meta.copy)}</div>
+          </div>`;
+        }).join('')}
       </div>
-      <div class="exec-list">
-        ${readyFeatures.length?readyFeatures.map(feature=>`<div class="exec-row">
-          <div class="exec-row-top"><span class="exec-row-title">${escHtml(feature.feature_id||'')}</span><span class="exec-row-tags">${vddPhaseBadge(feature.phase||'planned')}<span class="doc-pill">${escHtml((feature.next_gate||'next').toString())} ready</span></span></div>
-          <div class="exec-row-meta">${escHtml((feature.title||'').toString())}</div>
-        </div>`).join(''):'<div class="empty-note">Nothing is ready to advance yet.</div>'}
-        ${blockingFeatures.length?blockingFeatures.map(feature=>`<div class="exec-row">
-          <div class="exec-row-top"><span class="exec-row-title">${escHtml(feature.feature_id||'')}</span><span class="exec-row-tags">${vddPhaseBadge(feature.phase||'planned')}<span class="doc-pill">${escHtml((feature.next_gate||'next').toString())} blocked</span></span></div>
-          <div class="exec-row-meta">${escHtml((feature.title||'').toString())}${feature.blockers&&feature.blockers.length?` · ${feature.blockers.slice(0,3).map(b=>escHtml(String(b))).join(' · ')}`:''}</div>
-        </div>`).join(''):''}
+      <div class="exec-rail-grid">
+        <div class="exec-rail">
+          <div class="exec-rail-title">Client decisions waiting</div>
+          <div class="exec-rail-copy">These items still need approval or a chosen direction before build can be trusted to continue.</div>
+          <div class="exec-list-title">Approval queue</div>
+          <div class="exec-list">${renderPriorityRows(clientReviewFeatures,'approval')}</div>
+        </div>
+        <div class="exec-rail">
+          <div class="exec-rail-title">Ready moves and blockers</div>
+          <div class="exec-rail-copy">This is the short list for delivery leads: what can move now, and what is stopping the rest.</div>
+          <div class="exec-list-title">Ready to advance</div>
+          <div class="exec-list">${renderPriorityRows(readyFeatures,'ready')}</div>
+          <div class="exec-list-title">Currently blocked</div>
+          <div class="exec-list">${renderPriorityRows(blockingFeatures,'blocked')}</div>
+        </div>
       </div>
     </div>`;
 
-  runtimeEl.innerHTML=runtimes.length?runtimes.slice(0,8).map(runtime=>{
+  runtimeEl.innerHTML=`<div class="portal-note">Clients only need the story above. This network is the execution backplane for the specialists actually doing the work.</div>${runtimes.length?runtimes.slice(0,8).map(runtime=>{
     const paneLabel=runtime.pane?`Pane ${runtime.pane}`:'Live';
     const branch=runtime.branch_name||'';
     const workspace=runtime.workspace_path||'';
@@ -1462,9 +1571,10 @@ async function renderExecutionHub(){
       <div class="exec-row-meta">${escHtml((runtime.task||runtime.window_name||runtime.cwd||'').toString())}</div>
       <div class="exec-row-meta">${escHtml(meta)}</div>
     </div>`;
-  }).join(''):'<div class="empty-note">No people or agent runtimes are active in this project right now.</div>';
+  }).join(''):'<div class="empty-note">No people or agent runtimes are active in this project right now.</div>'}`;
 
   docsEl.innerHTML=`
+    <div class="portal-note">This section is the trust contract for the whole program. If docs, Git, approvals, and dashboard state drift apart, the portal becomes unreliable for both clients and delivery teams.</div>
     <div class="doc-health-banner">
       <div class="doc-health-top">
         <div>
@@ -1483,7 +1593,7 @@ async function renderExecutionHub(){
           <div class="meta">${visionDocs.length} research/discovery docs${missingFeatureDocs.length?` · ${missingFeatureDocs.length} feature gaps`:''}</div>
         </div>
         <div class="doc-mini-card">
-          <div class="label">Remote Mirror</div>
+          <div class="label">Hosted Mirror</div>
           <div class="meta">${escHtml((syncContract.mode||'snapshot_plus_events').toString())} via project brief + live events</div>
         </div>
       </div>
@@ -1554,6 +1664,7 @@ async function renderExecutionHub(){
 
   automationEl.innerHTML=`
     <div class="automation-shell">
+      <div class="portal-note">Skills, command packs, and external MCP servers are the specialist toolbox behind the portal. The contract is provider-neutral so Claude, Codex, Gemini, and future runtimes can share the same inventory.</div>
       <div class="automation-block">
         <div class="automation-head">
           <div>
