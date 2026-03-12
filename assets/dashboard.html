@@ -2433,6 +2433,94 @@ function renderFocusStrip(project){
     ${focus.feature_id?focusButton(project,focus.feature_id,'Focus'):'<span class="vdd-focus-chip">Goal scope</span>'}
   </div>`;
 }
+function designStatusPill(status){
+  const normalized=(status||'draft').toString().toLowerCase();
+  return `<span class="design-status ${normalized}">${escHtml(normalized)}</span>`;
+}
+function renderDesignOptions(project,featureId,options,readiness){
+  const items=Array.isArray(options)?options:[];
+  const discovery=readiness&&readiness.discovery?readiness.discovery:{};
+  const designRequired=!!discovery.design_required;
+  const optionCount=Number(discovery.design_options||items.length||0);
+  const approvedCount=Number(discovery.design_approved||0);
+  let html=`<div class="design-strip">
+    <div class="design-strip-head">
+      <div>
+        <div class="design-strip-title">Client Design Approval</div>
+        <div class="design-strip-copy">${designRequired?'This feature needs a client-approved direction before build should start.':'Use quick mockup options when you need a client to react early before build starts.'}</div>
+      </div>
+      <div class="design-strip-actions">
+        <button class="design-action" onclick="seedVisionMockups('${escHtml(project)}','${escHtml(featureId)}')">Generate options</button>
+      </div>
+    </div>`;
+  if(!items.length){
+    html+=`<div class="no-data" style="padding:10px 0 0;text-align:left">No design options yet. Generate 3 quick directions and review them with the client in the portal.</div>`;
+  }else{
+    html+=`<div class="design-option-grid">`;
+    html+=items.map(option=>{
+      const preview=option.preview_url?`<a class="design-link" href="${escHtml(option.preview_url)}" target="_blank" rel="noopener">Open Preview</a>`:'';
+      const approve=option.status==='approved'
+        ? `<span class="design-link" style="border-color:rgba(68,217,140,.2);background:rgba(68,217,140,.08);color:var(--green)">Approved</span>`
+        : `<button class="design-action" onclick="reviewDesignOption('${escHtml(project)}','${escHtml(featureId)}','${escHtml(option.id)}','approved')">Approve</button>`;
+      const reject=option.status==='rejected'
+        ? ''
+        : `<button class="design-action" style="border-color:rgba(255,100,100,.18);background:rgba(255,100,100,.08);color:#ff9f9f" onclick="reviewDesignOption('${escHtml(project)}','${escHtml(featureId)}','${escHtml(option.id)}','rejected')">Reject</button>`;
+      const approvedMeta=(option.approved_by||option.approved_at)?`<div class="design-note">${escHtml([option.approved_by||'',option.approved_at||''].filter(Boolean).join(' · '))}</div>`:'';
+      const notes=Array.isArray(option.review_notes)&&option.review_notes.length?`<div class="design-note">${escHtml(option.review_notes.slice(-1)[0])}</div>`:'';
+      return `<article class="design-option">
+        <div class="design-option-top">
+          <div>
+            <div class="design-option-title">${escHtml(option.title||option.id||'Design option')}</div>
+            <div class="design-option-meta">${escHtml(option.id||'')}</div>
+          </div>
+          ${designStatusPill(option.status)}
+        </div>
+        <div class="design-option-summary">${escHtml(option.summary||'Quick client-facing concept preview')}</div>
+        <div class="design-option-links">${preview}${approve}${reject}</div>
+        ${approvedMeta}
+        ${notes}
+      </article>`;
+    }).join('');
+    html+=`</div>`;
+  }
+  html+=`<div class="design-note" style="margin-top:10px">${optionCount} option(s) recorded · ${approvedCount} approved</div></div>`;
+  return html;
+}
+async function seedVisionMockups(project,featureId){
+  const reference=window.prompt('Reference or style hint for these quick concepts:', 'website like Shopify');
+  if(reference===null)return;
+  const data=await fetchJSON('/api/vision/design/mockups/seed',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({project,feature_id:featureId,reference})
+  });
+  if(!data||data.error){
+    console.error('seed mockups failed',data);
+    return;
+  }
+  if(selectedVisionProject===project||currentSpace===project||currentSpace==='all')renderVision();
+  renderVddDocs();
+  if(activePaneNum)renderPaneContext(activePaneNum);
+  await openVddDoc(project,featureId);
+}
+async function reviewDesignOption(project,featureId,optionId,status){
+  const note=status==='approved'
+    ? 'Approved in portal for build handoff.'
+    : 'Rejected in portal. Another direction is needed.';
+  const data=await fetchJSON('/api/vision/design/review',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({project,feature_id:featureId,option_id:optionId,status,note,actor:'portal-client'})
+  });
+  if(!data||data.error){
+    console.error('design review failed',data);
+    return;
+  }
+  if(selectedVisionProject===project||currentSpace===project||currentSpace==='all')renderVision();
+  renderVddDocs();
+  if(activePaneNum)renderPaneContext(activePaneNum);
+  await openVddDoc(project,featureId);
+}
 async function renderVddDocs(){
   const ws=currentSpace||'all';
   const section=document.getElementById('vdd-docs-section');
@@ -2452,7 +2540,7 @@ async function renderVddDocs(){
   // If viewer is open, don't re-render list
   if(viewerEl.style.display!=='none') return;
   listEl.innerHTML=docs.docs.map(d=>{
-    const badgeClass=d.type==='research'?'research':'discovery';
+    const badgeClass=d.type==='research'?'research':(d.type==='design'?'design':'discovery');
     const focused=isFocusedFeature(project,d.feature_id);
     return `<div class="vdd-doc-item${focused?' focused':''}" onclick="openVddDoc('${escHtml(project)}','${escHtml(d.feature_id)}')">
       <span class="vdd-doc-badge ${badgeClass}">${d.type}</span>
@@ -2507,6 +2595,7 @@ async function openVddDoc(project,featureId){
     readiness: doc.readiness||{},
     acceptance_items: doc.acceptance_items||[],
   },{indent:0});
+  html+=renderDesignOptions(project,featureId,doc.design_options||[],doc.readiness||{});
   html+=renderAcceptanceList(doc.acceptance_items||[],{indent:0});
   // Research doc
   if(doc.research&&doc.research.html){
@@ -2522,8 +2611,14 @@ async function openVddDoc(project,featureId){
       ${doc.discovery.html}
     </div>`;
   }
-  if(!doc.research&&!doc.discovery){
-    html+='<div class="no-data">No research or discovery docs found for this feature</div>';
+  if(doc.design&&doc.design.html){
+    html+=`<div style="border-left:3px solid #7fe7ff;padding-left:12px;margin-bottom:16px">
+      <div style="font-size:9px;font-weight:700;color:#7fe7ff;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Design Brief</div>
+      ${doc.design.html}
+    </div>`;
+  }
+  if(!doc.research&&!doc.discovery&&!doc.design){
+    html+='<div class="no-data">No research, discovery, or design docs found for this feature</div>';
   }
   html+='</div>';
   viewerEl.innerHTML=html;
