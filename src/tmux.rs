@@ -1,7 +1,7 @@
-//! Tmux integration: spawn Claude agents in real tmux panes that users can see.
+//! Tmux integration: spawn AI agents in real tmux panes that users can see.
 //!
 //! This replaces the internal PTY approach with visible tmux windows.
-//! DX Terminal creates windows, runs claude there, monitors via capture-pane.
+//! DX Terminal creates windows, runs provider CLIs there, monitors via capture-pane.
 
 use anyhow::{Context, Result};
 use std::process::Command;
@@ -304,7 +304,60 @@ pub struct LivePane {
     pub session_id: Option<String>,
 }
 
-/// Discover all tmux panes running Claude across all sessions.
+/// Infer the provider behind a live pane from its current command, window name,
+/// and optional session metadata.
+pub fn infer_provider(command: &str, window_name: &str, jsonl_path: Option<&str>) -> &'static str {
+    let command = command.to_lowercase();
+    let window_name = window_name.to_lowercase();
+    let jsonl_path = jsonl_path.unwrap_or("").to_lowercase();
+
+    if command == "claude"
+        || command == "node"
+        || window_name.contains("claude")
+        || jsonl_path.contains("/.claude/")
+    {
+        "claude"
+    } else if command.contains("codex")
+        || command.contains("openai")
+        || window_name.contains("codex")
+    {
+        "codex"
+    } else if command.contains("gemini")
+        || command.contains("google")
+        || window_name.contains("gemini")
+    {
+        "gemini"
+    } else if command.contains("opencode")
+        || command.contains("open-code")
+        || window_name.contains("opencode")
+    {
+        "opencode"
+    } else {
+        "unknown"
+    }
+}
+
+pub fn provider_label(provider: &str) -> &'static str {
+    match provider {
+        "claude" => "Claude Code",
+        "codex" => "Codex CLI",
+        "gemini" => "Gemini CLI",
+        "opencode" => "OpenCode",
+        _ => "Unknown",
+    }
+}
+
+pub fn provider_short(provider: &str) -> &'static str {
+    match provider {
+        "claude" => "Claude",
+        "codex" => "Codex",
+        "gemini" => "Gemini",
+        "opencode" => "Open",
+        _ => "Unknown",
+    }
+}
+
+/// Discover all tmux panes running supported agent CLIs across all sessions.
 /// Returns them ordered by session, window, pane.
 /// Also resolves each pane's working directory and JSONL session file.
 pub fn discover_live_panes() -> Vec<LivePane> {
@@ -328,7 +381,7 @@ pub fn discover_live_panes() -> Vec<LivePane> {
                     let command = parts[4].to_string();
                     let cwd = parts[5].to_string();
                     let pid: u32 = parts[6].parse().unwrap_or(0);
-                    if command == "claude" || command == "node" {
+                    if infer_provider(&command, &window_name, None) != "unknown" {
                         Some(LivePane {
                             target: format!("{}:{}.{}", session, window, pane_idx),
                             session,
@@ -516,6 +569,21 @@ pub fn read_jsonl_cwd(path: &str) -> Option<String> {
         .max_by_key(|(_, c)| *c)
         .map(|(name, _)| format!("{}/{}", projects_parent, name))
         .or(Some(header_cwd))
+}
+
+#[cfg(test)]
+mod provider_tests {
+    use super::*;
+
+    #[test]
+    fn infers_supported_providers() {
+        assert_eq!(infer_provider("claude", "dx-agent", None), "claude");
+        assert_eq!(infer_provider("node", "Claude Code", None), "claude");
+        assert_eq!(infer_provider("codex", "dx-agent", None), "codex");
+        assert_eq!(infer_provider("gemini", "Google CLI", None), "gemini");
+        assert_eq!(infer_provider("opencode", "OpenCode", None), "opencode");
+        assert_eq!(infer_provider("zsh", "shell", None), "unknown");
+    }
 }
 
 /// Capture output from a tmux pane — extended version with more lines for live view.
