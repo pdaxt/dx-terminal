@@ -1576,6 +1576,12 @@ pub async fn get_project_brief(
             "blocking_features": blocking_features,
             "ready_features": ready_features,
         },
+        "runtime_contract": {
+            "browser_port_base": crate::config::browser_port_base(),
+            "browser_port_formula": "browser_port_base + pane",
+            "browser_profile_root_template": "~/.playwright-profiles/pane-N",
+            "browser_artifacts_root_template": "~/Projects/test-artifacts/sessions/pane-N",
+        },
         "runtimes": runtimes,
         "runtime_count": runtime_count,
         "worktree_count": worktree_count,

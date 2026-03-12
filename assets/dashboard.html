@@ -1113,6 +1113,7 @@ async function renderExecutionHub(){
   const guidanceDocs=docs.guidance_docs||[];
   const visionDocs=docs.vision_docs||[];
   const delivery=brief.delivery||{};
+  const runtimeContract=brief.runtime_contract||{};
   const phaseCounts=delivery.phase_counts||{};
   const git=brief.git||null;
   const gitState=!git?'No repo':git.dirty_files===0&&git.ahead===0?'Clean':`${git.dirty_files||0} dirty · ↑${git.ahead||0} ↓${git.behind||0}`;
@@ -1265,7 +1266,7 @@ async function renderExecutionHub(){
         ${missingFeatureDocs.map(item=>`<div class="exec-row-meta">${escHtml((item.feature_id||'').toString())} needs discovery docs before ${escHtml((item.phase||'delivery').toString())} is trustworthy.</div>`).join('')}
         ${missingAcceptance.map(item=>`<div class="exec-row-meta">${escHtml((item.feature_id||'').toString())} is in ${escHtml((item.phase||'build').toString())} without acceptance coverage.</div>`).join('')}
       </div>`:''}
-      <div class="sync-note">Remote website sync should mirror <code>${escHtml((syncContract.snapshot||'').toString())}</code> and the live event stream (${(syncContract.events||[]).slice(0,4).map(e=>escHtml(String(e))).join(', ')}${(syncContract.events||[]).length>4?', …':''}). Pane browser automation also follows a stable contract: pane N owns browser port ${escHtml(String(46000))}+N, so local runtimes and hosted views do not have to negotiate ad-hoc ports.</div>
+      <div class="sync-note">Remote website sync should mirror <code>${escHtml((syncContract.snapshot||'').toString())}</code> and the live event stream (${(syncContract.events||[]).slice(0,4).map(e=>escHtml(String(e))).join(', ')}${(syncContract.events||[]).length>4?', …':''}). Pane browser automation also follows a stable contract: pane N owns browser port ${escHtml(String(runtimeContract.browser_port_base||46000))}+N, so local runtimes and hosted views do not have to negotiate ad-hoc ports.</div>
     </div>`;
 
   automationEl.innerHTML=`
