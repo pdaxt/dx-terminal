@@ -1401,6 +1401,16 @@ function paneLastActivity(pane){
   return '';
 }
 function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+function paneBrowserPortForRuntime(runtime,statusPane){
+  if(runtime&&runtime.browser_port)return runtime.browser_port;
+  if(statusPane&&statusPane.browser_port)return statusPane.browser_port;
+  return null;
+}
+function paneBrowserProfileLabel(profileRoot){
+  if(!profileRoot)return '--';
+  const parts=String(profileRoot).split('/');
+  return parts[parts.length-1]||profileRoot;
+}
 
 // === Right Panel: Terminal ===
 function openPanel(paneNum){
