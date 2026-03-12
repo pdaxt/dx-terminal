@@ -19,10 +19,12 @@ impl App {
         let descriptors_dir = config::dx_root().join("mcps");
         let screen_mgr = ScreenManager::new(config::dx_root());
         screen_mgr.init_default(&config::session_name());
+        let mut gateway = MCPRegistry::new(descriptors_dir);
+        crate::external_mcp::sync_gateway(&mut gateway);
         Self {
             state: Arc::new(StateManager::new()),
             pty: Arc::new(Mutex::new(PtyManager::new())),
-            gateway: Arc::new(tokio::sync::Mutex::new(MCPRegistry::new(descriptors_dir))),
+            gateway: Arc::new(tokio::sync::Mutex::new(gateway)),
             screens: Arc::new(RwLock::new(screen_mgr)),
             sync_manager: Arc::new(RwLock::new(None)),
         }

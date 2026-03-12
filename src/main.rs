@@ -9,6 +9,7 @@ mod config;
 mod dashboard;
 mod design_tokens;
 mod engine;
+mod external_mcp;
 mod factory;
 mod ipc;
 mod knowledge;
@@ -36,6 +37,7 @@ mod web;
 mod workspace;
 
 use clap::{Parser, Subcommand};
+use serde_json::{json, Value};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
@@ -70,6 +72,37 @@ enum Commands {
         #[arg(long)]
         port: Option<u16>,
     },
+    /// Use external MCP servers configured outside dx through the gateway bridge
+    Gateway {
+        #[command(subcommand)]
+        command: GatewayCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum GatewayCommands {
+    /// List all registered gateway MCPs
+    List {
+        #[arg(long)]
+        running_only: bool,
+    },
+    /// Discover MCPs by capability keyword
+    Discover {
+        capability: String,
+        #[arg(long)]
+        auto_start: bool,
+    },
+    /// Inspect the tools exposed by one gateway MCP
+    Tools {
+        mcp: String,
+    },
+    /// Call a tool on a gateway MCP
+    Call {
+        mcp: String,
+        tool: String,
+        #[arg(long)]
+        args: Option<String>,
+    },
 }
 
 fn runtime_identity(cli: &Cli, default_web_port: u16) -> String {
@@ -97,6 +130,16 @@ fn runtime_identity(cli: &Cli, default_web_port: u16) -> String {
         Some(Commands::Web { port }) => {
             format!("web-{}-{:x}", port.unwrap_or(default_web_port), cwd_hash)
         }
+        Some(Commands::Gateway { command }) => match command {
+            GatewayCommands::List { .. } => format!("gateway-list-{:x}", cwd_hash),
+            GatewayCommands::Discover { capability, .. } => {
+                format!("gateway-discover-{}-{:x}", capability, cwd_hash)
+            }
+            GatewayCommands::Tools { mcp } => format!("gateway-tools-{}-{:x}", mcp, cwd_hash),
+            GatewayCommands::Call { mcp, tool, .. } => {
+                format!("gateway-call-{}-{}-{:x}", mcp, tool, cwd_hash)
+            }
+        },
         None => format!("default-{}-{:x}", default_web_port, cwd_hash),
     }
 }
@@ -168,8 +211,63 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("Web dashboard at http://localhost:{}", port);
             web::run_web_server(application, port).await?;
         }
+        Some(Commands::Gateway { command }) => {
+            run_gateway_cli(application, command).await?;
+        }
     }
 
+    Ok(())
+}
+
+async fn run_gateway_cli(app: Arc<app::App>, command: GatewayCommands) -> anyhow::Result<()> {
+    let output = match command {
+        GatewayCommands::List { running_only } => {
+            mcp::tools::gateway_tools::gateway_list(&app, mcp::types::GatewayListRequest {
+                running_only: Some(running_only),
+            })
+            .await
+        }
+        GatewayCommands::Discover {
+            capability,
+            auto_start,
+        } => mcp::tools::gateway_tools::gateway_discover(
+            &app,
+            mcp::types::GatewayDiscoverRequest {
+                capability,
+                auto_start: Some(auto_start),
+            },
+        )
+        .await,
+        GatewayCommands::Tools { mcp } => mcp::tools::gateway_tools::gateway_tools(
+            &app,
+            mcp::types::GatewayToolsRequest {
+                mcp,
+                auto_start: Some(true),
+            },
+        )
+        .await,
+        GatewayCommands::Call { mcp, tool, args } => {
+            let parsed_args = match args {
+                Some(raw) => Some(
+                    serde_json::from_str::<Value>(&raw)
+                        .map_err(|e| anyhow::anyhow!("Invalid --args JSON: {}", e))?,
+                ),
+                None => None,
+            };
+            mcp::tools::gateway_tools::gateway_call(
+                &app,
+                mcp::types::GatewayCallRequest {
+                    mcp,
+                    tool,
+                    arguments: parsed_args,
+                },
+            )
+            .await
+        }
+    };
+
+    let value = serde_json::from_str::<Value>(&output).unwrap_or_else(|_| json!({ "raw": output }));
+    println!("{}", serde_json::to_string_pretty(&value)?);
     Ok(())
 }
 
