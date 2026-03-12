@@ -13,7 +13,7 @@ Single binary. No login. No telemetry. Open source.
 
 <img src="demo/demo-screenshot.png" alt="DX Terminal showing 16 AI agents with real-time dashboard, task queue, vision tracking, and sync status" width="800">
 
-[Quick Start](#install) · [Features](#features) · [Web Dashboard](#web-dashboard) · [MCP Server](#mcp-server) · [Architecture](#architecture) · [Contributing](#contributing)
+[Quick Start](#install) · [Operating Model](#operating-model) · [Web Dashboard](#web-dashboard) · [MCP Server](#mcp-server) · [Architecture](#architecture) · [Operator Guide](docs/OPERATOR_SYSTEM_GUIDE.md) · [Contributing](#contributing)
 
 </div>
 
@@ -26,6 +26,31 @@ You're running 16 Claude Code agents across tmux panes. One needs approval. Anot
 ## The Solution
 
 DX Terminal is a **complete AI agent orchestration platform** — a single Rust binary that monitors, coordinates, and tracks teams of AI coding agents. Real-time TUI dashboard, web dashboard with WebSocket streaming, 206-tool MCP server, vision-driven development tracking, file sync, and build environment management. Built in Rust, <5MB RAM.
+
+## Operating Model
+
+DX Terminal is designed as one control plane for work that usually gets split across:
+
+- documentation in Confluence or ad-hoc markdown
+- planning and feature tracking in Jira or tickets
+- implementation across tmux panes, CLIs, and worktrees
+- QA evidence scattered across terminal history and CI logs
+
+The intended lifecycle is:
+
+1. `planned`: mission exists, feature is known, but discovery has not started.
+2. `discovery`: research, questions, architecture notes, and acceptance criteria are being written.
+3. `build`: work is assigned to an agent pane and executed in a tracked workspace/worktree.
+4. `test`: test evidence and acceptance verification are collected.
+5. `done`: implementation, acceptance, and documentation are aligned.
+
+The system should keep these artifacts in sync:
+
+- filesystem docs: `AGENTS.md`, provider overlays, `.vision/research/*`, `.vision/discovery/*`
+- git state: branch, worktree, dirty files, ahead/behind
+- runtime state: pane, provider, task, browser port, tmux target, live output
+- dashboard state: project brief, focus, blockers, readiness, active runtimes
+- hosted site state: same snapshot and event contract as the local dashboard
 
 ## Install
 
@@ -51,6 +76,8 @@ dx mcp                      # MCP server mode (stdio, all 206 tools)
 dx mcp core                 # Split MCP server (faster tools/list)
 dx web --port 3100          # Web dashboard only
 ```
+
+See [docs/OPERATOR_SYSTEM_GUIDE.md](docs/OPERATOR_SYSTEM_GUIDE.md) for the full operator workflow, architecture diagrams, and documentation contract.
 
 ## Features
 
@@ -89,10 +116,13 @@ dx web --port 3100          # Web dashboard only
 
 The web dashboard runs alongside the MCP server and provides a real-time view of your entire agent fleet:
 
+- **Execution map** with mission, delivery phases, blockers, and ready features
 - **Agent grid** with live terminal output, status, and session metadata
+- **Runtime lanes** with provider, worktree, and pane-scoped browser test ports
 - **Task queue** with priority management and one-click operations
 - **Vision cockpit** showing VDD goals, features, and progress
 - **Build environments** with themed pane management
+- **Documentation sync** showing whether filesystem docs, git, and dashboard state agree
 - **Sync status** with git branch, dirty files, ahead/behind indicators
 - **Capacity gauges**, role utilization, sprint board, and activity feed
 
@@ -128,6 +158,8 @@ Run as monolith (`dx mcp`) or split servers for faster `tools/list` response.
 
 ## Architecture
 
+Detailed diagrams and operating notes live in [docs/OPERATOR_SYSTEM_GUIDE.md](docs/OPERATOR_SYSTEM_GUIDE.md).
+
 ```
 ┌────────────────────────────────────────────────────────────┐
 │                       DX Terminal                           │
@@ -152,6 +184,12 @@ Run as monolith (`dx mcp`) or split servers for faster `tools/list` response.
 ```
 
 All Rust. Single binary. No external runtime dependencies.
+
+Documentation and hosted UI should not invent their own state. They should consume:
+
+- snapshot: `GET /api/project/brief?project=...`
+- live events: websocket `vision_changed`, `focus_changed`, terminal/session updates
+- filesystem docs from the project root and `.vision/*`
 
 ## Comparison
 
