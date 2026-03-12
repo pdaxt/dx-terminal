@@ -1017,6 +1017,7 @@ async function renderExecutionHub(){
   const summaryEl=document.getElementById('project-brief');
   const runtimeEl=document.getElementById('runtime-brief');
   const docsEl=document.getElementById('worktree-brief');
+  const automationEl=document.getElementById('automation-brief');
   const project=activeProjectForHub();
   if(!project){
     section.style.display='none';
@@ -1035,7 +1036,9 @@ async function renderExecutionHub(){
   const automation=brief.automation||{};
   const automationCounts=automation.counts||{};
   const projectCommands=(automation.commands&&automation.commands.project)||[];
+  const userCommands=(automation.commands&&automation.commands.user)||[];
   const projectSkills=(automation.skills&&automation.skills.project)||[];
+  const userSkills=(automation.skills&&automation.skills.user)||[];
   const externalMcps=automation.external_mcps||[];
   const guidanceDocs=docs.guidance_docs||[];
   const visionDocs=docs.vision_docs||[];
@@ -1045,6 +1048,10 @@ async function renderExecutionHub(){
   const gitState=!git?'No repo':git.dirty_files===0&&git.ahead===0?'Clean':`${git.dirty_files||0} dirty · ↑${git.ahead||0} ↓${git.behind||0}`;
   const readyFeatures=(delivery.ready_features||[]).slice(0,3);
   const blockingFeatures=(delivery.blocking_features||[]).slice(0,3);
+  const selectedMcp=automationSelection[project]||(externalMcps[0]&&externalMcps[0].name)||'';
+  const selectedCacheKey=selectedMcp?automationCacheKey(project,selectedMcp):'';
+  const selectedToolInfo=selectedCacheKey?automationToolCache[selectedCacheKey]:null;
+  const selectedToolLoading=selectedCacheKey?automationToolLoading[selectedCacheKey]:false;
 
   summaryEl.innerHTML=`
     <div class="exec-hero">
