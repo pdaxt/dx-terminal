@@ -2491,6 +2491,8 @@ fn collect_featured_wiki_docs(project_path: &str) -> Vec<WikiDocEntry> {
     let candidates = [
         ("README.md", "overview"),
         ("docs/NON_TECH_GUIDE.md", "guide"),
+        ("docs/CLIENT_PORTAL_PLAYBOOK.md", "client"),
+        ("docs/DISCOVERY_AND_DESIGN_PLAYBOOK.md", "design"),
         ("docs/OPERATOR_SYSTEM_GUIDE.md", "operations"),
         ("docs/EXPERIENCE_BLUEPRINT.md", "experience"),
         ("docs/ARCHITECTURE_BLUEPRINT.md", "architecture"),
@@ -2636,6 +2638,7 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
     let library_docs = collect_library_wiki_docs(&path, &featured_paths);
     let research_docs = collect_scoped_wiki_docs(&path, ".vision/research", "research");
     let discovery_docs = collect_scoped_wiki_docs(&path, ".vision/discovery", "discovery");
+    let design_docs = collect_scoped_wiki_docs(&path, ".vision/design", "design");
 
     let phase_tone = |value: &str| -> &'static str {
         match value {
@@ -2652,6 +2655,8 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
             "guide" | "operations" => "guide",
             "experience" => "experience",
             "architecture" => "architecture",
+            "client" => "sync",
+            "design" => "discovery",
             "sync" => "sync",
             "history" => "history",
             "research" => "research",
@@ -3380,6 +3385,7 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
     let research_collections = [
         ("Research Notes", "research", &research_docs),
         ("Discovery Notes", "discovery", &discovery_docs),
+        ("Design Briefs", "discovery", &design_docs),
     ];
     let research_html = research_collections
         .iter()
@@ -3992,6 +3998,7 @@ code {{ font-family:var(--mono); }}
 .tone-history {{ background:rgba(160,77,95,.11); color:var(--coral); border-color:rgba(160,77,95,.18); }}
 .tone-research {{ background:rgba(101,84,162,.1); color:#5f4ba6; border-color:rgba(101,84,162,.15); }}
 .tone-discovery.tone {{ }}
+.tone-design {{ background:rgba(6,182,212,.1); color:#27587e; border-color:rgba(39,88,126,.15); }}
 .tone-library {{ background:rgba(86,102,121,.08); color:var(--slate); border-color:rgba(86,102,121,.12); }}
 .mini-chip-row {{
     display:flex;
@@ -4190,6 +4197,7 @@ code {{ font-family:var(--mono); }}
                 <div class="stat-card"><div class="stat-label">Goals</div><div class="stat-value">{goal_count}</div><div class="detail-meta">program outcomes tracked</div></div>
                 <div class="stat-card"><div class="stat-label">Features</div><div class="stat-value">{feature_count}</div><div class="detail-meta">delivery items in the plan</div></div>
                 <div class="stat-card"><div class="stat-label">Handbook Docs</div><div class="stat-value">{total_docs}</div><div class="detail-meta">featured, library, research, discovery</div></div>
+                <div class="stat-card"><div class="stat-label">Design Briefs</div><div class="stat-value">{design_doc_count}</div><div class="detail-meta">client-facing concept artifacts</div></div>
                 <div class="stat-card"><div class="stat-label">Milestones</div><div class="stat-value">{milestone_count}</div><div class="detail-meta">program checkpoints</div></div>
                 <div class="stat-card"><div class="stat-label">Architecture</div><div class="stat-value">{adr_count}</div><div class="detail-meta">decisions with rationale</div></div>
                 <div class="stat-card"><div class="stat-label">History</div><div class="stat-value">{change_count}</div><div class="detail-meta">recorded project changes</div></div>
@@ -4259,9 +4267,9 @@ code {{ font-family:var(--mono); }}
             <div class="section-head">
                 <div>
                     <div class="section-kicker">Evidence</div>
-                    <h2>Research and discovery evidence</h2>
+                    <h2>Research, discovery, and design evidence</h2>
                 </div>
-                <p>These notes keep delivery grounded in explicit research and discovery rather than verbal memory.</p>
+                <p>These notes keep delivery grounded in explicit research, design direction, and discovery rather than verbal memory.</p>
             </div>
             {research_html}
         </section>
@@ -4340,8 +4348,12 @@ try {{
             updated
         }),
         path = escape_html(&path),
-        total_docs =
-            featured_docs.len() + library_docs.len() + research_docs.len() + discovery_docs.len(),
+        total_docs = featured_docs.len()
+            + library_docs.len()
+            + research_docs.len()
+            + discovery_docs.len()
+            + design_docs.len(),
+        design_doc_count = design_docs.len(),
         goal_count = goals.len(),
         feature_count = features.len(),
         milestone_count = milestones.len(),
