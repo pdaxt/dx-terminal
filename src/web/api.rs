@@ -1083,7 +1083,7 @@ fn collect_vision_docs_for_path(project_path: &str) -> Vec<Value> {
     let base = FsPath::new(project_path).join(".vision");
     let mut docs = Vec::new();
 
-    for subdir in &["research", "discovery"] {
+    for subdir in &["research", "discovery", "design"] {
         let dir = base.join(subdir);
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
@@ -1467,6 +1467,7 @@ pub async fn get_project_brief(
     let mut phase_counts: HashMap<String, usize> = HashMap::new();
     let mut blocking_features = Vec::new();
     let mut ready_features = Vec::new();
+    let mut client_review_features = Vec::new();
     let mut feature_records = Vec::new();
 
     for goal in tree_value
@@ -1535,6 +1536,30 @@ pub async fn get_project_brief(
                     }));
                 }
             }
+
+            if readiness
+                .get("discovery")
+                .and_then(|value| value.get("design_required"))
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false)
+                && readiness
+                    .get("discovery")
+                    .and_then(|value| value.get("design_approved"))
+                    .and_then(|value| value.as_u64())
+                    .unwrap_or(0)
+                    == 0
+            {
+                client_review_features.push(json!({
+                    "feature_id": feature_id,
+                    "title": feature.get("title").cloned().unwrap_or(json!("")),
+                    "phase": phase,
+                    "design_options": readiness
+                        .get("discovery")
+                        .and_then(|value| value.get("design_options"))
+                        .cloned()
+                        .unwrap_or(json!(0)),
+                }));
+            }
         }
     }
 
@@ -1575,6 +1600,7 @@ pub async fn get_project_brief(
             "phase_counts": phase_counts,
             "blocking_features": blocking_features,
             "ready_features": ready_features,
+            "client_review_features": client_review_features,
         },
         "runtime_contract": {
             "browser_port_base": crate::config::browser_port_base(),
@@ -1987,6 +2013,13 @@ pub struct VisionDocQuery {
 }
 
 #[derive(Deserialize, Default)]
+pub struct VisionMockupQuery {
+    pub project: Option<String>,
+    pub feature_id: Option<String>,
+    pub option_id: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
 pub struct VisionFocusRequest {
     pub project: Option<String>,
     pub path: Option<String>,
@@ -2012,7 +2045,7 @@ pub async fn list_vision_docs(Query(q): Query<VisionQuery>) -> Json<Value> {
     Json(json!({ "project": q.project, "docs": docs }))
 }
 
-/// GET /api/vision/doc?project=NAME&feature_id=F-XXX — Get a specific research or discovery doc
+/// GET /api/vision/doc?project=NAME&feature_id=F-XXX — Get a specific research/discovery/design package
 pub async fn get_vision_doc(Query(q): Query<VisionDocQuery>) -> Json<Value> {
     let vq = VisionQuery {
         project: q.project.clone(),
@@ -2047,6 +2080,46 @@ pub async fn get_vision_doc(Query(q): Query<VisionDocQuery>) -> Json<Value> {
         });
     }
 
+    let design_path = base.join(format!("design/{}.md", feature_id));
+    if design_path.exists() {
+        let content = std::fs::read_to_string(&design_path).unwrap_or_default();
+        result["design"] = json!({
+            "content": content,
+            "html": markdown_to_html(&content),
+        });
+    }
+
+    if let Some(vision) = crate::vision::load_vision(&path) {
+        if let Some(feature) = vision.features.iter().find(|feature| feature.id == feature_id) {
+            result["design_options"] = json!(
+                feature
+                    .design_options
+                    .iter()
+                    .map(|option| {
+                        json!({
+                            "id": option.id,
+                            "title": option.title,
+                            "summary": option.summary,
+                            "kind": option.kind,
+                            "status": option.status,
+                            "relative_path": option.relative_path,
+                            "reference": option.reference,
+                            "approved_by": option.approved_by,
+                            "approved_at": option.approved_at,
+                            "review_notes": option.review_notes,
+                            "preview_url": format!(
+                                "/vision/mockup?project={}&feature_id={}&option_id={}",
+                                q.project.clone().unwrap_or_default(),
+                                feature_id,
+                                option.id
+                            ),
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
     let readiness = crate::vision::feature_readiness(&path, feature_id);
     if let Ok(readiness) = serde_json::from_str::<Value>(&readiness) {
         result["phase"] = readiness.get("phase").cloned().unwrap_or(json!("planned"));
@@ -2057,10 +2130,37 @@ pub async fn get_vision_doc(Query(q): Query<VisionDocQuery>) -> Json<Value> {
             .get("acceptance_items")
             .cloned()
             .unwrap_or(json!([]));
+        result["design_options"] = if result.get("design_options").is_some() {
+            result["design_options"].clone()
+        } else {
+            readiness
+                .get("design_options")
+                .cloned()
+                .unwrap_or(json!([]))
+        };
         result["readiness"] = readiness.get("readiness").cloned().unwrap_or(json!({}));
     }
 
     Json(result)
+}
+
+/// GET /vision/mockup?project=NAME&feature_id=F-XXX&option_id=MO-XXX — Serve a generated HTML mockup
+pub async fn get_vision_mockup(Query(q): Query<VisionMockupQuery>) -> Html<String> {
+    let vq = VisionQuery {
+        project: q.project.clone(),
+        path: None,
+    };
+    let path = resolve_project_path(&vq);
+    let feature_id = q.feature_id.as_deref().unwrap_or("");
+    let option_id = q.option_id.as_deref().unwrap_or("");
+    if feature_id.is_empty() || option_id.is_empty() {
+        return Html("<h1>Missing feature_id or option_id</h1>".to_string());
+    }
+
+    match crate::vision::read_mockup_html(&path, feature_id, option_id) {
+        Ok(html) => Html(html),
+        Err(err) => Html(format!("<h1>Unable to load mockup</h1><p>{}</p>", escape_html(&err))),
+    }
 }
 
 /// POST /api/vision/focus — Persist the operator's active goal/feature focus for auto-continue.
@@ -2121,6 +2221,53 @@ pub async fn upsert_vision_doc(
     }
 
     let result = crate::vision::upsert_feature_doc(&path, feature_id, doc_type, content);
+    maybe_emit_vision_change(&app, &path, &result, Some(feature_id));
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/vision/design/mockups/seed — Seed quick client-facing design directions
+pub async fn seed_vision_mockups(
+    State(app): State<AppState>,
+    Json(body): Json<Value>,
+) -> Json<Value> {
+    let project = body["project"].as_str().unwrap_or("").to_string();
+    let path = resolve_project_path(&VisionQuery {
+        project: Some(project.clone()),
+        path: None,
+    });
+    let feature_id = body["feature_id"].as_str().unwrap_or("");
+    let reference = body["reference"].as_str();
+
+    if feature_id.is_empty() {
+        return Json(json!({"error": "feature_id required"}));
+    }
+
+    let result = crate::vision::seed_mockup_options(&path, feature_id, reference);
+    maybe_emit_vision_change(&app, &path, &result, Some(feature_id));
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/vision/design/review — Approve/reject a design option from the portal
+pub async fn review_vision_design(
+    State(app): State<AppState>,
+    Json(body): Json<Value>,
+) -> Json<Value> {
+    let project = body["project"].as_str().unwrap_or("").to_string();
+    let path = resolve_project_path(&VisionQuery {
+        project: Some(project.clone()),
+        path: None,
+    });
+    let feature_id = body["feature_id"].as_str().unwrap_or("");
+    let option_id = body["option_id"].as_str().unwrap_or("");
+    let status = body["status"].as_str().unwrap_or("approved");
+    let note = body["note"].as_str();
+    let actor = body["actor"].as_str();
+
+    if feature_id.is_empty() || option_id.is_empty() {
+        return Json(json!({"error": "feature_id and option_id required"}));
+    }
+
+    let result = crate::vision::review_design_option(&path, feature_id, option_id, status, note, actor);
     maybe_emit_vision_change(&app, &path, &result, Some(feature_id));
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
