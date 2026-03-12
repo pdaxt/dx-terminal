@@ -85,12 +85,7 @@ pub fn prepare_outbound_event(payload: Value) -> Option<String> {
             ts_ms: now,
             payload: payload.clone(),
         });
-        retain_recent_entries(
-            &mut entries,
-            now,
-            VISION_REPLAY_MAX_AGE_MS,
-            VISION_REPLAY_MAX_COUNT,
-        );
+        prune_replay_entries(&mut entries, now);
         write_replay_entries(&path, &entries)?;
         serde_json::to_string(&payload)
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
@@ -623,7 +618,7 @@ mod tests {
         with_temp_dx_root(|| {
             let stale = RuntimeRegistration {
                 runtime_id: "web-stale".into(),
-                pid: u32::MAX,
+                pid: 999_999_999,
                 registered_at_ms: now_ms(),
             };
             atomic_write(
