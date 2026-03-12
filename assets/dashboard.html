@@ -1141,6 +1141,53 @@ async function renderExecutionHub(){
         <div class="exec-row-meta">${visionDocs.slice(0,4).map(doc=>`${escHtml(doc.feature_id)} ${escHtml(doc.type)}`).join(' · ')||'No feature research docs yet.'}</div>
       </div>
     </div>`;
+
+  automationEl.innerHTML=`
+    <div class="automation-shell">
+      <div class="automation-block">
+        <div class="automation-head">
+          <div>
+            <div class="automation-title">External MCP Bridge</div>
+            <div class="automation-sub">Configured external MCP servers are bridged into dx. Inspection is on-demand so the dashboard does not auto-start them on every refresh.</div>
+          </div>
+          <span class="doc-pill shared">${externalMcps.length} registered</span>
+        </div>
+        <div class="automation-chip-row">
+          ${externalMcps.length?externalMcps.map(mcp=>{
+            const active=selectedMcp===mcp.name;
+            const cached=automationToolCache[automationCacheKey(project,mcp.name)];
+            return `<button class="automation-chip ${active?'active':''} ${cached&&!(cached.error)?'is-running':''}" onclick="selectAutomationMcp(decodeURIComponent('${encodeURIComponent(mcp.name)}'))">${escHtml(mcp.name)}</button>`;
+          }).join(''):'<span class="automation-note">No external MCPs registered in the shared config.</span>'}
+        </div>
+        ${selectedMcp?`<div class="automation-sub">Selected MCP: <strong style="color:var(--text)">${escHtml(selectedMcp)}</strong>${selectedToolInfo&&selectedToolInfo.tool_count?` · ${selectedToolInfo.tool_count} tools loaded`:''}</div>`:''}
+        ${selectedToolLoading?'<div class="automation-note">Loading tool schema through the dx gateway...</div>':''}
+        ${selectedToolInfo&&selectedToolInfo.error?`<div class="automation-note" style="color:var(--red)">${escHtml(String(selectedToolInfo.error))}</div>`:''}
+        ${selectedToolInfo&&selectedToolInfo.tools?`<div class="automation-tool-grid">${selectedToolInfo.tools.slice(0,8).map(tool=>`<div class="automation-tool">
+          <div class="automation-tool-name">${escHtml((tool.name||'').toString())}</div>
+          <div class="automation-tool-desc">${escHtml((tool.description||'No description').toString())}</div>
+        </div>`).join('')}</div>`:'<div class="automation-note">Select an MCP chip to inspect its live tool schema.</div>'}
+      </div>
+      <div class="automation-block">
+        <div class="automation-head">
+          <div>
+            <div class="automation-title">Project Skills</div>
+            <div class="automation-sub">Codex skills from <code>.codex/skills</code> with user-level fallback if the project has none.</div>
+          </div>
+          <span class="doc-pill codex">${projectSkills.length} project · ${userSkills.length} user</span>
+        </div>
+        ${renderAutomationItems(projectSkills.length?projectSkills:userSkills,'No project or user skills detected for this workspace.')}
+      </div>
+      <div class="automation-block">
+        <div class="automation-head">
+          <div>
+            <div class="automation-title">Command Packs</div>
+            <div class="automation-sub">Claude command markdown from <code>.claude/commands</code> with user-level fallback if the project has none.</div>
+          </div>
+          <span class="doc-pill claude">${projectCommands.length} project · ${userCommands.length} user</span>
+        </div>
+        ${renderAutomationItems(projectCommands.length?projectCommands:userCommands,'No project or user command packs detected for this workspace.')}
+      </div>
+    </div>`;
 }
 
 // === Pane Grid ===
