@@ -976,6 +976,11 @@ async function renderExecutionHub(){
   section.style.display='';
   if(brief.focus)storeVisionFocus(project,brief.focus);
   const docs=brief.docs||{};
+  const automation=brief.automation||{};
+  const automationCounts=automation.counts||{};
+  const projectCommands=(automation.commands&&automation.commands.project)||[];
+  const projectSkills=(automation.skills&&automation.skills.project)||[];
+  const externalMcps=automation.external_mcps||[];
   const guidanceDocs=docs.guidance_docs||[];
   const visionDocs=docs.vision_docs||[];
   const delivery=brief.delivery||{};
@@ -998,6 +1003,7 @@ async function renderExecutionHub(){
       <div class="exec-kpis">
         <div class="exec-kpi"><div class="label">Runtimes</div><div class="value">${brief.runtime_count||0}</div><div class="meta">${brief.worktree_count||0} isolated worktrees</div></div>
         <div class="exec-kpi"><div class="label">Documentation</div><div class="value">${docs.vision_doc_count||0}</div><div class="meta">${docs.guidance_doc_count||0} guidance docs</div></div>
+        <div class="exec-kpi"><div class="label">Automation</div><div class="value">${automationCounts.external_mcps||0}</div><div class="meta">${automationCounts.project_skills||0} skills · ${automationCounts.project_commands||0} commands</div></div>
         <div class="exec-kpi"><div class="label">Git Sync</div><div class="value">${git&&git.branch?escHtml(git.branch):'--'}</div><div class="meta">${escHtml(gitState)}</div></div>
         <div class="exec-kpi"><div class="label">Current Gate</div><div class="value">${(blockingFeatures.length?'Blocked':readyFeatures.length?'Ready':'Active')}</div><div class="meta">${blockingFeatures.length||readyFeatures.length||0} highlighted features</div></div>
       </div>
@@ -1052,6 +1058,17 @@ async function renderExecutionHub(){
           <span class="exec-row-tags">${guidanceDocs.map(doc=>`<span class="doc-pill ${escHtml((doc.kind||'shared').toString())}">${escHtml((doc.name||'').toString())}</span>`).join('')||'<span class="doc-pill">missing</span>'}</span>
         </div>
         <div class="exec-row-meta">${guidanceDocs.length?`Synced guidance for shared and provider-specific agents.`:'Add AGENTS.md, CLAUDE.md, CODEX.md, or GEMINI.md at the project root.'}</div>
+      </div>
+      <div class="exec-row">
+        <div class="exec-row-top">
+          <span class="exec-row-title">Automation Assets</span>
+          <span class="exec-row-tags">
+            <span class="doc-pill shared">${externalMcps.length} MCPs</span>
+            <span class="doc-pill codex">${projectSkills.length} skills</span>
+            <span class="doc-pill claude">${projectCommands.length} commands</span>
+          </span>
+        </div>
+        <div class="exec-row-meta">${externalMcps.slice(0,4).map(mcp=>escHtml(mcp.name)).join(' · ')||'No external MCPs registered.'}${projectSkills.length?` · skills: ${projectSkills.slice(0,3).map(skill=>escHtml(skill.name)).join(' · ')}`:''}${projectCommands.length?` · commands: ${projectCommands.slice(0,3).map(command=>escHtml(command.name)).join(' · ')}`:''}</div>
       </div>
       <div class="exec-row">
         <div class="exec-row-top">
