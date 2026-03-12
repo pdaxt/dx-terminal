@@ -2217,7 +2217,10 @@ fn markdown_to_html(md: &str) -> String {
         // Blockquotes
         else if trimmed.starts_with("> ") {
             close_list(&mut html, &mut list_tag);
-            html.push_str(&format!("<blockquote><p>{}</p></blockquote>", inline_md(&trimmed[2..])));
+            html.push_str(&format!(
+                "<blockquote><p>{}</p></blockquote>",
+                inline_md(&trimmed[2..])
+            ));
         }
         // List items
         else if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
