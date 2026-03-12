@@ -2625,8 +2625,9 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
         };
         let ready_for_gate = next_gate
             .map(|gate| {
+                let ready_key = format!("ready_for_{}", gate);
                 readiness
-                    .get(format!("ready_for_{}", gate))
+                    .get(&ready_key)
                     .and_then(|value| value.as_bool())
                     .unwrap_or(false)
             })
@@ -3166,12 +3167,12 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
         .iter()
         .map(|doc| {
             format!(
-                r#"<a class="handbook-card" href="#doc-{}">
+                r##"<a class="handbook-card" href="#doc-{}">
                     <span class="tone tone-{}">{}</span>
                     <h3>{}</h3>
                     <p>{}</p>
                     <div class="card-path">{}</div>
-                </a>"#,
+                </a>"##,
                 escape_html(&doc.id),
                 doc_tone(&doc.category),
                 escape_html(&doc.category),
@@ -3191,7 +3192,7 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
         .iter()
         .map(|doc| {
             format!(
-                r#"<article class="wiki-doc-article" id="doc-{}">
+                r##"<article class="wiki-doc-article" id="doc-{}">
                     <div class="wiki-card-top">
                         <div class="wiki-heading-group">
                             <span class="tone tone-{}">{}</span>
@@ -3202,7 +3203,7 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
                     <p class="wiki-copy">{}</p>
                     <div class="card-path">{}</div>
                     <div class="wiki-rich-text">{}</div>
-                </article>"#,
+                </article>"##,
                 escape_html(&doc.id),
                 doc_tone(&doc.category),
                 escape_html(&doc.category),
