@@ -224,7 +224,10 @@ pub async fn get_gateway_tools(
 }
 
 /// POST /api/gateway/call — Invoke one tool on a bridged external MCP
-pub async fn post_gateway_call(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
+pub async fn post_gateway_call(
+    State(app): State<AppState>,
+    Json(body): Json<Value>,
+) -> Json<Value> {
     let mcp = body["mcp"].as_str().unwrap_or("").to_string();
     let tool = body["tool"].as_str().unwrap_or("").to_string();
     if mcp.is_empty() || tool.is_empty() {

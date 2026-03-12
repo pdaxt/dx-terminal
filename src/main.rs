@@ -1,5 +1,5 @@
-mod analytics;
 mod agent_assets;
+mod analytics;
 mod app;
 mod audit;
 mod build;

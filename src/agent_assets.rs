@@ -17,8 +17,11 @@ fn collect_automation_assets_with_home(project_root: &Path, home_root: &Path) ->
         "claude",
         "user",
     );
-    let project_skills =
-        collect_skill_assets(&project_root.join(".codex").join("skills"), "codex", "project");
+    let project_skills = collect_skill_assets(
+        &project_root.join(".codex").join("skills"),
+        "codex",
+        "project",
+    );
     let user_skills =
         collect_skill_assets(&home_root.join(".codex").join("skills"), "codex", "user");
     let external_mcps = crate::external_mcp::load_external_descriptors()
@@ -122,7 +125,12 @@ fn compare_asset_name(left: &Value, right: &Value) -> std::cmp::Ordering {
     left.get("name")
         .and_then(|value| value.as_str())
         .unwrap_or("")
-        .cmp(right.get("name").and_then(|value| value.as_str()).unwrap_or(""))
+        .cmp(
+            right
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or(""),
+        )
 }
 
 fn read_summary(path: &Path) -> String {
@@ -155,7 +163,11 @@ mod tests {
         let home = tempdir().unwrap();
 
         let project_command_dir = project.path().join(".claude").join("commands");
-        let project_skill_dir = project.path().join(".codex").join("skills").join("reviewer");
+        let project_skill_dir = project
+            .path()
+            .join(".codex")
+            .join("skills")
+            .join("reviewer");
         let user_skill_dir = home.path().join(".codex").join("skills").join("builder");
 
         std::fs::create_dir_all(&project_command_dir).unwrap();
@@ -167,7 +179,11 @@ mod tests {
             "# Handoff\nProject handoff command",
         )
         .unwrap();
-        std::fs::write(project_skill_dir.join("SKILL.md"), "# Reviewer\nReview workflows").unwrap();
+        std::fs::write(
+            project_skill_dir.join("SKILL.md"),
+            "# Reviewer\nReview workflows",
+        )
+        .unwrap();
         std::fs::write(user_skill_dir.join("SKILL.md"), "Builder skill").unwrap();
 
         let assets = collect_automation_assets_with_home(project.path(), home.path());
@@ -177,6 +193,9 @@ mod tests {
         assert_eq!(assets["counts"]["user_skills"], json!(1));
         assert_eq!(assets["commands"]["project"][0]["name"], json!("handoff"));
         assert_eq!(assets["skills"]["project"][0]["name"], json!("reviewer"));
-        assert_eq!(assets["skills"]["user"][0]["summary"], json!("Builder skill"));
+        assert_eq!(
+            assets["skills"]["user"][0]["summary"],
+            json!("Builder skill")
+        );
     }
 }
