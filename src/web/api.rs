@@ -5,7 +5,7 @@ use axum::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
 
 use crate::app::App;
@@ -908,7 +908,7 @@ fn guidance_doc_rank(file_name: &str) -> usize {
     }
 }
 
-fn has_project_marker(path: &Path) -> bool {
+fn has_project_marker(path: &FsPath) -> bool {
     path.join(".git").exists()
         || path.join(".vision/vision.json").exists()
         || GUIDANCE_DOC_FILES
@@ -916,7 +916,7 @@ fn has_project_marker(path: &Path) -> bool {
             .any(|name| path.join(name).exists())
 }
 
-fn find_project_root(candidate: &Path) -> Option<PathBuf> {
+fn find_project_root(candidate: &FsPath) -> Option<PathBuf> {
     let start = if candidate.is_file() {
         candidate.parent()?
     } else {
@@ -932,7 +932,7 @@ fn find_project_root(candidate: &Path) -> Option<PathBuf> {
 }
 
 fn project_name_from_path(project_path: &str) -> String {
-    Path::new(project_path)
+    FsPath::new(project_path)
         .file_name()
         .map(|name| name.to_string_lossy().to_string())
         .unwrap_or_else(|| "--".to_string())
@@ -943,8 +943,8 @@ fn matches_project_path(candidate: &str, project_path: &str) -> bool {
         return false;
     }
 
-    let candidate = Path::new(candidate);
-    let project_root = Path::new(project_path);
+    let candidate = FsPath::new(candidate);
+    let project_root = FsPath::new(project_path);
     candidate.starts_with(project_root)
         || find_project_root(candidate)
             .as_deref()
@@ -960,7 +960,7 @@ fn collect_guidance_docs(cwd: &str, project_path: &str) -> Vec<Value> {
         if candidate.trim().is_empty() {
             continue;
         }
-        let path = Path::new(candidate);
+        let path = FsPath::new(candidate);
         if let Some(root) = find_project_root(path) {
             let key = root.to_string_lossy().to_string();
             if seen_roots.insert(key) {
@@ -1011,7 +1011,7 @@ fn collect_guidance_docs(cwd: &str, project_path: &str) -> Vec<Value> {
 }
 
 fn collect_vision_docs_for_path(project_path: &str) -> Vec<Value> {
-    let base = Path::new(project_path).join(".vision");
+    let base = FsPath::new(project_path).join(".vision");
     let mut docs = Vec::new();
 
     for subdir in &["research", "discovery"] {
