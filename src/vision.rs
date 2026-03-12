@@ -1484,6 +1484,7 @@ pub fn upsert_feature_doc(
     vision.updated_at = now();
     let feature_phase = feature.phase.clone();
     let feature_state = feature.state.clone();
+    let readiness = feature_readiness_value(project_path, feature);
 
     let change = VisionChange {
         timestamp: now(),
@@ -2213,7 +2214,7 @@ pub fn review_design_option(
             "option_status": parsed_status,
             "phase": feature_phase,
             "state": feature_state,
-            "readiness": feature_readiness_value(project_path, feature),
+            "readiness": readiness,
         })
         .to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
