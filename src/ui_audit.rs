@@ -404,7 +404,11 @@ fn check_transitions(html: &str, root_range: &(usize, usize)) -> Vec<Violation> 
             let val = cap[1].trim();
             if !val.contains("var(--transition") {
                 // Allow specific transition properties (width, height for animations)
-                if val.contains("width") || val.contains("height") || val.contains("opacity") {
+                if val.contains("width")
+                    || val.contains("height")
+                    || val.contains("opacity")
+                    || val.contains("none")
+                {
                     continue;
                 }
                 violations.push(Violation {
