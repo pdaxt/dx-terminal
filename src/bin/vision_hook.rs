@@ -60,6 +60,8 @@ struct SessionEdits {
     commits: Vec<CommitRecord>,
     project: Option<String>,
     has_vision: bool,
+    current_goal_id: Option<String>,
+    current_feature_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
