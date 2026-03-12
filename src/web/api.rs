@@ -1367,7 +1367,11 @@ pub async fn set_vision_focus(Json(body): Json<VisionFocusRequest>) -> Json<Valu
     });
     let source = body.source.as_deref().unwrap_or("dashboard");
 
-    let focus = if let Some(feature_id) = body.feature_id.as_deref().filter(|value| !value.trim().is_empty()) {
+    let focus = if let Some(feature_id) = body
+        .feature_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
         crate::vision_focus::upsert_feature_focus(&path, feature_id, Some(source))
     } else {
         crate::vision_focus::upsert_focus(

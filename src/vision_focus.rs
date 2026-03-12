@@ -73,7 +73,9 @@ fn upsert_focus_at(
         updated_at: Some(now()),
     };
 
-    store.entries.retain(|existing| existing.project_path != normalized);
+    store
+        .entries
+        .retain(|existing| existing.project_path != normalized);
     store.entries.push(entry.clone());
     store
         .entries
@@ -159,7 +161,8 @@ pub fn upsert_feature_focus(
         project_path,
         None,
         value.get("goal_id").and_then(|v| v.as_str()),
-        value.get("feature_id")
+        value
+            .get("feature_id")
             .and_then(|v| v.as_str())
             .or(Some(feature_id)),
         source,
