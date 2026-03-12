@@ -624,6 +624,22 @@ canvas{width:100%;display:block}
   <div class="main" id="main">
     <div class="alert-bar" id="alerts"></div>
     <div class="gauge-row" id="gauges"><div class="loading">Loading</div></div>
+    <div class="execution-grid" id="execution-hub" style="display:none">
+      <div class="card">
+        <h3>Execution Map</h3>
+        <div id="project-brief"></div>
+      </div>
+      <div class="execution-stack">
+        <div class="card">
+          <h3>Active Runtimes</h3>
+          <div id="runtime-brief"></div>
+        </div>
+        <div class="card">
+          <h3>Worktrees & Documentation</h3>
+          <div id="worktree-brief"></div>
+        </div>
+      </div>
+    </div>
     <div class="section-head">Agent Panes <span class="count" id="pane-count">0/9</span></div>
     <div class="pane-grid" id="panes"><div class="loading">Loading agents</div></div>
 
