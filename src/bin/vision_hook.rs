@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::os::unix::net::UnixStream;
@@ -24,6 +25,7 @@ use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const SESSION_FILE: &str = "/tmp/vdd_session_edits.json";
+const STOP_STATE_FILE: &str = "/tmp/vdd_stop_hook_state.json";
 const VISIONS_CACHE: &str = "/tmp/vdd_visions_cache.json";
 const CACHE_TTL: u64 = 120;
 
@@ -64,6 +66,13 @@ struct SessionEdits {
 struct CommitRecord {
     branch: Option<String>,
     command: String,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct StopState {
+    project: Option<String>,
+    instruction: Option<String>,
+    message_fingerprint: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -117,6 +126,30 @@ fn save_session(session: &SessionEdits) {
         SESSION_FILE,
         serde_json::to_string_pretty(session).unwrap_or_default(),
     );
+}
+
+fn load_stop_state() -> StopState {
+    fs::read_to_string(STOP_STATE_FILE)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_stop_state(state: &StopState) {
+    let _ = fs::write(
+        STOP_STATE_FILE,
+        serde_json::to_string_pretty(state).unwrap_or_default(),
+    );
+}
+
+fn clear_stop_state() {
+    let _ = fs::remove_file(STOP_STATE_FILE);
+}
+
+fn message_fingerprint(text: &str) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    text.hash(&mut hasher);
+    hasher.finish()
 }
 
 // ── Vision scanning ──
@@ -263,6 +296,136 @@ fn feature_readiness_blockers<'a>(feature: &'a Value, phase: &str) -> Vec<&'a st
         .and_then(|v| v.as_array())
         .map(|items| items.iter().filter_map(|v| v.as_str()).collect())
         .unwrap_or_default()
+}
+
+fn feature_is_done(feature: &Value) -> bool {
+    matches!(feature_phase(feature), "done" | "verified")
+}
+
+fn task_is_complete(task: &Value) -> bool {
+    matches!(
+        task.get("status").and_then(|s| s.as_str()),
+        Some("done") | Some("verified")
+    )
+}
+
+fn first_incomplete_task<'a>(feature: &'a Value) -> Option<&'a Value> {
+    feature
+        .get("tasks")
+        .and_then(|v| v.as_array())
+        .and_then(|tasks| tasks.iter().find(|task| !task_is_complete(task)))
+}
+
+fn first_unverified_acceptance<'a>(feature: &'a Value) -> Option<&'a Value> {
+    feature
+        .get("acceptance_items")
+        .and_then(|v| v.as_array())
+        .and_then(|items| {
+            items.iter().find(|item| {
+                item.get("status").and_then(|s| s.as_str()) != Some("verified")
+            })
+        })
+}
+
+fn select_stop_feature<'a>(project: &str, vision: &'a Value, features: &'a [Value]) -> Option<&'a Value> {
+    if let Some(branch) = get_current_branch(Some(project)) {
+        if let Some((feature, _task)) = find_task_by_branch(vision, &branch) {
+            if !feature_is_done(feature) {
+                return Some(feature);
+            }
+        }
+    }
+
+    let active = features
+        .iter()
+        .filter(|feature| !feature_is_done(feature))
+        .collect::<Vec<_>>();
+    if active.len() == 1 {
+        return active.into_iter().next();
+    }
+    None
+}
+
+fn next_step_instruction(feature: &Value) -> Option<String> {
+    let feature_id = feature.get("id").and_then(|v| v.as_str()).unwrap_or("feature");
+    let title = feature
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or(feature_id);
+    let phase = feature_phase(feature);
+
+    let instruction = match phase {
+        "planned" => format!(
+            "Continue {} ({}). Start discovery by adding acceptance criteria or discovery notes. Keep going without waiting for permission if the follow-on step stays obvious.",
+            feature_id, title
+        ),
+        "discovery" => {
+            let blockers = feature_readiness_blockers(feature, "build");
+            if let Some(blocker) = blockers.first() {
+                format!(
+                    "Continue discovery for {} ({}). Resolve this blocker next: {}. Keep going without waiting for permission if the follow-on step stays obvious.",
+                    feature_id, title, blocker
+                )
+            } else {
+                format!(
+                    "Continue {} ({}). Discovery is ready, so move it into build and start the next implementation task. Keep going without waiting for permission if the follow-on step stays obvious.",
+                    feature_id, title
+                )
+            }
+        }
+        "build" => {
+            if let Some(task) = first_incomplete_task(feature) {
+                let task_title = task
+                    .get("title")
+                    .or_else(|| task.get("task"))
+                    .or_else(|| task.get("description"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("the next build task");
+                format!(
+                    "Continue build for {} ({}). Complete the next task: {}. Keep going without waiting for permission if the follow-on step stays obvious.",
+                    feature_id, title, task_title
+                )
+            } else {
+                let blockers = feature_readiness_blockers(feature, "test");
+                if let Some(blocker) = blockers.first() {
+                    format!(
+                        "Continue build for {} ({}). Clear this test blocker next: {}. Keep going without waiting for permission if the follow-on step stays obvious.",
+                        feature_id, title, blocker
+                    )
+                } else {
+                    format!(
+                        "Continue {} ({}). Build is complete, so run verification and attach test evidence next. Keep going without waiting for permission if the follow-on step stays obvious.",
+                        feature_id, title
+                    )
+                }
+            }
+        }
+        "test" => {
+            if let Some(item) = first_unverified_acceptance(feature) {
+                let criterion = item
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("the next acceptance criterion");
+                format!(
+                    "Continue test for {} ({}). Verify this acceptance criterion next: {}. Keep going without waiting for permission if the follow-on step stays obvious.",
+                    feature_id, title, criterion
+                )
+            } else {
+                let blockers = feature_readiness_blockers(feature, "done");
+                if let Some(blocker) = blockers.first() {
+                    format!(
+                        "Continue test for {} ({}). Clear this completion blocker next: {}. Keep going without waiting for permission if the follow-on step stays obvious.",
+                        feature_id, title, blocker
+                    )
+                } else {
+                    return None;
+                }
+            }
+        }
+        _ => return None,
+    };
+
+    Some(instruction)
 }
 
 fn is_doc_like_edit(file_path: &str) -> bool {
@@ -1237,6 +1400,7 @@ fn handle_post_tool_use(event: &Value) -> Option<Value> {
 fn handle_stop(_event: &Value) -> Option<Value> {
     let session = load_session();
     if !session.has_vision {
+        clear_stop_state();
         return None;
     }
 
@@ -1247,6 +1411,39 @@ fn handle_stop(_event: &Value) -> Option<Value> {
         .and_then(|f| f.as_array())
         .cloned()
         .unwrap_or_default();
+
+    if let Some(feature) = select_stop_feature(project, &vision, &features) {
+        if let Some(instruction) = next_step_instruction(feature) {
+            let last_message = _event
+                .get("last_assistant_message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let fingerprint = message_fingerprint(last_message);
+            let stop_hook_active = _event
+                .get("stop_hook_active")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let prior = load_stop_state();
+            let repeated = stop_hook_active
+                && prior.project.as_deref() == Some(project.as_str())
+                && prior.instruction.as_deref() == Some(instruction.as_str())
+                && prior.message_fingerprint == Some(fingerprint);
+
+            if !repeated {
+                save_stop_state(&StopState {
+                    project: Some(project.clone()),
+                    instruction: Some(instruction.clone()),
+                    message_fingerprint: Some(fingerprint),
+                });
+                return Some(json!({
+                    "decision": "block",
+                    "reason": instruction,
+                    "systemMessage": "VDD auto-continue: obvious next step detected; keep going."
+                }));
+            }
+        }
+    }
+    clear_stop_state();
 
     let total_tasks: usize = features
         .iter()
@@ -1404,5 +1601,84 @@ mod tests {
         assert!(request.contains("Host: 127.0.0.1:3100\r\n"));
         assert!(request.contains(&format!("Content-Length: {}\r\n", body.len())));
         assert!(request.ends_with(body));
+    }
+
+    #[test]
+    fn test_next_step_instruction_prefers_incomplete_build_task() {
+        let feature = json!({
+            "id": "F1.1",
+            "title": "IPC lifecycle",
+            "phase": "build",
+            "tasks": [
+                {"title": "Add runtime heartbeat", "status": "pending"},
+                {"title": "Verify shutdown cleanup", "status": "done"}
+            ],
+            "readiness": {"blockers": {"test": [], "done": []}}
+        });
+
+        let instruction = next_step_instruction(&feature).unwrap();
+        assert!(instruction.contains("Complete the next task"));
+        assert!(instruction.contains("Add runtime heartbeat"));
+    }
+
+    #[test]
+    fn test_handle_stop_blocks_when_obvious_next_step_exists() {
+        static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+        let _guard = TEST_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path();
+        let vision_dir = project.join(".vision");
+        fs::create_dir_all(&vision_dir).unwrap();
+        fs::write(
+            vision_dir.join("vision.json"),
+            serde_json::to_string_pretty(&json!({
+                "features": [{
+                    "id": "F1.1",
+                    "title": "IPC lifecycle",
+                    "phase": "build",
+                    "tasks": [{"title": "Add runtime heartbeat", "status": "pending"}],
+                    "questions": [],
+                    "readiness": {"blockers": {"test": [], "done": []}}
+                }]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let original_session = fs::read_to_string(SESSION_FILE).ok();
+        let original_stop = fs::read_to_string(STOP_STATE_FILE).ok();
+        save_session(&SessionEdits {
+            files: vec!["src/ipc.rs".into()],
+            commits: vec![],
+            project: Some(project.to_string_lossy().into()),
+            has_vision: true,
+        });
+
+        let result = handle_stop(&json!({
+            "hook_event": "Stop",
+            "last_assistant_message": "stopping here",
+            "stop_hook_active": false
+        }))
+        .unwrap();
+
+        match original_session {
+            Some(contents) => fs::write(SESSION_FILE, contents).unwrap(),
+            None => {
+                let _ = fs::remove_file(SESSION_FILE);
+            }
+        }
+        match original_stop {
+            Some(contents) => fs::write(STOP_STATE_FILE, contents).unwrap(),
+            None => {
+                let _ = fs::remove_file(STOP_STATE_FILE);
+            }
+        }
+
+        assert_eq!(result["decision"], "block");
+        assert!(result["reason"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Add runtime heartbeat"));
     }
 }
