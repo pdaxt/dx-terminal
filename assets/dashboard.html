@@ -1789,6 +1789,52 @@ async function restyleBuilds(){
 }
 
 // === VDD Research & Discovery Docs ===
+let visionFocusCache={};
+
+async function loadVisionFocus(project,options){
+  const opts=options||{};
+  const key=project||'';
+  if(!key)return null;
+  if(!opts.force&&Object.prototype.hasOwnProperty.call(visionFocusCache,key))return visionFocusCache[key];
+  const data=await fetchJSON(`/api/vision/focus?project=${encodeURIComponent(key)}`);
+  visionFocusCache[key]=data&&data.focus?data.focus:null;
+  return visionFocusCache[key];
+}
+function storeVisionFocus(project,focus){
+  const key=(project||focus&&focus.project||'').toString();
+  if(!key)return null;
+  visionFocusCache[key]=focus||null;
+  return visionFocusCache[key];
+}
+function focusedFeatureId(project){
+  const focus=visionFocusCache[project];
+  return focus&&focus.feature_id?focus.feature_id:null;
+}
+function focusedGoalId(project){
+  const focus=visionFocusCache[project];
+  return focus&&focus.goal_id?focus.goal_id:null;
+}
+function isFocusedFeature(project,featureId){
+  return !!featureId&&focusedFeatureId(project)===featureId;
+}
+function focusButton(project,featureId,label){
+  const active=isFocusedFeature(project,featureId);
+  return `<button class="vdd-focus-btn${active?' active':''}" onclick="event.stopPropagation();setVisionFocus('${escHtml(project||'')}','${escHtml(featureId||'')}')">${active?(label||'Focused'):(label||'Focus')}</button>`;
+}
+function renderFocusStrip(project){
+  const focus=visionFocusCache[project];
+  if(!focus)return `<div class="vdd-focus-strip"><div class="vdd-focus-copy"><span class="vdd-focus-label">Active Focus</span><span class="vdd-focus-value">No active feature selected</span><span class="vdd-focus-meta">Click Focus on a feature to make auto-continue and panel context track it.</span></div></div>`;
+  const title=focus.feature_id||focus.goal_id||'Project';
+  const meta=[focus.source||'dashboard',focus.updated_at||''].filter(Boolean).join(' · ');
+  return `<div class="vdd-focus-strip">
+    <div class="vdd-focus-copy">
+      <span class="vdd-focus-label">Active Focus</span>
+      <span class="vdd-focus-value">${escHtml(title)}</span>
+      <span class="vdd-focus-meta">${escHtml(meta||'Current working target')}</span>
+    </div>
+    ${focus.feature_id?focusButton(project,focus.feature_id,'Focused'):'<span class="vdd-focus-chip">Goal scope</span>'}
+  </div>`;
+}
 async function renderVddDocs(){
   const ws=currentSpace||'all';
   const section=document.getElementById('vdd-docs-section');
@@ -1798,6 +1844,7 @@ async function renderVddDocs(){
     if(!list||!list.visions||!list.visions.length){section.style.display='none';return;}
     project=list.visions[0].project;
   }
+  await loadVisionFocus(project);
   const docs=await fetchJSON(`/api/vision/docs?project=${encodeURIComponent(project)}`);
   if(!docs||!docs.docs||!docs.docs.length){section.style.display='none';return;}
   section.style.display='';
@@ -1808,26 +1855,34 @@ async function renderVddDocs(){
   if(viewerEl.style.display!=='none') return;
   listEl.innerHTML=docs.docs.map(d=>{
     const badgeClass=d.type==='research'?'research':'discovery';
-    return `<div class="vdd-doc-item" onclick="openVddDoc('${escHtml(project)}','${escHtml(d.feature_id)}')">
+    const focused=isFocusedFeature(project,d.feature_id);
+    return `<div class="vdd-doc-item${focused?' focused':''}" onclick="openVddDoc('${escHtml(project)}','${escHtml(d.feature_id)}')">
       <span class="vdd-doc-badge ${badgeClass}">${d.type}</span>
       <span style="font-size:11px;color:var(--text);font-weight:600;flex:1">${escHtml(d.feature_id)}</span>
+      ${focused?'<span class="vdd-focus-chip">active</span>':''}
       <span style="font-size:10px;color:var(--dim)">${escHtml(d.preview.substring(0,80))}</span>
       <span style="font-size:9px;color:var(--dim)">${(d.size/1024).toFixed(1)}KB</span>
     </div>`;
   }).join('');
 }
-function setVisionFocus(project,featureId){
-  if(!project||!featureId)return;
-  fetch('/api/vision/focus',{
+async function setVisionFocus(project,featureId){
+  if(!project||!featureId)return null;
+  const data=await fetchJSON('/api/vision/focus',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({project,feature_id:featureId,source:'dashboard'})
-  }).catch(()=>{});
+  });
+  if(data&&data.focus)storeVisionFocus(project,data.focus);
+  else storeVisionFocus(project,{project,feature_id:featureId,source:'dashboard'});
+  if(selectedVisionProject===project||(!selectedVisionProject&&currentSpace==='all')||currentSpace===project)renderVision();
+  if(activePaneNum)renderPaneContext(activePaneNum);
+  renderVddDocs();
+  return data&&data.focus?data.focus:null;
 }
 async function openVddDoc(project,featureId){
   const focusChanged=!activeVddDoc||activeVddDoc.project!==project||activeVddDoc.featureId!==featureId;
   activeVddDoc={project,featureId};
-  if(focusChanged)setVisionFocus(project,featureId);
+  if(focusChanged)await setVisionFocus(project,featureId);
   const doc=await fetchJSON(`/api/vision/doc?project=${encodeURIComponent(project)}&feature_id=${encodeURIComponent(featureId)}`);
   if(!doc) return;
   const listEl=document.getElementById('vdd-doc-list');
@@ -1840,11 +1895,13 @@ async function openVddDoc(project,featureId){
   let html='<div class="vdd-viewer">';
   // Header with phase badge
   const phase=normalizeVddPhase(doc.phase||doc.status||'planned');
+  html+=renderFocusStrip(project);
   html+=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
     <span style="font-size:16px;font-weight:700;color:var(--text)">${escHtml(featureId)}</span>
     ${vddPhaseBadge(phase)}
     ${vddStatePill(doc.state)}
     ${doc.title?`<span style="font-size:12px;color:var(--muted)">${escHtml(doc.title)}</span>`:''}
+    <span style="margin-left:auto">${focusButton(project,featureId,'Focused')}</span>
   </div>`;
   html+=renderReadinessSummary({
     phase,
