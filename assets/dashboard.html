@@ -1169,14 +1169,16 @@ function openPanel(paneNum){
   }
   document.getElementById('panel-meta').innerHTML=`
     <div><dt>Status</dt><dd>${p?p.status:'idle'}</dd></div>
+    <div><dt>Provider</dt><dd>${p&&p.provider_label?p.provider_label:'Unknown'}</dd></div>
     <div><dt>Role</dt><dd>${sp?sp.role_full||(p&&p.role!=='--'?p.role:'--'):'--'}</dd></div>
     <div><dt>Started</dt><dd>${startedStr}</dd></div>
     <div><dt>Branch</dt><dd>${sp&&sp.branch?sp.branch:'--'}</dd></div>
-    <div><dt>Workspace</dt><dd>${sp&&sp.workspace?'isolated':'shared'}</dd></div>
+    <div><dt>Workspace</dt><dd>${p&&p.workspace_path?p.workspace_path.split('/').pop():(sp&&sp.workspace?'isolated':'shared')}</dd></div>
     <div><dt>ACU</dt><dd>${sp?sp.acu||0:0}</dd></div>
     <div><dt>Space</dt><dd>${sp&&sp.space?sp.space:'--'}</dd></div>
     <div><dt>Issue</dt><dd>${sp&&sp.issue_id?sp.issue_id:'--'}</dd></div>
     <div><dt>Target</dt><dd style="font-family:var(--mono);font-size:9px">${p&&p.tmux_target?p.tmux_target:'--'}</dd></div>
+    <div><dt>Command</dt><dd style="font-family:var(--mono);font-size:9px">${p&&p.command?p.command:'--'}</dd></div>
     <div style="grid-column:1/-1"><dt>Task</dt><dd style="max-width:380px;white-space:normal;font-size:10px">${p?p.task||'--':'--'}</dd></div>`;
 
   document.getElementById('panel-actions').innerHTML=`
