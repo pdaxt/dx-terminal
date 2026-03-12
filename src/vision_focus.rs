@@ -166,6 +166,31 @@ pub fn upsert_feature_focus(
     )
 }
 
+pub fn upsert_focus_from_work_result(
+    project_path: &str,
+    result: &str,
+    source: Option<&str>,
+) -> Option<VisionFocusEntry> {
+    let value = serde_json::from_str::<Value>(result).ok()?;
+    if value.get("matched").and_then(|v| v.as_bool()) != Some(true) {
+        return None;
+    }
+
+    if let Some(feature_id) = value
+        .get("matching_feature")
+        .and_then(|v| v.get("id"))
+        .and_then(|v| v.as_str())
+    {
+        return upsert_feature_focus(project_path, feature_id, source);
+    }
+
+    let goal_id = value
+        .get("goal")
+        .and_then(|v| v.get("id"))
+        .and_then(|v| v.as_str())?;
+    upsert_focus(project_path, None, Some(goal_id), None, source)
+}
+
 pub fn read_project_focus(project_path: &str) -> Option<VisionFocusEntry> {
     read_project_focus_at(&focus_path(), project_path)
 }
@@ -217,5 +242,43 @@ mod tests {
 
         std::env::set_current_dir(original).unwrap();
         assert_eq!(normalized, tmp.path().join("demo").to_string_lossy());
+    }
+
+    #[test]
+    fn work_result_prefers_matching_feature_focus() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("demo");
+        std::fs::create_dir_all(project.join(".vision")).unwrap();
+        std::fs::write(
+            project.join(".vision/vision.json"),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "project": "demo",
+                "mission": "Ship demo",
+                "goals": [{"id": "G1", "title": "Goal", "description": "", "status": "planned", "priority": 1}],
+                "features": [{"id": "F1.2", "goal_id": "G1", "title": "Feature", "description": "", "status": "planned", "phase": "planned", "state": "planned", "questions": [], "decisions": [], "tasks": [], "acceptance_criteria": [], "acceptance_items": [], "sub_vision": null, "parent_vision": null, "created_at": "", "updated_at": ""}],
+                "milestones": [],
+                "architecture": [],
+                "changes": [],
+                "principles": [],
+                "github": {"repo": "", "default_branch": "main", "labels": [], "sync_enabled": false, "wiki_page": null},
+                "updated_at": ""
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let store_path = tmp.path().join("focus.json");
+        let result = serde_json::json!({
+            "matched": true,
+            "goal": {"id": "G1"},
+            "matching_feature": {"id": "F1.2"}
+        })
+        .to_string();
+
+        let focus = upsert_focus_from_work_result(project.to_str().unwrap(), &result, Some("mcp"));
+        assert_eq!(focus.unwrap().feature_id.as_deref(), Some("F1.2"));
+
+        let stored = read_project_focus_at(&store_path, project.to_str().unwrap());
+        assert!(stored.is_none());
     }
 }
