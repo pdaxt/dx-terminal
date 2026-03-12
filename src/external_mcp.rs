@@ -80,17 +80,19 @@ pub fn sync_gateway(gateway: &mut dx_gateway::MCPRegistry) -> usize {
     count
 }
 
-fn merged_catalog_entries() -> Vec<ExternalMcpEntry> {
-    merged_catalog_entries_from_path(&shared_catalog_path(), &crate::claude::read_claude_config())
-}
-
-fn load_external_catalog_from_path(shared_path: &Path, claude_config: &Value) -> Vec<ExternalMcpEntry> {
+fn load_external_catalog_from_path(
+    shared_path: &Path,
+    claude_config: &Value,
+) -> Vec<ExternalMcpEntry> {
     let entries = merged_catalog_entries_from_path(shared_path, claude_config);
     let _ = write_shared_catalog_to(shared_path, &entries);
     entries
 }
 
-fn merged_catalog_entries_from_path(shared_path: &Path, claude_config: &Value) -> Vec<ExternalMcpEntry> {
+fn merged_catalog_entries_from_path(
+    shared_path: &Path,
+    claude_config: &Value,
+) -> Vec<ExternalMcpEntry> {
     let mut merged: HashMap<String, ExternalMcpEntry> = HashMap::new();
 
     for entry in read_shared_catalog_from_path(shared_path) {
@@ -113,10 +115,6 @@ fn merged_catalog_entries_from_path(shared_path: &Path, claude_config: &Value) -
     entries
 }
 
-fn read_shared_catalog() -> Vec<ExternalMcpEntry> {
-    read_shared_catalog_from_path(&shared_catalog_path())
-}
-
 fn read_shared_catalog_from_path(path: &Path) -> Vec<ExternalMcpEntry> {
     let Ok(content) = std::fs::read_to_string(path) else {
         return Vec::new();
@@ -125,10 +123,6 @@ fn read_shared_catalog_from_path(path: &Path) -> Vec<ExternalMcpEntry> {
     serde_json::from_str::<ExternalMcpCatalog>(&content)
         .map(|catalog| catalog.servers)
         .unwrap_or_default()
-}
-
-fn write_shared_catalog(entries: &[ExternalMcpEntry]) -> anyhow::Result<()> {
-    write_shared_catalog_to(&shared_catalog_path(), entries)
 }
 
 fn write_shared_catalog_to(path: &Path, entries: &[ExternalMcpEntry]) -> anyhow::Result<()> {
@@ -145,10 +139,6 @@ fn write_shared_catalog_to(path: &Path, entries: &[ExternalMcpEntry]) -> anyhow:
     std::fs::write(&tmp, serde_json::to_string_pretty(&payload)?)?;
     std::fs::rename(&tmp, &path)?;
     Ok(())
-}
-
-fn import_claude_catalog() -> Vec<ExternalMcpEntry> {
-    import_catalog_from_config(&crate::claude::read_claude_config(), CLAUDE_SOURCE)
 }
 
 fn import_catalog_from_config(config: &Value, source: &str) -> Vec<ExternalMcpEntry> {
@@ -484,33 +474,7 @@ pub fn entry_to_registry_info(entry: &ExternalMcpEntry) -> crate::mcp_registry::
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::sync::Mutex;
     use tempfile::tempdir;
-
-    static ENV_TEST_LOCK: Mutex<()> = Mutex::new(());
-
-    fn with_temp_env<T>(f: impl FnOnce() -> T) -> T {
-        let _guard = ENV_TEST_LOCK.lock().unwrap();
-        let home = tempdir().unwrap();
-        let dx = tempdir().unwrap();
-
-        let old_home = std::env::var("HOME").ok();
-        let old_dx_root = std::env::var("DX_ROOT").ok();
-        std::env::set_var("HOME", home.path());
-        std::env::set_var("DX_ROOT", dx.path());
-
-        let result = f();
-
-        match old_home {
-            Some(value) => std::env::set_var("HOME", value),
-            None => std::env::remove_var("HOME"),
-        }
-        match old_dx_root {
-            Some(value) => std::env::set_var("DX_ROOT", value),
-            None => std::env::remove_var("DX_ROOT"),
-        }
-        result
-    }
 
     #[test]
     fn wraps_playwright_launcher_with_nonomatch() {
@@ -575,82 +539,71 @@ mod tests {
 
     #[test]
     fn syncs_shared_catalog_from_claude_import() {
-        with_temp_env(|| {
-            std::fs::write(
-                crate::config::claude_json_path(),
-                serde_json::to_string_pretty(&json!({
-                    "mcpServers": {
-                        "playwright": {
-                            "command": "/Users/pran/bin/playwright-session",
-                            "args": ["--headless"]
-                        }
-                    }
-                }))
-                .unwrap(),
-            )
-            .unwrap();
-
-            let entries = load_external_catalog();
-            assert_eq!(entries.len(), 1);
-            assert_eq!(entries[0].name, "playwright");
-            assert_eq!(entries[0].sources, vec![CLAUDE_SOURCE.to_string()]);
-
-            let persisted = std::fs::read_to_string(shared_catalog_path()).unwrap();
-            let catalog: ExternalMcpCatalog = serde_json::from_str(&persisted).unwrap();
-            assert_eq!(catalog.servers.len(), 1);
-            assert_eq!(catalog.servers[0].name, "playwright");
+        let dx = tempdir().unwrap();
+        let shared_path = dx.path().join("external_mcps.json");
+        let claude_config = json!({
+            "mcpServers": {
+                "playwright": {
+                    "command": "/Users/pran/bin/playwright-session",
+                    "args": ["--headless"]
+                }
+            }
         });
+
+        let entries = load_external_catalog_from_path(&shared_path, &claude_config);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "playwright");
+        assert_eq!(entries[0].sources, vec![CLAUDE_SOURCE.to_string()]);
+
+        let persisted = std::fs::read_to_string(&shared_path).unwrap();
+        let catalog: ExternalMcpCatalog = serde_json::from_str(&persisted).unwrap();
+        assert_eq!(catalog.servers.len(), 1);
+        assert_eq!(catalog.servers[0].name, "playwright");
     }
 
     #[test]
     fn keeps_dx_owned_entry_while_merging_claude_metadata() {
-        with_temp_env(|| {
-            let path = shared_catalog_path();
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(
-                &path,
-                serde_json::to_string_pretty(&ExternalMcpCatalog {
-                    version: 1,
-                    servers: vec![ExternalMcpEntry {
-                        name: "playwright".to_string(),
-                        command: "/custom/playwright".to_string(),
-                        args: vec!["--headless".to_string()],
-                        env: HashMap::new(),
-                        description: "Shared dx override".to_string(),
-                        capabilities: vec!["browser".to_string()],
-                        projects: vec!["dx-terminal".to_string()],
-                        keywords: vec!["browser".to_string()],
-                        category: "testing".to_string(),
-                        sources: vec![SHARED_SOURCE.to_string()],
-                    }],
-                })
-                .unwrap(),
-            )
-            .unwrap();
+        let dx = tempdir().unwrap();
+        let path = dx.path().join("external_mcps.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            serde_json::to_string_pretty(&ExternalMcpCatalog {
+                version: 1,
+                servers: vec![ExternalMcpEntry {
+                    name: "playwright".to_string(),
+                    command: "/custom/playwright".to_string(),
+                    args: vec!["--headless".to_string()],
+                    env: HashMap::new(),
+                    description: "Shared dx override".to_string(),
+                    capabilities: vec!["browser".to_string()],
+                    projects: vec!["dx-terminal".to_string()],
+                    keywords: vec!["browser".to_string()],
+                    category: "testing".to_string(),
+                    sources: vec![SHARED_SOURCE.to_string()],
+                }],
+            })
+            .unwrap(),
+        )
+        .unwrap();
 
-            std::fs::write(
-                crate::config::claude_json_path(),
-                serde_json::to_string_pretty(&json!({
-                    "mcpServers": {
-                        "playwright": {
-                            "command": "/Users/pran/bin/playwright-session"
-                        }
-                    }
-                }))
-                .unwrap(),
-            )
-            .unwrap();
-
-            let entries = load_external_catalog();
-            assert_eq!(entries[0].command, "/custom/playwright");
-            assert!(entries[0]
-                .sources
-                .iter()
-                .any(|value| value == SHARED_SOURCE));
-            assert!(entries[0]
-                .sources
-                .iter()
-                .any(|value| value == CLAUDE_SOURCE));
+        let claude_config = json!({
+            "mcpServers": {
+                "playwright": {
+                    "command": "/Users/pran/bin/playwright-session"
+                }
+            }
         });
+
+        let entries = load_external_catalog_from_path(&path, &claude_config);
+        assert_eq!(entries[0].command, "/custom/playwright");
+        assert!(entries[0]
+            .sources
+            .iter()
+            .any(|value| value == SHARED_SOURCE));
+        assert!(entries[0]
+            .sources
+            .iter()
+            .any(|value| value == CLAUDE_SOURCE));
     }
 }
