@@ -58,6 +58,7 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/builds/restyle", post(api::post_build_restyle))
         .route("/api/builds/send", post(api::post_build_send))
         .route("/api/builds/rename", post(api::post_build_rename))
+        .route("/api/project/brief", get(api::get_project_brief))
         // Vision
         .route("/api/vision", get(api::get_vision))
         .route("/api/vision/summary", get(api::get_vision_summary))

@@ -128,7 +128,7 @@ async fn build_full_snapshot(app: &App) -> Value {
     let state = app.state.get_state_snapshot().await;
     let max_panes = crate::config::pane_count();
 
-    // Auto-discover all live Claude panes across all tmux sessions
+    // Auto-discover all live agent panes across all tmux sessions
     let live_panes = tokio::task::spawn_blocking(|| tmux::discover_live_panes())
         .await
         .unwrap_or_default();
@@ -221,6 +221,12 @@ async fn build_full_snapshot(app: &App) -> Value {
             "--".to_string()
         };
 
+        let provider = if let Some(lp) = live {
+            tmux::infer_provider(&lp.command, &lp.window_name, lp.jsonl_path.as_deref())
+        } else {
+            "unknown"
+        };
+
         let task = if let Some(ref p) = ps {
             let t = &p.task;
             if t.len() > 80 {
@@ -229,7 +235,7 @@ async fn build_full_snapshot(app: &App) -> Value {
                 t.clone()
             }
         } else if let Some(lp) = live {
-            format!("Claude in {}", lp.target)
+            format!("{} in {}", tmux::provider_label(provider), lp.target)
         } else {
             "--".to_string()
         };
@@ -264,6 +270,9 @@ async fn build_full_snapshot(app: &App) -> Value {
             "project": project,
             "task": task,
             "role": role,
+            "provider": provider,
+            "provider_label": tmux::provider_label(provider),
+            "provider_short": tmux::provider_short(provider),
             "output": tail,
             "line_count": line_vec.len(),
             "tmux_target": tmux_target,
@@ -272,6 +281,11 @@ async fn build_full_snapshot(app: &App) -> Value {
             "session_id": session_id,
             "events": session_events,
             "cwd": live.map(|l| l.cwd.clone()),
+            "command": live.map(|l| l.command.clone()),
+            "window_name": live.map(|l| l.window_name.clone()),
+            "workspace_path": ps.and_then(|p| p.workspace_path.clone()),
+            "branch_name": ps.and_then(|p| p.branch_name.clone()),
+            "base_branch": ps.and_then(|p| p.base_branch.clone()),
         }));
     }
 
