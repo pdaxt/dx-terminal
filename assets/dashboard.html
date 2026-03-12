@@ -1103,12 +1103,15 @@ async function renderPaneContext(paneNum){
   // VDD Vision
   if(ctx.vision){
     const v=ctx.vision;
+    const visionProject=(v.project||ctx.project||'').toString();
+    await loadVisionFocus(visionProject);
     html+=`<div style="margin-bottom:12px">`;
     html+=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">`;
     html+=`<span style="font-size:11px;font-weight:700;color:var(--blue)">VDD Vision</span>`;
     if(v.wiki_url)html+=`<a href="${v.wiki_url}" target="_blank" style="font-size:9px;color:var(--dim);text-decoration:none;margin-left:auto">Wiki &#8599;</a>`;
     html+=`</div>`;
     if(v.mission)html+=`<div style="font-size:10px;color:var(--text);margin-bottom:8px;font-style:italic;opacity:.8">${escHtml(v.mission)}</div>`;
+    html+=renderFocusStrip(visionProject);
 
     // Goals as progress bar
     if(v.goals&&v.goals.length){
@@ -1136,10 +1139,11 @@ async function renderPaneContext(paneNum){
         const phase=normalizeVddPhase(f.phase||f.status);
         const state=f.state||'planned';
         const col=phase==='done'?'var(--green)':phase==='build'?'var(--blue)':phase==='test'?'var(--teal)':phase==='discovery'?'var(--yellow)':'var(--dim)';
-        html+=`<div style="margin-bottom:8px;padding:6px 8px;background:var(--surface2);border-radius:4px;border-left:2px solid ${col}">`;
+        const focused=isFocusedFeature(visionProject,f.id);
+        html+=`<div style="margin-bottom:8px;padding:6px 8px;background:${focused?'linear-gradient(90deg,rgba(79,143,247,.12),rgba(79,143,247,.04))':'var(--surface2)'};border-radius:4px;border-left:2px solid ${focused?'var(--blue)':col}">`;
         html+=`<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap">`;
         html+=`<span style="font-size:10px;font-weight:600;color:var(--text)">${escHtml(f.id+': '+(f.title||''))}</span>`;
-        html+=`<span style="display:flex;gap:4px;align-items:center">${vddPhaseBadge(phase)}${vddStatePill(state)}</span>`;
+        html+=`<span style="display:flex;gap:4px;align-items:center">${focused?'<span class="vdd-focus-chip">active</span>':''}${vddPhaseBadge(phase)}${vddStatePill(state)}${focusButton(visionProject,f.id,'Focus')}</span>`;
         html+=`</div>`;
         html+=vddPipelineBar(phase);
         html+=renderReadinessSummary(f,{indent:0});
@@ -2099,11 +2103,13 @@ function featureDocLink(featureId,project){
 }
 async function renderVisionCockpit(project){
   const section=document.getElementById('vision-section');
-  const [tree,summary]=await Promise.all([
+  const [tree,summary,focus]=await Promise.all([
     fetchJSON(`/api/vision/tree?project=${encodeURIComponent(project)}`),
-    fetchJSON(`/api/vision/summary?project=${encodeURIComponent(project)}`)
+    fetchJSON(`/api/vision/summary?project=${encodeURIComponent(project)}`),
+    loadVisionFocus(project,{force:true})
   ]);
   if(!tree||tree.error){section.style.display='none';return;}
+  storeVisionFocus(project,focus);
   section.style.display='';
   document.getElementById('vision-project').textContent=tree.project||project;
   document.getElementById('vision-mission').textContent=tree.mission||'';
@@ -2130,6 +2136,7 @@ async function renderVisionCockpit(project){
   if(summary&&summary.principles&&summary.principles.length){
     statsHtml+=`<div style="font-size:9px;color:var(--dim);margin-top:4px">Principles: ${summary.principles.map(p=>`<span style="color:var(--teal)">${escHtml(p)}</span>`).join(' · ')}</div>`;
   }
+  statsHtml+=renderFocusStrip(tree.project||project);
   document.getElementById('vision-summary-stats').innerHTML=statsHtml;
   // Vision tree
   const goals=tree.goals||[];
@@ -2154,6 +2161,7 @@ async function renderVisionCockpit(project){
         const fExpanded=visionExpandState[fKey]===true;
         const phase=normalizeVddPhase(f.phase||f.status);
         const state=f.state||'planned';
+        const focused=isFocusedFeature(tree.project||project,f.id);
         const fPct=f.progress||0;
         const tasks=f.tasks||[];
         const readiness=f.readiness||{};
@@ -2161,13 +2169,15 @@ async function renderVisionCockpit(project){
         const oq=f.open_questions||counts.open_questions||0;
         if(oq>0) allOpenQuestions.push({feature:f.id,count:oq});
         treeHtml+=`<div style="margin-left:20px;margin-top:2px">
-          <div onclick="visionExpandState['${fKey}']=!visionExpandState['${fKey}'];renderVision()" style="cursor:pointer;display:flex;align-items:center;gap:5px;padding:3px 0">
+          <div class="vdd-feature-row${focused?' focused':''}" onclick="visionExpandState['${fKey}']=!visionExpandState['${fKey}'];renderVision()" style="cursor:pointer;display:flex;align-items:center;gap:5px;padding:3px 0">
             <span style="font-size:9px;color:var(--dim);width:10px">${fExpanded?'▾':'▸'}</span>
             <span style="font-size:9px;color:var(--dim);font-weight:600">${escHtml(f.id)}</span>
             <span style="font-size:10px;color:var(--muted);flex:1">${escHtml(f.title)}</span>
+            ${focused?'<span class="vdd-focus-chip">active</span>':''}
             ${vddPhaseBadge(phase)}
             ${vddStatePill(state)}
             <span style="font-size:8px;color:var(--dim)">${f.tasks_done||0}/${f.tasks_total||0}</span>
+            ${focusButton(tree.project||project,f.id,'Focus')}
             ${featureDocLink(f.id,tree.project||project)}
             ${f.has_sub_vision?'<span style="font-size:8px;color:var(--purple)" title="Has sub-vision">◆</span>':''}
           </div>
