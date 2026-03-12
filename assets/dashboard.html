@@ -1282,6 +1282,23 @@ async function renderPaneContext(paneNum){
   if(ctx.cwd)html+=`<div style="font-size:9px;color:var(--dim);font-family:var(--mono)">${escHtml(ctx.cwd)}</div>`;
   html+=`</div>`;
 
+  if(ctx.runtime){
+    const runtime=ctx.runtime;
+    const provider=runtime.provider||{};
+    const runtimeMeta=[
+      runtime.branch_name?`branch ${runtime.branch_name}`:null,
+      runtime.workspace_path?'isolated worktree':'shared tree',
+      runtime.tmux_target||null
+    ].filter(Boolean).join(' · ');
+    html+=`<div style="margin-bottom:12px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">`;
+    html+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">`;
+    html+=`<span style="display:flex;align-items:center;gap:6px">${providerBadge(provider,true)}<span style="font-size:10px;color:var(--text);font-weight:600">${escHtml(provider.label||'Unknown runtime')}</span></span>`;
+    if(runtime.command)html+=`<span style="font-size:9px;color:var(--dim);font-family:var(--mono)">${escHtml(runtime.command)}</span>`;
+    html+=`</div>`;
+    if(runtimeMeta)html+=`<div style="font-size:9px;color:var(--dim);margin-top:4px">${escHtml(runtimeMeta)}</div>`;
+    html+=`</div>`;
+  }
+
   // Current task
   if(ctx.task){
     html+=`<div style="margin-bottom:12px;padding:8px 10px;background:var(--surface2);border-radius:6px;border-left:3px solid var(--blue)">`;
@@ -1354,21 +1371,26 @@ async function renderPaneContext(paneNum){
     html+=`</div>`;
   }
 
-  // CLAUDE.md preview
-  if(ctx.has_claude_md&&ctx.claude_md_preview){
+  // Shared and provider-specific guidance docs
+  if(ctx.guidance_docs&&ctx.guidance_docs.length){
     html+=`<details style="margin-bottom:12px" ${ctx.vision?'':'open'}>`;
-    html+=`<summary style="font-size:9px;font-weight:600;color:var(--dim);cursor:pointer;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">CLAUDE.md</summary>`;
-    html+=`<div style="padding:8px;background:var(--surface2);border-radius:6px;font-size:9px;color:var(--text);font-family:var(--mono);white-space:pre-wrap;max-height:300px;overflow-y:auto;line-height:1.4">${escHtml(ctx.claude_md_preview)}</div>`;
+    html+=`<summary style="font-size:9px;font-weight:600;color:var(--dim);cursor:pointer;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Agent Guidance</summary>`;
+    ctx.guidance_docs.forEach(doc=>{
+      html+=`<div style="padding:8px;background:var(--surface2);border-radius:6px;margin-bottom:8px">`;
+      html+=`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px">${providerBadge({id:doc.kind,label:doc.name,short:doc.kind},true)}<span style="font-size:10px;color:var(--text);font-weight:600">${escHtml(doc.name||'')}</span><span style="font-size:9px;color:var(--dim)">${((doc.size||0)/1024).toFixed(1)}KB</span></div>`;
+      html+=`<div style="font-size:9px;color:var(--text);font-family:var(--mono);white-space:pre-wrap;max-height:220px;overflow-y:auto;line-height:1.4">${escHtml((doc.preview||'').toString())}</div>`;
+      html+=`</div>`;
+    });
     html+=`</details>`;
   }
 
   // No VDD state
-  if(!ctx.vision&&!ctx.has_claude_md){
+  if(!ctx.vision&&(!ctx.guidance_docs||!ctx.guidance_docs.length)){
     html+=`<div style="padding:16px;background:var(--surface2);border-radius:8px;text-align:center">`;
     html+=`<div style="font-size:12px;color:var(--dim);margin-bottom:4px">No project documentation found</div>`;
-    html+=`<div style="font-size:9px;color:var(--dim)">Add <code style="background:rgba(255,255,255,.05);padding:1px 4px;border-radius:3px">CLAUDE.md</code> or run <code style="background:rgba(255,255,255,.05);padding:1px 4px;border-radius:3px">/vision init</code></div>`;
+    html+=`<div style="font-size:9px;color:var(--dim)">Add <code style="background:rgba(255,255,255,.05);padding:1px 4px;border-radius:3px">AGENTS.md</code>, <code style="background:rgba(255,255,255,.05);padding:1px 4px;border-radius:3px">CLAUDE.md</code>, <code style="background:rgba(255,255,255,.05);padding:1px 4px;border-radius:3px">CODEX.md</code>, or run <code style="background:rgba(255,255,255,.05);padding:1px 4px;border-radius:3px">/vision init</code></div>`;
     html+=`</div>`;
-  } else if(!ctx.vision&&ctx.has_claude_md){
+  } else if(!ctx.vision&&ctx.guidance_docs&&ctx.guidance_docs.length){
     html+=`<div style="padding:8px;background:rgba(59,130,246,.05);border:1px solid rgba(59,130,246,.1);border-radius:6px;text-align:center;font-size:9px;color:var(--dim)">`;
     html+=`Run <code style="background:rgba(255,255,255,.05);padding:1px 4px;border-radius:3px">/vision init</code> to enable VDD tracking`;
     html+=`</div>`;
@@ -1780,6 +1802,7 @@ function handleWSMessage(msg){
       if(!selectedVisionProject||selectedVisionProject===msg.project){
         renderVision();renderVddDocs();
       }
+      renderExecutionHub();
       if(activePaneNum)renderPaneContext(activePaneNum);
       if(activeVddDoc&&activeVddDoc.project===msg.project&&(!msg.feature_id||activeVddDoc.featureId===msg.feature_id)){
         openVddDoc(activeVddDoc.project,activeVddDoc.featureId);
@@ -1825,11 +1848,18 @@ function handleWSMessage(msg){
       renderSync();
       const ev=msg.event||{};
       const changedPath=(ev.FileChanged&&ev.FileChanged.path)||'';
-      if(changedPath.includes('.vision/')||changedPath.includes('CLAUDE.md')){
+      if(changedPath.includes('.vision/')
+        || changedPath.includes('AGENTS.md')
+        || changedPath.includes('CLAUDE.md')
+        || changedPath.includes('CODEX.md')
+        || changedPath.includes('GEMINI.md')){
         renderVision();renderVddDocs();
+        renderExecutionHub();
+        if(activePaneNum)renderPaneContext(activePaneNum);
       }
       if(ev.GitCommit||ev.GitPush){
         renderSync();
+        renderExecutionHub();
       }
       break;
 
