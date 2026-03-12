@@ -3015,6 +3015,20 @@ fn collect_project_runtimes(
             "branch_name": pane.branch_name,
             "base_branch": pane.base_branch,
             "tmux_target": pane.tmux_target,
+            "browser_port": pane_id
+                .parse::<u8>()
+                .ok()
+                .map(crate::config::pane_browser_port),
+            "browser_profile_root": pane_id
+                .parse::<u8>()
+                .ok()
+                .map(crate::config::pane_browser_profile_root)
+                .map(|value| value.to_string_lossy().to_string()),
+            "browser_artifacts_root": pane_id
+                .parse::<u8>()
+                .ok()
+                .map(crate::config::pane_browser_artifacts_root)
+                .map(|value| value.to_string_lossy().to_string()),
             "provider": provider,
             "command": live.map(|entry| entry.command.clone()),
             "window_name": live.map(|entry| entry.window_name.clone()),
@@ -3183,6 +3197,14 @@ pub async fn get_pane_context(
         .as_ref()
         .map(|pane| provider_json(&pane.command, &pane.window_name, pane.jsonl_path.as_deref()))
         .unwrap_or_else(|| provider_json("", "", None));
+    let pane_num = pane_ref.parse::<u8>().ok();
+    let browser_port = pane_num.map(crate::config::pane_browser_port);
+    let browser_profile_root = pane_num
+        .map(crate::config::pane_browser_profile_root)
+        .map(|value| value.to_string_lossy().to_string());
+    let browser_artifacts_root = pane_num
+        .map(crate::config::pane_browser_artifacts_root)
+        .map(|value| value.to_string_lossy().to_string());
 
     // Build context response
     let mut ctx = json!({
@@ -3205,6 +3227,9 @@ pub async fn get_pane_context(
             "workspace_path": pane_data.get("workspace_path").cloned().unwrap_or(Value::Null),
             "branch_name": pane_data.get("branch_name").cloned().unwrap_or(Value::Null),
             "base_branch": pane_data.get("base_branch").cloned().unwrap_or(Value::Null),
+            "browser_port": browser_port,
+            "browser_profile_root": browser_profile_root,
+            "browser_artifacts_root": browser_artifacts_root,
         },
     });
 
