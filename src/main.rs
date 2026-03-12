@@ -93,9 +93,7 @@ enum GatewayCommands {
         auto_start: bool,
     },
     /// Inspect the tools exposed by one gateway MCP
-    Tools {
-        mcp: String,
-    },
+    Tools { mcp: String },
     /// Call a tool on a gateway MCP
     Call {
         mcp: String,
@@ -222,30 +220,37 @@ async fn main() -> anyhow::Result<()> {
 async fn run_gateway_cli(app: Arc<app::App>, command: GatewayCommands) -> anyhow::Result<()> {
     let output = match command {
         GatewayCommands::List { running_only } => {
-            mcp::tools::gateway_tools::gateway_list(&app, mcp::types::GatewayListRequest {
-                running_only: Some(running_only),
-            })
+            mcp::tools::gateway_tools::gateway_list(
+                &app,
+                mcp::types::GatewayListRequest {
+                    running_only: Some(running_only),
+                },
+            )
             .await
         }
         GatewayCommands::Discover {
             capability,
             auto_start,
-        } => mcp::tools::gateway_tools::gateway_discover(
-            &app,
-            mcp::types::GatewayDiscoverRequest {
-                capability,
-                auto_start: Some(auto_start),
-            },
-        )
-        .await,
-        GatewayCommands::Tools { mcp } => mcp::tools::gateway_tools::gateway_tools(
-            &app,
-            mcp::types::GatewayToolsRequest {
-                mcp,
-                auto_start: Some(true),
-            },
-        )
-        .await,
+        } => {
+            mcp::tools::gateway_tools::gateway_discover(
+                &app,
+                mcp::types::GatewayDiscoverRequest {
+                    capability,
+                    auto_start: Some(auto_start),
+                },
+            )
+            .await
+        }
+        GatewayCommands::Tools { mcp } => {
+            mcp::tools::gateway_tools::gateway_tools(
+                &app,
+                mcp::types::GatewayToolsRequest {
+                    mcp,
+                    auto_start: Some(true),
+                },
+            )
+            .await
+        }
         GatewayCommands::Call { mcp, tool, args } => {
             let parsed_args = match args {
                 Some(raw) => Some(
