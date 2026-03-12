@@ -2214,6 +2214,11 @@ fn markdown_to_html(md: &str) -> String {
             close_list(&mut html, &mut list_tag);
             html.push_str("<hr>");
         }
+        // Blockquotes
+        else if trimmed.starts_with("> ") {
+            close_list(&mut html, &mut list_tag);
+            html.push_str(&format!("<blockquote><p>{}</p></blockquote>", inline_md(&trimmed[2..])));
+        }
         // List items
         else if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
             if list_tag != Some("ul") {
@@ -4169,7 +4174,7 @@ try {{
 </body>
 </html>"##,
         project = escape_html(project),
-        project_url = escape_html(project),
+        project_url = escape_html(&project.replace(' ', "%20")),
         mission = escape_html(if mission.is_empty() {
             "No project mission has been written yet."
         } else {
