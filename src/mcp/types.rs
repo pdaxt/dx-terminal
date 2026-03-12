@@ -1974,6 +1974,32 @@ pub struct VisionDocUpsertRequest {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct VisionMockupSeedRequest {
+    #[schemars(description = "Project path")]
+    pub project: Option<String>,
+    #[schemars(description = "Feature ID (e.g. 'F1.1')")]
+    pub feature_id: String,
+    #[schemars(description = "Reference or style hint, e.g. 'website like Shopify'")]
+    pub reference: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VisionDesignReviewRequest {
+    #[schemars(description = "Project path")]
+    pub project: Option<String>,
+    #[schemars(description = "Feature ID (e.g. 'F1.1')")]
+    pub feature_id: String,
+    #[schemars(description = "Design option ID (e.g. 'MO1.1.1')")]
+    pub option_id: String,
+    #[schemars(description = "Review status: draft/proposed/approved/rejected")]
+    pub status: String,
+    #[schemars(description = "Optional review note")]
+    pub note: Option<String>,
+    #[schemars(description = "Reviewer identity, provider-neutral")]
+    pub actor: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct VisionAnswerRequest {
     #[schemars(description = "Project path")]
     pub project: Option<String>,
