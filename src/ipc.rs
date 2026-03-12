@@ -425,7 +425,8 @@ fn active_runtime_ids() -> Vec<String> {
             match registration {
                 Some(registration)
                     if pid_is_alive(registration.pid)
-                        && now.saturating_sub(registration.last_seen_ms) <= VISION_RUNTIME_STALE_MS =>
+                        && now.saturating_sub(registration.last_seen_ms)
+                            <= VISION_RUNTIME_STALE_MS =>
                 {
                     runtime_ids.push(registration.runtime_id);
                 }
