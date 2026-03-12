@@ -1797,6 +1797,14 @@ pub struct GatewayListRequest {
     pub running_only: Option<bool>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GatewayToolsRequest {
+    #[schemars(description = "MCP name to inspect")]
+    pub mcp: String,
+    #[schemars(description = "Auto-start the MCP if needed (default true)")]
+    pub auto_start: Option<bool>,
+}
+
 // === AUDIT TYPES ===
 
 #[derive(Debug, Deserialize, JsonSchema)]

@@ -266,6 +266,16 @@ impl MCPRegistry {
             .collect()
     }
 
+    /// Return descriptor metadata for all registered MCPs.
+    pub fn list_descriptors(&self) -> Vec<&MCPDescriptor> {
+        self.descriptors.values().collect()
+    }
+
+    /// Get descriptor metadata for one MCP.
+    pub fn get_descriptor(&self, name: &str) -> Option<&MCPDescriptor> {
+        self.descriptors.get(name)
+    }
+
     /// Shutdown MCPs idle for longer than max_idle
     pub async fn gc_idle(&mut self, max_idle: Duration) {
         let now = Instant::now();
