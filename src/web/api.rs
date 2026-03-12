@@ -2592,7 +2592,12 @@ pub async fn get_audit_frontend(
     let html = include_str!("../../assets/dashboard.html");
     let ui = crate::ui_audit::audit_ui_html(html, "dashboard.html");
     let url = q.url.unwrap_or_else(|| "http://localhost:3100".into());
-    let ux = enrich_ux_report_with_bridge(&app, &url, crate::ux_audit::audit_ux(&url)).await;
+    let ux = enrich_ux_report_with_bridge(
+        &app,
+        &url,
+        crate::ux_audit::audit_ux_with_html(&url, Some(html)),
+    )
+    .await;
     let tokens = crate::design_tokens::design_tokens();
     let contrasts = crate::design_tokens::check_all_contrasts();
 
