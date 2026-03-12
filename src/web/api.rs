@@ -1630,31 +1630,7 @@ pub async fn get_vision_focus(Query(q): Query<VisionQuery>) -> Json<Value> {
 /// GET /api/vision/docs?project=NAME — List all research/discovery docs
 pub async fn list_vision_docs(Query(q): Query<VisionQuery>) -> Json<Value> {
     let path = resolve_project_path(&q);
-    let base = std::path::Path::new(&path).join(".vision");
-
-    let mut docs = vec![];
-    for subdir in &["research", "discovery"] {
-        let dir = base.join(subdir);
-        if let Ok(entries) = std::fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                let fname = entry.file_name().to_string_lossy().to_string();
-                if fname.ends_with(".md") {
-                    let feature_id = fname.trim_end_matches(".md").to_string();
-                    let content = std::fs::read_to_string(entry.path()).unwrap_or_default();
-                    let lines: Vec<&str> = content.lines().take(3).collect();
-                    let preview = lines.join(" ").chars().take(150).collect::<String>();
-                    docs.push(json!({
-                        "type": *subdir,
-                        "feature_id": feature_id,
-                        "file": fname,
-                        "preview": preview,
-                        "size": content.len(),
-                    }));
-                }
-            }
-        }
-    }
-
+    let docs = collect_vision_docs_for_path(&path);
     Json(json!({ "project": q.project, "docs": docs }))
 }
 
