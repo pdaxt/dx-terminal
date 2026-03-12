@@ -2469,488 +2469,1769 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
     let project = vision["project"].as_str().unwrap_or("Unknown");
     let mission = vision["mission"].as_str().unwrap_or("");
     let updated = vision["updated_at"].as_str().unwrap_or("");
+    let focus = crate::vision_focus::read_project_focus(&path);
+    let featured_docs = collect_featured_wiki_docs(&path);
+    let featured_paths = featured_docs
+        .iter()
+        .map(|doc| doc.relative_path.clone())
+        .collect::<HashSet<_>>();
+    let library_docs = collect_library_wiki_docs(&path, &featured_paths);
+    let research_docs = collect_scoped_wiki_docs(&path, ".vision/research", "research");
+    let discovery_docs = collect_scoped_wiki_docs(&path, ".vision/discovery", "discovery");
 
-    // Build goals HTML
+    let phase_tone = |value: &str| -> &'static str {
+        match value {
+            "discovery" | "specifying" => "discovery",
+            "build" | "building" | "in_progress" => "build",
+            "test" | "testing" => "test",
+            "done" | "achieved" | "verified" | "complete" => "done",
+            "blocked" | "failed" | "dropped" => "blocked",
+            _ => "planned",
+        }
+    };
+    let doc_tone = |value: &str| -> &'static str {
+        match value {
+            "guide" | "operations" => "guide",
+            "experience" => "experience",
+            "architecture" => "architecture",
+            "sync" => "sync",
+            "history" => "history",
+            "research" => "research",
+            "discovery" => "discovery",
+            "overview" => "overview",
+            _ => "library",
+        }
+    };
+
+    let principles = vision["principles"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let goals = vision["goals"].as_array().cloned().unwrap_or_default();
+    let features = vision["features"].as_array().cloned().unwrap_or_default();
+    let adrs = vision["architecture"].as_array().cloned().unwrap_or_default();
+    let milestones = vision["milestones"].as_array().cloned().unwrap_or_default();
+    let changes = vision["changes"].as_array().cloned().unwrap_or_default();
+
+    let mut phase_counts: HashMap<String, usize> = HashMap::new();
+    let mut ready_features = 0usize;
+    let mut blocked_features = 0usize;
+
     let mut goals_html = String::new();
-    if let Some(goals) = vision["goals"].as_array() {
-        for g in goals {
-            let id = g["id"].as_str().unwrap_or("");
-            let title = g["title"].as_str().unwrap_or("");
-            let desc = g["description"].as_str().unwrap_or("");
-            let status = g["status"].as_str().unwrap_or("planned");
-            let priority = g["priority"].as_u64().unwrap_or(3);
-            let (badge_color, badge_bg) = match status {
-                "achieved" => ("#10b981", "rgba(16,185,129,0.1)"),
-                "in_progress" | "build" => ("#3b82f6", "rgba(59,130,246,0.1)"),
-                _ => ("#6b7280", "rgba(107,114,128,0.1)"),
-            };
-            let metrics_html = if let Some(metrics) = g["metrics"].as_array() {
-                let items: Vec<String> = metrics
+    for goal in &goals {
+        let id = goal.get("id").and_then(|value| value.as_str()).unwrap_or("");
+        let title = goal
+            .get("title")
+            .and_then(|value| value.as_str())
+            .unwrap_or("Untitled goal");
+        let description = goal
+            .get("description")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let status = goal
+            .get("status")
+            .and_then(|value| value.as_str())
+            .unwrap_or("planned");
+        let priority = goal
+            .get("priority")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(3);
+        let goal_metrics = goal
+            .get("metrics")
+            .and_then(|value| value.as_array())
+            .map(|items| {
+                items
                     .iter()
-                    .filter_map(|m| m.as_str())
-                    .map(|m| format!("<span class='wiki-metric'>{}</span>", escape_html(m)))
-                    .collect();
-                format!("<div class='wiki-metrics'>{}</div>", items.join(""))
+                    .filter_map(|item| item.as_str())
+                    .map(|metric| {
+                        format!(
+                            "<span class=\"mini-chip\">{}</span>",
+                            escape_html(metric)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .unwrap_or_default();
+
+        goals_html.push_str(&format!(
+            r#"<article class="wiki-card">
+                <div class="wiki-card-top">
+                    <div class="wiki-heading-group">
+                        <span class="wiki-id">{}</span>
+                        <h3>{}</h3>
+                    </div>
+                    <div class="wiki-tag-row">
+                        <span class="tone tone-{}">{}</span>
+                        <span class="mini-chip">Priority P{}</span>
+                    </div>
+                </div>
+                <p class="wiki-copy">{}</p>
+                {}
+            </article>"#,
+            escape_html(id),
+            escape_html(title),
+            phase_tone(status),
+            escape_html(status),
+            priority,
+            escape_html(description),
+            if goal_metrics.is_empty() {
+                String::new()
+            } else {
+                format!("<div class=\"mini-chip-row\">{}</div>", goal_metrics)
+            }
+        ));
+    }
+
+    let mut features_html = String::new();
+    for feature in &features {
+        let id = feature
+            .get("id")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let title = feature
+            .get("title")
+            .and_then(|value| value.as_str())
+            .unwrap_or("Untitled feature");
+        let description = feature
+            .get("description")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let goal_id = feature
+            .get("goal_id")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let phase_raw = feature
+            .get("phase")
+            .or_else(|| feature.get("status"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("planned");
+        let phase = phase_tone(phase_raw);
+        let state = feature
+            .get("state")
+            .and_then(|value| value.as_str())
+            .unwrap_or("active");
+        *phase_counts.entry(phase.to_string()).or_insert(0) += 1;
+
+        let readiness = feature
+            .get("readiness")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        let next_gate = match phase {
+            "planned" | "discovery" => Some("build"),
+            "build" => Some("test"),
+            "test" => Some("done"),
+            _ => None,
+        };
+        let ready_for_gate = next_gate
+            .map(|gate| {
+                readiness
+                    .get(format!("ready_for_{}", gate))
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
+        let blockers = next_gate
+            .and_then(|gate| {
+                readiness
+                    .get("blockers")
+                    .and_then(|value| value.get(gate))
+                    .and_then(|value| value.as_array())
+                    .cloned()
+            })
+            .unwrap_or_default();
+        if ready_for_gate {
+            ready_features += 1;
+        } else if !blockers.is_empty() {
+            blocked_features += 1;
+        }
+
+        let tasks_html = feature
+            .get("tasks")
+            .and_then(|value| value.as_array())
+            .map(|tasks| {
+                tasks.iter()
+                    .map(|task| {
+                        let task_title = task
+                            .get("title")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("Untitled task");
+                        let task_status = task
+                            .get("status")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("planned");
+                        let branch = task
+                            .get("branch")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("");
+                        format!(
+                            r#"<li class="detail-row">
+                                <span class="tone tone-{}">{}</span>
+                                <div>
+                                    <div class="detail-title">{}</div>
+                                    {}
+                                </div>
+                            </li>"#,
+                            phase_tone(task_status),
+                            escape_html(task_status),
+                            escape_html(task_title),
+                            if branch.is_empty() {
+                                String::new()
+                            } else {
+                                format!(
+                                    "<div class=\"detail-meta\">branch <code>{}</code></div>",
+                                    escape_html(branch)
+                                )
+                            }
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .unwrap_or_default();
+
+        let acceptance_items = if let Some(items) =
+            feature.get("acceptance_items").and_then(|value| value.as_array())
+        {
+            items.iter()
+                .map(|item| {
+                    let text = item
+                        .get("text")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("Unnamed acceptance criterion");
+                    let status = item
+                        .get("status")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("draft");
+                    let meta = [
+                        item.get("verification_method")
+                            .and_then(|value| value.as_str()),
+                        item.get("verification_source")
+                            .and_then(|value| value.as_str()),
+                        item.get("verified_by")
+                            .and_then(|value| value.as_str()),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>()
+                    .join(" · ");
+                    format!(
+                        r#"<li class="detail-row">
+                            <span class="tone tone-{}">{}</span>
+                            <div>
+                                <div class="detail-title">{}</div>
+                                {}
+                            </div>
+                        </li>"#,
+                        phase_tone(status),
+                        escape_html(status),
+                        escape_html(text),
+                        if meta.is_empty() {
+                            String::new()
+                        } else {
+                            format!(
+                                "<div class=\"detail-meta\">{}</div>",
+                                escape_html(&meta)
+                            )
+                        }
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("")
+        } else {
+            feature
+                .get("acceptance_criteria")
+                .and_then(|value| value.as_array())
+                .map(|criteria| {
+                    criteria
+                        .iter()
+                        .filter_map(|item| item.as_str())
+                        .map(|item| {
+                            format!(
+                                r#"<li class="detail-row">
+                                    <span class="tone tone-{}">{}</span>
+                                    <div><div class="detail-title">{}</div></div>
+                                </li>"#,
+                                if phase == "done" { "done" } else { "planned" },
+                                if phase == "done" { "verified" } else { "draft" },
+                                escape_html(item)
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("")
+                })
+                .unwrap_or_default()
+        };
+
+        let questions_html = feature
+            .get("questions")
+            .and_then(|value| value.as_array())
+            .map(|questions| {
+                questions
+                    .iter()
+                    .map(|question| {
+                        let text = question
+                            .get("text")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("Unnamed question");
+                        let status = question
+                            .get("status")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("open");
+                        let blocking = question
+                            .get("blocking")
+                            .and_then(|value| value.as_bool())
+                            .unwrap_or(true);
+                        let answer = question
+                            .get("answer")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("");
+                        format!(
+                            r#"<li class="detail-row">
+                                <span class="tone tone-{}">{}</span>
+                                <div>
+                                    <div class="detail-title">{}</div>
+                                    <div class="detail-meta">{}</div>
+                                    {}
+                                </div>
+                            </li>"#,
+                            if status == "answered" { "done" } else { "discovery" },
+                            escape_html(status),
+                            escape_html(text),
+                            if blocking {
+                                "blocking question".to_string()
+                            } else {
+                                "non-blocking question".to_string()
+                            },
+                            if answer.is_empty() {
+                                String::new()
+                            } else {
+                                format!(
+                                    "<div class=\"detail-meta\">{}</div>",
+                                    escape_html(answer)
+                                )
+                            }
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .unwrap_or_default();
+
+        let decisions_html = feature
+            .get("decisions")
+            .and_then(|value| value.as_array())
+            .map(|decisions| {
+                decisions
+                    .iter()
+                    .map(|decision| {
+                        let choice = decision
+                            .get("decision")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("Unnamed decision");
+                        let rationale = decision
+                            .get("rationale")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("");
+                        format!(
+                            r#"<li class="detail-row">
+                                <span class="tone tone-architecture">decision</span>
+                                <div>
+                                    <div class="detail-title">{}</div>
+                                    {}
+                                </div>
+                            </li>"#,
+                            escape_html(choice),
+                            if rationale.is_empty() {
+                                String::new()
+                            } else {
+                                format!(
+                                    "<div class=\"detail-meta\">{}</div>",
+                                    escape_html(rationale)
+                                )
+                            }
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .unwrap_or_default();
+
+        let focus_match = focus
+            .as_ref()
+            .and_then(|value| value.feature_id.as_deref())
+            .map(|feature_id| feature_id == id)
+            .unwrap_or(false);
+        let blockers_html = if blockers.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "<div class=\"mini-chip-row\">{}</div>",
+                blockers
+                    .iter()
+                    .filter_map(|blocker| blocker.as_str())
+                    .map(|blocker| format!(
+                        "<span class=\"mini-chip mini-chip-alert\">{}</span>",
+                        escape_html(blocker)
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("")
+            )
+        };
+        let readiness_html = match next_gate {
+            Some(gate) if ready_for_gate => format!(
+                "<div class=\"detail-meta\"><strong>Next gate:</strong> ready for {}</div>",
+                escape_html(gate)
+            ),
+            Some(gate) => format!(
+                "<div class=\"detail-meta\"><strong>Next gate:</strong> blocked before {}</div>",
+                escape_html(gate)
+            ),
+            None => "<div class=\"detail-meta\"><strong>Lifecycle:</strong> complete</div>".to_string(),
+        };
+
+        features_html.push_str(&format!(
+            r#"<details class="wiki-expandable" id="feature-{}" {}>
+                <summary>
+                    <div class="wiki-card-top">
+                        <div class="wiki-heading-group">
+                            <span class="wiki-id">{}</span>
+                            <h3>{}</h3>
+                        </div>
+                        <div class="wiki-tag-row">
+                            {}
+                            <span class="tone tone-{}">{}</span>
+                            <span class="tone tone-{}">{}</span>
+                            <span class="mini-chip">goal {}</span>
+                            {}
+                        </div>
+                    </div>
+                    <p class="wiki-copy">{}</p>
+                    {}
+                    {}
+                </summary>
+                <div class="wiki-detail-grid">
+                    {}
+                    {}
+                    {}
+                    {}
+                </div>
+            </details>"#,
+            slugify_doc_id(id),
+            if focus_match || phase != "done" { "open" } else { "" },
+            escape_html(id),
+            escape_html(title),
+            if focus_match {
+                "<span class=\"tone tone-overview\">focus</span>".to_string()
             } else {
                 String::new()
-            };
-
-            goals_html.push_str(&format!(r#"
-                <div class="wiki-goal">
-                    <div class="wiki-goal-header">
-                        <span class="wiki-id">{id}</span>
-                        <span class="wiki-goal-title">{title}</span>
-                        <span class="wiki-badge" style="color:{badge_color};background:{badge_bg}">{status}</span>
-                        <span class="wiki-priority">P{priority}</span>
-                    </div>
-                    <div class="wiki-desc">{desc}</div>
-                    {metrics_html}
-                </div>
-            "#, id=escape_html(id), title=escape_html(title), desc=escape_html(desc),
-               status=status, badge_color=badge_color, badge_bg=badge_bg,
-               priority=priority, metrics_html=metrics_html));
-        }
+            },
+            phase,
+            escape_html(phase_raw),
+            phase_tone(state),
+            escape_html(state),
+            escape_html(goal_id),
+            if feature
+                .get("has_sub_vision")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false)
+            {
+                "<span class=\"tone tone-architecture\">sub-vision</span>".to_string()
+            } else {
+                String::new()
+            },
+            escape_html(description),
+            readiness_html,
+            blockers_html,
+            if tasks_html.is_empty() {
+                "<div class=\"detail-block\"><h4>Build Tasks</h4><p class=\"wiki-empty\">No implementation tasks recorded yet.</p></div>".to_string()
+            } else {
+                format!("<div class=\"detail-block\"><h4>Build Tasks</h4><ul class=\"detail-list\">{}</ul></div>", tasks_html)
+            },
+            if acceptance_items.is_empty() {
+                "<div class=\"detail-block\"><h4>Acceptance</h4><p class=\"wiki-empty\">Acceptance criteria have not been documented yet.</p></div>".to_string()
+            } else {
+                format!("<div class=\"detail-block\"><h4>Acceptance</h4><ul class=\"detail-list\">{}</ul></div>", acceptance_items)
+            },
+            if questions_html.is_empty() {
+                "<div class=\"detail-block\"><h4>Questions</h4><p class=\"wiki-empty\">No open discovery questions are recorded.</p></div>".to_string()
+            } else {
+                format!("<div class=\"detail-block\"><h4>Questions</h4><ul class=\"detail-list\">{}</ul></div>", questions_html)
+            },
+            if decisions_html.is_empty() {
+                "<div class=\"detail-block\"><h4>Decisions</h4><p class=\"wiki-empty\">No explicit implementation decisions are logged yet.</p></div>".to_string()
+            } else {
+                format!("<div class=\"detail-block\"><h4>Decisions</h4><ul class=\"detail-list\">{}</ul></div>", decisions_html)
+            }
+        ));
     }
 
-    // Build features HTML
-    let mut features_html = String::new();
-    if let Some(features) = vision["features"].as_array() {
-        for f in features {
-            let id = f["id"].as_str().unwrap_or("");
-            let title = f["title"].as_str().unwrap_or("");
-            let desc = f["description"].as_str().unwrap_or("");
-            let status = f
-                .get("phase")
-                .or(f.get("status"))
-                .and_then(|v| v.as_str())
+    let milestones_html = milestones
+        .iter()
+        .map(|milestone| {
+            let id = milestone
+                .get("id")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let title = milestone
+                .get("title")
+                .and_then(|value| value.as_str())
+                .unwrap_or("Untitled milestone");
+            let description = milestone
+                .get("description")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let status = milestone
+                .get("status")
+                .and_then(|value| value.as_str())
                 .unwrap_or("planned");
-            let goal_id = f["goal_id"].as_str().unwrap_or("");
-
-            let (badge_color, badge_bg) = match status {
-                "done" => ("#10b981", "rgba(16,185,129,0.1)"),
-                "test" | "testing" => ("#f59e0b", "rgba(245,158,11,0.1)"),
-                "build" | "building" | "in_progress" => ("#3b82f6", "rgba(59,130,246,0.1)"),
-                "specifying" => ("#8b5cf6", "rgba(139,92,246,0.1)"),
-                _ => ("#6b7280", "rgba(107,114,128,0.1)"),
-            };
-
-            // Tasks
-            let mut tasks_html = String::new();
-            if let Some(tasks) = f["tasks"].as_array() {
-                for t in tasks {
-                    let t_title = t["title"].as_str().unwrap_or("");
-                    let t_status = t["status"].as_str().unwrap_or("planned");
-                    let icon = match t_status {
-                        "done" => "&#x2705;",
-                        "in_progress" => "&#x1F6E0;",
-                        _ => "&#x25CB;",
-                    };
-                    let branch = t["branch"].as_str().unwrap_or("");
-                    let branch_tag = if !branch.is_empty() {
-                        format!("<code class='wiki-branch'>{}</code>", escape_html(branch))
-                    } else {
-                        String::new()
-                    };
-                    tasks_html.push_str(&format!(
-                        "<div class='wiki-task'><span>{icon}</span> <span>{title}</span> {branch}</div>",
-                        icon=icon, title=escape_html(t_title), branch=branch_tag
-                    ));
-                }
-            }
-
-            // Questions
-            let mut questions_html = String::new();
-            if let Some(questions) = f["questions"].as_array() {
-                for q in questions {
-                    let q_text = q["text"].as_str().unwrap_or("");
-                    let q_status = q["status"].as_str().unwrap_or("open");
-                    let q_answer = q["answer"].as_str().unwrap_or("");
-                    let icon = if q_status == "answered" {
-                        "&#x2705;"
-                    } else {
-                        "&#x2753;"
-                    };
-                    questions_html.push_str(&format!(
-                        "<div class='wiki-question'><span>{icon}</span> <span>{text}</span>{answer}</div>",
-                        icon=icon, text=escape_html(q_text),
-                        answer=if !q_answer.is_empty() {
-                            format!("<div class='wiki-answer'>{}</div>", escape_html(q_answer))
-                        } else { String::new() }
-                    ));
-                }
-            }
-
-            // Decisions
-            let mut decisions_html = String::new();
-            if let Some(decisions) = f["decisions"].as_array() {
-                for d in decisions {
-                    let d_decision = d["decision"].as_str().unwrap_or("");
-                    let d_rationale = d["rationale"].as_str().unwrap_or("");
-                    decisions_html.push_str(&format!(
-                        "<div class='wiki-decision'><strong>Decision:</strong> {decision}<br><em>Rationale:</em> {rationale}</div>",
-                        decision=escape_html(d_decision), rationale=escape_html(d_rationale)
-                    ));
-                }
-            }
-
-            // Acceptance criteria
-            let mut criteria_html = String::new();
-            if let Some(criteria) = f["acceptance_criteria"].as_array() {
-                for c in criteria {
-                    if let Some(text) = c.as_str() {
-                        let check = if status == "done" {
-                            "&#x2705;"
-                        } else {
-                            "&#x25CB;"
-                        };
-                        criteria_html.push_str(&format!(
-                            "<div class='wiki-criterion'><span>{check}</span> {text}</div>",
-                            check = check,
-                            text = escape_html(text)
-                        ));
-                    }
-                }
-            }
-
-            features_html.push_str(&format!(r#"
-                <div class="wiki-feature" id="feature-{id}">
-                    <div class="wiki-feature-header">
-                        <span class="wiki-id">{id}</span>
-                        <span class="wiki-feature-title">{title}</span>
-                        <span class="wiki-badge" style="color:{badge_color};background:{badge_bg}">{status}</span>
-                        <span class="wiki-goal-ref">&#x2192; {goal_id}</span>
+            let target_date = milestone
+                .get("target_date")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let pct = milestone
+                .get("progress_pct")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(0);
+            format!(
+                r#"<article class="wiki-card">
+                    <div class="wiki-card-top">
+                        <div class="wiki-heading-group">
+                            <span class="wiki-id">{}</span>
+                            <h3>{}</h3>
+                        </div>
+                        <div class="wiki-tag-row">
+                            <span class="tone tone-{}">{}</span>
+                            <span class="mini-chip">{}</span>
+                            <span class="mini-chip">{}%</span>
+                        </div>
                     </div>
-                    <div class="wiki-desc">{desc}</div>
-                    {tasks_section}
-                    {criteria_section}
-                    {questions_section}
-                    {decisions_section}
-                </div>
-            "#,
-                id=escape_html(id), title=escape_html(title), desc=escape_html(desc),
-                status=status, badge_color=badge_color, badge_bg=badge_bg,
-                goal_id=escape_html(goal_id),
-                tasks_section=if !tasks_html.is_empty() {
-                    format!("<div class='wiki-section-title'>Tasks</div>{}", tasks_html)
-                } else { String::new() },
-                criteria_section=if !criteria_html.is_empty() {
-                    format!("<div class='wiki-section-title'>Acceptance Criteria</div>{}", criteria_html)
-                } else { String::new() },
-                questions_section=if !questions_html.is_empty() {
-                    format!("<div class='wiki-section-title'>Questions</div>{}", questions_html)
-                } else { String::new() },
-                decisions_section=if !decisions_html.is_empty() {
-                    format!("<div class='wiki-section-title'>Decisions</div>{}", decisions_html)
-                } else { String::new() },
-            ));
-        }
-    }
+                    <p class="wiki-copy">{}</p>
+                    <div class="progress-track"><div class="progress-fill tone-fill-{}" style="width:{}%"></div></div>
+                </article>"#,
+                escape_html(id),
+                escape_html(title),
+                phase_tone(status),
+                escape_html(status),
+                if target_date.is_empty() {
+                    "No target date".to_string()
+                } else {
+                    escape_html(target_date)
+                },
+                pct,
+                escape_html(description),
+                phase_tone(status),
+                pct.min(100)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
 
-    // Architecture Decision Records
-    let mut adr_html = String::new();
-    if let Some(adrs) = vision["architecture"].as_array() {
-        for a in adrs {
-            let id = a["id"].as_str().unwrap_or("");
-            let title = a["title"].as_str().unwrap_or("");
-            let decision = a["decision"].as_str().unwrap_or("");
-            let rationale = a["rationale"].as_str().unwrap_or("");
-            let date = a["date"].as_str().unwrap_or("");
-            let status = a["status"].as_str().unwrap_or("active");
-            let alts = a["alternatives_considered"]
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str())
+    let adr_html = adrs
+        .iter()
+        .map(|adr| {
+            let id = adr
+                .get("id")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let title = adr
+                .get("title")
+                .and_then(|value| value.as_str())
+                .unwrap_or("Untitled decision");
+            let decision = adr
+                .get("decision")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let rationale = adr
+                .get("rationale")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let date = adr
+                .get("date")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let status = adr
+                .get("status")
+                .and_then(|value| value.as_str())
+                .unwrap_or("active");
+            let alternatives = adr
+                .get("alternatives_considered")
+                .and_then(|value| value.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str())
                         .collect::<Vec<_>>()
                         .join(", ")
                 })
                 .unwrap_or_default();
-
-            adr_html.push_str(&format!(r#"
-                <div class="wiki-adr">
-                    <div class="wiki-adr-header">
-                        <span class="wiki-id">{id}</span>
-                        <span class="wiki-adr-title">{title}</span>
-                        <span class="wiki-badge" style="color:#10b981;background:rgba(16,185,129,0.1)">{status}</span>
-                        <span class="wiki-date">{date}</span>
-                    </div>
-                    <div class="wiki-adr-body">
-                        <p><strong>Decision:</strong> {decision}</p>
-                        <p><strong>Rationale:</strong> {rationale}</p>
-                        {alts_html}
-                    </div>
-                </div>
-            "#,
-                id=escape_html(id), title=escape_html(title), decision=escape_html(decision),
-                rationale=escape_html(rationale), date=escape_html(date), status=escape_html(status),
-                alts_html=if !alts.is_empty() {
-                    format!("<p><strong>Alternatives considered:</strong> {}</p>", escape_html(&alts))
-                } else { String::new() }
-            ));
-        }
-    }
-
-    // Milestones
-    let mut milestones_html = String::new();
-    if let Some(milestones) = vision["milestones"].as_array() {
-        for m in milestones {
-            let id = m["id"].as_str().unwrap_or("");
-            let title = m["title"].as_str().unwrap_or("");
-            let desc = m["description"].as_str().unwrap_or("");
-            let status = m["status"].as_str().unwrap_or("upcoming");
-            let target = m["target_date"].as_str().unwrap_or("");
-            let pct = m["progress_pct"].as_u64().unwrap_or(0);
-            let (badge_color, badge_bg) = match status {
-                "complete" => ("#10b981", "rgba(16,185,129,0.1)"),
-                "active" | "in_progress" => ("#3b82f6", "rgba(59,130,246,0.1)"),
-                _ => ("#6b7280", "rgba(107,114,128,0.1)"),
-            };
-
-            milestones_html.push_str(&format!(r#"
-                <div class="wiki-milestone">
-                    <div class="wiki-milestone-header">
-                        <span class="wiki-id">{id}</span>
-                        <span>{title}</span>
-                        <span class="wiki-badge" style="color:{badge_color};background:{badge_bg}">{status}</span>
-                        <span class="wiki-date">{target}</span>
-                        <span class="wiki-pct">{pct}%</span>
-                    </div>
-                    <div class="wiki-desc">{desc}</div>
-                    <div class="wiki-progress-bar"><div class="wiki-progress-fill" style="width:{pct}%"></div></div>
-                </div>
-            "#,
-                id=escape_html(id), title=escape_html(title), desc=escape_html(desc),
-                status=escape_html(status), target=escape_html(target), pct=pct,
-                badge_color=badge_color, badge_bg=badge_bg,
-            ));
-        }
-    }
-
-    // Recent changes
-    let mut changes_html = String::new();
-    if let Some(changes) = vision["changes"].as_array() {
-        let recent: Vec<&Value> = changes.iter().rev().take(20).collect();
-        for c in recent {
-            let ts = c["timestamp"].as_str().unwrap_or("");
-            let change_type = c["change_type"].as_str().unwrap_or("");
-            let field = c["field"].as_str().unwrap_or("");
-            let reason = c["reason"].as_str().unwrap_or("");
-            let triggered_by = c["triggered_by"].as_str().unwrap_or("");
-            let icon = match change_type {
-                "added" => "&#x2795;",
-                "modified" => "&#x270F;",
-                "status_change" => "&#x1F504;",
-                _ => "&#x2022;",
-            };
-            changes_html.push_str(&format!(
-                "<tr><td>{icon}</td><td><code>{field}</code></td><td>{reason}</td><td>{by}</td><td class='wiki-date'>{ts}</td></tr>",
-                icon=icon, field=escape_html(field), reason=escape_html(reason),
-                by=escape_html(triggered_by), ts=escape_html(&ts.get(..16).unwrap_or(ts))
-            ));
-        }
-    }
-
-    // Research/Discovery docs
-    let mut docs_html = String::new();
-    let base = std::path::Path::new(&path).join(".vision");
-    for subdir in &["research", "discovery"] {
-        let dir = base.join(subdir);
-        if let Ok(entries) = std::fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                let fname = entry.file_name().to_string_lossy().to_string();
-                if fname.ends_with(".md") {
-                    let feature_id = fname.trim_end_matches(".md");
-                    let content = std::fs::read_to_string(entry.path()).unwrap_or_default();
-                    let html = markdown_to_html(&content);
-                    docs_html.push_str(&format!(r#"
-                        <div class="wiki-doc">
-                            <div class="wiki-doc-header">
-                                <span class="wiki-badge" style="color:#8b5cf6;background:rgba(139,92,246,0.1)">{subdir}</span>
-                                <span>{feature_id}</span>
-                            </div>
-                            <div class="wiki-doc-content">{html}</div>
+            format!(
+                r#"<article class="wiki-card">
+                    <div class="wiki-card-top">
+                        <div class="wiki-heading-group">
+                            <span class="wiki-id">{}</span>
+                            <h3>{}</h3>
                         </div>
-                    "#, subdir=subdir, feature_id=escape_html(feature_id), html=html));
+                        <div class="wiki-tag-row">
+                            <span class="tone tone-architecture">{}</span>
+                            {}
+                        </div>
+                    </div>
+                    <div class="wiki-rich-text">
+                        <p><strong>Decision:</strong> {}</p>
+                        <p><strong>Rationale:</strong> {}</p>
+                        {}
+                    </div>
+                </article>"#,
+                escape_html(id),
+                escape_html(title),
+                escape_html(status),
+                if date.is_empty() {
+                    String::new()
+                } else {
+                    format!("<span class=\"mini-chip\">{}</span>", escape_html(date))
+                },
+                escape_html(decision),
+                escape_html(rationale),
+                if alternatives.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "<p><strong>Alternatives considered:</strong> {}</p>",
+                        escape_html(&alternatives)
+                    )
                 }
-            }
-        }
-    }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
 
-    // Principles
-    let principles_html = vision["principles"]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str())
-                .map(|p| format!("<li>{}</li>", escape_html(p)))
+    let changes_html = changes
+        .iter()
+        .rev()
+        .take(25)
+        .map(|change| {
+            let timestamp = change
+                .get("timestamp")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let change_type = change
+                .get("change_type")
+                .and_then(|value| value.as_str())
+                .unwrap_or("updated");
+            let field = change
+                .get("field")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let reason = change
+                .get("reason")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let by = change
+                .get("triggered_by")
+                .and_then(|value| value.as_str())
+                .unwrap_or("system");
+            format!(
+                r#"<div class="timeline-item">
+                    <div class="timeline-top">
+                        <span class="tone tone-{}">{}</span>
+                        <span class="timeline-date">{}</span>
+                    </div>
+                    <div class="detail-title"><code>{}</code></div>
+                    {}
+                    <div class="detail-meta">by {}</div>
+                </div>"#,
+                if change_type == "status_change" {
+                    "build"
+                } else if change_type == "added" {
+                    "done"
+                } else {
+                    "overview"
+                },
+                escape_html(change_type),
+                escape_html(timestamp.get(..16).unwrap_or(timestamp)),
+                escape_html(field),
+                if reason.is_empty() {
+                    String::new()
+                } else {
+                    format!("<div class=\"detail-meta\">{}</div>", escape_html(reason))
+                },
+                escape_html(by)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
+    let featured_cards_html = featured_docs
+        .iter()
+        .map(|doc| {
+            format!(
+                r#"<a class="handbook-card" href="#doc-{}">
+                    <span class="tone tone-{}">{}</span>
+                    <h3>{}</h3>
+                    <p>{}</p>
+                    <div class="card-path">{}</div>
+                </a>"#,
+                escape_html(&doc.id),
+                doc_tone(&doc.category),
+                escape_html(&doc.category),
+                escape_html(&doc.title),
+                escape_html(if doc.summary.is_empty() {
+                    "Open this handbook page for the full narrative."
+                } else {
+                    &doc.summary
+                }),
+                escape_html(&doc.relative_path)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
+    let featured_articles_html = featured_docs
+        .iter()
+        .map(|doc| {
+            format!(
+                r#"<article class="wiki-doc-article" id="doc-{}">
+                    <div class="wiki-card-top">
+                        <div class="wiki-heading-group">
+                            <span class="tone tone-{}">{}</span>
+                            <h3>{}</h3>
+                        </div>
+                        <a class="text-link" href="#top">Back to top</a>
+                    </div>
+                    <p class="wiki-copy">{}</p>
+                    <div class="card-path">{}</div>
+                    <div class="wiki-rich-text">{}</div>
+                </article>"#,
+                escape_html(&doc.id),
+                doc_tone(&doc.category),
+                escape_html(&doc.category),
+                escape_html(&doc.title),
+                escape_html(if doc.summary.is_empty() {
+                    "Narrative document"
+                } else {
+                    &doc.summary
+                }),
+                escape_html(&doc.relative_path),
+                doc.html
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
+    let research_collections = [
+        ("Research Notes", "research", &research_docs),
+        ("Discovery Notes", "discovery", &discovery_docs),
+    ];
+    let research_html = research_collections
+        .iter()
+        .map(|(title, tone, docs)| {
+            let items = docs
+                .iter()
+                .map(|doc| {
+                    format!(
+                        r#"<details class="wiki-expandable">
+                            <summary>
+                                <div class="wiki-card-top">
+                                    <div class="wiki-heading-group">
+                                        <span class="tone tone-{}">{}</span>
+                                        <h3>{}</h3>
+                                    </div>
+                                    <span class="mini-chip">{}</span>
+                                </div>
+                                <p class="wiki-copy">{}</p>
+                            </summary>
+                            <div class="wiki-rich-text">{}</div>
+                        </details>"#,
+                        doc_tone(&doc.category),
+                        escape_html(&doc.category),
+                        escape_html(&doc.title),
+                        escape_html(&doc.relative_path),
+                        escape_html(if doc.summary.is_empty() {
+                            "Operational note"
+                        } else {
+                            &doc.summary
+                        }),
+                        doc.html
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("");
+            format!(
+                r#"<div class="doc-collection">
+                    <div class="wiki-card-top">
+                        <div class="wiki-heading-group">
+                            <span class="tone tone-{}">{}</span>
+                            <h3>{}</h3>
+                        </div>
+                        <span class="mini-chip">{} documents</span>
+                    </div>
+                    {}
+                </div>"#,
+                tone,
+                escape_html(tone),
+                escape_html(title),
+                docs.len(),
+                if items.is_empty() {
+                    "<p class=\"wiki-empty\">No documents in this collection yet.</p>".to_string()
+                } else {
+                    items
+                }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
+    let library_html = library_docs
+        .iter()
+        .map(|doc| {
+            format!(
+                r#"<details class="wiki-expandable">
+                    <summary>
+                        <div class="wiki-card-top">
+                            <div class="wiki-heading-group">
+                                <span class="tone tone-{}">{}</span>
+                                <h3>{}</h3>
+                            </div>
+                            <span class="card-path">{}</span>
+                        </div>
+                        <p class="wiki-copy">{}</p>
+                    </summary>
+                    <div class="wiki-rich-text">{}</div>
+                </details>"#,
+                doc_tone(&doc.category),
+                escape_html(&doc.category),
+                escape_html(&doc.title),
+                escape_html(&doc.relative_path),
+                escape_html(if doc.summary.is_empty() {
+                    "Library document"
+                } else {
+                    &doc.summary
+                }),
+                doc.html
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
+    let principles_html = if principles.is_empty() {
+        "<p class=\"wiki-empty\">No explicit project principles are recorded yet.</p>".to_string()
+    } else {
+        format!(
+            "<div class=\"principle-grid\">{}</div>",
+            principles
+                .iter()
+                .filter_map(|value| value.as_str())
+                .map(|principle| format!(
+                    "<div class=\"principle-item\">{}</div>",
+                    escape_html(principle)
+                ))
                 .collect::<Vec<_>>()
                 .join("")
-        })
-        .unwrap_or_default();
+        )
+    };
 
-    // Assemble full page
+    let focus_html = if let Some(entry) = focus {
+        format!(
+            r#"<div class="focus-card">
+                <span class="tone tone-overview">active focus</span>
+                <div class="focus-title">{}</div>
+                <div class="detail-meta">{}</div>
+                <div class="detail-meta">{}</div>
+            </div>"#,
+            escape_html(
+                entry
+                    .feature_id
+                    .as_deref()
+                    .or(entry.goal_id.as_deref())
+                    .unwrap_or(project)
+            ),
+            escape_html(
+                entry
+                    .source
+                    .as_deref()
+                    .map(|source| format!("set by {}", source))
+                    .unwrap_or_else(|| "shared focus".to_string())
+            ),
+            escape_html(
+                entry
+                    .updated_at
+                    .as_deref()
+                    .map(|value| format!("updated {}", value))
+                    .unwrap_or_else(|| "recent".to_string())
+            )
+        )
+    } else {
+        "<div class=\"focus-card\"><span class=\"tone tone-planned\">no shared focus</span><div class=\"detail-meta\">Set focus from the dashboard, MCP, or hook flow to keep auto-continue and docs aligned.</div></div>".to_string()
+    };
+
+    let stage_story = if blocked_features > 0 {
+        format!(
+            "{} feature(s) currently have explicit blockers before their next gate.",
+            blocked_features
+        )
+    } else if ready_features > 0 {
+        format!(
+            "{} feature(s) are ready to advance to the next delivery gate.",
+            ready_features
+        )
+    } else {
+        "The plan is present, but no feature is fully gate-ready yet.".to_string()
+    };
+
+    let phase_cards_html = ["planned", "discovery", "build", "test", "done"]
+        .iter()
+        .map(|phase| {
+            format!(
+                r#"<div class="stat-card">
+                    <div class="stat-label">{}</div>
+                    <div class="stat-value">{}</div>
+                    <div class="detail-meta">phase count</div>
+                </div>"#,
+                escape_html(phase),
+                phase_counts.get(*phase).copied().unwrap_or(0)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
+    let sidebar_doc_links = featured_docs
+        .iter()
+        .map(|doc| {
+            format!(
+                "<a href=\"#doc-{}\">{}</a>",
+                escape_html(&doc.id),
+                escape_html(&doc.title)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
     let html = format!(
         r##"<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{project} — Project Wiki</title>
+<title>{project} — DX Handbook</title>
 <style>
 :root {{
-    --bg: #0d1117; --surface: #161b22; --surface2: #1c2333; --border: #30363d;
-    --text: #e6edf3; --muted: #8b949e; --dim: #484f58;
-    --blue: #58a6ff; --green: #3fb950; --yellow: #d29922; --red: #f85149;
-    --purple: #bc8cff; --teal: #39d2c0;
+    --paper:#f3eee5;
+    --paper-strong:#fffdf9;
+    --ink:#1c2733;
+    --muted:#5d6a77;
+    --line:#d8dee5;
+    --line-strong:#c3ced9;
+    --navy:#27587e;
+    --teal:#1d6d6b;
+    --gold:#9a6b17;
+    --green:#2f7d59;
+    --coral:#a04d5f;
+    --slate:#566679;
+    --shadow:0 20px 45px rgba(20,28,38,.08);
+    --radius:20px;
+    --radius-sm:12px;
+    --serif:'Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;
+    --sans:'Avenir Next','Segoe UI','IBM Plex Sans','Helvetica Neue',sans-serif;
+    --mono:'SF Mono','JetBrains Mono','Cascadia Code',monospace;
 }}
-* {{ margin:0; padding:0; box-sizing:border-box; }}
-body {{ background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; line-height:1.6; }}
-.wiki-container {{ max-width:960px; margin:0 auto; padding:32px 24px; }}
-.wiki-header {{ border-bottom:1px solid var(--border); padding-bottom:24px; margin-bottom:32px; }}
-.wiki-title {{ font-size:28px; font-weight:700; color:var(--text); margin-bottom:4px; }}
-.wiki-mission {{ font-size:14px; color:var(--muted); margin-bottom:12px; }}
-.wiki-meta {{ font-size:11px; color:var(--dim); display:flex; gap:16px; }}
-.wiki-nav {{ display:flex; gap:8px; margin-bottom:32px; flex-wrap:wrap; }}
-.wiki-nav a {{ padding:6px 14px; border-radius:6px; background:var(--surface); color:var(--muted); text-decoration:none; font-size:12px; font-weight:500; border:1px solid var(--border); transition:all 0.15s; }}
-.wiki-nav a:hover, .wiki-nav a.active {{ background:var(--surface2); color:var(--blue); border-color:var(--blue); }}
-.wiki-section {{ margin-bottom:40px; }}
-.wiki-section > h2 {{ font-size:20px; font-weight:600; color:var(--text); border-bottom:2px solid var(--border); padding-bottom:8px; margin-bottom:16px; }}
-.wiki-section > h2 span {{ font-size:12px; color:var(--dim); font-weight:400; margin-left:8px; }}
-.wiki-id {{ font-size:10px; font-weight:700; color:var(--purple); background:rgba(139,92,246,0.1); padding:2px 6px; border-radius:4px; font-family:monospace; }}
-.wiki-badge {{ font-size:10px; font-weight:600; padding:2px 8px; border-radius:10px; text-transform:uppercase; letter-spacing:0.3px; }}
-.wiki-date {{ font-size:11px; color:var(--dim); }}
-.wiki-priority {{ font-size:10px; color:var(--yellow); font-weight:600; }}
-.wiki-pct {{ font-size:11px; color:var(--blue); font-weight:600; }}
-.wiki-desc {{ font-size:13px; color:var(--muted); margin:6px 0 10px; }}
-.wiki-goal, .wiki-feature, .wiki-adr, .wiki-milestone, .wiki-doc {{ background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:12px; }}
-.wiki-goal-header, .wiki-feature-header, .wiki-adr-header, .wiki-milestone-header {{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
-.wiki-goal-title, .wiki-feature-title, .wiki-adr-title {{ font-size:15px; font-weight:600; }}
-.wiki-goal-ref {{ font-size:10px; color:var(--dim); }}
-.wiki-metrics {{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }}
-.wiki-metric {{ font-size:10px; padding:3px 8px; border-radius:4px; background:var(--surface2); color:var(--teal); border:1px solid rgba(57,210,192,0.15); }}
-.wiki-section-title {{ font-size:11px; font-weight:700; color:var(--dim); text-transform:uppercase; letter-spacing:0.5px; margin:12px 0 6px; }}
-.wiki-task {{ display:flex; align-items:center; gap:6px; font-size:12px; padding:3px 0; color:var(--muted); }}
-.wiki-branch {{ font-size:10px; padding:1px 5px; background:var(--surface2); border-radius:3px; color:var(--blue); }}
-.wiki-question {{ font-size:12px; padding:4px 0; color:var(--muted); }}
-.wiki-answer {{ margin-left:22px; padding:4px 8px; border-left:2px solid var(--green); color:var(--green); font-size:12px; }}
-.wiki-decision {{ font-size:12px; padding:8px; background:var(--surface2); border-radius:4px; margin:4px 0; color:var(--muted); }}
-.wiki-criterion {{ display:flex; align-items:center; gap:6px; font-size:12px; padding:3px 0; color:var(--muted); }}
-.wiki-adr-body {{ font-size:13px; color:var(--muted); margin-top:8px; }}
-.wiki-adr-body p {{ margin:4px 0; }}
-.wiki-progress-bar {{ height:4px; background:var(--surface2); border-radius:2px; margin-top:8px; overflow:hidden; }}
-.wiki-progress-fill {{ height:100%; background:var(--green); border-radius:2px; transition:width 0.3s; }}
-.wiki-doc-header {{ display:flex; align-items:center; gap:8px; margin-bottom:8px; }}
-.wiki-doc-content {{ font-size:13px; color:var(--muted); }}
-.wiki-doc-content h1,.wiki-doc-content h2,.wiki-doc-content h3 {{ color:var(--text); margin:12px 0 6px; }}
-.wiki-doc-content pre {{ background:var(--surface2); padding:10px; border-radius:6px; overflow-x:auto; font-size:12px; }}
-.wiki-doc-content code {{ font-size:12px; padding:1px 4px; background:var(--surface2); border-radius:3px; }}
-.wiki-doc-content ul,.wiki-doc-content ol {{ margin-left:20px; margin-bottom:8px; }}
-.wiki-doc-content li {{ margin:2px 0; }}
-.wiki-changelog {{ width:100%; border-collapse:collapse; font-size:12px; }}
-.wiki-changelog td {{ padding:6px 8px; border-bottom:1px solid var(--border); color:var(--muted); }}
-.wiki-changelog code {{ font-size:11px; background:var(--surface2); padding:1px 5px; border-radius:3px; color:var(--purple); }}
-.wiki-principles {{ list-style:none; }}
-.wiki-principles li {{ padding:4px 0; font-size:13px; color:var(--muted); }}
-.wiki-principles li::before {{ content:"→ "; color:var(--blue); font-weight:700; }}
-.wiki-footer {{ border-top:1px solid var(--border); padding-top:16px; margin-top:40px; text-align:center; font-size:11px; color:var(--dim); }}
-@media (max-width:768px) {{ .wiki-container {{ padding:16px 12px; }} .wiki-title {{ font-size:22px; }} }}
+* {{ box-sizing:border-box; }}
+html {{ scroll-behavior:smooth; }}
+body {{
+    margin:0;
+    font-family:var(--sans);
+    color:var(--ink);
+    background:
+        radial-gradient(circle at top left, rgba(39,88,126,.08), transparent 32%),
+        radial-gradient(circle at top right, rgba(29,109,107,.07), transparent 28%),
+        linear-gradient(180deg, #f8f4ed 0%, var(--paper) 100%);
+    line-height:1.65;
+}}
+a {{ color:var(--navy); text-decoration:none; }}
+a:hover {{ text-decoration:underline; }}
+code {{ font-family:var(--mono); }}
+.wiki-shell {{
+    max-width:1480px;
+    margin:0 auto;
+    padding:28px 24px 48px;
+    display:grid;
+    grid-template-columns:280px minmax(0, 1fr);
+    gap:28px;
+}}
+.wiki-sidebar {{
+    position:sticky;
+    top:24px;
+    align-self:start;
+    display:grid;
+    gap:16px;
+}}
+.sidebar-card,
+.section-card,
+.wiki-card,
+.wiki-doc-article,
+.doc-collection {{
+    background:var(--paper-strong);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+}}
+.sidebar-card {{ padding:18px; }}
+.section-card {{ padding:24px; margin-bottom:22px; }}
+.brand {{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    margin-bottom:10px;
+}}
+.brand-mark {{
+    width:46px;
+    height:46px;
+    border-radius:14px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:linear-gradient(135deg, #224c70, #2a7a78);
+    color:#fff;
+    font-family:var(--mono);
+    font-weight:800;
+    letter-spacing:-0.04em;
+}}
+.brand-copy h1 {{
+    margin:0;
+    font-size:18px;
+    font-weight:800;
+    letter-spacing:-0.03em;
+}}
+.brand-copy p,
+.sidebar-copy,
+.wiki-copy,
+.detail-meta,
+.wiki-empty,
+.card-path {{
+    color:var(--muted);
+}}
+.sidebar-copy,
+.wiki-copy {{
+    font-size:14px;
+}}
+.sidebar-title,
+.section-kicker {{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.14em;
+    font-weight:800;
+    color:var(--navy);
+    margin-bottom:10px;
+}}
+.sidebar-actions {{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-top:14px;
+}}
+.sidebar-actions a,
+.hero-actions a {{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    padding:10px 14px;
+    border-radius:999px;
+    border:1px solid var(--line-strong);
+    background:#fff;
+    font-size:12px;
+    font-weight:700;
+}}
+.sidebar-actions a.primary,
+.hero-actions a.primary {{
+    background:var(--navy);
+    color:#fff;
+    border-color:var(--navy);
+}}
+.sidebar-nav {{
+    display:grid;
+    gap:6px;
+}}
+.sidebar-nav a {{
+    padding:8px 10px;
+    border-radius:10px;
+    color:var(--ink);
+    border:1px solid transparent;
+}}
+.sidebar-nav a:hover,
+.sidebar-nav a.is-active {{
+    background:rgba(39,88,126,.07);
+    border-color:rgba(39,88,126,.12);
+    text-decoration:none;
+}}
+.focus-card {{
+    display:grid;
+    gap:6px;
+}}
+.focus-title {{
+    font-size:16px;
+    font-weight:800;
+}}
+.hero {{
+    padding:30px;
+}}
+.hero-top {{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:18px;
+    flex-wrap:wrap;
+}}
+.hero h1 {{
+    margin:6px 0 8px;
+    font-size:44px;
+    line-height:1.02;
+    font-family:var(--serif);
+    letter-spacing:-0.04em;
+}}
+.hero-mission {{
+    font-size:17px;
+    max-width:70ch;
+    color:var(--muted);
+}}
+.hero-meta {{
+    display:flex;
+    gap:12px;
+    flex-wrap:wrap;
+    margin-top:16px;
+}}
+.hero-actions {{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+}}
+.meta-chip,
+.mini-chip {{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:6px 10px;
+    border-radius:999px;
+    border:1px solid var(--line);
+    background:#fff;
+    font-size:12px;
+    color:var(--muted);
+}}
+.mini-chip {{
+    font-size:11px;
+    padding:5px 8px;
+}}
+.mini-chip-alert {{
+    color:var(--coral);
+    border-color:rgba(160,77,95,.16);
+    background:rgba(160,77,95,.08);
+}}
+.stats-grid,
+.handbook-grid,
+.principle-grid,
+.wiki-detail-grid {{
+    display:grid;
+    gap:12px;
+}}
+.stats-grid {{
+    grid-template-columns:repeat(6, minmax(0, 1fr));
+    margin-top:24px;
+}}
+.handbook-grid {{
+    grid-template-columns:repeat(3, minmax(0, 1fr));
+}}
+.principle-grid,
+.wiki-detail-grid {{
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+}}
+.stat-card,
+.handbook-card,
+.detail-block,
+.principle-item {{
+    padding:16px;
+    border:1px solid var(--line);
+    border-radius:16px;
+    background:#fff;
+}}
+.stat-label {{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.12em;
+    font-weight:800;
+    color:var(--muted);
+}}
+.stat-value {{
+    font-size:28px;
+    font-weight:800;
+    margin-top:6px;
+    letter-spacing:-0.03em;
+}}
+.section-head {{
+    display:flex;
+    align-items:flex-end;
+    justify-content:space-between;
+    gap:16px;
+    margin-bottom:18px;
+    flex-wrap:wrap;
+}}
+.section-head h2 {{
+    margin:0;
+    font-size:30px;
+    font-family:var(--serif);
+    letter-spacing:-0.03em;
+}}
+.section-head p {{
+    margin:0;
+    max-width:68ch;
+    color:var(--muted);
+}}
+.phase-band {{
+    display:grid;
+    grid-template-columns:repeat(5, minmax(0, 1fr));
+    gap:10px;
+    margin-bottom:18px;
+}}
+.phase-band .stat-card {{
+    min-height:118px;
+}}
+.wiki-card,
+.wiki-doc-article,
+.doc-collection {{
+    padding:18px;
+}}
+.wiki-card + .wiki-card,
+.wiki-doc-article + .wiki-doc-article,
+.doc-collection + .doc-collection,
+.wiki-expandable + .wiki-expandable {{
+    margin-top:14px;
+}}
+.wiki-card-top,
+.wiki-heading-group,
+.wiki-tag-row,
+.timeline-top {{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+}}
+.wiki-card-top {{
+    justify-content:space-between;
+    align-items:flex-start;
+}}
+.wiki-heading-group h3 {{
+    margin:0;
+    font-size:20px;
+    font-weight:800;
+    letter-spacing:-0.02em;
+}}
+.wiki-id {{
+    font-family:var(--mono);
+    font-size:11px;
+    padding:4px 8px;
+    border-radius:999px;
+    background:rgba(39,88,126,.08);
+    color:var(--navy);
+    font-weight:700;
+}}
+.detail-list {{
+    list-style:none;
+    padding:0;
+    margin:12px 0 0;
+    display:grid;
+    gap:10px;
+}}
+.detail-row {{
+    display:grid;
+    grid-template-columns:auto 1fr;
+    gap:10px;
+    align-items:flex-start;
+}}
+.detail-title {{
+    font-weight:700;
+    color:var(--ink);
+}}
+.wiki-expandable {{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:0 18px;
+}}
+.wiki-expandable summary {{
+    list-style:none;
+    cursor:pointer;
+    padding:16px 0;
+}}
+.wiki-expandable summary::-webkit-details-marker {{
+    display:none;
+}}
+.wiki-expandable[open] summary {{
+    border-bottom:1px solid var(--line);
+}}
+.wiki-expandable > div {{
+    padding:16px 0 18px;
+}}
+.detail-block h4 {{
+    margin:0 0 12px;
+    font-size:15px;
+    font-weight:800;
+}}
+.timeline-stack {{
+    display:grid;
+    gap:12px;
+}}
+.timeline-item {{
+    padding:16px;
+    border:1px solid var(--line);
+    border-radius:16px;
+    background:#fff;
+}}
+.timeline-date {{
+    color:var(--muted);
+    font-size:12px;
+}}
+.progress-track {{
+    margin-top:12px;
+    height:8px;
+    border-radius:999px;
+    overflow:hidden;
+    background:#ecf0f3;
+}}
+.progress-fill {{
+    height:100%;
+    border-radius:999px;
+}}
+.tone-fill-planned {{ background:#93a1ad; }}
+.tone-fill-discovery {{ background:#b1831f; }}
+.tone-fill-build {{ background:#27587e; }}
+.tone-fill-test {{ background:#1d6d6b; }}
+.tone-fill-done {{ background:#2f7d59; }}
+.tone-fill-blocked {{ background:#a04d5f; }}
+.tone {{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    padding:5px 10px;
+    border-radius:999px;
+    font-size:11px;
+    font-weight:800;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    border:1px solid transparent;
+    white-space:nowrap;
+}}
+.tone-planned {{ background:rgba(86,102,121,.1); color:var(--slate); border-color:rgba(86,102,121,.14); }}
+.tone-discovery {{ background:rgba(154,107,23,.12); color:var(--gold); border-color:rgba(154,107,23,.18); }}
+.tone-build {{ background:rgba(39,88,126,.1); color:var(--navy); border-color:rgba(39,88,126,.16); }}
+.tone-test {{ background:rgba(29,109,107,.11); color:var(--teal); border-color:rgba(29,109,107,.18); }}
+.tone-done {{ background:rgba(47,125,89,.1); color:var(--green); border-color:rgba(47,125,89,.16); }}
+.tone-blocked {{ background:rgba(160,77,95,.11); color:var(--coral); border-color:rgba(160,77,95,.18); }}
+.tone-overview {{ background:rgba(39,88,126,.1); color:var(--navy); border-color:rgba(39,88,126,.16); }}
+.tone-guide {{ background:rgba(29,109,107,.11); color:var(--teal); border-color:rgba(29,109,107,.18); }}
+.tone-experience {{ background:rgba(86,102,121,.1); color:var(--slate); border-color:rgba(86,102,121,.15); }}
+.tone-architecture {{ background:rgba(101,84,162,.1); color:#5f4ba6; border-color:rgba(101,84,162,.15); }}
+.tone-sync {{ background:rgba(47,125,89,.1); color:var(--green); border-color:rgba(47,125,89,.16); }}
+.tone-history {{ background:rgba(160,77,95,.11); color:var(--coral); border-color:rgba(160,77,95,.18); }}
+.tone-research {{ background:rgba(101,84,162,.1); color:#5f4ba6; border-color:rgba(101,84,162,.15); }}
+.tone-discovery.tone {{ }}
+.tone-library {{ background:rgba(86,102,121,.08); color:var(--slate); border-color:rgba(86,102,121,.12); }}
+.mini-chip-row {{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-top:12px;
+}}
+.handbook-card {{
+    display:grid;
+    gap:10px;
+    color:inherit;
+    text-decoration:none;
+}}
+.handbook-card:hover {{
+    transform:translateY(-2px);
+    box-shadow:0 18px 30px rgba(20,28,38,.08);
+    text-decoration:none;
+}}
+.handbook-card h3 {{
+    margin:0;
+    font-size:20px;
+    font-weight:800;
+    color:var(--ink);
+}}
+.card-path {{
+    font-size:12px;
+    word-break:break-all;
+}}
+.wiki-rich-text {{
+    margin-top:16px;
+    font-size:16px;
+}}
+.wiki-rich-text h1,
+.wiki-rich-text h2,
+.wiki-rich-text h3 {{
+    font-family:var(--serif);
+    color:var(--ink);
+    letter-spacing:-0.02em;
+}}
+.wiki-rich-text h1 {{
+    font-size:32px;
+    margin:26px 0 12px;
+}}
+.wiki-rich-text h2 {{
+    font-size:24px;
+    margin:24px 0 10px;
+}}
+.wiki-rich-text h3 {{
+    font-size:19px;
+    margin:18px 0 8px;
+}}
+.wiki-rich-text p,
+.wiki-rich-text li {{
+    color:var(--ink);
+}}
+.wiki-rich-text ul,
+.wiki-rich-text ol {{
+    padding-left:24px;
+}}
+.wiki-rich-text pre {{
+    padding:16px;
+    overflow:auto;
+    border-radius:14px;
+    background:#16202a;
+    color:#f4f7fb;
+}}
+.wiki-rich-text code {{
+    padding:2px 6px;
+    border-radius:8px;
+    background:rgba(39,88,126,.08);
+    color:var(--navy);
+}}
+.wiki-rich-text pre code {{
+    background:none;
+    color:inherit;
+    padding:0;
+}}
+.wiki-rich-text hr {{
+    border:none;
+    border-top:1px solid var(--line);
+    margin:24px 0;
+}}
+.wiki-rich-text blockquote {{
+    margin:16px 0;
+    padding:12px 16px;
+    border-left:4px solid rgba(39,88,126,.3);
+    background:rgba(39,88,126,.05);
+    color:var(--muted);
+}}
+.mermaid {{
+    margin:18px 0;
+    padding:16px;
+    overflow:auto;
+    border-radius:16px;
+    border:1px solid var(--line);
+    background:#fff;
+    white-space:pre-wrap;
+}}
+.text-link {{
+    font-size:12px;
+    font-weight:700;
+}}
+.wiki-footer {{
+    text-align:center;
+    color:var(--muted);
+    font-size:13px;
+    padding:20px 0 8px;
+}}
+@media (max-width: 1180px) {{
+    .stats-grid {{ grid-template-columns:repeat(3, minmax(0, 1fr)); }}
+    .handbook-grid {{ grid-template-columns:repeat(2, minmax(0, 1fr)); }}
+}}
+@media (max-width: 980px) {{
+    .wiki-shell {{ grid-template-columns:1fr; }}
+    .wiki-sidebar {{ position:static; }}
+    .phase-band,
+    .principle-grid,
+    .wiki-detail-grid {{ grid-template-columns:1fr; }}
+}}
+@media (max-width: 720px) {{
+    .wiki-shell {{ padding:18px 14px 32px; gap:18px; }}
+    .hero {{ padding:22px; }}
+    .hero h1 {{ font-size:34px; }}
+    .stats-grid,
+    .handbook-grid {{ grid-template-columns:1fr; }}
+    .section-card {{ padding:18px; }}
+}}
 </style>
 </head>
 <body>
-<div class="wiki-container">
-    <div class="wiki-header">
-        <div class="wiki-title">{project}</div>
-        <div class="wiki-mission">{mission}</div>
-        <div class="wiki-meta">
-            <span>Last updated: {updated}</span>
-            <span><a href="/" style="color:var(--blue);text-decoration:none">&#x2190; Dashboard</a></span>
+<div class="wiki-shell" id="top">
+    <aside class="wiki-sidebar">
+        <div class="sidebar-card">
+            <div class="brand">
+                <div class="brand-mark">DX</div>
+                <div class="brand-copy">
+                    <h1>DX Handbook</h1>
+                    <p class="sidebar-copy">One readable program record for operators, builders, QA, and stakeholders.</p>
+                </div>
+            </div>
+            <p class="sidebar-copy">This page is generated from the project mission, VDD state, markdown docs, architecture notes, and change history so the handbook stays close to the running system.</p>
+            <div class="sidebar-actions">
+                <a class="primary" href="/?project={project_url}">Open Live Dashboard</a>
+                <a href="#handbook">Read Handbook</a>
+            </div>
         </div>
-    </div>
+        <div class="sidebar-card">
+            <div class="sidebar-title">Jump To</div>
+            <nav class="sidebar-nav">
+                <a href="#overview">Overview</a>
+                <a href="#stages">Stages</a>
+                <a href="#handbook">Handbook</a>
+                <a href="#goals">Goals</a>
+                <a href="#features">Features</a>
+                <a href="#architecture">Architecture</a>
+                <a href="#research">Research</a>
+                <a href="#history">History</a>
+                <a href="#library">Library</a>
+                {sidebar_doc_links}
+            </nav>
+        </div>
+        <div class="sidebar-card">
+            <div class="sidebar-title">Current Focus</div>
+            {focus_html}
+        </div>
+        <div class="sidebar-card">
+            <div class="sidebar-title">Hosted Sync Rule</div>
+            <p class="sidebar-copy">Local and hosted dashboards should consume the same project brief and event stream, not separate copies of project state.</p>
+            <div class="mini-chip-row">
+                <span class="tone tone-sync">/api/project/brief</span>
+                <span class="tone tone-overview">vision_changed</span>
+                <span class="tone tone-overview">focus_changed</span>
+            </div>
+        </div>
+    </aside>
 
-    <nav class="wiki-nav">
-        <a href="#principles">Principles</a>
-        <a href="#milestones">Milestones</a>
-        <a href="#goals">Goals</a>
-        <a href="#features">Features</a>
-        <a href="#architecture">Architecture</a>
-        <a href="#docs">Docs</a>
-        <a href="#changelog">Changelog</a>
-    </nav>
+    <main>
+        <section class="section-card hero" id="overview">
+            <div class="section-kicker">Project Handbook</div>
+            <div class="hero-top">
+                <div>
+                    <h1>{project}</h1>
+                    <div class="hero-mission">{mission}</div>
+                    <div class="hero-meta">
+                        <span class="meta-chip">Last updated {updated}</span>
+                        <span class="meta-chip">{path}</span>
+                        <span class="meta-chip">{total_docs} handbook documents</span>
+                    </div>
+                </div>
+                <div class="hero-actions">
+                    <a class="primary" href="/?project={project_url}">Open cockpit</a>
+                    <a href="#library">Browse full library</a>
+                </div>
+            </div>
+            <div class="stats-grid">
+                <div class="stat-card"><div class="stat-label">Goals</div><div class="stat-value">{goal_count}</div><div class="detail-meta">program outcomes tracked</div></div>
+                <div class="stat-card"><div class="stat-label">Features</div><div class="stat-value">{feature_count}</div><div class="detail-meta">delivery items in the plan</div></div>
+                <div class="stat-card"><div class="stat-label">Handbook Docs</div><div class="stat-value">{total_docs}</div><div class="detail-meta">featured, library, research, discovery</div></div>
+                <div class="stat-card"><div class="stat-label">Milestones</div><div class="stat-value">{milestone_count}</div><div class="detail-meta">program checkpoints</div></div>
+                <div class="stat-card"><div class="stat-label">Architecture</div><div class="stat-value">{adr_count}</div><div class="detail-meta">decisions with rationale</div></div>
+                <div class="stat-card"><div class="stat-label">History</div><div class="stat-value">{change_count}</div><div class="detail-meta">recorded project changes</div></div>
+            </div>
+        </section>
 
-    <div class="wiki-section" id="principles">
-        <h2>Principles</h2>
-        <ul class="wiki-principles">{principles}</ul>
-    </div>
+        <section class="section-card" id="stages">
+            <div class="section-head">
+                <div>
+                    <div class="section-kicker">Delivery Model</div>
+                    <h2>Stages and operating principles</h2>
+                </div>
+                <p>{stage_story}</p>
+            </div>
+            <div class="phase-band">{phase_cards}</div>
+            {principles_html}
+        </section>
 
-    <div class="wiki-section" id="milestones">
-        <h2>Milestones <span>{milestone_count} milestones</span></h2>
-        {milestones}
-    </div>
+        {milestones_section}
 
-    <div class="wiki-section" id="goals">
-        <h2>Goals <span>{goal_count} goals</span></h2>
-        {goals}
-    </div>
+        <section class="section-card" id="handbook">
+            <div class="section-head">
+                <div>
+                    <div class="section-kicker">Core Reading</div>
+                    <h2>Handbook paths for different audiences</h2>
+                </div>
+                <p>These documents explain the product from the operator, delivery, architecture, hosted sync, and historical perspectives.</p>
+            </div>
+            <div class="handbook-grid">{featured_cards}</div>
+            <div style="margin-top:18px">{featured_articles}</div>
+        </section>
 
-    <div class="wiki-section" id="features">
-        <h2>Features <span>{feature_count} features</span></h2>
-        {features}
-    </div>
+        <section class="section-card" id="goals">
+            <div class="section-head">
+                <div>
+                    <div class="section-kicker">Program Intent</div>
+                    <h2>Goals and outcomes</h2>
+                </div>
+                <p>Goals express the business or program outcomes the system is trying to achieve, not just implementation tasks.</p>
+            </div>
+            {goals_html}
+        </section>
 
-    <div class="wiki-section" id="architecture">
-        <h2>Architecture Decision Records <span>{adr_count} ADRs</span></h2>
-        {adrs}
-    </div>
+        <section class="section-card" id="features">
+            <div class="section-head">
+                <div>
+                    <div class="section-kicker">Delivery Plan</div>
+                    <h2>Feature delivery map</h2>
+                </div>
+                <p>Each feature shows its current stage, readiness, blockers, acceptance coverage, and implementation details.</p>
+            </div>
+            {features_html}
+        </section>
 
-    {docs_section}
+        <section class="section-card" id="architecture">
+            <div class="section-head">
+                <div>
+                    <div class="section-kicker">Architecture</div>
+                    <h2>Decisions and tradeoffs</h2>
+                </div>
+                <p>Architecture records explain why the system looks the way it does and preserve the reasoning behind important choices.</p>
+            </div>
+            {adr_html}
+        </section>
 
-    <div class="wiki-section" id="changelog">
-        <h2>Changelog <span>{change_count} changes</span></h2>
-        <table class="wiki-changelog">{changes}</table>
-    </div>
+        <section class="section-card" id="research">
+            <div class="section-head">
+                <div>
+                    <div class="section-kicker">Evidence</div>
+                    <h2>Research and discovery evidence</h2>
+                </div>
+                <p>These notes keep delivery grounded in explicit research and discovery rather than verbal memory.</p>
+            </div>
+            {research_html}
+        </section>
 
-    <div class="wiki-footer">
-        Generated from <code>.vision/vision.json</code> &mdash; DX Terminal
-    </div>
+        <section class="section-card" id="history">
+            <div class="section-head">
+                <div>
+                    <div class="section-kicker">Program Record</div>
+                    <h2>Recent change history</h2>
+                </div>
+                <p>The handbook keeps a readable account of what changed, why it changed, and who or what triggered it.</p>
+            </div>
+            <div class="timeline-stack">{changes_html}</div>
+        </section>
+
+        <section class="section-card" id="library">
+            <div class="section-head">
+                <div>
+                    <div class="section-kicker">Reference Library</div>
+                    <h2>Full document library</h2>
+                </div>
+                <p>Everything under <code>docs/</code> is visible here so the wiki can act as the readable memory of the project.</p>
+            </div>
+            {library_html}
+        </section>
+
+        <div class="wiki-footer">
+            Generated from <code>.vision/vision.json</code>, project markdown, and DX Terminal state.
+        </div>
+    </main>
 </div>
-<script>
-document.querySelectorAll('.wiki-nav a').forEach(a => {{
-    a.addEventListener('click', e => {{
-        document.querySelectorAll('.wiki-nav a').forEach(x => x.classList.remove('active'));
-        a.classList.add('active');
-    }});
-}});
+<script type="module">
+const navLinks=[...document.querySelectorAll('.sidebar-nav a')];
+const sections=[...document.querySelectorAll('main [id]')];
+const activate=()=>{{
+  const marker=window.scrollY+160;
+  let current=sections[0]?.id||'overview';
+  sections.forEach(section=>{{ if(section.offsetTop<=marker) current=section.id; }});
+  navLinks.forEach(link=>link.classList.toggle('is-active', link.getAttribute('href')===`#${{current}}`));
+}};
+window.addEventListener('scroll', activate, {{ passive:true }});
+activate();
+
+try {{
+  const mermaidModule = await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs');
+  mermaidModule.default.initialize({{
+    startOnLoad:false,
+    theme:'base',
+    themeVariables:{{
+      primaryColor:'#ffffff',
+      primaryTextColor:'#1c2733',
+      primaryBorderColor:'#c3ced9',
+      lineColor:'#27587e',
+      secondaryColor:'#f3eee5',
+      tertiaryColor:'#fffdf9',
+      fontFamily:'Avenir Next, Segoe UI, sans-serif'
+    }}
+  }});
+  await mermaidModule.default.run({{ querySelector: '.mermaid' }});
+}} catch (_) {{
+  document.documentElement.dataset.mermaid='fallback';
+}}
 </script>
 </body>
 </html>"##,
         project = escape_html(project),
-        mission = escape_html(mission),
-        updated = escape_html(updated),
-        principles = principles_html,
-        goals = goals_html,
-        features = features_html,
-        adrs = adr_html,
-        milestones = milestones_html,
-        changes = changes_html,
-        milestone_count = vision["milestones"]
-            .as_array()
-            .map(|a| a.len())
-            .unwrap_or(0),
-        goal_count = vision["goals"].as_array().map(|a| a.len()).unwrap_or(0),
-        feature_count = vision["features"].as_array().map(|a| a.len()).unwrap_or(0),
-        adr_count = vision["architecture"]
-            .as_array()
-            .map(|a| a.len())
-            .unwrap_or(0),
-        change_count = vision["changes"].as_array().map(|a| a.len()).unwrap_or(0),
-        docs_section = if !docs_html.is_empty() {
-            format!(
-                r#"<div class="wiki-section" id="docs"><h2>Research &amp; Discovery Docs</h2>{}</div>"#,
-                docs_html
-            )
+        project_url = escape_html(project),
+        mission = escape_html(if mission.is_empty() {
+            "No project mission has been written yet."
         } else {
+            mission
+        }),
+        updated = escape_html(if updated.is_empty() { "unknown" } else { updated }),
+        path = escape_html(&path),
+        total_docs = featured_docs.len() + library_docs.len() + research_docs.len() + discovery_docs.len(),
+        goal_count = goals.len(),
+        feature_count = features.len(),
+        milestone_count = milestones.len(),
+        adr_count = adrs.len(),
+        change_count = changes.len(),
+        stage_story = escape_html(&stage_story),
+        phase_cards = phase_cards_html,
+        principles_html = principles_html,
+        milestones_section = if milestones_html.is_empty() {
             String::new()
+        } else {
+            format!(
+                r#"<section class="section-card" id="milestones">
+                    <div class="section-head">
+                        <div>
+                            <div class="section-kicker">Program Cadence</div>
+                            <h2>Milestones and checkpoints</h2>
+                        </div>
+                        <p>Milestones show the larger program beats the team is trying to reach.</p>
+                    </div>
+                    {}
+                </section>"#,
+                milestones_html
+            )
         },
+        featured_cards = featured_cards_html,
+        featured_articles = featured_articles_html,
+        goals_html = if goals_html.is_empty() {
+            "<p class=\"wiki-empty\">No goals are defined yet.</p>".to_string()
+        } else {
+            goals_html
+        },
+        features_html = if features_html.is_empty() {
+            "<p class=\"wiki-empty\">No features are defined yet.</p>".to_string()
+        } else {
+            features_html
+        },
+        adr_html = if adr_html.is_empty() {
+            "<p class=\"wiki-empty\">No architecture decisions are documented yet.</p>".to_string()
+        } else {
+            adr_html
+        },
+        research_html = research_html,
+        changes_html = if changes_html.is_empty() {
+            "<p class=\"wiki-empty\">No project history has been recorded yet.</p>".to_string()
+        } else {
+            changes_html
+        },
+        library_html = if library_html.is_empty() {
+            "<p class=\"wiki-empty\">No additional library documents were found under <code>docs/</code>.</p>".to_string()
+        } else {
+            library_html
+        },
+        sidebar_doc_links = sidebar_doc_links,
+        focus_html = focus_html
     );
 
     Html(html)
