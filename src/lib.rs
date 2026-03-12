@@ -1,4 +1,5 @@
 pub mod analytics;
+pub mod agent_assets;
 pub mod app;
 pub mod audit;
 pub mod build;
