@@ -2451,6 +2451,60 @@ impl DxTerminalService {
     }
 
     #[tool(
+        description = "Create or update a design markdown doc for a feature. Use this during discovery when the feature needs client-facing flows, layout direction, or design constraints."
+    )]
+    async fn vision_design_doc_upsert(
+        &self,
+        Parameters(req): Parameters<types::VisionDocUpsertRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
+        let result = tools::vision_tools::vision_design_doc_upsert(
+            req.project.as_deref(),
+            &req.feature_id,
+            &req.content,
+        );
+        self.emit_vision_change(&project_path, &result, Some(&req.feature_id));
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Seed quick branded mockup directions for a feature so a client can react before build starts. Use with references like 'website like Shopify' or 'dashboard for non-technical users'."
+    )]
+    async fn vision_mockup_seed(
+        &self,
+        Parameters(req): Parameters<types::VisionMockupSeedRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
+        let result = tools::vision_tools::vision_mockup_seed(
+            req.project.as_deref(),
+            &req.feature_id,
+            req.reference.as_deref(),
+        );
+        self.emit_vision_change(&project_path, &result, Some(&req.feature_id));
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Review or approve a design option from discovery. Approval is the client-facing gate that unlocks build for design-heavy features."
+    )]
+    async fn vision_design_review(
+        &self,
+        Parameters(req): Parameters<types::VisionDesignReviewRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
+        let result = tools::vision_tools::vision_design_review(
+            req.project.as_deref(),
+            &req.feature_id,
+            &req.option_id,
+            &req.status,
+            req.note.as_deref(),
+            req.actor.as_deref(),
+        );
+        self.emit_vision_change(&project_path, &result, Some(&req.feature_id));
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
         description = "Answer a question and record a decision with rationale and alternatives considered."
     )]
     async fn vision_answer(
