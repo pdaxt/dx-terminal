@@ -3374,6 +3374,7 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
         "<div class=\"focus-card\"><span class=\"tone tone-planned\">no shared focus</span><div class=\"detail-meta\">Set focus from the dashboard, MCP, or hook flow to keep auto-continue and docs aligned.</div></div>".to_string()
     };
 
+    let feature_count = features.len();
     let done_features = phase_counts.get("done").copied().unwrap_or(0);
     let stage_story = if feature_count > 0 && done_features == feature_count {
         "All currently tracked features are marked complete, so this handbook is acting as an execution record and reference surface.".to_string()
