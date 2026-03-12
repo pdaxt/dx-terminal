@@ -378,10 +378,57 @@ fn normalize_launch(
         env.entry("DX_BROWSER_PORT".to_string())
             .or_insert_with(|| browser_port.clone());
 
+        let browser_profile_root = env
+            .get("DX_BROWSER_PROFILE_ROOT")
+            .cloned()
+            .or_else(|| std::env::var("DX_BROWSER_PROFILE_ROOT").ok())
+            .or_else(|| {
+                pane.parse::<u8>().ok().map(|value| {
+                    crate::config::pane_browser_profile_root(value)
+                        .to_string_lossy()
+                        .to_string()
+                })
+            })
+            .unwrap_or_else(|| {
+                crate::config::pane_browser_profile_root(99)
+                    .to_string_lossy()
+                    .to_string()
+            });
+        let browser_artifacts_root = env
+            .get("DX_BROWSER_ARTIFACTS_ROOT")
+            .cloned()
+            .or_else(|| std::env::var("DX_BROWSER_ARTIFACTS_ROOT").ok())
+            .or_else(|| {
+                pane.parse::<u8>().ok().map(|value| {
+                    crate::config::pane_browser_artifacts_root(value)
+                        .to_string_lossy()
+                        .to_string()
+                })
+            })
+            .unwrap_or_else(|| {
+                crate::config::pane_browser_artifacts_root(99)
+                    .to_string_lossy()
+                    .to_string()
+            });
+        env.entry("DX_BROWSER_PROFILE_ROOT".to_string())
+            .or_insert_with(|| browser_profile_root.clone());
+        env.entry("DX_BROWSER_ARTIFACTS_ROOT".to_string())
+            .or_insert_with(|| browser_artifacts_root.clone());
+
         let has_port_arg = args.windows(2).any(|window| window[0] == "--port");
         if !has_port_arg {
             args.push("--port".to_string());
             args.push(browser_port);
+        }
+        let has_profile_arg = args.windows(2).any(|window| window[0] == "--user-data-dir");
+        if !has_profile_arg {
+            args.push("--user-data-dir".to_string());
+            args.push(browser_profile_root);
+        }
+        let has_output_arg = args.windows(2).any(|window| window[0] == "--output-dir");
+        if !has_output_arg {
+            args.push("--output-dir".to_string());
+            args.push(browser_artifacts_root);
         }
 
         let mut wrapped = vec![
