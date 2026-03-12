@@ -1613,7 +1613,7 @@ fn render_mockup_html(
         reference
     };
     format!(
-        r#"<!DOCTYPE html>
+        r##"<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -2002,7 +2002,7 @@ fn render_mockup_html(
     </section>
   </div>
 </body>
-</html>"#,
+</html>"##,
         feature_title = feature_title,
         option_title = option_title,
         feature_description = feature_description,
