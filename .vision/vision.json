@@ -1,6 +1,6 @@
 {
   "project": "dx-terminal",
-  "mission": "Build the worlds most powerful AI-native terminal multiplexer \u2014 a single Rust binary that orchestrates teams of Claude agents across tmux panes with real-time dashboards, smart task routing, and zero-config GitHub integration",
+  "mission": "Build the worlds most powerful AI-native terminal multiplexer \u2014 a single Rust binary that orchestrates teams of AI coding runtimes across tmux panes with real-time dashboards, smart task routing, deterministic browser lanes, and zero-config GitHub integration",
   "principles": [
     "Everything in Rust",
     "MCP-first architecture",
@@ -25,7 +25,7 @@
     {
       "id": "G2",
       "title": "206-tool MCP server",
-      "description": "Monolithic MCP server exposing all DX Terminal capabilities as tools for Claude agents",
+      "description": "Monolithic MCP server exposing all DX Terminal capabilities as tools for supported runtimes and external agent workflows",
       "status": "achieved",
       "priority": 1,
       "linked_issues": [],
@@ -50,7 +50,7 @@
     {
       "id": "G4",
       "title": "Autonomous agent orchestration",
-      "description": "Spawn, monitor, and auto-cycle Claude agents across panes with health checks and dead agent reaping",
+      "description": "Spawn, monitor, and auto-cycle mixed provider runtimes across panes with health checks and dead agent reaping",
       "status": "achieved",
       "priority": 1,
       "linked_issues": [],
