@@ -983,6 +983,35 @@ function providerBadge(provider,compact){
   return `<span class="provider-pill provider-${escHtml(id)}">${escHtml(label)}</span>`;
 }
 
+function automationCacheKey(project,name){
+  return `${project}::${name}`;
+}
+
+async function selectAutomationMcp(name){
+  const project=activeProjectForHub();
+  if(!project||!name)return;
+  automationSelection[project]=name;
+  const key=automationCacheKey(project,name);
+  if(automationToolCache[key]||automationToolLoading[key]){
+    renderExecutionHub();
+    return;
+  }
+  automationToolLoading[key]=true;
+  renderExecutionHub();
+  const tools=await fetchJSON(`/api/gateway/tools?mcp=${encodeURIComponent(name)}`);
+  automationToolCache[key]=tools||{error:'Unable to inspect MCP tools'};
+  automationToolLoading[key]=false;
+  renderExecutionHub();
+}
+
+function renderAutomationItems(items,emptyText){
+  if(!items||!items.length)return `<div class="automation-note">${escHtml(emptyText)}</div>`;
+  return `<div class="automation-grid">${items.map(item=>`<div class="automation-item">
+    <div class="automation-item-title">${escHtml((item.name||'').toString())}</div>
+    <div class="automation-item-meta">${escHtml((item.summary||item.path||'').toString())}</div>
+  </div>`).join('')}</div>`;
+}
+
 async function renderExecutionHub(){
   const section=document.getElementById('execution-hub');
   const summaryEl=document.getElementById('project-brief');
