@@ -4,27 +4,28 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DX Delivery OS</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23142029'/><rect x='4' y='4' width='24' height='24' rx='7' fill='%231d6d6b'/><text x='16' y='22' text-anchor='middle' font-size='14' font-family='Arial' font-weight='700' fill='%23fffdf9'>DX</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><defs><linearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'><stop offset='0%25' stop-color='%2306B6D4'/><stop offset='50%25' stop-color='%23A855F7'/><stop offset='100%25' stop-color='%23FF00AA'/></linearGradient></defs><polygon points='100,20 170,60 170,140 100,180 30,140 30,60' stroke='url(%23g)' stroke-width='10' fill='none'/><circle cx='100' cy='100' r='25' fill='url(%23g)'/></svg>">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
-  --bg:#0c1319;--surface:#142029;--surface2:#1b2934;--border:#2a3c4a;--border-bright:#466377;
-  --text:#eef4f7;--muted:#a7b5c1;--dim:#6f808f;
-  --blue:#6ea4c7;--green:#72b083;--yellow:#c6a15b;--red:#d16f74;--purple:#9b86c5;--teal:#6aa7a1;--orange:#cc8b52;--pink:#c77d9c;
+  --bg:#0f0f1a;--surface:#17172a;--surface2:#1f2036;--border:#2b3151;--border-bright:#425486;
+  --text:#f3f7ff;--muted:#adb7d4;--dim:#7984a6;
+  --blue:#06b6d4;--green:#34d399;--yellow:#f59e0b;--red:#fb7185;--purple:#a855f7;--teal:#22d3ee;--orange:#fb923c;--pink:#ff00aa;
   --mono:'SF Mono','JetBrains Mono','Cascadia Code','Fira Code',Monaco,Consolas,monospace;
   --sans:'Avenir Next','Segoe UI','IBM Plex Sans','Helvetica Neue',sans-serif;
   --radius:10px;--radius-sm:6px;--radius-pill:999px;
   --shadow:0 8px 24px rgba(0,0,0,.32);
   --transition:all .2s cubic-bezier(.4,0,.2,1);
-  --glow-blue:0 0 20px rgba(110,164,199,.15);
-  --glow-green:0 0 20px rgba(114,176,131,.15);
-  --glow-purple:0 0 20px rgba(155,134,197,.15);
+  --glow-blue:0 0 20px rgba(6,182,212,.18);
+  --glow-green:0 0 20px rgba(52,211,153,.16);
+  --glow-purple:0 0 20px rgba(168,85,247,.2);
 }
 
 body{font-family:var(--sans);background:
-  radial-gradient(circle at top left, rgba(110,164,199,.08), transparent 28%),
-  radial-gradient(circle at top right, rgba(106,167,161,.08), transparent 24%),
-  linear-gradient(180deg,#0b1116 0%, #0f171d 48%, #0c1319 100%);
+  radial-gradient(circle at top left, rgba(6,182,212,.12), transparent 24%),
+  radial-gradient(circle at top right, rgba(168,85,247,.13), transparent 26%),
+  radial-gradient(circle at bottom right, rgba(255,0,170,.08), transparent 20%),
+  linear-gradient(180deg,#0b0b14 0%, #0f0f1a 48%, #111322 100%);
   color:var(--text);min-height:100vh;overflow-x:hidden;line-height:1.5;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 
 /* === Layout: sidebar + main + terminal panel === */
@@ -45,12 +46,11 @@ body{font-family:var(--sans);background:
 }
 .logo{display:flex;align-items:center;gap:10px}
 .logo-mark{
-  width:32px;height:32px;border-radius:10px;
-  background:linear-gradient(135deg,var(--blue),var(--teal));
+  width:36px;height:36px;
   display:flex;align-items:center;justify-content:center;
-  font-family:var(--mono);font-size:11px;font-weight:800;color:#fff;letter-spacing:-0.5px;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.15),0 8px 18px rgba(0,0,0,.24);
+  filter:drop-shadow(0 10px 20px rgba(6,182,212,.18));
 }
+.logo-mark svg{width:100%;height:100%;display:block}
 .logo h1{font-size:16px;font-weight:800;color:var(--text);letter-spacing:-.3px}
 .logo h1 span{color:var(--muted);font-weight:500;margin-left:6px;font-size:12px;text-transform:uppercase;letter-spacing:.08em}
 .header-right{display:flex;gap:10px;align-items:center}
