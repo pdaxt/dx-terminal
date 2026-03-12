@@ -2230,7 +2230,7 @@ pub fn read_mockup_html(
         .relative_path
         .as_deref()
         .ok_or_else(|| "design_option_missing_path".to_string())?;
-    std::fs::read_to_string(FsPath::new(project_path).join(relative))
+    std::fs::read_to_string(Path::new(project_path).join(relative))
         .map_err(|e| format!("read: {}", e))
 }
 
