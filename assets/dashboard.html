@@ -119,7 +119,8 @@ select:hover{border-color:var(--border-bright)}
 .exec-mission{font-size:12px;color:var(--muted);line-height:1.5;max-width:70ch}
 .exec-link{font-size:10px;font-weight:700;color:var(--blue);text-decoration:none;padding:6px 10px;border:1px solid rgba(79,143,247,.25);border-radius:999px}
 .exec-link:hover{background:rgba(79,143,247,.08)}
-.exec-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.exec-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+@media(max-width:960px){.exec-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:760px){.exec-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .exec-kpi{padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.01))}
 .exec-kpi .label{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);font-weight:700}
@@ -1121,17 +1122,6 @@ async function renderExecutionHub(){
           <span class="exec-row-tags">${guidanceDocs.map(doc=>`<span class="doc-pill ${escHtml((doc.kind||'shared').toString())}">${escHtml((doc.name||'').toString())}</span>`).join('')||'<span class="doc-pill">missing</span>'}</span>
         </div>
         <div class="exec-row-meta">${guidanceDocs.length?`Synced guidance for shared and provider-specific agents.`:'Add AGENTS.md, CLAUDE.md, CODEX.md, or GEMINI.md at the project root.'}</div>
-      </div>
-      <div class="exec-row">
-        <div class="exec-row-top">
-          <span class="exec-row-title">Automation Assets</span>
-          <span class="exec-row-tags">
-            <span class="doc-pill shared">${externalMcps.length} MCPs</span>
-            <span class="doc-pill codex">${projectSkills.length} skills</span>
-            <span class="doc-pill claude">${projectCommands.length} commands</span>
-          </span>
-        </div>
-        <div class="exec-row-meta">${externalMcps.slice(0,4).map(mcp=>escHtml(mcp.name)).join(' · ')||'No external MCPs registered.'}${projectSkills.length?` · skills: ${projectSkills.slice(0,3).map(skill=>escHtml(skill.name)).join(' · ')}`:''}${projectCommands.length?` · commands: ${projectCommands.slice(0,3).map(command=>escHtml(command.name)).join(' · ')}`:''}</div>
       </div>
       <div class="exec-row">
         <div class="exec-row-top">
