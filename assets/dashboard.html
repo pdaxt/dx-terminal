@@ -766,7 +766,15 @@ let apiPaneColors={};
 function paneColor(n){return apiPaneColors[n]||COLORS[(n-1)%COLORS.length]}
 
 // === Helpers ===
-async function fetchJSON(url){try{const r=await fetch(API+url);if(!r.ok)return null;return await r.json();}catch{return null;}}
+async function fetchJSON(url,options){
+  try{
+    const r=await fetch(API+url,options);
+    if(!r.ok)return null;
+    return await r.json();
+  }catch{
+    return null;
+  }
+}
 function fmtMins(m){if(!m&&m!==0)return'';if(m<60)return m+'m';return Math.floor(m/60)+'h'+(m%60?m%60+'m':'');}
 
 function updateClock(){
