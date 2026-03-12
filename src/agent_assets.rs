@@ -62,13 +62,15 @@ fn collect_automation_assets_with_home(project_root: &Path, home_root: &Path) ->
     project_skills.sort_by(compare_asset_name);
     user_skills.sort_by(compare_asset_name);
 
-    let external_mcps = crate::external_mcp::load_external_descriptors()
+    let external_mcps = crate::external_mcp::load_external_catalog()
         .into_iter()
-        .map(|descriptor| {
+        .map(|entry| {
             json!({
-                "name": descriptor.name,
-                "description": descriptor.description,
-                "capabilities": descriptor.capabilities,
+                "name": entry.name,
+                "description": entry.description,
+                "category": entry.category,
+                "capabilities": entry.capabilities,
+                "sources": entry.sources,
             })
         })
         .collect::<Vec<_>>();
