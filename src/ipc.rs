@@ -18,6 +18,8 @@ const VISION_SOCKET_SUFFIX: &str = ".sock";
 const VISION_REPLAY_FILE: &str = "vision-events.jsonl";
 const VISION_CURSOR_PREFIX: &str = "vision-cursor-";
 const VISION_CURSOR_SUFFIX: &str = ".json";
+const VISION_RUNTIME_PREFIX: &str = "vision-runtime-";
+const VISION_RUNTIME_SUFFIX: &str = ".json";
 const LOCK_SUFFIX: &str = ".lock";
 const VISION_REPLAY_MAX_AGE_MS: u64 = 30_000;
 const VISION_REPLAY_MAX_COUNT: usize = 256;
@@ -27,6 +29,13 @@ struct ReplayEnvelope {
     seq: u64,
     ts_ms: u64,
     payload: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RuntimeRegistration {
+    runtime_id: String,
+    pid: u32,
+    registered_at_ms: u64,
 }
 
 pub fn vision_socket_dir() -> PathBuf {
@@ -122,6 +131,7 @@ async fn run_local_ipc(app: Arc<App>, runtime_id: String) -> anyhow::Result<()> 
 
     let listener = UnixListener::bind(&socket_path)
         .with_context(|| format!("bind ipc socket {}", socket_path.display()))?;
+    register_runtime(&runtime_id);
     tracing::info!("local IPC listener active at {}", socket_path.display());
     replay_recent_events(app.as_ref(), &runtime_id);
 
@@ -173,12 +183,7 @@ fn replay_recent_events(app: &App, runtime_id: &str) {
     let path = vision_replay_log_path();
     let entries = with_exclusive_lock(&lock_path_for(&path), || {
         let mut entries = load_replay_entries(&path);
-        retain_recent_entries(
-            &mut entries,
-            now_ms(),
-            VISION_REPLAY_MAX_AGE_MS,
-            VISION_REPLAY_MAX_COUNT,
-        );
+        prune_replay_entries(&mut entries, now_ms());
         write_replay_entries(&path, &entries)?;
         Ok(entries)
     })
@@ -303,8 +308,102 @@ fn atomic_write(path: &Path, content: &str) -> io::Result<()> {
     std::fs::rename(&tmp, path)
 }
 
+fn prune_replay_entries(entries: &mut Vec<ReplayEnvelope>, now_ms: u64) {
+    let active_runtime_ids = active_runtime_ids();
+    if active_runtime_ids.is_empty() {
+        retain_recent_entries(
+            entries,
+            now_ms,
+            VISION_REPLAY_MAX_AGE_MS,
+            VISION_REPLAY_MAX_COUNT,
+        );
+        return;
+    }
+
+    let min_cursor = active_runtime_ids
+        .into_iter()
+        .map(|runtime_id| read_cursor(&runtime_id))
+        .min()
+        .unwrap_or(0);
+    entries.retain(|entry| entry.seq > min_cursor);
+}
+
+fn register_runtime(runtime_id: &str) {
+    let path = runtime_registration_path(runtime_id);
+    let registration = RuntimeRegistration {
+        runtime_id: runtime_id.to_string(),
+        pid: std::process::id(),
+        registered_at_ms: now_ms(),
+    };
+    let content = match serde_json::to_string(&registration) {
+        Ok(content) => content,
+        Err(_) => return,
+    };
+    let _ = atomic_write(&path, &content);
+}
+
+fn active_runtime_ids() -> Vec<String> {
+    let mut runtime_ids = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(vision_socket_dir()) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !is_runtime_registration_path(&path) {
+                continue;
+            }
+            let registration = std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|content| serde_json::from_str::<RuntimeRegistration>(&content).ok());
+            match registration {
+                Some(registration) if pid_is_alive(registration.pid) => {
+                    runtime_ids.push(registration.runtime_id);
+                }
+                _ => {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+        }
+    }
+    runtime_ids.sort();
+    runtime_ids.dedup();
+    runtime_ids
+}
+
+fn runtime_registration_path(runtime_id: &str) -> PathBuf {
+    vision_socket_dir().join(format!(
+        "{}{}{}",
+        VISION_RUNTIME_PREFIX,
+        sanitize_runtime_key(runtime_id),
+        VISION_RUNTIME_SUFFIX
+    ))
+}
+
+fn is_runtime_registration_path(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| {
+            name.starts_with(VISION_RUNTIME_PREFIX) && name.ends_with(VISION_RUNTIME_SUFFIX)
+        })
+        .unwrap_or(false)
+}
+
+fn pid_is_alive(pid: u32) -> bool {
+    let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
+    if result == 0 {
+        return true;
+    }
+    io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
 fn runtime_cursor_path(runtime_id: &str) -> PathBuf {
-    let safe: String = runtime_id
+    let safe = sanitize_runtime_key(runtime_id);
+    vision_socket_dir().join(format!(
+        "{}{}{}",
+        VISION_CURSOR_PREFIX, safe, VISION_CURSOR_SUFFIX
+    ))
+}
+
+fn sanitize_runtime_key(runtime_id: &str) -> String {
+    runtime_id
         .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
@@ -313,11 +412,7 @@ fn runtime_cursor_path(runtime_id: &str) -> PathBuf {
                 '-'
             }
         })
-        .collect();
-    vision_socket_dir().join(format!(
-        "{}{}{}",
-        VISION_CURSOR_PREFIX, safe, VISION_CURSOR_SUFFIX
-    ))
+        .collect()
 }
 
 fn read_cursor(runtime_id: &str) -> u64 {
@@ -438,6 +533,13 @@ mod tests {
     }
 
     #[test]
+    fn runtime_registration_path_is_sanitized() {
+        let _guard = env_guard();
+        let path = runtime_registration_path("web:3100/demo");
+        assert!(path.ends_with("vision-runtime-web-3100-demo.json"));
+    }
+
+    #[test]
     fn prepare_outbound_event_assigns_unique_sequences_under_contention() {
         with_temp_dx_root(|| {
             let mut workers = Vec::new();
@@ -473,6 +575,81 @@ mod tests {
             advance_cursor("web-3100-demo", 8);
             advance_cursor("web-3100-demo", 3);
             assert_eq!(read_cursor("web-3100-demo"), 8);
+        });
+    }
+
+    #[test]
+    fn prune_replay_entries_uses_min_ack_of_active_runtimes() {
+        with_temp_dx_root(|| {
+            let runtime_a = RuntimeRegistration {
+                runtime_id: "web-a".into(),
+                pid: std::process::id(),
+                registered_at_ms: now_ms(),
+            };
+            let runtime_b = RuntimeRegistration {
+                runtime_id: "web-b".into(),
+                pid: std::process::id(),
+                registered_at_ms: now_ms(),
+            };
+            atomic_write(
+                &runtime_registration_path(&runtime_a.runtime_id),
+                &serde_json::to_string(&runtime_a).unwrap(),
+            )
+            .unwrap();
+            atomic_write(
+                &runtime_registration_path(&runtime_b.runtime_id),
+                &serde_json::to_string(&runtime_b).unwrap(),
+            )
+            .unwrap();
+            advance_cursor("web-a", 4);
+            advance_cursor("web-b", 2);
+
+            let mut entries = (1..=5)
+                .map(|seq| ReplayEnvelope {
+                    seq,
+                    ts_ms: now_ms(),
+                    payload: serde_json::json!({ "seq": seq }),
+                })
+                .collect::<Vec<_>>();
+            prune_replay_entries(&mut entries, now_ms());
+
+            let remaining = entries.into_iter().map(|entry| entry.seq).collect::<Vec<_>>();
+            assert_eq!(remaining, vec![3, 4, 5]);
+        });
+    }
+
+    #[test]
+    fn stale_runtime_registrations_are_ignored() {
+        with_temp_dx_root(|| {
+            let stale = RuntimeRegistration {
+                runtime_id: "web-stale".into(),
+                pid: u32::MAX,
+                registered_at_ms: now_ms(),
+            };
+            atomic_write(
+                &runtime_registration_path(&stale.runtime_id),
+                &serde_json::to_string(&stale).unwrap(),
+            )
+            .unwrap();
+            advance_cursor("web-stale", 99);
+
+            let mut entries = vec![
+                ReplayEnvelope {
+                    seq: 1,
+                    ts_ms: now_ms().saturating_sub(VISION_REPLAY_MAX_AGE_MS + 1),
+                    payload: serde_json::json!({ "seq": 1 }),
+                },
+                ReplayEnvelope {
+                    seq: 2,
+                    ts_ms: now_ms(),
+                    payload: serde_json::json!({ "seq": 2 }),
+                },
+            ];
+            prune_replay_entries(&mut entries, now_ms());
+
+            let remaining = entries.into_iter().map(|entry| entry.seq).collect::<Vec<_>>();
+            assert_eq!(remaining, vec![2]);
+            assert!(!runtime_registration_path("web-stale").exists());
         });
     }
 }
