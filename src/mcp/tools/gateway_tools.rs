@@ -4,8 +4,14 @@ use super::super::types::*;
 use super::helpers::*;
 use crate::app::App;
 
+async fn sync_external_descriptors(app: &App) {
+    let mut gateway = app.gateway.lock().await;
+    crate::external_mcp::sync_gateway(&mut gateway);
+}
+
 /// Discover micro MCPs matching a capability
 pub async fn gateway_discover(app: &App, req: GatewayDiscoverRequest) -> String {
+    sync_external_descriptors(app).await;
     let (results, names_to_start) = {
         let gateway = app.gateway.lock().await;
         let matches = gateway.discover(&req.capability);
@@ -65,6 +71,8 @@ pub async fn gateway_discover(app: &App, req: GatewayDiscoverRequest) -> String 
 
 /// Call a tool on a running micro MCP
 pub async fn gateway_call(app: &App, req: GatewayCallRequest) -> String {
+    sync_external_descriptors(app).await;
+
     // Ensure the MCP is running
     {
         let mut gw = app.gateway.lock().await;
@@ -97,6 +105,7 @@ pub async fn gateway_call(app: &App, req: GatewayCallRequest) -> String {
 
 /// List all MCPs (running and registered)
 pub async fn gateway_list(app: &App, req: GatewayListRequest) -> String {
+    sync_external_descriptors(app).await;
     let gw = app.gateway.lock().await;
 
     if req.running_only.unwrap_or(false) {
@@ -113,17 +122,64 @@ pub async fn gateway_list(app: &App, req: GatewayListRequest) -> String {
         })
         .to_string()
     } else {
-        let all = gw.list_all();
-        let running_count = all.iter().filter(|(_, r)| *r).count();
+        let mut descriptors = gw.list_descriptors();
+        descriptors.sort_by(|left, right| left.name.cmp(&right.name));
+        let running_count = descriptors
+            .iter()
+            .filter(|descriptor| gw.get_tools(&descriptor.name).is_some())
+            .count();
         serde_json::json!({
-            "mcps": all.iter().map(|(name, running)| serde_json::json!({
-                "name": name,
-                "running": running,
+            "mcps": descriptors.iter().map(|descriptor| serde_json::json!({
+                "name": descriptor.name,
+                "description": descriptor.description,
+                "capabilities": descriptor.capabilities,
+                "running": gw.get_tools(&descriptor.name).is_some(),
             })).collect::<Vec<_>>(),
-            "total": all.len(),
+            "total": descriptors.len(),
             "running": running_count,
-            "registered": all.len() - running_count,
+            "registered": descriptors.len().saturating_sub(running_count),
         })
         .to_string()
     }
+}
+
+/// List tools exposed by one MCP, auto-starting it if needed.
+pub async fn gateway_tools(app: &App, req: GatewayToolsRequest) -> String {
+    sync_external_descriptors(app).await;
+
+    if req.auto_start.unwrap_or(true) {
+        let mut gw = app.gateway.lock().await;
+        if let Err(e) = gw.ensure_running(&req.mcp).await {
+            return json_err(&format!("Failed to start MCP '{}': {}", req.mcp, e));
+        }
+    }
+
+    let gw = app.gateway.lock().await;
+    let tools = match gw.get_tools(&req.mcp) {
+        Some(tools) => tools,
+        None => return json_err(&format!("MCP '{}' is not running", req.mcp)),
+    };
+
+    let descriptor = gw.get_descriptor(&req.mcp);
+    let tool_rows: Vec<serde_json::Value> = tools
+        .iter()
+        .map(|tool| {
+            serde_json::json!({
+                "name": tool.name,
+                "title": tool.title,
+                "description": tool.description,
+                "input_schema": tool.input_schema.as_ref(),
+                "output_schema": tool.output_schema.as_deref(),
+            })
+        })
+        .collect();
+
+    serde_json::json!({
+        "mcp": req.mcp,
+        "description": descriptor.map(|d| d.description.clone()).unwrap_or_default(),
+        "capabilities": descriptor.map(|d| d.capabilities.clone()).unwrap_or_default(),
+        "tool_count": tool_rows.len(),
+        "tools": tool_rows,
+    })
+    .to_string()
 }
