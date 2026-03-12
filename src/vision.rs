@@ -4011,6 +4011,92 @@ mod tests {
     }
 
     #[test]
+    fn test_design_required_feature_blocks_build_until_approved() {
+        let dir = temp_project();
+        let path = dir.path().to_str().unwrap();
+        init_test_vision(dir.path());
+        add_goal(path, "G1", "Goal", "desc", 1);
+        add_feature(
+            path,
+            "G1",
+            "Client portal website",
+            "A Shopify-like website for non-technical clients",
+            vec!["Clear onboarding path".to_string()],
+        );
+
+        let blocked: serde_json::Value =
+            serde_json::from_str(&discovery_ready_check(path, "F1.1")).unwrap();
+        let blockers = blocked["blockers"].as_array().cloned().unwrap_or_default();
+        assert!(blockers.iter().any(|value| value.as_str() == Some("design brief missing")));
+        assert!(blockers.iter().any(|value| value.as_str() == Some("client mockup missing")));
+        assert!(blockers.iter().any(|value| value.as_str() == Some("client approval missing")));
+
+        upsert_feature_doc(path, "F1.1", "design", "# Design brief");
+        let seeded: serde_json::Value =
+            serde_json::from_str(&seed_mockup_options(path, "F1.1", Some("website like Shopify")))
+                .unwrap();
+        assert_eq!(seeded["status"], "seeded");
+        assert_eq!(seeded["count"], 3);
+
+        let still_blocked: serde_json::Value =
+            serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        assert_eq!(still_blocked["readiness"]["ready_for_build"], false);
+        assert_eq!(
+            still_blocked["readiness"]["counts"]["design_options"],
+            serde_json::json!(3)
+        );
+        assert_eq!(
+            still_blocked["readiness"]["counts"]["design_approved"],
+            serde_json::json!(0)
+        );
+
+        let option_id = seeded["options"][0]["id"].as_str().unwrap();
+        let reviewed: serde_json::Value = serde_json::from_str(&review_design_option(
+            path,
+            "F1.1",
+            option_id,
+            "approved",
+            Some("Approved for build"),
+            Some("client"),
+        ))
+        .unwrap();
+        assert_eq!(reviewed["status"], "reviewed");
+        assert_eq!(reviewed["option_status"], "approved");
+        assert_eq!(reviewed["phase"], "build");
+
+        let ready: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        assert_eq!(ready["readiness"]["ready_for_build"], true);
+        assert_eq!(ready["readiness"]["counts"]["design_approved"], serde_json::json!(1));
+        assert_eq!(ready["phase"], "build");
+    }
+
+    #[test]
+    fn test_seed_mockups_creates_readable_html() {
+        let dir = temp_project();
+        let path = dir.path().to_str().unwrap();
+        init_test_vision(dir.path());
+        add_goal(path, "G1", "Goal", "desc", 1);
+        add_feature(
+            path,
+            "G1",
+            "Marketing portal",
+            "A premium client-facing website",
+            vec!["Explain the process".to_string()],
+        );
+
+        upsert_feature_doc(path, "F1.1", "design", "# Design brief");
+        let seeded: serde_json::Value =
+            serde_json::from_str(&seed_mockup_options(path, "F1.1", Some("website like Shopify")))
+                .unwrap();
+        let option_id = seeded["options"][0]["id"].as_str().unwrap();
+
+        let html = read_mockup_html(path, "F1.1", option_id).unwrap();
+        assert!(html.contains("Client Journey"));
+        assert!(html.contains("DataXLR8"));
+        assert!(html.contains("Marketing portal"));
+    }
+
+    #[test]
     fn test_milestone_in_progress_parses() {
         // This was the root cause bug — InProgress missing from MilestoneStatus
         let json = r#"{"status":"in_progress","id":"M1","title":"Test","description":"","target_date":"2026-01-01","goals":[]}"#;
