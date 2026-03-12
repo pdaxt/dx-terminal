@@ -221,6 +221,10 @@ pub fn pane_browser_port(pane: u8) -> u16 {
     DEFAULT_BROWSER_PORT_BASE + pane as u16
 }
 
+pub fn browser_port_base() -> u16 {
+    DEFAULT_BROWSER_PORT_BASE
+}
+
 pub fn pane_browser_profile_root(pane: u8) -> PathBuf {
     home_dir()
         .join(".playwright-profiles")
