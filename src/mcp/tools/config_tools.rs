@@ -74,6 +74,9 @@ pub async fn config_show(app: &App, req: ConfigShowRequest) -> String {
                 "status": pane_data.status,
                 "pty_active": has_pty,
                 "pty_running": running,
+                "browser_port": config::pane_browser_port(pane_num),
+                "browser_profile_root": config::pane_browser_profile_root(pane_num),
+                "browser_artifacts_root": config::pane_browser_artifacts_root(pane_num),
                 "preamble_exists": claude::preamble_exists(pane_num),
                 "project_mcps": mcps,
             })
@@ -97,6 +100,7 @@ pub async fn config_show(app: &App, req: ConfigShowRequest) -> String {
                 "role": pd.role,
                 "task": pd.task,
                 "status": pd.status,
+                "browser_port": config::pane_browser_port(*i),
                 "pty_active": pty.has_agent(*i),
             }),
         );

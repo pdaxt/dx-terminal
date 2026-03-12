@@ -73,6 +73,9 @@ pub fn generate_preamble(
     prompt: &str,
 ) -> String {
     let role_short = config::role_short(role);
+    let browser_port = config::pane_browser_port(pane);
+    let browser_profile_root = config::pane_browser_profile_root(pane);
+    let browser_artifacts_root = config::pane_browser_artifacts_root(pane);
 
     // Parse prompt sections: split on known headers
     let mut regular_prompt = String::new();
@@ -147,6 +150,9 @@ pub fn generate_preamble(
          - Pane: {pane} ({theme})\n\
          - Project: {project}\n\
          - Role: {role} ({role_short})\n\
+         - Browser testing port: {browser_port}\n\
+         - Browser profile root: {browser_profile_root}\n\
+         - Browser artifacts root: {browser_artifacts_root}\n\
          - DX Terminal managed agent — your work is monitored automatically\n\
          \n\
          ## Role Instructions\n\
@@ -159,6 +165,9 @@ pub fn generate_preamble(
          {gate}\
          {sibling_context}\
          {coord}\n",
+        browser_port = browser_port,
+        browser_profile_root = browser_profile_root.display(),
+        browser_artifacts_root = browser_artifacts_root.display(),
     )
 }
 

@@ -45,6 +45,9 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     let ws_path = ws.ws_path;
     let ws_branch = ws.ws_branch;
     let ws_base = ws.ws_base;
+    let browser_port = config::pane_browser_port(pane_num);
+    let browser_profile_root = config::pane_browser_profile_root(pane_num);
+    let browser_artifacts_root = config::pane_browser_artifacts_root(pane_num);
 
     // Validate CWD exists — fall back to project_path to avoid posix_spawn ENOENT
     if !std::path::Path::new(&spawn_cwd).exists() {
@@ -82,6 +85,16 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         ("DX_THEME".to_string(), theme.to_string()),
         ("DX_PROJECT".to_string(), project_name.clone()),
         ("DX_ROLE".to_string(), role.clone()),
+        ("DX_BROWSER_PORT".to_string(), browser_port.to_string()),
+        ("PLAYWRIGHT_PORT".to_string(), browser_port.to_string()),
+        (
+            "DX_BROWSER_PROFILE_ROOT".to_string(),
+            browser_profile_root.to_string_lossy().to_string(),
+        ),
+        (
+            "DX_BROWSER_ARTIFACTS_ROOT".to_string(),
+            browser_artifacts_root.to_string_lossy().to_string(),
+        ),
         ("MACHINE_IP".to_string(), machine_id.ip.clone()),
         ("MACHINE_HOSTNAME".to_string(), machine_id.hostname.clone()),
         ("MACHINE_MAC".to_string(), machine_id.mac.clone()),
@@ -189,6 +202,9 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         "project_path": project_path,
         "workspace": ws_path,
         "branch": ws_branch,
+        "browser_port": browser_port,
+        "browser_profile_root": browser_profile_root,
+        "browser_artifacts_root": browser_artifacts_root,
         "tmux": tmux_status,
         "tmux_target": tmux_target,
         "machine_ip": machine_id.ip,
