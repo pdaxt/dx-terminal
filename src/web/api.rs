@@ -2656,7 +2656,7 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
             "experience" => "experience",
             "architecture" => "architecture",
             "client" => "sync",
-            "design" => "discovery",
+            "design" => "design",
             "sync" => "sync",
             "history" => "history",
             "research" => "research",
@@ -3385,7 +3385,7 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
     let research_collections = [
         ("Research Notes", "research", &research_docs),
         ("Discovery Notes", "discovery", &discovery_docs),
-        ("Design Briefs", "discovery", &design_docs),
+        ("Design Briefs", "design", &design_docs),
     ];
     let research_html = research_collections
         .iter()
@@ -4196,7 +4196,7 @@ code {{ font-family:var(--mono); }}
             <div class="stats-grid">
                 <div class="stat-card"><div class="stat-label">Goals</div><div class="stat-value">{goal_count}</div><div class="detail-meta">program outcomes tracked</div></div>
                 <div class="stat-card"><div class="stat-label">Features</div><div class="stat-value">{feature_count}</div><div class="detail-meta">delivery items in the plan</div></div>
-                <div class="stat-card"><div class="stat-label">Handbook Docs</div><div class="stat-value">{total_docs}</div><div class="detail-meta">featured, library, research, discovery</div></div>
+                <div class="stat-card"><div class="stat-label">Handbook Docs</div><div class="stat-value">{total_docs}</div><div class="detail-meta">featured, library, research, discovery, design</div></div>
                 <div class="stat-card"><div class="stat-label">Design Briefs</div><div class="stat-value">{design_doc_count}</div><div class="detail-meta">client-facing concept artifacts</div></div>
                 <div class="stat-card"><div class="stat-label">Milestones</div><div class="stat-value">{milestone_count}</div><div class="detail-meta">program checkpoints</div></div>
                 <div class="stat-card"><div class="stat-label">Architecture</div><div class="stat-value">{adr_count}</div><div class="detail-meta">decisions with rationale</div></div>
