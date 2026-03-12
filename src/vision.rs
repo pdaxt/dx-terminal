@@ -2012,7 +2012,11 @@ fn render_mockup_html(
     )
 }
 
-pub fn seed_mockup_options(project_path: &str, feature_id: &str, reference: Option<&str>) -> String {
+pub fn seed_mockup_options(
+    project_path: &str,
+    feature_id: &str,
+    reference: Option<&str>,
+) -> String {
     let mut vision = match load_vision(project_path) {
         Some(v) => v,
         None => return serde_json::json!({"error": "no_vision"}).to_string(),
@@ -2035,7 +2039,11 @@ pub fn seed_mockup_options(project_path: &str, feature_id: &str, reference: Opti
     let mut created = Vec::new();
     for (slug, title, summary) in variants {
         let option_id = design_option_id(feature_id, feature.design_options.len());
-        let file_name = format!("{}-{}.html", option_id.to_lowercase(), slugify_fragment(slug));
+        let file_name = format!(
+            "{}-{}.html",
+            option_id.to_lowercase(),
+            slugify_fragment(slug)
+        );
         let relative_path = format!(".vision/mockups/{}/{}", feature_id, file_name);
         let html = render_mockup_html(feature, title, summary, reference);
         let path = mockup_root.join(&file_name);
@@ -2144,8 +2152,10 @@ pub fn review_design_option(
     let Some(selected_idx) = feature
         .design_options
         .iter()
-        .position(|option| option.id == option_id) else {
-        return serde_json::json!({"error": "design_option_not_found", "id": option_id}).to_string();
+        .position(|option| option.id == option_id)
+    else {
+        return serde_json::json!({"error": "design_option_not_found", "id": option_id})
+            .to_string();
     };
 
     if parsed_status == DesignOptionStatus::Approved {

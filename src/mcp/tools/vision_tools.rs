@@ -120,10 +120,19 @@ pub fn vision_discovery_doc_upsert(
 }
 
 pub fn vision_design_doc_upsert(project: Option<&str>, feature_id: &str, content: &str) -> String {
-    vision::upsert_feature_doc(&resolve_project_path(project), feature_id, "design", content)
+    vision::upsert_feature_doc(
+        &resolve_project_path(project),
+        feature_id,
+        "design",
+        content,
+    )
 }
 
-pub fn vision_mockup_seed(project: Option<&str>, feature_id: &str, reference: Option<&str>) -> String {
+pub fn vision_mockup_seed(
+    project: Option<&str>,
+    feature_id: &str,
+    reference: Option<&str>,
+) -> String {
     vision::seed_mockup_options(&resolve_project_path(project), feature_id, reference)
 }
 

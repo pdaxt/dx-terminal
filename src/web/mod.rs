@@ -118,7 +118,10 @@ pub fn build_router(app: Arc<App>) -> Router {
             "/api/vision/doc",
             get(api::get_vision_doc).post(api::upsert_vision_doc),
         )
-        .route("/api/vision/design/mockups/seed", post(api::seed_vision_mockups))
+        .route(
+            "/api/vision/design/mockups/seed",
+            post(api::seed_vision_mockups),
+        )
         .route("/api/vision/design/review", post(api::review_vision_design))
         .route("/vision/mockup", get(api::get_vision_mockup))
         .route("/api/vision/notify", post(api::notify_vision_change))

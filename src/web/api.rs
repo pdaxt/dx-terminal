@@ -2090,33 +2090,35 @@ pub async fn get_vision_doc(Query(q): Query<VisionDocQuery>) -> Json<Value> {
     }
 
     if let Some(vision) = crate::vision::load_vision(&path) {
-        if let Some(feature) = vision.features.iter().find(|feature| feature.id == feature_id) {
-            result["design_options"] = json!(
-                feature
-                    .design_options
-                    .iter()
-                    .map(|option| {
-                        json!({
-                            "id": option.id,
-                            "title": option.title,
-                            "summary": option.summary,
-                            "kind": option.kind,
-                            "status": option.status,
-                            "relative_path": option.relative_path,
-                            "reference": option.reference,
-                            "approved_by": option.approved_by,
-                            "approved_at": option.approved_at,
-                            "review_notes": option.review_notes,
-                            "preview_url": format!(
-                                "/vision/mockup?project={}&feature_id={}&option_id={}",
-                                q.project.clone().unwrap_or_default(),
-                                feature_id,
-                                option.id
-                            ),
-                        })
+        if let Some(feature) = vision
+            .features
+            .iter()
+            .find(|feature| feature.id == feature_id)
+        {
+            result["design_options"] = json!(feature
+                .design_options
+                .iter()
+                .map(|option| {
+                    json!({
+                        "id": option.id,
+                        "title": option.title,
+                        "summary": option.summary,
+                        "kind": option.kind,
+                        "status": option.status,
+                        "relative_path": option.relative_path,
+                        "reference": option.reference,
+                        "approved_by": option.approved_by,
+                        "approved_at": option.approved_at,
+                        "review_notes": option.review_notes,
+                        "preview_url": format!(
+                            "/vision/mockup?project={}&feature_id={}&option_id={}",
+                            q.project.clone().unwrap_or_default(),
+                            feature_id,
+                            option.id
+                        ),
                     })
-                    .collect::<Vec<_>>()
-            );
+                })
+                .collect::<Vec<_>>());
         }
     }
 
@@ -2159,7 +2161,10 @@ pub async fn get_vision_mockup(Query(q): Query<VisionMockupQuery>) -> Html<Strin
 
     match crate::vision::read_mockup_html(&path, feature_id, option_id) {
         Ok(html) => Html(html),
-        Err(err) => Html(format!("<h1>Unable to load mockup</h1><p>{}</p>", escape_html(&err))),
+        Err(err) => Html(format!(
+            "<h1>Unable to load mockup</h1><p>{}</p>",
+            escape_html(&err)
+        )),
     }
 }
 
@@ -2267,7 +2272,8 @@ pub async fn review_vision_design(
         return Json(json!({"error": "feature_id and option_id required"}));
     }
 
-    let result = crate::vision::review_design_option(&path, feature_id, option_id, status, note, actor);
+    let result =
+        crate::vision::review_design_option(&path, feature_id, option_id, status, note, actor);
     maybe_emit_vision_change(&app, &path, &result, Some(feature_id));
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
