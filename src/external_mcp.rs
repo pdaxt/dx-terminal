@@ -206,7 +206,8 @@ fn descriptor_from_entry(entry: &ExternalMcpEntry) -> Option<MCPDescriptor> {
     }
 
     let mut env = entry.env.clone();
-    let normalized_command = normalize_launch(&entry.name, &entry.command, entry.args.clone(), &mut env);
+    let normalized_command =
+        normalize_launch(&entry.name, &entry.command, entry.args.clone(), &mut env);
 
     let mut capabilities = BTreeSet::new();
     capabilities.insert("external".to_string());
@@ -270,7 +271,10 @@ fn normalize_entry(mut entry: ExternalMcpEntry) -> ExternalMcpEntry {
 }
 
 fn merge_entry(existing: &mut ExternalMcpEntry, imported: ExternalMcpEntry) {
-    let dx_owned = existing.sources.iter().any(|source| source == SHARED_SOURCE);
+    let dx_owned = existing
+        .sources
+        .iter()
+        .any(|source| source == SHARED_SOURCE);
     if !dx_owned {
         existing.command = imported.command.clone();
         existing.args = imported.args.clone();
@@ -562,8 +566,14 @@ mod tests {
 
             let entries = load_external_catalog();
             assert_eq!(entries[0].command, "/custom/playwright");
-            assert!(entries[0].sources.iter().any(|value| value == SHARED_SOURCE));
-            assert!(entries[0].sources.iter().any(|value| value == CLAUDE_SOURCE));
+            assert!(entries[0]
+                .sources
+                .iter()
+                .any(|value| value == SHARED_SOURCE));
+            assert!(entries[0]
+                .sources
+                .iter()
+                .any(|value| value == CLAUDE_SOURCE));
         });
     }
 }
