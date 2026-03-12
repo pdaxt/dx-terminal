@@ -6,7 +6,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path as FsPath, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::app::App;
 use crate::capacity;
@@ -1062,6 +1064,7 @@ fn collect_guidance_docs(cwd: &str, project_path: &str) -> Vec<Value> {
                     "root": root.to_string_lossy().to_string(),
                     "preview": preview,
                     "size": content.len(),
+                    "modified_unix_ms": modified_unix_ms(&file_path),
                 }));
             }
         }
@@ -1094,8 +1097,10 @@ fn collect_vision_docs_for_path(project_path: &str) -> Vec<Value> {
                         "type": *subdir,
                         "feature_id": feature_id,
                         "file": fname,
+                        "path": entry.path().to_string_lossy().to_string(),
                         "preview": preview,
                         "size": content.len(),
+                        "modified_unix_ms": modified_unix_ms(&entry.path()),
                     }));
                 }
             }
@@ -1108,6 +1113,285 @@ fn collect_vision_docs_for_path(project_path: &str) -> Vec<Value> {
         a_feature.cmp(b_feature)
     });
     docs
+}
+
+fn modified_unix_ms(path: &FsPath) -> Option<u64> {
+    std::fs::metadata(path)
+        .ok()
+        .and_then(|meta| meta.modified().ok())
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as u64)
+}
+
+fn git_file_inventory(project_path: &str) -> (HashSet<String>, HashMap<String, String>) {
+    let root = FsPath::new(project_path);
+    let mut tracked = HashSet::new();
+    let mut dirty = HashMap::new();
+
+    if let Ok(output) = Command::new("git")
+        .args(["ls-files"])
+        .current_dir(root)
+        .output()
+    {
+        if output.status.success() {
+            for line in String::from_utf8_lossy(&output.stdout).lines() {
+                if !line.trim().is_empty() {
+                    tracked.insert(line.trim().to_string());
+                }
+            }
+        }
+    }
+
+    if let Ok(output) = Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(root)
+        .output()
+    {
+        if output.status.success() {
+            for line in String::from_utf8_lossy(&output.stdout).lines() {
+                if line.len() < 4 {
+                    continue;
+                }
+                let status = &line[..2];
+                let raw_path = line[3..].trim();
+                let path = raw_path
+                    .split(" -> ")
+                    .last()
+                    .unwrap_or(raw_path)
+                    .trim_matches('"')
+                    .to_string();
+                let x = status.chars().next().unwrap_or(' ');
+                let y = status.chars().nth(1).unwrap_or(' ');
+                let label = if status == "??" {
+                    "untracked"
+                } else if x != ' ' && y != ' ' {
+                    "staged+modified"
+                } else if x != ' ' {
+                    "staged"
+                } else {
+                    "modified"
+                };
+                dirty.insert(path, label.to_string());
+            }
+        }
+    }
+
+    (tracked, dirty)
+}
+
+fn annotate_docs_with_git(project_path: &str, docs: &mut [Value]) {
+    let root = FsPath::new(project_path);
+    let (tracked, dirty) = git_file_inventory(project_path);
+
+    for doc in docs.iter_mut() {
+        let Some(obj) = doc.as_object_mut() else {
+            continue;
+        };
+        let Some(path) = obj.get("path").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        let abs = FsPath::new(path);
+        let relative = abs
+            .strip_prefix(root)
+            .unwrap_or(abs)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let dirty_status = dirty.get(&relative).cloned();
+        let is_tracked = tracked.contains(&relative);
+
+        obj.insert("relative_path".to_string(), json!(relative));
+        obj.insert(
+            "git".to_string(),
+            json!({
+                "tracked": is_tracked,
+                "dirty": dirty_status.is_some(),
+                "status": dirty_status.unwrap_or_else(|| {
+                    if is_tracked { "clean".to_string() } else { "unknown".to_string() }
+                }),
+            }),
+        );
+    }
+}
+
+fn documentation_sync_contract(project: &str) -> Value {
+    json!({
+        "mode": "snapshot_plus_events",
+        "snapshot": format!("/api/project/brief?project={}", project),
+        "wiki": format!("/wiki?project={}", project),
+        "events": [
+            "vision_changed",
+            "sync_event",
+            "sync_status",
+            "pane_upsert",
+            "pane_removed",
+            "pane_status",
+            "terminal_output",
+            "session_events",
+            "queue_upsert",
+            "queue_removed"
+        ],
+        "authorities": [
+            ".vision/vision.json",
+            "AGENTS.md + provider guidance docs",
+            "git status",
+            "runtime state + tmux discovery"
+        ],
+        "remote_site": "A hosted dashboard should consume the same snapshot and event channels instead of keeping a second project state."
+    })
+}
+
+fn documentation_health(
+    guidance_docs: &[Value],
+    vision_docs: &[Value],
+    runtimes: &[Value],
+    features: &[Value],
+) -> Value {
+    let active_providers = runtimes
+        .iter()
+        .filter_map(|runtime| {
+            runtime
+                .get("provider")
+                .and_then(|value| value.get("id"))
+                .and_then(|value| value.as_str())
+        })
+        .filter(|provider| !provider.is_empty() && *provider != "unknown")
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .map(|provider| provider.to_string())
+        .collect::<Vec<_>>();
+
+    let guidance_kinds = guidance_docs
+        .iter()
+        .filter_map(|doc| doc.get("kind").and_then(|value| value.as_str()))
+        .collect::<HashSet<_>>();
+    let missing_provider_guidance = active_providers
+        .iter()
+        .filter(|provider| matches!(provider.as_str(), "claude" | "codex" | "gemini"))
+        .filter(|provider| !guidance_kinds.contains(provider.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let mut docs_by_feature: HashMap<String, usize> = HashMap::new();
+    for doc in vision_docs {
+        if let Some(feature_id) = doc.get("feature_id").and_then(|value| value.as_str()) {
+            *docs_by_feature.entry(feature_id.to_string()).or_insert(0) += 1;
+        }
+    }
+
+    let mut missing_feature_docs = Vec::new();
+    let mut missing_acceptance = Vec::new();
+    for feature in features {
+        let feature_id = feature
+            .get("id")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .to_string();
+        let phase = feature
+            .get("phase")
+            .or_else(|| feature.get("status"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("planned")
+            .to_string();
+        if feature_id.is_empty() || phase == "planned" {
+            continue;
+        }
+
+        if docs_by_feature.get(&feature_id).copied().unwrap_or(0) == 0 {
+            missing_feature_docs.push(json!({
+                "feature_id": feature_id,
+                "title": feature.get("title").cloned().unwrap_or(json!("")),
+                "phase": phase,
+            }));
+        }
+
+        let acceptance_count = feature
+            .get("acceptance_items")
+            .and_then(|value| value.as_array())
+            .map(|items| items.len())
+            .unwrap_or_else(|| {
+                feature
+                    .get("acceptance_criteria")
+                    .and_then(|value| value.as_array())
+                    .map(|items| items.len())
+                    .unwrap_or(0)
+            });
+        if matches!(phase.as_str(), "build" | "building" | "test" | "testing" | "done")
+            && acceptance_count == 0
+        {
+            missing_acceptance.push(json!({
+                "feature_id": feature_id,
+                "title": feature.get("title").cloned().unwrap_or(json!("")),
+                "phase": phase,
+            }));
+        }
+    }
+
+    let dirty_docs = guidance_docs
+        .iter()
+        .chain(vision_docs.iter())
+        .filter_map(|doc| {
+            let git = doc.get("git")?;
+            if !git.get("dirty").and_then(|value| value.as_bool()).unwrap_or(false) {
+                return None;
+            }
+            Some(json!({
+                "name": doc.get("name")
+                    .or_else(|| doc.get("file"))
+                    .cloned()
+                    .unwrap_or(json!("")),
+                "path": doc.get("relative_path")
+                    .or_else(|| doc.get("path"))
+                    .cloned()
+                    .unwrap_or(json!("")),
+                "status": git.get("status").cloned().unwrap_or(json!("modified")),
+            }))
+        })
+        .collect::<Vec<_>>();
+
+    let status = if !guidance_kinds.contains("shared") || !missing_provider_guidance.is_empty() {
+        "blocked"
+    } else if !missing_feature_docs.is_empty()
+        || !missing_acceptance.is_empty()
+        || !dirty_docs.is_empty()
+    {
+        "attention"
+    } else {
+        "synced"
+    };
+
+    let summary = match status {
+        "blocked" if !guidance_kinds.contains("shared") => {
+            "AGENTS.md is missing, so shared operating guidance is not aligned.".to_string()
+        }
+        "blocked" => format!(
+            "Active runtime guidance is missing for: {}.",
+            missing_provider_guidance.join(", ")
+        ),
+        "attention" if !dirty_docs.is_empty() => {
+            "Documentation has uncommitted changes or drift that the dashboard is surfacing live."
+                .to_string()
+        }
+        "attention" if !missing_feature_docs.is_empty() => {
+            "Features have advanced past planning without attached research or discovery docs."
+                .to_string()
+        }
+        "attention" => {
+            "Features in delivery phases still need acceptance coverage or doc cleanup."
+                .to_string()
+        }
+        _ => "Filesystem docs, git, and dashboard state are aligned.".to_string(),
+    };
+
+    json!({
+        "status": status,
+        "summary": summary,
+        "active_providers": active_providers,
+        "shared_guidance_present": guidance_kinds.contains("shared"),
+        "missing_provider_guidance": missing_provider_guidance,
+        "dirty_docs": dirty_docs,
+        "missing_feature_docs": missing_feature_docs,
+        "missing_acceptance": missing_acceptance,
+    })
 }
 
 fn provider_json(command: &str, window_name: &str, jsonl_path: Option<&str>) -> Value {
@@ -1149,8 +1433,10 @@ pub async fn get_project_brief(
     let tree_value = serde_json::from_str::<Value>(&tree).unwrap_or_else(|_| json!({}));
     let summary = crate::vision::vision_summary(&project_path);
     let summary_value = serde_json::from_str::<Value>(&summary).unwrap_or_else(|_| json!({}));
-    let docs = collect_vision_docs_for_path(&project_path);
-    let guidance_docs = collect_guidance_docs(&project_path, &project_path);
+    let mut docs = collect_vision_docs_for_path(&project_path);
+    let mut guidance_docs = collect_guidance_docs(&project_path, &project_path);
+    annotate_docs_with_git(&project_path, &mut docs);
+    annotate_docs_with_git(&project_path, &mut guidance_docs);
     let automation = crate::agent_assets::collect_automation_assets(&project_path);
     let vision_doc_count = docs.len();
     let guidance_doc_count = guidance_docs.len();
@@ -1176,6 +1462,7 @@ pub async fn get_project_brief(
     let mut phase_counts: HashMap<String, usize> = HashMap::new();
     let mut blocking_features = Vec::new();
     let mut ready_features = Vec::new();
+    let mut feature_records = Vec::new();
 
     for goal in tree_value
         .get("goals")
@@ -1205,6 +1492,7 @@ pub async fn get_project_brief(
                 .cloned()
                 .unwrap_or_else(|| json!({}));
 
+            feature_records.push(feature.clone());
             *phase_counts.entry(phase.clone()).or_insert(0) += 1;
 
             let next_gate = match phase.as_str() {
@@ -1258,6 +1546,11 @@ pub async fn get_project_brief(
         })
         .unwrap_or_else(|| json!(null));
 
+    let documentation = json!({
+        "health": documentation_health(&guidance_docs, &docs, &runtimes, &feature_records),
+        "sync_contract": documentation_sync_contract(&project),
+    });
+
     Json(json!({
         "project": project,
         "path": project_path,
@@ -1271,6 +1564,7 @@ pub async fn get_project_brief(
             "vision_doc_count": vision_doc_count,
             "guidance_doc_count": guidance_doc_count,
         },
+        "documentation": documentation,
         "automation": automation,
         "delivery": {
             "phase_counts": phase_counts,
