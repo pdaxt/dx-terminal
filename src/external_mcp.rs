@@ -342,12 +342,40 @@ fn dedupe_sorted(values: Vec<String>) -> Vec<String> {
 fn normalize_launch(
     name: &str,
     command: &str,
-    args: Vec<String>,
+    mut args: Vec<String>,
     env: &mut HashMap<String, String>,
 ) -> Vec<String> {
     if is_playwright_launcher(name, command) {
-        env.entry("P".to_string())
-            .or_insert_with(|| std::env::var("P").unwrap_or_else(|_| "99".to_string()));
+        let pane = env
+            .get("P")
+            .cloned()
+            .or_else(|| std::env::var("P").ok())
+            .unwrap_or_else(|| "99".to_string());
+        env.entry("P".to_string()).or_insert_with(|| pane.clone());
+
+        let browser_port = env
+            .get("PLAYWRIGHT_PORT")
+            .cloned()
+            .or_else(|| env.get("DX_BROWSER_PORT").cloned())
+            .or_else(|| std::env::var("PLAYWRIGHT_PORT").ok())
+            .or_else(|| std::env::var("DX_BROWSER_PORT").ok())
+            .or_else(|| {
+                pane.parse::<u8>()
+                    .ok()
+                    .map(crate::config::pane_browser_port)
+                    .map(|value| value.to_string())
+            })
+            .unwrap_or_else(|| "46099".to_string());
+
+        env.insert("PLAYWRIGHT_PORT".to_string(), browser_port.clone());
+        env.entry("DX_BROWSER_PORT".to_string())
+            .or_insert_with(|| browser_port.clone());
+
+        let has_port_arg = args.windows(2).any(|window| window[0] == "--port");
+        if !has_port_arg {
+            args.push("--port".to_string());
+            args.push(browser_port);
+        }
 
         let mut wrapped = vec![
             "zsh".to_string(),
