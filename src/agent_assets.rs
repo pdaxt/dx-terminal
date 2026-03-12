@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use walkdir::WalkDir;
 
 pub fn collect_automation_assets(project_root: &str) -> Value {
