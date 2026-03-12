@@ -63,11 +63,14 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         }
     }
 
-    // Generate preamble and write as CLAUDE.md in workspace for auto-load
+    // Generate preamble and write a shared guidance bundle in the workspace for
+    // whichever provider is active there.
     let preamble = claude::generate_preamble(pane_num, theme, &project_name, &role, &task, &prompt);
     let _ = claude::write_preamble(pane_num, &preamble);
-    let claude_md_path = format!("{}/CLAUDE.md", spawn_cwd);
-    let _ = std::fs::write(&claude_md_path, &preamble);
+    for guidance_file in ["AGENTS.md", "CLAUDE.md", "CODEX.md", "GEMINI.md"] {
+        let guidance_path = format!("{}/{}", spawn_cwd, guidance_file);
+        let _ = std::fs::write(&guidance_path, &preamble);
+    }
 
     // Register machine identity
     let machine_id = machine::register(pane_num);
