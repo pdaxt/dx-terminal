@@ -101,6 +101,17 @@ select:hover{border-color:var(--border-bright)}
 .intro-title{font-size:24px;font-weight:800;letter-spacing:-.03em;line-height:1.05;margin-bottom:8px}
 .intro-copy{font-size:13px;color:var(--muted);max-width:68ch}
 .phase-legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
+.tone{
+  display:inline-flex;align-items:center;justify-content:center;
+  padding:5px 10px;border-radius:var(--radius-pill);
+  font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;
+  border:1px solid transparent;
+}
+.tone-planned{background:rgba(111,128,143,.12);color:var(--dim);border-color:rgba(111,128,143,.18)}
+.tone-discovery{background:rgba(198,161,91,.12);color:var(--yellow);border-color:rgba(198,161,91,.18)}
+.tone-build{background:rgba(110,164,199,.12);color:var(--blue);border-color:rgba(110,164,199,.18)}
+.tone-test{background:rgba(106,167,161,.12);color:var(--teal);border-color:rgba(106,167,161,.18)}
+.tone-done{background:rgba(114,176,131,.12);color:var(--green);border-color:rgba(114,176,131,.18)}
 .guide-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .guide-card{padding:14px}
 .guide-step{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:rgba(110,164,199,.12);color:var(--blue);font-family:var(--mono);font-size:11px;font-weight:800;margin-bottom:10px}
@@ -689,7 +700,7 @@ canvas{width:100%;display:block}
   <div class="header">
     <div class="logo">
       <div class="logo-mark">DX</div>
-      <h1>DX Terminal<span>v2</span></h1>
+      <h1>DX Delivery OS<span>terminal + handbook</span></h1>
     </div>
     <div class="header-right">
       <div class="live-badge"><span class="live-dot"></span> LIVE</div>
