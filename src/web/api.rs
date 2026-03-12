@@ -2148,21 +2148,40 @@ pub async fn notify_vision_change(
 /// Simple markdown to HTML converter (no external deps)
 fn markdown_to_html(md: &str) -> String {
     let mut html = String::new();
-    let mut in_list = false;
+    let mut list_tag: Option<&'static str> = None;
     let mut in_code = false;
+    let mut code_lang = String::new();
+
+    fn close_list(html: &mut String, list_tag: &mut Option<&'static str>) {
+        if let Some(tag) = list_tag.take() {
+            html.push_str(&format!("</{}>", tag));
+        }
+    }
 
     for line in md.lines() {
         // Code blocks
         if line.starts_with("```") {
             if in_code {
-                html.push_str("</code></pre>");
-                in_code = false;
-            } else {
-                if in_list {
-                    html.push_str("</ul>");
-                    in_list = false;
+                if code_lang.eq_ignore_ascii_case("mermaid") {
+                    html.push_str("</div>");
+                } else {
+                    html.push_str("</code></pre>");
                 }
-                html.push_str("<pre><code>");
+                in_code = false;
+                code_lang.clear();
+            } else {
+                close_list(&mut html, &mut list_tag);
+                code_lang = line.trim_start_matches("```").trim().to_string();
+                if code_lang.eq_ignore_ascii_case("mermaid") {
+                    html.push_str("<div class=\"mermaid\">");
+                } else if code_lang.is_empty() {
+                    html.push_str("<pre class=\"code-block\"><code>");
+                } else {
+                    html.push_str(&format!(
+                        "<pre class=\"code-block\"><code class=\"language-{}\">",
+                        escape_html(&code_lang)
+                    ));
+                }
                 in_code = true;
             }
             continue;
@@ -2175,46 +2194,32 @@ fn markdown_to_html(md: &str) -> String {
 
         let trimmed = line.trim();
         if trimmed.is_empty() {
-            if in_list {
-                html.push_str("</ul>");
-                in_list = false;
-            }
+            close_list(&mut html, &mut list_tag);
             continue;
         }
 
         // Headers
         if trimmed.starts_with("### ") {
-            if in_list {
-                html.push_str("</ul>");
-                in_list = false;
-            }
+            close_list(&mut html, &mut list_tag);
             html.push_str(&format!("<h3>{}</h3>", escape_html(&trimmed[4..])));
         } else if trimmed.starts_with("## ") {
-            if in_list {
-                html.push_str("</ul>");
-                in_list = false;
-            }
+            close_list(&mut html, &mut list_tag);
             html.push_str(&format!("<h2>{}</h2>", escape_html(&trimmed[3..])));
         } else if trimmed.starts_with("# ") {
-            if in_list {
-                html.push_str("</ul>");
-                in_list = false;
-            }
+            close_list(&mut html, &mut list_tag);
             html.push_str(&format!("<h1>{}</h1>", escape_html(&trimmed[2..])));
         }
         // Horizontal rules
         else if trimmed == "---" || trimmed == "***" {
-            if in_list {
-                html.push_str("</ul>");
-                in_list = false;
-            }
+            close_list(&mut html, &mut list_tag);
             html.push_str("<hr>");
         }
         // List items
         else if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
-            if !in_list {
+            if list_tag != Some("ul") {
+                close_list(&mut html, &mut list_tag);
                 html.push_str("<ul>");
-                in_list = true;
+                list_tag = Some("ul");
             }
             html.push_str(&format!("<li>{}</li>", inline_md(&trimmed[2..])));
         }
@@ -2228,29 +2233,146 @@ fn markdown_to_html(md: &str) -> String {
             && trimmed.contains(". ")
         {
             if let Some(pos) = trimmed.find(". ") {
-                if !in_list {
+                if list_tag != Some("ol") {
+                    close_list(&mut html, &mut list_tag);
                     html.push_str("<ol>");
-                    in_list = true;
+                    list_tag = Some("ol");
                 }
                 html.push_str(&format!("<li>{}</li>", inline_md(&trimmed[pos + 2..])));
             }
         }
         // Regular paragraph
         else {
-            if in_list {
-                html.push_str("</ul>");
-                in_list = false;
-            }
+            close_list(&mut html, &mut list_tag);
             html.push_str(&format!("<p>{}</p>", inline_md(trimmed)));
         }
     }
-    if in_list {
-        html.push_str("</ul>");
-    }
+    close_list(&mut html, &mut list_tag);
     if in_code {
-        html.push_str("</code></pre>");
+        if code_lang.eq_ignore_ascii_case("mermaid") {
+            html.push_str("</div>");
+        } else {
+            html.push_str("</code></pre>");
+        }
     }
     html
+}
+
+#[derive(Clone, Debug)]
+struct WikiDocEntry {
+    id: String,
+    title: String,
+    summary: String,
+    category: String,
+    relative_path: String,
+    html: String,
+}
+
+fn slugify_doc_id(value: &str) -> String {
+    value.chars()
+        .map(|ch| match ch {
+            'a'..='z' | 'A'..='Z' | '0'..='9' => ch.to_ascii_lowercase(),
+            _ => '-',
+        })
+        .collect::<String>()
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+fn markdown_title_and_summary(md: &str, fallback: &str) -> (String, String) {
+    let mut title = fallback.to_string();
+    let mut summary = String::new();
+
+    for line in md.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("# ") {
+            title = trimmed.trim_start_matches("# ").trim().to_string();
+            continue;
+        }
+        if trimmed.is_empty()
+            || trimmed.starts_with('#')
+            || trimmed.starts_with("```")
+            || trimmed.starts_with("- ")
+            || trimmed.starts_with("* ")
+        {
+            continue;
+        }
+        let looks_numbered = trimmed
+            .split_once(". ")
+            .map(|(prefix, _)| prefix.chars().all(|ch| ch.is_ascii_digit()))
+            .unwrap_or(false);
+        if looks_numbered {
+            continue;
+        }
+        summary = trimmed.to_string();
+        break;
+    }
+
+    (title, summary)
+}
+
+fn load_wiki_doc(project_path: &str, relative_path: &str, category: &str) -> Option<WikiDocEntry> {
+    let path = FsPath::new(project_path).join(relative_path);
+    let content = std::fs::read_to_string(&path).ok()?;
+    let fallback = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("document");
+    let (title, summary) = markdown_title_and_summary(&content, fallback);
+    Some(WikiDocEntry {
+        id: slugify_doc_id(relative_path),
+        title,
+        summary,
+        category: category.to_string(),
+        relative_path: relative_path.to_string(),
+        html: markdown_to_html(&content),
+    })
+}
+
+fn collect_featured_wiki_docs(project_path: &str) -> Vec<WikiDocEntry> {
+    let candidates = [
+        ("README.md", "overview"),
+        ("docs/NON_TECH_GUIDE.md", "guide"),
+        ("docs/OPERATOR_SYSTEM_GUIDE.md", "operations"),
+        ("docs/ARCHITECTURE_BLUEPRINT.md", "architecture"),
+        ("docs/HISTORY_OF_DX_TERMINAL.md", "history"),
+    ];
+
+    candidates
+        .into_iter()
+        .filter_map(|(relative_path, category)| load_wiki_doc(project_path, relative_path, category))
+        .collect()
+}
+
+fn collect_library_wiki_docs(project_path: &str, exclude: &HashSet<String>) -> Vec<WikiDocEntry> {
+    let docs_dir = FsPath::new(project_path).join("docs");
+    let Ok(entries) = std::fs::read_dir(&docs_dir) else {
+        return Vec::new();
+    };
+
+    let mut docs = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if !path.is_file() || path.extension().and_then(|value| value.to_str()) != Some("md") {
+                return None;
+            }
+            let relative_path = path
+                .strip_prefix(project_path)
+                .ok()?
+                .to_string_lossy()
+                .to_string();
+            if exclude.contains(&relative_path) {
+                return None;
+            }
+            load_wiki_doc(project_path, &relative_path, "library")
+        })
+        .collect::<Vec<_>>();
+
+    docs.sort_by(|left, right| left.title.cmp(&right.title));
+    docs
 }
 
 /// Inline markdown: **bold**, `code`, *italic*
