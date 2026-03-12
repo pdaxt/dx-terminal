@@ -1279,7 +1279,9 @@ pub async fn assess_vision_work(
     });
     let description = body["description"].as_str().unwrap_or("");
     let result = crate::vision::assess_work(&path, description);
-    if let Some(focus) = crate::vision_focus::upsert_focus_from_work_result(&path, &result, Some("web")) {
+    if let Some(focus) =
+        crate::vision_focus::upsert_focus_from_work_result(&path, &result, Some("web"))
+    {
         maybe_emit_focus_change(&app, &focus);
     }
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
