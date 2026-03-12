@@ -76,6 +76,25 @@ pub fn audit_ux(url: &str) -> Value {
         }
     }
 
+    report_from_checks(url, &checks)
+}
+
+pub fn rebuild_report(url: &str, checks: Vec<Value>) -> Value {
+    let typed_checks: Vec<UxCheck> = checks
+        .into_iter()
+        .map(|value| UxCheck {
+            name: value["name"].as_str().unwrap_or("unknown").to_string(),
+            category: value["category"].as_str().unwrap_or("other").to_string(),
+            passed: value["passed"].as_bool().unwrap_or(false),
+            details: value["details"].as_str().unwrap_or("").to_string(),
+            severity: value["severity"].as_str().unwrap_or("info").to_string(),
+        })
+        .collect();
+
+    report_from_checks(url, &typed_checks)
+}
+
+fn report_from_checks(url: &str, checks: &[UxCheck]) -> Value {
     // Score
     let total = checks.len();
     let passed = checks.iter().filter(|c| c.passed).count();
