@@ -50,8 +50,8 @@ pub mod vision_tools;
 // ── Re-exports (flat namespace for backward compat) ──
 
 pub use config_tools::{config_show, set_mcps, set_preamble};
-pub use git_tools::{git_merge, git_pr, git_push, git_status_tool, git_sync};
 pub use gateway_tools::gateway_tools;
+pub use git_tools::{git_merge, git_pr, git_push, git_status_tool, git_sync};
 pub use helpers::{machine_info_tool, machine_list_tool};
 pub use monitoring::{dashboard, digest, health, logs, monitor, project_status, status, watch};
 pub use panes::{assign, assign_adhoc, collect, complete, kill, reassign, restart, spawn};
