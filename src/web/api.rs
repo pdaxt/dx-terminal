@@ -4,6 +4,8 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::app::App;
@@ -882,6 +884,171 @@ fn resolve_project_path(q: &VisionQuery) -> String {
     } else {
         format!("{}/Projects", home)
     }
+}
+
+const GUIDANCE_DOC_FILES: &[&str] = &["AGENTS.md", "CLAUDE.md", "CODEX.md", "GEMINI.md"];
+
+fn guidance_doc_kind(file_name: &str) -> &'static str {
+    match file_name {
+        "AGENTS.md" => "shared",
+        "CLAUDE.md" => "claude",
+        "CODEX.md" => "codex",
+        "GEMINI.md" => "gemini",
+        _ => "shared",
+    }
+}
+
+fn guidance_doc_rank(file_name: &str) -> usize {
+    match file_name {
+        "AGENTS.md" => 0,
+        "CLAUDE.md" => 1,
+        "CODEX.md" => 2,
+        "GEMINI.md" => 3,
+        _ => 9,
+    }
+}
+
+fn has_project_marker(path: &Path) -> bool {
+    path.join(".git").exists()
+        || path.join(".vision/vision.json").exists()
+        || GUIDANCE_DOC_FILES.iter().any(|name| path.join(name).exists())
+}
+
+fn find_project_root(candidate: &Path) -> Option<PathBuf> {
+    let start = if candidate.is_file() {
+        candidate.parent()?
+    } else {
+        candidate
+    };
+
+    for dir in start.ancestors() {
+        if has_project_marker(dir) {
+            return Some(dir.to_path_buf());
+        }
+    }
+    None
+}
+
+fn project_name_from_path(project_path: &str) -> String {
+    Path::new(project_path)
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "--".to_string())
+}
+
+fn matches_project_path(candidate: &str, project_path: &str) -> bool {
+    if candidate.trim().is_empty() || project_path.trim().is_empty() {
+        return false;
+    }
+
+    let candidate = Path::new(candidate);
+    let project_root = Path::new(project_path);
+    candidate.starts_with(project_root)
+        || find_project_root(candidate)
+            .as_deref()
+            .map(|root| root == project_root)
+            .unwrap_or(false)
+}
+
+fn collect_guidance_docs(cwd: &str, project_path: &str) -> Vec<Value> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    let mut seen_roots = HashSet::new();
+
+    for candidate in [Some(project_path), Some(cwd)].into_iter().flatten() {
+        if candidate.trim().is_empty() {
+            continue;
+        }
+        let path = Path::new(candidate);
+        if let Some(root) = find_project_root(path) {
+            let key = root.to_string_lossy().to_string();
+            if seen_roots.insert(key) {
+                roots.push(root);
+            }
+        } else {
+            let key = path.to_string_lossy().to_string();
+            if seen_roots.insert(key.clone()) {
+                roots.push(PathBuf::from(key));
+            }
+        }
+    }
+
+    let mut seen_files = HashSet::new();
+    let mut docs = Vec::new();
+    for root in roots {
+        for name in GUIDANCE_DOC_FILES {
+            let file_path = root.join(name);
+            if !file_path.exists() {
+                continue;
+            }
+            let key = file_path.to_string_lossy().to_string();
+            if !seen_files.insert(key.clone()) {
+                continue;
+            }
+
+            if let Ok(content) = std::fs::read_to_string(&file_path) {
+                let preview: String = content.chars().take(1600).collect();
+                docs.push(json!({
+                    "name": *name,
+                    "kind": guidance_doc_kind(name),
+                    "path": key,
+                    "root": root.to_string_lossy().to_string(),
+                    "preview": preview,
+                    "size": content.len(),
+                }));
+            }
+        }
+    }
+
+    docs.sort_by_key(|doc| {
+        doc.get("name")
+            .and_then(|value| value.as_str())
+            .map(guidance_doc_rank)
+            .unwrap_or(99)
+    });
+    docs
+}
+
+fn collect_vision_docs_for_path(project_path: &str) -> Vec<Value> {
+    let base = Path::new(project_path).join(".vision");
+    let mut docs = Vec::new();
+
+    for subdir in &["research", "discovery"] {
+        let dir = base.join(subdir);
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let fname = entry.file_name().to_string_lossy().to_string();
+                if fname.ends_with(".md") {
+                    let feature_id = fname.trim_end_matches(".md").to_string();
+                    let content = std::fs::read_to_string(entry.path()).unwrap_or_default();
+                    let lines: Vec<&str> = content.lines().take(3).collect();
+                    let preview = lines.join(" ").chars().take(150).collect::<String>();
+                    docs.push(json!({
+                        "type": *subdir,
+                        "feature_id": feature_id,
+                        "file": fname,
+                        "preview": preview,
+                        "size": content.len(),
+                    }));
+                }
+            }
+        }
+    }
+
+    docs.sort_by(|a, b| {
+        let a_feature = a.get("feature_id").and_then(|v| v.as_str()).unwrap_or("");
+        let b_feature = b.get("feature_id").and_then(|v| v.as_str()).unwrap_or("");
+        a_feature.cmp(b_feature)
+    });
+    docs
+}
+
+fn provider_json(command: &str, window_name: &str, jsonl_path: Option<&str>) -> Value {
+    let provider = crate::tmux::infer_provider(command, window_name, jsonl_path);
+    json!({
+        "id": provider,
+        "label": crate::tmux::provider_label(provider),
+        "short": crate::tmux::provider_short(provider),
+    })
 }
 
 /// GET /api/vision?project=NAME — Get vision for a project
