@@ -1267,6 +1267,15 @@ pub struct VisionDocQuery {
     pub feature_id: Option<String>,
 }
 
+#[derive(Deserialize, Default)]
+pub struct VisionFocusRequest {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub goal_id: Option<String>,
+    pub feature_id: Option<String>,
+    pub source: Option<String>,
+}
+
 /// GET /api/vision/docs?project=NAME — List all research/discovery docs
 pub async fn list_vision_docs(Query(q): Query<VisionQuery>) -> Json<Value> {
     let path = resolve_project_path(&q);
@@ -1347,6 +1356,32 @@ pub async fn get_vision_doc(Query(q): Query<VisionDocQuery>) -> Json<Value> {
     }
 
     Json(result)
+}
+
+/// POST /api/vision/focus — Persist the operator's active goal/feature focus for auto-continue.
+pub async fn set_vision_focus(Json(body): Json<VisionFocusRequest>) -> Json<Value> {
+    let path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let source = body.source.as_deref().unwrap_or("dashboard");
+
+    let focus = if let Some(feature_id) = body.feature_id.as_deref().filter(|value| !value.trim().is_empty()) {
+        crate::vision_focus::upsert_feature_focus(&path, feature_id, Some(source))
+    } else {
+        crate::vision_focus::upsert_focus(
+            &path,
+            body.project.as_deref(),
+            body.goal_id.as_deref(),
+            None,
+            Some(source),
+        )
+    };
+
+    match focus {
+        Some(focus) => Json(json!({"status": "focused", "focus": focus})),
+        None => Json(json!({"error": "unable_to_set_focus"})),
+    }
 }
 
 /// POST /api/vision/doc — Create or update a research/discovery doc for a feature
