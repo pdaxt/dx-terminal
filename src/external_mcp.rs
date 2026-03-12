@@ -52,9 +52,7 @@ pub fn shared_catalog_path() -> PathBuf {
 /// Load the shared dx-owned external MCP catalog, importing Claude config as a source
 /// when needed so all runtimes can consume the same registry.
 pub fn load_external_catalog() -> Vec<ExternalMcpEntry> {
-    let entries = merged_catalog_entries();
-    let _ = write_shared_catalog(&entries);
-    entries
+    load_external_catalog_from_path(&shared_catalog_path(), &crate::claude::read_claude_config())
 }
 
 /// Refresh the shared dx-owned catalog from known import sources.
@@ -83,14 +81,24 @@ pub fn sync_gateway(gateway: &mut dx_gateway::MCPRegistry) -> usize {
 }
 
 fn merged_catalog_entries() -> Vec<ExternalMcpEntry> {
+    merged_catalog_entries_from_path(&shared_catalog_path(), &crate::claude::read_claude_config())
+}
+
+fn load_external_catalog_from_path(shared_path: &Path, claude_config: &Value) -> Vec<ExternalMcpEntry> {
+    let entries = merged_catalog_entries_from_path(shared_path, claude_config);
+    let _ = write_shared_catalog_to(shared_path, &entries);
+    entries
+}
+
+fn merged_catalog_entries_from_path(shared_path: &Path, claude_config: &Value) -> Vec<ExternalMcpEntry> {
     let mut merged: HashMap<String, ExternalMcpEntry> = HashMap::new();
 
-    for entry in read_shared_catalog() {
+    for entry in read_shared_catalog_from_path(shared_path) {
         let entry = normalize_entry(entry);
         merged.insert(entry.name.clone(), entry);
     }
 
-    for imported in import_claude_catalog() {
+    for imported in import_catalog_from_config(claude_config, CLAUDE_SOURCE) {
         let imported = normalize_entry(imported);
         match merged.get_mut(&imported.name) {
             Some(existing) => merge_entry(existing, imported),
@@ -106,7 +114,10 @@ fn merged_catalog_entries() -> Vec<ExternalMcpEntry> {
 }
 
 fn read_shared_catalog() -> Vec<ExternalMcpEntry> {
-    let path = shared_catalog_path();
+    read_shared_catalog_from_path(&shared_catalog_path())
+}
+
+fn read_shared_catalog_from_path(path: &Path) -> Vec<ExternalMcpEntry> {
     let Ok(content) = std::fs::read_to_string(path) else {
         return Vec::new();
     };
@@ -117,7 +128,10 @@ fn read_shared_catalog() -> Vec<ExternalMcpEntry> {
 }
 
 fn write_shared_catalog(entries: &[ExternalMcpEntry]) -> anyhow::Result<()> {
-    let path = shared_catalog_path();
+    write_shared_catalog_to(&shared_catalog_path(), entries)
+}
+
+fn write_shared_catalog_to(path: &Path, entries: &[ExternalMcpEntry]) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -134,14 +148,17 @@ fn write_shared_catalog(entries: &[ExternalMcpEntry]) -> anyhow::Result<()> {
 }
 
 fn import_claude_catalog() -> Vec<ExternalMcpEntry> {
-    let config = crate::claude::read_claude_config();
+    import_catalog_from_config(&crate::claude::read_claude_config(), CLAUDE_SOURCE)
+}
+
+fn import_catalog_from_config(config: &Value, source: &str) -> Vec<ExternalMcpEntry> {
     let Some(servers) = config.get("mcpServers").and_then(|value| value.as_object()) else {
         return Vec::new();
     };
 
     let mut entries = servers
         .iter()
-        .filter_map(|(name, server)| entry_from_value(name, server, CLAUDE_SOURCE))
+        .filter_map(|(name, server)| entry_from_value(name, server, source))
         .collect::<Vec<_>>();
     entries.sort_by(|left, right| left.name.cmp(&right.name));
     entries
