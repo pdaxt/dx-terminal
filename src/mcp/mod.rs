@@ -2268,7 +2268,9 @@ impl DxTerminalService {
         &self,
         Parameters(req): Parameters<types::VisionWorkRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
         let result = tools::vision_tools::vision_work(req.project.as_deref(), &req.description);
+        crate::vision_focus::upsert_focus_from_work_result(&project_path, &result, Some("mcp"));
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 

@@ -233,6 +233,9 @@ mod tests {
 
     #[test]
     fn normalize_project_path_resolves_existing_relative_path() {
+        static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+        let _guard = TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let original = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
