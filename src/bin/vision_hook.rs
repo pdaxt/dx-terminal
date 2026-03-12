@@ -321,13 +321,17 @@ fn first_unverified_acceptance<'a>(feature: &'a Value) -> Option<&'a Value> {
         .get("acceptance_items")
         .and_then(|v| v.as_array())
         .and_then(|items| {
-            items.iter().find(|item| {
-                item.get("status").and_then(|s| s.as_str()) != Some("verified")
-            })
+            items
+                .iter()
+                .find(|item| item.get("status").and_then(|s| s.as_str()) != Some("verified"))
         })
 }
 
-fn select_stop_feature<'a>(project: &str, vision: &'a Value, features: &'a [Value]) -> Option<&'a Value> {
+fn select_stop_feature<'a>(
+    project: &str,
+    vision: &'a Value,
+    features: &'a [Value],
+) -> Option<&'a Value> {
     if let Some(branch) = get_current_branch(Some(project)) {
         if let Some((feature, _task)) = find_task_by_branch(vision, &branch) {
             if !feature_is_done(feature) {
@@ -347,7 +351,10 @@ fn select_stop_feature<'a>(project: &str, vision: &'a Value, features: &'a [Valu
 }
 
 fn next_step_instruction(feature: &Value) -> Option<String> {
-    let feature_id = feature.get("id").and_then(|v| v.as_str()).unwrap_or("feature");
+    let feature_id = feature
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("feature");
     let title = feature
         .get("title")
         .and_then(|v| v.as_str())
