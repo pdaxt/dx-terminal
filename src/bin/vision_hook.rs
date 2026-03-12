@@ -1686,9 +1686,8 @@ fn main() {
         _ => None,
     };
 
-    if let Some(r) = result {
-        println!("{}", r);
-    }
+    let output = result.unwrap_or_else(|| json!({"continue": true}));
+    println!("{}", output);
 }
 
 #[cfg(test)]
