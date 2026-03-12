@@ -166,16 +166,14 @@ fn generate_commit_message(dirty_files: &[String], _trigger_files: &[PathBuf]) -
     let has_vision = dirty_files.iter().any(|f| f.contains(".vision/"));
     let has_src = dirty_files.iter().any(|f| f.contains("src/"));
     let has_assets = dirty_files.iter().any(|f| f.contains("assets/"));
-    let has_config = dirty_files
-        .iter()
-        .any(|f| {
-            f.contains("Cargo.toml")
-                || f.contains("package.json")
-                || f.contains("AGENTS.md")
-                || f.contains("CLAUDE.md")
-                || f.contains("CODEX.md")
-                || f.contains("GEMINI.md")
-        });
+    let has_config = dirty_files.iter().any(|f| {
+        f.contains("Cargo.toml")
+            || f.contains("package.json")
+            || f.contains("AGENTS.md")
+            || f.contains("CLAUDE.md")
+            || f.contains("CODEX.md")
+            || f.contains("GEMINI.md")
+    });
     let has_hooks = dirty_files.iter().any(|f| f.contains(".claude/"));
 
     let mut parts = Vec::new();

@@ -911,7 +911,9 @@ fn guidance_doc_rank(file_name: &str) -> usize {
 fn has_project_marker(path: &Path) -> bool {
     path.join(".git").exists()
         || path.join(".vision/vision.json").exists()
-        || GUIDANCE_DOC_FILES.iter().any(|name| path.join(name).exists())
+        || GUIDANCE_DOC_FILES
+            .iter()
+            .any(|name| path.join(name).exists())
 }
 
 fn find_project_root(candidate: &Path) -> Option<PathBuf> {
@@ -2561,7 +2563,13 @@ fn collect_project_runtimes(
             .as_deref()
             .and_then(|target| live_by_target.get(target).copied());
         let provider = live
-            .map(|entry| provider_json(&entry.command, &entry.window_name, entry.jsonl_path.as_deref()))
+            .map(|entry| {
+                provider_json(
+                    &entry.command,
+                    &entry.window_name,
+                    entry.jsonl_path.as_deref(),
+                )
+            })
             .unwrap_or_else(|| provider_json("", "", None));
         if let Some(target) = pane.tmux_target.as_deref() {
             seen_targets.insert(target.to_string());
@@ -2628,8 +2636,14 @@ fn collect_project_runtimes(
     }
 
     runtimes.sort_by(|a, b| {
-        let a_pane = a.get("pane").and_then(|value| value.as_u64()).unwrap_or(999);
-        let b_pane = b.get("pane").and_then(|value| value.as_u64()).unwrap_or(999);
+        let a_pane = a
+            .get("pane")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(999);
+        let b_pane = b
+            .get("pane")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(999);
         a_pane.cmp(&b_pane)
     });
     runtimes
@@ -2718,10 +2732,12 @@ pub async fn get_pane_context(
     let project_path = if let Some(ref live) = live_pane {
         find_project_root(Path::new(&live.cwd))
             .map(|root| root.to_string_lossy().to_string())
-            .unwrap_or_else(|| resolve_project_path(&VisionQuery {
-                project: Some(project.clone()),
-                path: None,
-            }))
+            .unwrap_or_else(|| {
+                resolve_project_path(&VisionQuery {
+                    project: Some(project.clone()),
+                    path: None,
+                })
+            })
     } else {
         resolve_project_path(&VisionQuery {
             project: Some(project.clone()),
