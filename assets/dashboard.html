@@ -3,25 +3,29 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DX Terminal</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230d1117'/><text x='16' y='23' text-anchor='middle' font-size='18' fill='%2358a6ff'>DX</text></svg>">
+<title>DX Delivery OS</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23142029'/><rect x='4' y='4' width='24' height='24' rx='7' fill='%231d6d6b'/><text x='16' y='22' text-anchor='middle' font-size='14' font-family='Arial' font-weight='700' fill='%23fffdf9'>DX</text></svg>">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
-  --bg:#0b1117;--surface:#111923;--surface2:#182331;--border:#223246;--border-bright:#35506f;
-  --text:#e6edf6;--muted:#91a3b8;--dim:#58697d;
-  --blue:#4f8ff7;--green:#2fbf71;--yellow:#d8a739;--red:#e46060;--purple:#8a78e6;--teal:#22b8ad;--orange:#e79a3b;--pink:#d96aa6;
+  --bg:#0c1319;--surface:#142029;--surface2:#1b2934;--border:#2a3c4a;--border-bright:#466377;
+  --text:#eef4f7;--muted:#a7b5c1;--dim:#6f808f;
+  --blue:#6ea4c7;--green:#72b083;--yellow:#c6a15b;--red:#d16f74;--purple:#9b86c5;--teal:#6aa7a1;--orange:#cc8b52;--pink:#c77d9c;
   --mono:'SF Mono','JetBrains Mono','Cascadia Code','Fira Code',Monaco,Consolas,monospace;
   --sans:'Avenir Next','Segoe UI','IBM Plex Sans','Helvetica Neue',sans-serif;
   --radius:10px;--radius-sm:6px;--radius-pill:999px;
-  --shadow:0 4px 20px rgba(0,0,0,.5);
+  --shadow:0 8px 24px rgba(0,0,0,.32);
   --transition:all .2s cubic-bezier(.4,0,.2,1);
-  --glow-blue:0 0 20px rgba(77,166,255,.15);
-  --glow-green:0 0 20px rgba(68,217,140,.15);
-  --glow-purple:0 0 20px rgba(176,122,255,.15);
+  --glow-blue:0 0 20px rgba(110,164,199,.15);
+  --glow-green:0 0 20px rgba(114,176,131,.15);
+  --glow-purple:0 0 20px rgba(155,134,197,.15);
 }
 
-body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;line-height:1.45;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+body{font-family:var(--sans);background:
+  radial-gradient(circle at top left, rgba(110,164,199,.08), transparent 28%),
+  radial-gradient(circle at top right, rgba(106,167,161,.08), transparent 24%),
+  linear-gradient(180deg,#0b1116 0%, #0f171d 48%, #0c1319 100%);
+  color:var(--text);min-height:100vh;overflow-x:hidden;line-height:1.5;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 
 /* === Layout: sidebar + main + terminal panel === */
 .app{display:grid;grid-template-columns:1fr;grid-template-rows:auto 1fr;height:100vh}
@@ -34,20 +38,21 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
   grid-column:1/-1;
   background:linear-gradient(180deg,rgba(12,18,25,.98) 0%,rgba(12,18,25,.95) 100%);
   border-bottom:1px solid var(--border);
-  padding:0 24px;height:52px;
+  padding:0 24px;height:56px;
   display:flex;align-items:center;justify-content:space-between;
   backdrop-filter:blur(20px) saturate(1.5);z-index:100;
   box-shadow:0 1px 3px rgba(0,0,0,.3),0 1px 0 rgba(77,166,255,.03);
 }
 .logo{display:flex;align-items:center;gap:10px}
 .logo-mark{
-  width:28px;height:28px;border-radius:7px;
-  background:linear-gradient(135deg,var(--blue),var(--purple));
+  width:32px;height:32px;border-radius:10px;
+  background:linear-gradient(135deg,var(--blue),var(--teal));
   display:flex;align-items:center;justify-content:center;
   font-family:var(--mono);font-size:11px;font-weight:800;color:#fff;letter-spacing:-0.5px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.15),0 8px 18px rgba(0,0,0,.24);
 }
-.logo h1{font-size:15px;font-weight:700;color:var(--text);letter-spacing:-.3px}
-.logo h1 span{color:var(--muted);font-weight:400;margin-left:4px;font-size:13px}
+.logo h1{font-size:16px;font-weight:800;color:var(--text);letter-spacing:-.3px}
+.logo h1 span{color:var(--muted);font-weight:500;margin-left:6px;font-size:12px;text-transform:uppercase;letter-spacing:.08em}
 .header-right{display:flex;gap:10px;align-items:center}
 .live-badge{
   display:flex;align-items:center;gap:5px;
@@ -83,6 +88,27 @@ select:hover{border-color:var(--border-bright)}
 .alert-warning{background:rgba(240,192,64,.1);color:var(--yellow);border:1px solid rgba(240,192,64,.15)}
 .alert-info{background:rgba(77,166,255,.1);color:var(--blue);border:1px solid rgba(77,166,255,.15)}
 
+/* === Page Intro === */
+.page-intro{display:grid;grid-template-columns:1.15fr .85fr;gap:14px;margin-bottom:16px}
+.intro-banner,.guide-card{
+  background:linear-gradient(145deg,var(--surface) 0%,var(--surface2) 100%);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  box-shadow:0 2px 8px rgba(0,0,0,.2);
+}
+.intro-banner{padding:18px 20px}
+.intro-kicker{font-size:10px;text-transform:uppercase;letter-spacing:.14em;font-weight:800;color:var(--blue);margin-bottom:8px}
+.intro-title{font-size:24px;font-weight:800;letter-spacing:-.03em;line-height:1.05;margin-bottom:8px}
+.intro-copy{font-size:13px;color:var(--muted);max-width:68ch}
+.phase-legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
+.guide-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.guide-card{padding:14px}
+.guide-step{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:rgba(110,164,199,.12);color:var(--blue);font-family:var(--mono);font-size:11px;font-weight:800;margin-bottom:10px}
+.guide-card h3{font-size:13px;font-weight:800;margin-bottom:4px}
+.guide-card p{font-size:11px;color:var(--muted);line-height:1.5}
+@media(max-width:1100px){.page-intro{grid-template-columns:1fr}.guide-strip{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:760px){.guide-strip{grid-template-columns:1fr}}
+
 /* === Gauge Row === */
 .gauge-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
 @media(max-width:900px){.gauge-row{grid-template-columns:repeat(2,1fr)}}
@@ -101,10 +127,10 @@ select:hover{border-color:var(--border-bright)}
 .gauge.g-blue::after{background:var(--blue)}.gauge.g-green::after{background:var(--green)}
 .gauge.g-yellow::after{background:var(--yellow)}.gauge.g-red::after{background:var(--red)}
 .gauge.g-purple::after{background:var(--purple)}
-.gauge-label{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700;letter-spacing:.6px;margin-bottom:6px}
+.gauge-label{font-size:11px;text-transform:uppercase;color:var(--muted);font-weight:700;letter-spacing:.6px;margin-bottom:6px}
 .gauge-value{font-size:26px;font-weight:800;line-height:1;font-feature-settings:'tnum';font-family:var(--mono)}
 .gauge-value small{font-size:13px;color:var(--muted);font-weight:500}
-.gauge-sub{font-size:10px;color:var(--muted);margin-top:5px}
+.gauge-sub{font-size:11px;color:var(--muted);margin-top:5px}
 .gauge-bar{height:3px;background:rgba(255,255,255,.04);border-radius:2px;margin-top:10px;overflow:hidden}
 .gauge-fill{height:100%;border-radius:2px;transition:width .8s cubic-bezier(.4,0,.2,1);box-shadow:0 0 6px currentColor}
 
@@ -115,8 +141,8 @@ select:hover{border-color:var(--border-bright)}
 @media(max-width:760px){.execution-stack{grid-template-columns:1fr}}
 .exec-hero{display:grid;gap:12px}
 .exec-title{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.exec-project{font-size:18px;font-weight:800;letter-spacing:-.4px}
-.exec-mission{font-size:13px;color:var(--muted);line-height:1.55;max-width:70ch}
+.exec-project{font-size:20px;font-weight:800;letter-spacing:-.4px}
+.exec-mission{font-size:14px;color:var(--muted);line-height:1.6;max-width:70ch}
 .exec-link{font-size:10px;font-weight:700;color:var(--blue);text-decoration:none;padding:6px 10px;border:1px solid rgba(79,143,247,.25);border-radius:var(--radius-pill)}
 .exec-link:hover{background:rgba(79,143,247,.08)}
 .exec-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
@@ -132,8 +158,8 @@ select:hover{border-color:var(--border-bright)}
 .exec-list{display:grid;gap:8px}
 .exec-row{padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,.015)}
 .exec-row-top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.exec-row-title{font-size:12px;font-weight:700;color:var(--text)}
-.exec-row-meta{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.45}
+.exec-row-title{font-size:13px;font-weight:700;color:var(--text)}
+.exec-row-meta{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.5}
 .exec-row-tags{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .provider-pill{font-size:9px;font-weight:800;padding:3px 8px;border-radius:var(--radius-pill);text-transform:uppercase;letter-spacing:.35px;border:1px solid transparent}
 .provider-claude{background:rgba(138,120,230,.12);color:var(--purple);border-color:rgba(138,120,230,.2)}
@@ -152,8 +178,8 @@ select:hover{border-color:var(--border-bright)}
 .automation-shell{display:grid;gap:12px}
 .automation-block{display:grid;gap:8px;padding:12px;border:1px solid var(--border);border-radius:10px;background:linear-gradient(180deg,rgba(255,255,255,.018),rgba(255,255,255,.01))}
 .automation-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.automation-title{font-size:12px;font-weight:700;color:var(--text)}
-.automation-sub{font-size:11px;color:var(--muted);line-height:1.45}
+.automation-title{font-size:13px;font-weight:700;color:var(--text)}
+.automation-sub{font-size:12px;color:var(--muted);line-height:1.55}
 .automation-chip-row{display:flex;gap:6px;flex-wrap:wrap}
 .automation-chip{appearance:none;border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:var(--radius-pill);padding:5px 9px;font-size:9px;font-weight:800;letter-spacing:.35px;text-transform:uppercase;cursor:pointer;transition:var(--transition)}
 .automation-chip:hover{border-color:var(--border-bright);transform:translateY(-1px)}
@@ -194,11 +220,11 @@ select:hover{border-color:var(--border-bright)}
 
 /* === Pane Grid === */
 .section-head{
-  font-size:12px;font-weight:700;color:var(--text);
+  font-size:13px;font-weight:700;color:var(--text);
   letter-spacing:.2px;margin-bottom:10px;display:flex;align-items:center;gap:8px;
 }
 .section-head .count{
-  font-size:10px;padding:2px 7px;border-radius:10px;
+  font-size:11px;padding:2px 7px;border-radius:10px;
   background:var(--surface2);color:var(--dim);font-weight:600;
 }
 .pane-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:20px}
@@ -264,11 +290,11 @@ select:hover{border-color:var(--border-bright)}
 }
 .pane-status{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
 .s-active{color:var(--green)}.s-idle{color:var(--dim)}.s-done{color:var(--teal)}.s-error{color:var(--red)}.s-stuck{color:var(--yellow)}
-.pane-project{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pane-task{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.pane-project{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pane-task{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
 .pane-meta{display:flex;gap:4px;margin-top:6px;flex-wrap:wrap}
 .badge{
-  font-size:8px;font-weight:700;padding:2px 6px;border-radius:4px;
+  font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;
   text-transform:uppercase;letter-spacing:.3px;
 }
 .b-provider{background:var(--surface2)}
@@ -302,7 +328,7 @@ select:hover{border-color:var(--border-bright)}
   box-shadow:0 2px 8px rgba(0,0,0,.2);
 }
 .card:hover{border-color:var(--border-bright);box-shadow:0 4px 16px rgba(0,0,0,.3)}
-.card h2,.card h3{font-size:12px;color:var(--text);margin-bottom:14px;letter-spacing:.2px;font-weight:700;display:flex;align-items:center;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.05)}
+.card h2,.card h3{font-size:13px;color:var(--text);margin-bottom:14px;letter-spacing:.2px;font-weight:800;display:flex;align-items:center;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.05)}
 
 /* === Queue Table === */
 .q-table{width:100%;border-collapse:collapse;font-size:11px}
@@ -580,7 +606,7 @@ canvas{width:100%;display:block}
 .vdd-focus-btn.active{background:rgba(47,191,113,.14);border-color:rgba(47,191,113,.28);color:var(--green)}
 .vdd-focus-chip{font-size:8px;font-weight:700;padding:2px 7px;border-radius:var(--radius-pill);background:rgba(47,191,113,.12);color:var(--green);text-transform:uppercase;letter-spacing:.35px}
 .vdd-feature-row.focused{background:linear-gradient(90deg,rgba(79,143,247,.12),rgba(79,143,247,.03));border-radius:6px;padding:4px 6px;margin-left:-6px}
-.vdd-viewer{padding:12px 0;font-size:12px;line-height:1.7;color:var(--text)}
+.vdd-viewer{padding:12px 0;font-size:13px;line-height:1.75;color:var(--text)}
 .vdd-viewer h1{font-size:18px;font-weight:700;color:var(--text);border-bottom:2px solid var(--border);padding-bottom:8px;margin:16px 0 10px}
 .vdd-viewer h2{font-size:13px;font-weight:700;color:var(--blue);border-bottom:1px solid var(--border);padding-bottom:6px;margin:14px 0 8px}
 .vdd-viewer h3{font-size:12px;font-weight:700;color:var(--teal);margin:10px 0 6px}
@@ -674,34 +700,65 @@ canvas{width:100%;display:block}
 
   <div class="main" id="main">
     <div class="alert-bar" id="alerts"></div>
+    <div class="page-intro">
+      <div class="intro-banner">
+        <div class="intro-kicker">How To Read This Page</div>
+        <div class="intro-title">Start with the story, then move into live work.</div>
+        <div class="intro-copy">DX Terminal is ordered from summary to detail so operators, delivery leads, engineers, and QA can understand the program before opening raw terminals. Read the brief first, confirm documentation and stage health, then inspect the live workstations.</div>
+        <div class="phase-legend">
+          <span class="tone tone-planned">planned</span>
+          <span class="tone tone-discovery">discovery</span>
+          <span class="tone tone-build">build</span>
+          <span class="tone tone-test">test</span>
+          <span class="tone tone-done">done</span>
+        </div>
+      </div>
+      <div class="guide-strip">
+        <div class="guide-card">
+          <span class="guide-step">1</span>
+          <h3>Read what matters now</h3>
+          <p>Mission, focus, blockers, and readiness tell you what deserves attention before terminal output does.</p>
+        </div>
+        <div class="guide-card">
+          <span class="guide-step">2</span>
+          <h3>Confirm handbook health</h3>
+          <p>Check whether research, acceptance, git, and dashboard state are aligned before moving work forward.</p>
+        </div>
+        <div class="guide-card">
+          <span class="guide-step">3</span>
+          <h3>Inspect live workstations</h3>
+          <p>Only after the brief is clear should you drill into panes, worktrees, browser lanes, and terminal history.</p>
+        </div>
+      </div>
+    </div>
     <div class="gauge-row" id="gauges"><div class="loading">Loading</div></div>
     <div class="execution-grid" id="execution-hub" style="display:none">
       <div class="card">
-        <h2>Program Brief</h2>
+        <h2>What Matters Now</h2>
         <div id="project-brief"></div>
       </div>
       <div class="execution-stack">
         <div class="card">
-          <h2>Documentation Sync</h2>
+          <h2>Handbook & Sync Health</h2>
           <div id="documentation-brief"></div>
         </div>
         <div class="card">
-          <h2>Runtime Lanes</h2>
+          <h2>Active Work Lanes</h2>
           <div id="runtime-brief"></div>
         </div>
         <div class="card">
-          <h2>Automation Catalog</h2>
+          <h2>Automation & Skills</h2>
           <div id="automation-brief"></div>
         </div>
       </div>
     </div>
-    <div class="section-head">Runtime Grid <span class="count" id="pane-count">0/9</span></div>
+    <div class="section-head">Live Workstations <span class="count" id="pane-count">0/9</span></div>
     <div class="pane-grid" id="panes"><div class="loading">Loading agents</div></div>
 
     <div class="content-grid">
       <div>
         <div class="card">
-          <h2>Delivery Queue <button class="btn btn-green" onclick="toggleAdd()" style="font-size:9px;padding:2px 8px">+ Add</button></h2>
+          <h2>Work Intake <button class="btn btn-green" onclick="toggleAdd()" style="font-size:9px;padding:2px 8px">+ Add</button></h2>
           <div class="add-form" id="add-form">
             <div><label>Project</label><input id="qa-project" placeholder="project-name" style="width:130px"></div>
             <div><label>Task</label><input id="qa-task" placeholder="Task description" style="width:180px"></div>
@@ -714,7 +771,7 @@ canvas{width:100%;display:block}
       </div>
       <div>
         <div class="card">
-          <h2>Tracker Board</h2>
+          <h2>Stage Board</h2>
           <div class="kanban" id="kanban"></div>
         </div>
       </div>
@@ -722,11 +779,11 @@ canvas{width:100%;display:block}
 
     <div class="content-grid">
       <div class="card">
-        <h2>Role Utilization</h2>
+        <h2>Team Coverage</h2>
         <div id="roles"></div>
       </div>
       <div class="card">
-        <h2>Event Feed</h2>
+        <h2>Recent Activity</h2>
         <div class="log-list" id="logs"></div>
       </div>
     </div>
@@ -734,11 +791,11 @@ canvas{width:100%;display:block}
     <!-- Analytics Row: Digest + Overview -->
     <div class="content-grid" id="analytics-section">
       <div class="card">
-        <h2>24h Digest</h2>
+        <h2>Delivery Digest</h2>
         <div id="digest"></div>
       </div>
       <div class="card">
-        <h2>System Overview</h2>
+        <h2>Delivery Snapshot</h2>
         <div id="overview"></div>
       </div>
     </div>
@@ -746,18 +803,18 @@ canvas{width:100%;display:block}
     <!-- Ports + MCP Routing -->
     <div class="content-grid" id="infra-section">
       <div class="card">
-        <h2>Allocated Ports</h2>
+        <h2>Browser & Service Ports</h2>
         <div id="ports"></div>
       </div>
       <div class="card">
-        <h2>Quality Gate</h2>
+        <h2>Release Readiness</h2>
         <div id="quality-gate"></div>
       </div>
     </div>
 
     <!-- Build Environments -->
     <div class="card" id="builds-section">
-      <h2>Build Environments <span class="count" id="build-count">0/5</span>
+      <h2>Workbench Layouts <span class="count" id="build-count">0/5</span>
         <button class="btn btn-blue" onclick="restyleBuilds()" style="font-size:9px;padding:2px 8px;margin-left:8px">Restyle All</button>
       </h2>
       <div class="build-grid" id="builds"></div>
@@ -765,30 +822,30 @@ canvas{width:100%;display:block}
 
     <!-- Git Sync Status -->
     <div class="card" id="sync-card">
-      <h2>Sync <span id="sync-indicator" style="font-size:9px;padding:2px 7px;border-radius:10px;margin-left:6px"></span></h2>
+      <h2>Git & Mirror Status <span id="sync-indicator" style="font-size:9px;padding:2px 7px;border-radius:10px;margin-left:6px"></span></h2>
       <div id="sync-status" style="font-size:11px;color:var(--dim)">Loading...</div>
     </div>
 
     <!-- Vision Cockpit -->
     <div class="col-2" id="vision-section" style="display:none">
       <div class="card">
-        <h2>Vision <span id="vision-project" style="color:var(--blue);font-size:10px;margin-left:4px"></span>
+        <h2>Delivery Plan <span id="vision-project" style="color:var(--blue);font-size:10px;margin-left:4px"></span>
           <span id="vision-progress-badge" style="font-size:9px;padding:2px 7px;border-radius:10px;background:var(--surface2);color:var(--dim);margin-left:6px;font-weight:600"></span>
-          <a id="wiki-link" href="/wiki" target="_blank" style="font-size:9px;padding:2px 8px;margin-left:8px;color:var(--blue);text-decoration:none;border:1px solid var(--blue);border-radius:4px;opacity:0.7" title="Open full wiki">Wiki ↗</a>
+          <a id="wiki-link" href="/wiki" target="_blank" style="font-size:9px;padding:2px 8px;margin-left:8px;color:var(--blue);text-decoration:none;border:1px solid var(--blue);border-radius:4px;opacity:0.7" title="Open full wiki">Handbook ↗</a>
         </h2>
         <div id="vision-mission" style="font-size:11px;color:var(--text);padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px"></div>
         <div id="vision-summary-stats"></div>
       </div>
       <div class="card" id="vision-tree-card">
-        <h2>Vision Tree <span style="font-size:9px;color:var(--dim);font-weight:400;margin-left:4px">goals → features → tasks</span></h2>
+        <h2>Delivery Breakdown <span style="font-size:9px;color:var(--dim);font-weight:400;margin-left:4px">goals → features → tasks</span></h2>
         <div id="vision-tree"></div>
       </div>
       <div class="card" id="vision-questions-card" style="display:none">
-        <h2>Open Questions <span id="vision-q-count" style="font-size:9px;padding:2px 7px;border-radius:10px;background:rgba(240,192,64,.1);color:var(--yellow)"></span></h2>
+        <h2>Decisions Needed <span id="vision-q-count" style="font-size:9px;padding:2px 7px;border-radius:10px;background:rgba(240,192,64,.1);color:var(--yellow)"></span></h2>
         <div id="vision-questions"></div>
       </div>
       <div class="card">
-        <h2>Recent Changes</h2>
+        <h2>Plan Change Log</h2>
         <div id="vision-changes"></div>
       </div>
     </div>
@@ -796,7 +853,7 @@ canvas{width:100%;display:block}
     <!-- VDD Research & Discovery Docs (Confluence-like) -->
     <div class="col-2" id="vdd-docs-section" style="display:none">
       <div class="card">
-        <h2>Research & Discovery
+        <h2>Handbook Notes
           <span id="vdd-docs-count" style="font-size:9px;padding:2px 7px;border-radius:10px;background:var(--surface2);color:var(--dim);margin-left:6px;font-weight:600"></span>
           <button class="btn btn-blue" onclick="closeVddDoc()" id="vdd-back-btn" style="font-size:9px;padding:2px 8px;margin-left:8px;display:none">Back</button>
         </h2>
