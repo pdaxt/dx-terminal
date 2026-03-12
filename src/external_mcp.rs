@@ -540,17 +540,33 @@ mod tests {
         .expect("descriptor");
 
         assert_eq!(
-            descriptor.command,
-            vec![
+            descriptor.command[0..4],
+            [
                 "zsh".to_string(),
                 "-o".to_string(),
                 "nonomatch".to_string(),
                 "/Users/pran/bin/playwright-session".to_string(),
-                "--headless".to_string(),
-                "--port".to_string(),
-                "46099".to_string(),
             ]
         );
+        assert!(descriptor.command.contains(&"--headless".to_string()));
+        assert!(descriptor
+            .command
+            .windows(2)
+            .any(|window| { window[0] == "--port" && window[1] == "46099" }));
+        assert!(descriptor.command.windows(2).any(|window| {
+            window[0] == "--user-data-dir"
+                && window[1]
+                    == crate::config::pane_browser_profile_root(99)
+                        .to_string_lossy()
+                        .to_string()
+        }));
+        assert!(descriptor.command.windows(2).any(|window| {
+            window[0] == "--output-dir"
+                && window[1]
+                    == crate::config::pane_browser_artifacts_root(99)
+                        .to_string_lossy()
+                        .to_string()
+        }));
         assert!(descriptor
             .capabilities
             .iter()
