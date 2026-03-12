@@ -439,9 +439,13 @@ pub fn entry_to_registry_info(entry: &ExternalMcpEntry) -> crate::mcp_registry::
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::sync::Mutex;
     use tempfile::tempdir;
 
+    static ENV_TEST_LOCK: Mutex<()> = Mutex::new(());
+
     fn with_temp_env<T>(f: impl FnOnce() -> T) -> T {
+        let _guard = ENV_TEST_LOCK.lock().unwrap();
         let home = tempdir().unwrap();
         let dx = tempdir().unwrap();
 

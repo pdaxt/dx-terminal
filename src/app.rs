@@ -20,6 +20,7 @@ impl App {
         let screen_mgr = ScreenManager::new(config::dx_root());
         screen_mgr.init_default(&config::session_name());
         let mut gateway = MCPRegistry::new(descriptors_dir);
+        crate::external_mcp::sync_shared_catalog();
         crate::external_mcp::sync_gateway(&mut gateway);
         Self {
             state: Arc::new(StateManager::new()),
