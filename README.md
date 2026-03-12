@@ -21,7 +21,7 @@ Single binary. No login. No telemetry. Open source.
 
 ## The Problem
 
-You're running 16 Claude Code agents across tmux panes. One needs approval. Another is stuck. A third finished but nobody noticed. You're alt-tabbing like a madman, losing context every time, with no idea what's actually getting done.
+You're running 16 AI coding runtimes across tmux panes. One needs approval. Another is stuck. A third finished but nobody noticed. You're alt-tabbing constantly, losing context every time, with no idea what's actually getting done.
 
 ## The Solution
 
