@@ -1159,6 +1159,9 @@ pub async fn dispatch_mcp_tool(app: &App, tool: &str, args: Value) -> String {
         "mcp_gateway_list" | "gateway_list" => {
             tools::gateway_tools::gateway_list(app, deser!(args, GatewayListRequest)).await
         }
+        "mcp_gateway_tools" | "gateway_tools" => {
+            tools::gateway_tools::gateway_tools(app, deser!(args, GatewayToolsRequest)).await
+        }
 
         _ => format!("{{\"error\":\"Unknown tool: {}\"}}", tool),
     }
@@ -1403,6 +1406,7 @@ pub const MCP_TOOLS: &[(&str, &str)] = &[
     ("mcp_discover", "Find micro MCPs"),
     ("mcp_call", "Call micro MCP tool"),
     ("mcp_gateway_list", "List micro MCPs"),
+    ("mcp_gateway_tools", "Inspect MCP tool schemas"),
 ];
 
 /// Get completions for a prefix
