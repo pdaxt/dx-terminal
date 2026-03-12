@@ -11,6 +11,8 @@
   --bg:#0f0f1a;--surface:#17172a;--surface2:#1f2036;--border:#2b3151;--border-bright:#425486;
   --text:#f3f7ff;--muted:#adb7d4;--dim:#7984a6;
   --blue:#06b6d4;--green:#34d399;--yellow:#f59e0b;--red:#fb7185;--purple:#a855f7;--teal:#22d3ee;--orange:#fb923c;--pink:#ff00aa;
+  --bg-top:#0b0b14;--bg-mid:#0f0f1a;--bg-floor:#111322;
+  --cyan-soft:#7fe7ff;--rejected-soft:#ff8c8c;--danger-soft:#ff9f9f;
   --mono:'SF Mono','JetBrains Mono','Cascadia Code','Fira Code',Monaco,Consolas,monospace;
   --sans:'Avenir Next','SF Pro Display','IBM Plex Sans','Segoe UI','Helvetica Neue',sans-serif;
   --display:'Avenir Next','SF Pro Display','IBM Plex Sans','Segoe UI','Helvetica Neue',sans-serif;
@@ -26,7 +28,7 @@ body{font-family:var(--sans);background:
   radial-gradient(circle at top left, rgba(6,182,212,.12), transparent 24%),
   radial-gradient(circle at top right, rgba(168,85,247,.13), transparent 26%),
   radial-gradient(circle at bottom right, rgba(255,0,170,.08), transparent 20%),
-  linear-gradient(180deg,#0b0b14 0%, #0f0f1a 48%, #111322 100%);
+  linear-gradient(180deg,var(--bg-top) 0%, var(--bg-mid) 48%, var(--bg-floor) 100%);
   color:var(--text);min-height:100vh;overflow-x:hidden;line-height:1.5;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 
 /* === Layout: sidebar + main + terminal panel === */
@@ -110,8 +112,8 @@ select:hover{border-color:var(--border-bright)}
   pointer-events:none;
 }
 .intro-kicker{font-size:10px;text-transform:uppercase;letter-spacing:.18em;font-weight:800;color:var(--blue);margin-bottom:10px}
-.intro-title{font-family:var(--display);font-size:32px;font-weight:900;letter-spacing:-.05em;line-height:1.02;margin-bottom:10px;max-width:16ch}
-.intro-copy{font-size:14px;color:var(--muted);max-width:70ch;line-height:1.65}
+.intro-title{font-family:var(--display);font-size:26px;font-weight:900;letter-spacing:-.05em;line-height:1.02;margin-bottom:10px;max-width:16ch}
+.intro-copy{font-size:15px;color:var(--muted);max-width:70ch;line-height:1.65}
 .phase-legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
 .tone{
   display:inline-flex;align-items:center;justify-content:center;
@@ -154,7 +156,7 @@ select:hover{border-color:var(--border-bright)}
 .guide-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .guide-card{padding:16px}
 .guide-step{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:rgba(110,164,199,.12);color:var(--blue);font-family:var(--mono);font-size:11px;font-weight:800;margin-bottom:10px}
-.guide-card h3{font-size:14px;font-weight:800;margin-bottom:6px}
+.guide-card h3{font-size:15px;font-weight:800;margin-bottom:6px}
 .guide-card p{font-size:12px;color:var(--muted);line-height:1.55}
 .section-anchor-row{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
 .section-anchor{
@@ -175,7 +177,7 @@ select:hover{border-color:var(--border-bright)}
 }
 @media(max-width:640px){
   .hero-stage-track,.guide-strip,.spotlight-grid{grid-template-columns:1fr}
-  .intro-title{font-size:28px}
+  .intro-title{font-size:26px}
 }
 
 /* === Gauge Row === */
