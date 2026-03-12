@@ -38,6 +38,8 @@ fn default_web_port() -> u16 {
     3100
 }
 
+const DEFAULT_BROWSER_PORT_BASE: u16 = 46000;
+
 /// Default color palette (cycles if pane_count > len)
 const DEFAULT_THEMES: &[(&str, &str)] = &[
     ("#00d4ff", "CYAN"),
@@ -215,6 +217,24 @@ pub fn role_short(role: &str) -> &'static str {
     }
 }
 
+pub fn pane_browser_port(pane: u8) -> u16 {
+    DEFAULT_BROWSER_PORT_BASE + pane as u16
+}
+
+pub fn pane_browser_profile_root(pane: u8) -> PathBuf {
+    home_dir()
+        .join(".playwright-profiles")
+        .join(format!("pane-{}", pane))
+}
+
+pub fn pane_browser_artifacts_root(pane: u8) -> PathBuf {
+    home_dir()
+        .join("Projects")
+        .join("test-artifacts")
+        .join("sessions")
+        .join(format!("pane-{}", pane))
+}
+
 // --- Path helpers ---
 
 pub fn dx_root() -> PathBuf {
@@ -338,6 +358,13 @@ mod tests {
         assert_eq!(role_short("devops"), "OPS");
         assert_eq!(role_short("developer"), "DEV");
         assert_eq!(role_short("unknown_role"), "--");
+    }
+
+    #[test]
+    fn test_pane_browser_port_is_deterministic_and_unique() {
+        assert_eq!(pane_browser_port(1), 46001);
+        assert_eq!(pane_browser_port(9), 46009);
+        assert_ne!(pane_browser_port(1), pane_browser_port(2));
     }
 
     #[test]
