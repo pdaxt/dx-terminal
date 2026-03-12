@@ -641,8 +641,8 @@ impl GatewayMCP {
 
 ### Current State
 
-DX Terminal is an MCP server that spawns **Claude agents** (not MCP servers).
-It uses PTY to run `claude` CLI processes.
+DX Terminal is an MCP server and runtime controller that can spawn **AI coding runtimes** (not just MCP servers).
+Historically it started by running `claude` CLI processes over PTY, but the target contract is provider-neutral.
 
 ### How to Add MCP Composition
 
