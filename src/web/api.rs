@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path as FsPath, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
 
 use crate::app::App;
 use crate::capacity;
@@ -1298,9 +1298,9 @@ fn documentation_health(
 
         if docs_by_feature.get(&feature_id).copied().unwrap_or(0) == 0 {
             missing_feature_docs.push(json!({
-                "feature_id": feature_id,
+                "feature_id": feature_id.clone(),
                 "title": feature.get("title").cloned().unwrap_or(json!("")),
-                "phase": phase,
+                "phase": phase.clone(),
             }));
         }
 
