@@ -32,6 +32,27 @@ impl DxTerminalService {
         crate::vision_events::emit_from_result(self.app.as_ref(), project_path, result, feature_id);
     }
 
+    fn emit_focus_change(&self, focus: &crate::vision_focus::VisionFocusEntry) {
+        let project = focus.project.clone().unwrap_or_else(|| {
+            std::path::Path::new(&focus.project_path)
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| "--".to_string())
+        });
+        self.app
+            .state
+            .event_bus
+            .send(crate::state::events::StateEvent::VisionChanged {
+                project,
+                summary: "Focus updated".to_string(),
+                feature_id: focus.feature_id.clone(),
+                feature_title: None,
+                phase: None,
+                state: None,
+                readiness: None,
+            });
+    }
+
     // === AGENT LIFECYCLE ===
 
     #[tool(
@@ -2270,7 +2291,11 @@ impl DxTerminalService {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let project_path = tools::vision_tools::resolve_project_path(req.project.as_deref());
         let result = tools::vision_tools::vision_work(req.project.as_deref(), &req.description);
-        crate::vision_focus::upsert_focus_from_work_result(&project_path, &result, Some("mcp"));
+        if let Some(focus) =
+            crate::vision_focus::upsert_focus_from_work_result(&project_path, &result, Some("mcp"))
+        {
+            self.emit_focus_change(&focus);
+        }
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 

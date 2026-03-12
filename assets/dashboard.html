@@ -1831,7 +1831,7 @@ function isFocusedFeature(project,featureId){
 }
 function focusButton(project,featureId,label){
   const active=isFocusedFeature(project,featureId);
-  return `<button class="vdd-focus-btn${active?' active':''}" onclick="event.stopPropagation();setVisionFocus('${escHtml(project||'')}','${escHtml(featureId||'')}')">${active?(label||'Focused'):(label||'Focus')}</button>`;
+  return `<button class="vdd-focus-btn${active?' active':''}" onclick="event.stopPropagation();setVisionFocus('${escHtml(project||'')}','${escHtml(featureId||'')}')">${active?'Focused':(label||'Focus')}</button>`;
 }
 function renderFocusStrip(project){
   const focus=visionFocusCache[project];
@@ -1886,6 +1886,7 @@ async function setVisionFocus(project,featureId){
   });
   if(data&&data.focus)storeVisionFocus(project,data.focus);
   else storeVisionFocus(project,{project,feature_id:featureId,source:'dashboard'});
+  if(currentSpace==='all')selectedVisionProject=project;
   if(selectedVisionProject===project||(!selectedVisionProject&&currentSpace==='all')||currentSpace===project)renderVision();
   if(activePaneNum)renderPaneContext(activePaneNum);
   renderVddDocs();
