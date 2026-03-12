@@ -2551,6 +2551,111 @@ pub async fn get_sync_status(State(app): State<Arc<crate::app::App>>) -> Json<Va
     }
 }
 
+fn collect_project_runtimes(
+    state: &crate::state::types::DxTerminalState,
+    live_panes: &[crate::tmux::LivePane],
+    project_path: &str,
+    project: &str,
+) -> Vec<Value> {
+    let mut runtimes = Vec::new();
+    let mut live_by_target: HashMap<&str, &crate::tmux::LivePane> = HashMap::new();
+    let mut seen_targets = HashSet::new();
+
+    for live in live_panes {
+        live_by_target.insert(live.target.as_str(), live);
+    }
+
+    for (pane_id, pane) in &state.panes {
+        let matches = pane.project.eq_ignore_ascii_case(project)
+            || matches_project_path(&pane.project_path, project_path)
+            || pane
+                .workspace_path
+                .as_deref()
+                .map(|value| matches_project_path(value, project_path))
+                .unwrap_or(false);
+        if !matches {
+            continue;
+        }
+
+        let live = pane
+            .tmux_target
+            .as_deref()
+            .and_then(|target| live_by_target.get(target).copied());
+        let provider = live
+            .map(|entry| provider_json(&entry.command, &entry.window_name, entry.jsonl_path.as_deref()))
+            .unwrap_or_else(|| provider_json("", "", None));
+        if let Some(target) = pane.tmux_target.as_deref() {
+            seen_targets.insert(target.to_string());
+        }
+
+        runtimes.push(json!({
+            "pane": pane_id.parse::<u8>().ok(),
+            "status": pane.status,
+            "role": pane.role,
+            "task": pane.task,
+            "project": pane.project,
+            "project_path": pane.project_path,
+            "workspace_path": pane.workspace_path,
+            "branch_name": pane.branch_name,
+            "base_branch": pane.base_branch,
+            "tmux_target": pane.tmux_target,
+            "provider": provider,
+            "command": live.map(|entry| entry.command.clone()),
+            "window_name": live.map(|entry| entry.window_name.clone()),
+            "cwd": live.map(|entry| entry.cwd.clone()).or_else(|| {
+                pane.workspace_path.clone().or_else(|| {
+                    if pane.project_path.is_empty() {
+                        None
+                    } else {
+                        Some(pane.project_path.clone())
+                    }
+                })
+            }),
+            "session_id": live.and_then(|entry| entry.session_id.clone()),
+            "jsonl_path": live.and_then(|entry| entry.jsonl_path.clone()),
+            "live": live.is_some(),
+        }));
+    }
+
+    for live in live_panes {
+        if seen_targets.contains(&live.target) {
+            continue;
+        }
+        if !(matches_project_path(&live.cwd, project_path)
+            || project_name_from_path(&live.cwd).eq_ignore_ascii_case(project))
+        {
+            continue;
+        }
+
+        runtimes.push(json!({
+            "pane": Value::Null,
+            "status": "live",
+            "role": "--",
+            "task": format!("{} in {}", crate::tmux::provider_label(crate::tmux::infer_provider(&live.command, &live.window_name, live.jsonl_path.as_deref())), live.target),
+            "project": project,
+            "project_path": project_path,
+            "workspace_path": Value::Null,
+            "branch_name": Value::Null,
+            "base_branch": Value::Null,
+            "tmux_target": live.target,
+            "provider": provider_json(&live.command, &live.window_name, live.jsonl_path.as_deref()),
+            "command": live.command,
+            "window_name": live.window_name,
+            "cwd": live.cwd,
+            "session_id": live.session_id,
+            "jsonl_path": live.jsonl_path,
+            "live": true,
+        }));
+    }
+
+    runtimes.sort_by(|a, b| {
+        let a_pane = a.get("pane").and_then(|value| value.as_u64()).unwrap_or(999);
+        let b_pane = b.get("pane").and_then(|value| value.as_u64()).unwrap_or(999);
+        a_pane.cmp(&b_pane)
+    });
+    runtimes
+}
+
 /// GET /api/pane/:id/context — VDD context for a pane's project
 /// Returns the vision, active features, tasks, and docs for the project the pane is working on
 pub async fn get_pane_context(
