@@ -1178,7 +1178,7 @@ pub async fn get_project_brief(
         }
     }
 
-    let git = crate::sync::git::status(Path::new(&project_path))
+    let git = crate::sync::git::status(FsPath::new(&project_path))
         .ok()
         .map(|status| {
             json!({
@@ -2730,7 +2730,7 @@ pub async fn get_pane_context(
     let vision = find_vision_for_project(&project, cwd);
 
     let project_path = if let Some(ref live) = live_pane {
-        find_project_root(Path::new(&live.cwd))
+        find_project_root(FsPath::new(&live.cwd))
             .map(|root| root.to_string_lossy().to_string())
             .unwrap_or_else(|| {
                 resolve_project_path(&VisionQuery {
