@@ -655,20 +655,20 @@ canvas{width:100%;display:block}
     <div class="gauge-row" id="gauges"><div class="loading">Loading</div></div>
     <div class="execution-grid" id="execution-hub" style="display:none">
       <div class="card">
-        <h3>Execution Map</h3>
+        <h2>Execution Map</h2>
         <div id="project-brief"></div>
       </div>
       <div class="execution-stack">
         <div class="card">
-          <h3>Active Runtimes</h3>
+          <h2>Active Runtimes</h2>
           <div id="runtime-brief"></div>
         </div>
         <div class="card">
-          <h3>Worktrees & Documentation</h3>
+          <h2>Worktrees & Documentation</h2>
           <div id="worktree-brief"></div>
         </div>
         <div class="card">
-          <h3>Automation Catalog</h3>
+          <h2>Automation Catalog</h2>
           <div id="automation-brief"></div>
         </div>
       </div>
@@ -679,7 +679,7 @@ canvas{width:100%;display:block}
     <div class="content-grid">
       <div>
         <div class="card">
-          <h3>Task Queue <button class="btn btn-green" onclick="toggleAdd()" style="font-size:9px;padding:2px 8px">+ Add</button></h3>
+          <h2>Task Queue <button class="btn btn-green" onclick="toggleAdd()" style="font-size:9px;padding:2px 8px">+ Add</button></h2>
           <div class="add-form" id="add-form">
             <div><label>Project</label><input id="qa-project" placeholder="project-name" style="width:130px"></div>
             <div><label>Task</label><input id="qa-task" placeholder="Task description" style="width:180px"></div>
@@ -692,7 +692,7 @@ canvas{width:100%;display:block}
       </div>
       <div>
         <div class="card">
-          <h3>Board</h3>
+          <h2>Board</h2>
           <div class="kanban" id="kanban"></div>
         </div>
       </div>
@@ -700,11 +700,11 @@ canvas{width:100%;display:block}
 
     <div class="content-grid">
       <div class="card">
-        <h3>Role Utilization</h3>
+        <h2>Role Utilization</h2>
         <div id="roles"></div>
       </div>
       <div class="card">
-        <h3>Activity</h3>
+        <h2>Activity</h2>
         <div class="log-list" id="logs"></div>
       </div>
     </div>
@@ -712,11 +712,11 @@ canvas{width:100%;display:block}
     <!-- Analytics Row: Digest + Overview -->
     <div class="content-grid" id="analytics-section">
       <div class="card">
-        <h3>24h Digest</h3>
+        <h2>24h Digest</h2>
         <div id="digest"></div>
       </div>
       <div class="card">
-        <h3>System Overview</h3>
+        <h2>System Overview</h2>
         <div id="overview"></div>
       </div>
     </div>
@@ -724,49 +724,49 @@ canvas{width:100%;display:block}
     <!-- Ports + MCP Routing -->
     <div class="content-grid" id="infra-section">
       <div class="card">
-        <h3>Allocated Ports</h3>
+        <h2>Allocated Ports</h2>
         <div id="ports"></div>
       </div>
       <div class="card">
-        <h3>Quality Gate</h3>
+        <h2>Quality Gate</h2>
         <div id="quality-gate"></div>
       </div>
     </div>
 
     <!-- Build Environments -->
     <div class="card" id="builds-section">
-      <h3>Build Environments <span class="count" id="build-count">0/5</span>
+      <h2>Build Environments <span class="count" id="build-count">0/5</span>
         <button class="btn btn-blue" onclick="restyleBuilds()" style="font-size:9px;padding:2px 8px;margin-left:8px">Restyle All</button>
-      </h3>
+      </h2>
       <div class="build-grid" id="builds"></div>
     </div>
 
     <!-- Git Sync Status -->
     <div class="card" id="sync-card">
-      <h3>Sync <span id="sync-indicator" style="font-size:9px;padding:2px 7px;border-radius:10px;margin-left:6px"></span></h3>
+      <h2>Sync <span id="sync-indicator" style="font-size:9px;padding:2px 7px;border-radius:10px;margin-left:6px"></span></h2>
       <div id="sync-status" style="font-size:11px;color:var(--dim)">Loading...</div>
     </div>
 
     <!-- Vision Cockpit -->
     <div class="col-2" id="vision-section" style="display:none">
       <div class="card">
-        <h3>Vision <span id="vision-project" style="color:var(--blue);font-size:10px;margin-left:4px"></span>
+        <h2>Vision <span id="vision-project" style="color:var(--blue);font-size:10px;margin-left:4px"></span>
           <span id="vision-progress-badge" style="font-size:9px;padding:2px 7px;border-radius:10px;background:var(--surface2);color:var(--dim);margin-left:6px;font-weight:600"></span>
           <a id="wiki-link" href="/wiki" target="_blank" style="font-size:9px;padding:2px 8px;margin-left:8px;color:var(--blue);text-decoration:none;border:1px solid var(--blue);border-radius:4px;opacity:0.7" title="Open full wiki">Wiki ↗</a>
-        </h3>
+        </h2>
         <div id="vision-mission" style="font-size:11px;color:var(--text);padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px"></div>
         <div id="vision-summary-stats"></div>
       </div>
       <div class="card" id="vision-tree-card">
-        <h3>Vision Tree <span style="font-size:9px;color:var(--dim);font-weight:400;margin-left:4px">goals → features → tasks</span></h3>
+        <h2>Vision Tree <span style="font-size:9px;color:var(--dim);font-weight:400;margin-left:4px">goals → features → tasks</span></h2>
         <div id="vision-tree"></div>
       </div>
       <div class="card" id="vision-questions-card" style="display:none">
-        <h3>Open Questions <span id="vision-q-count" style="font-size:9px;padding:2px 7px;border-radius:10px;background:rgba(240,192,64,.1);color:var(--yellow)"></span></h3>
+        <h2>Open Questions <span id="vision-q-count" style="font-size:9px;padding:2px 7px;border-radius:10px;background:rgba(240,192,64,.1);color:var(--yellow)"></span></h2>
         <div id="vision-questions"></div>
       </div>
       <div class="card">
-        <h3>Recent Changes</h3>
+        <h2>Recent Changes</h2>
         <div id="vision-changes"></div>
       </div>
     </div>
@@ -774,10 +774,10 @@ canvas{width:100%;display:block}
     <!-- VDD Research & Discovery Docs (Confluence-like) -->
     <div class="col-2" id="vdd-docs-section" style="display:none">
       <div class="card">
-        <h3>Research & Discovery
+        <h2>Research & Discovery
           <span id="vdd-docs-count" style="font-size:9px;padding:2px 7px;border-radius:10px;background:var(--surface2);color:var(--dim);margin-left:6px;font-weight:600"></span>
           <button class="btn btn-blue" onclick="closeVddDoc()" id="vdd-back-btn" style="font-size:9px;padding:2px 8px;margin-left:8px;display:none">Back</button>
-        </h3>
+        </h2>
         <!-- Doc list (index view) -->
         <div id="vdd-doc-list"></div>
         <!-- Doc viewer (Confluence-like rendered markdown) -->
@@ -787,7 +787,7 @@ canvas{width:100%;display:block}
 
     <div id="sprint-section"></div>
     <div class="burndown-wrap" id="burndown-section" style="display:none">
-      <div class="card"><h3>Sprint Burndown</h3><canvas id="burndown-chart" width="700" height="140"></canvas></div>
+      <div class="card"><h2>Sprint Burndown</h2><canvas id="burndown-chart" width="700" height="140"></canvas></div>
     </div>
   </div>
 
