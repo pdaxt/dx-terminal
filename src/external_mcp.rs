@@ -518,7 +518,9 @@ mod tests {
                 "-o".to_string(),
                 "nonomatch".to_string(),
                 "/Users/pran/bin/playwright-session".to_string(),
-                "--headless".to_string()
+                "--headless".to_string(),
+                "--port".to_string(),
+                "46099".to_string(),
             ]
         );
         assert!(descriptor
@@ -526,6 +528,32 @@ mod tests {
             .iter()
             .any(|capability| capability == "playwright"));
         assert_eq!(descriptor.env.get("P").map(String::as_str), Some("99"));
+        assert_eq!(
+            descriptor.env.get("PLAYWRIGHT_PORT").map(String::as_str),
+            Some("46099")
+        );
+    }
+
+    #[test]
+    fn derives_playwright_port_from_pane_env() {
+        let descriptor = descriptor_from_entry(&normalize_entry(ExternalMcpEntry {
+            name: "playwright".to_string(),
+            command: "/Users/pran/bin/playwright-session".to_string(),
+            args: Vec::new(),
+            env: HashMap::from([(String::from("P"), String::from("3"))]),
+            description: String::new(),
+            capabilities: Vec::new(),
+            projects: Vec::new(),
+            keywords: Vec::new(),
+            category: String::new(),
+            sources: vec![CLAUDE_SOURCE.to_string()],
+        }))
+        .expect("descriptor");
+
+        assert!(descriptor.command.ends_with(&[
+            "--port".to_string(),
+            crate::config::pane_browser_port(3).to_string(),
+        ]));
     }
 
     #[test]
