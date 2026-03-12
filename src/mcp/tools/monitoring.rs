@@ -46,6 +46,9 @@ pub async fn status(app: &App) -> String {
             "branch": pd.branch_name,
             "workspace": pd.workspace_path,
             "started_at": pd.started_at,
+            "browser_port": config::pane_browser_port(*i),
+            "browser_profile_root": config::pane_browser_profile_root(*i),
+            "browser_artifacts_root": config::pane_browser_artifacts_root(*i),
             "tmux_target": pd.tmux_target,
             "running": is_running,
             "line_count": line_count,
@@ -98,6 +101,7 @@ pub async fn dashboard(app: &App, req: DashboardRequest) -> String {
             "task": truncate(&pd.task, 30),
             "role": config::role_short(&pd.role),
             "status": pd.status,
+            "browser_port": config::pane_browser_port(*i),
             "running": is_running,
         }));
     }
