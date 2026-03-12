@@ -2903,6 +2903,7 @@ pub fn drill_down(project_path: &str, goal_id: &str) -> String {
                 },
                 "acceptance_criteria": f.acceptance_criteria,
                 "acceptance_items": f.acceptance_items,
+                "design_options": f.design_options,
                 "sub_vision": f.sub_vision,
                 "readiness": feature_readiness_value(project_path, f),
                 "progress": if total_tasks > 0 { (done_tasks as f64 / total_tasks as f64 * 100.0) as u8 } else { 0 },
@@ -3019,6 +3020,7 @@ pub fn vision_tree(project_path: &str) -> String {
                     "progress": if total_tasks > 0 { (done_tasks as f64 / total_tasks as f64 * 100.0) as u8 } else { 0 },
                     "has_sub_vision": f.sub_vision.is_some(),
                     "acceptance_items": f.acceptance_items,
+                    "design_options": f.design_options,
                     "readiness": feature_readiness_value(project_path, f),
                     "tasks": f.tasks.iter().map(|t| serde_json::json!({
                         "id": t.id,
@@ -3104,6 +3106,7 @@ pub fn feature_readiness(project_path: &str, feature_id: &str) -> String {
         "phase": feature.phase,
         "state": feature.state,
         "acceptance_items": feature.acceptance_items,
+        "design_options": feature.design_options,
         "readiness": feature_readiness_value(project_path, feature),
     })
     .to_string()
