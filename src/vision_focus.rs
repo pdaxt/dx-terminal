@@ -246,39 +246,35 @@ mod tests {
 
     #[test]
     fn work_result_prefers_matching_feature_focus() {
-        let tmp = tempfile::tempdir().unwrap();
-        let project = tmp.path().join("demo");
-        std::fs::create_dir_all(project.join(".vision")).unwrap();
-        std::fs::write(
-            project.join(".vision/vision.json"),
-            serde_json::to_string_pretty(&serde_json::json!({
-                "project": "demo",
-                "mission": "Ship demo",
-                "goals": [{"id": "G1", "title": "Goal", "description": "", "status": "planned", "priority": 1}],
-                "features": [{"id": "F1.2", "goal_id": "G1", "title": "Feature", "description": "", "status": "planned", "phase": "planned", "state": "planned", "questions": [], "decisions": [], "tasks": [], "acceptance_criteria": [], "acceptance_items": [], "sub_vision": null, "parent_vision": null, "created_at": "", "updated_at": ""}],
-                "milestones": [],
-                "architecture": [],
-                "changes": [],
-                "principles": [],
-                "github": {"repo": "", "default_branch": "main", "labels": [], "sync_enabled": false, "wiki_page": null},
-                "updated_at": ""
-            }))
-            .unwrap(),
-        )
-        .unwrap();
+        static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-        let store_path = tmp.path().join("focus.json");
+        let _guard = TEST_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let original_dx_root = std::env::var("DX_ROOT").ok();
+        std::env::set_var("DX_ROOT", tmp.path());
+
+        let project = tmp.path().join("demo");
+        std::fs::create_dir_all(&project).unwrap();
+        crate::vision::init_vision(project.to_str().unwrap(), "demo", "Ship demo", "");
+        crate::vision::add_goal(project.to_str().unwrap(), "G1", "Goal", "", 1);
+        crate::vision::add_feature(project.to_str().unwrap(), "G1", "Feature", "", vec![]);
+
         let result = serde_json::json!({
             "matched": true,
             "goal": {"id": "G1"},
-            "matching_feature": {"id": "F1.2"}
+            "matching_feature": {"id": "F1.1"}
         })
         .to_string();
 
         let focus = upsert_focus_from_work_result(project.to_str().unwrap(), &result, Some("mcp"));
-        assert_eq!(focus.unwrap().feature_id.as_deref(), Some("F1.2"));
+        let stored = read_project_focus(project.to_str().unwrap()).unwrap();
 
-        let stored = read_project_focus_at(&store_path, project.to_str().unwrap());
-        assert!(stored.is_none());
+        match original_dx_root {
+            Some(value) => std::env::set_var("DX_ROOT", value),
+            None => std::env::remove_var("DX_ROOT"),
+        }
+
+        assert_eq!(focus.unwrap().feature_id.as_deref(), Some("F1.1"));
+        assert_eq!(stored.feature_id.as_deref(), Some("F1.1"));
     }
 }
