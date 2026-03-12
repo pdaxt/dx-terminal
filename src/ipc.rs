@@ -608,7 +608,10 @@ mod tests {
                 .collect::<Vec<_>>();
             prune_replay_entries(&mut entries, now_ms());
 
-            let remaining = entries.into_iter().map(|entry| entry.seq).collect::<Vec<_>>();
+            let remaining = entries
+                .into_iter()
+                .map(|entry| entry.seq)
+                .collect::<Vec<_>>();
             assert_eq!(remaining, vec![3, 4, 5]);
         });
     }
@@ -642,7 +645,10 @@ mod tests {
             ];
             prune_replay_entries(&mut entries, now_ms());
 
-            let remaining = entries.into_iter().map(|entry| entry.seq).collect::<Vec<_>>();
+            let remaining = entries
+                .into_iter()
+                .map(|entry| entry.seq)
+                .collect::<Vec<_>>();
             assert_eq!(remaining, vec![2]);
             assert!(!runtime_registration_path("web-stale").exists());
         });
