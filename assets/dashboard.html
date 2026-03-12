@@ -1167,7 +1167,8 @@ async function renderExecutionHub(){
     const meta=[
       runtime.role&&runtime.role!=='--'?runtime.role:null,
       branch?`branch ${branch}`:null,
-      workspace?'isolated worktree':'shared tree'
+      workspace?'isolated worktree':'shared tree',
+      runtime.browser_port?`browser ${runtime.browser_port}`:null
     ].filter(Boolean).join(' · ');
     return `<div class="exec-row">
       <div class="exec-row-top">
@@ -1264,7 +1265,7 @@ async function renderExecutionHub(){
         ${missingFeatureDocs.map(item=>`<div class="exec-row-meta">${escHtml((item.feature_id||'').toString())} needs discovery docs before ${escHtml((item.phase||'delivery').toString())} is trustworthy.</div>`).join('')}
         ${missingAcceptance.map(item=>`<div class="exec-row-meta">${escHtml((item.feature_id||'').toString())} is in ${escHtml((item.phase||'build').toString())} without acceptance coverage.</div>`).join('')}
       </div>`:''}
-      <div class="sync-note">Remote website sync should mirror <code>${escHtml((syncContract.snapshot||'').toString())}</code> and the live event stream (${(syncContract.events||[]).slice(0,4).map(e=>escHtml(String(e))).join(', ')}${(syncContract.events||[]).length>4?', …':''}). That keeps filesystem docs, git, and the hosted dashboard on one contract instead of separate state.</div>
+      <div class="sync-note">Remote website sync should mirror <code>${escHtml((syncContract.snapshot||'').toString())}</code> and the live event stream (${(syncContract.events||[]).slice(0,4).map(e=>escHtml(String(e))).join(', ')}${(syncContract.events||[]).length>4?', …':''}). Pane browser automation also follows a stable contract: pane N owns browser port ${escHtml(String(46000))}+N, so local runtimes and hosted views do not have to negotiate ad-hoc ports.</div>
     </div>`;
 
   automationEl.innerHTML=`
@@ -1559,6 +1560,7 @@ async function renderPaneContext(paneNum){
     const runtimeMeta=[
       runtime.branch_name?`branch ${runtime.branch_name}`:null,
       runtime.workspace_path?'isolated worktree':'shared tree',
+      runtime.browser_port?`browser ${runtime.browser_port}`:null,
       runtime.tmux_target||null
     ].filter(Boolean).join(' · ');
     html+=`<div style="margin-bottom:12px;padding:8px 10px;background:var(--surface2);border-radius:var(--radius-sm);border:1px solid var(--border)">`;
@@ -1567,6 +1569,7 @@ async function renderPaneContext(paneNum){
     if(runtime.command)html+=`<span style="font-size:9px;color:var(--dim);font-family:var(--mono)">${escHtml(runtime.command)}</span>`;
     html+=`</div>`;
     if(runtimeMeta)html+=`<div style="font-size:9px;color:var(--dim);margin-top:4px">${escHtml(runtimeMeta)}</div>`;
+    if(runtime.browser_profile_root)html+=`<div style="font-size:9px;color:var(--dim);margin-top:4px;font-family:var(--mono)">profile ${escHtml(paneBrowserProfileLabel(runtime.browser_profile_root))}</div>`;
     html+=`</div>`;
   }
 
