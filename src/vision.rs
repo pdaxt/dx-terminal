@@ -1484,7 +1484,6 @@ pub fn upsert_feature_doc(
     vision.updated_at = now();
     let feature_phase = feature.phase.clone();
     let feature_state = feature.state.clone();
-    let readiness = feature_readiness_value(project_path, feature);
 
     let change = VisionChange {
         timestamp: now(),
@@ -2088,7 +2087,6 @@ pub fn seed_mockup_options(
     vision.updated_at = now();
     let feature_phase = feature.phase.clone();
     let feature_state = feature.state.clone();
-    let readiness = feature_readiness_value(project_path, feature);
 
     let change = VisionChange {
         timestamp: now(),
