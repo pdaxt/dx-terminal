@@ -1013,6 +1013,41 @@ function providerBadge(provider,compact){
   return `<span class="provider-pill provider-${escHtml(id)}">${escHtml(label)}</span>`;
 }
 
+function healthPill(status){
+  const id=(status||'attention').toString();
+  const label=id==='synced'?'In Sync':id==='blocked'?'Blocked':'Needs Attention';
+  return `<span class="health-pill ${escHtml(id)}">${escHtml(label)}</span>`;
+}
+
+function docGitBadge(doc){
+  const git=(doc&&doc.git)||{};
+  const status=(git.status||'').toString();
+  if(!status||status==='clean'||status==='unknown')return '';
+  const tone=status==='untracked'?'gemini':status.includes('staged')?'codex':'shared';
+  return `<span class="doc-pill ${tone}">${escHtml(status)}</span>`;
+}
+
+function renderProviderAssetSummary(providers,kind){
+  const entries=Object.entries(providers||{}).filter(([,bucket])=>{
+    const project=(bucket&&bucket.project)||[];
+    const user=(bucket&&bucket.user)||[];
+    return project.length||user.length;
+  });
+  if(!entries.length)return `<div class="automation-note">No ${escHtml(kind)} detected for any provider in this workspace.</div>`;
+  return `<div class="provider-summary-grid">${entries.map(([provider,bucket])=>{
+    const project=(bucket&&bucket.project)||[];
+    const user=(bucket&&bucket.user)||[];
+    const sample=[...(project.length?project:user)].slice(0,2).map(item=>escHtml((item.name||'').toString())).join(' · ');
+    return `<div class="provider-summary">
+      <div class="provider-summary-top">
+        ${providerBadge({id:provider,label:provider,short:provider},true)}
+        <span class="doc-pill">${project.length} project · ${user.length} user</span>
+      </div>
+      <div class="provider-summary-meta">${sample||`No ${escHtml(kind)} yet for this provider.`}</div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
 function automationCacheKey(project,name){
   return `${project}::${name}`;
 }
@@ -1789,7 +1824,7 @@ async function renderBoard(){
   let html='';
   for(const col of order){
     const cards=d[col]||[];
-    html+=`<div class="kanban-col"><h4>${labels[col]} (${cards.length})</h4><div class="kanban-cards">`;
+    html+=`<div class="kanban-col"><h3>${labels[col]} (${cards.length})</h3><div class="kanban-cards">`;
     for(const c of cards){
       html+=`<div class="k-card"><div class="k-id">${c.id}</div><div class="k-title">${(c.title||'').slice(0,40)}</div></div>`;
     }
