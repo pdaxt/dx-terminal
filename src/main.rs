@@ -107,7 +107,7 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
     let application = Arc::new(app::App::new());
-    ipc::start_local_ipc(
+    let _ipc_guard = ipc::start_local_ipc(
         Arc::clone(&application),
         runtime_identity(&cli, cfg.web_port),
     );
