@@ -4170,13 +4170,13 @@ code {{ font-family:var(--mono); }}
                     </svg>
                 </div>
                 <div class="brand-copy">
-                    <h1>DX Handbook</h1>
-                    <p class="sidebar-copy">One readable program record for operators, builders, QA, and stakeholders.</p>
+                    <h1>DX Program Handbook</h1>
+                    <p class="sidebar-copy">One readable record for clients, operators, builders, QA, and stakeholders.</p>
                 </div>
             </div>
-            <p class="sidebar-copy">This page is generated from the project mission, VDD state, markdown docs, architecture notes, and change history so the handbook stays close to the running system.</p>
+            <p class="sidebar-copy">This page is generated from the live project mission, delivery state, markdown docs, architecture notes, and change history so the handbook stays close to the running system.</p>
             <div class="sidebar-actions">
-                <a class="primary" href="/?project={project_url}">Open Live Dashboard</a>
+                <a class="primary" href="/?project={project_url}">Open Portal</a>
                 <a href="#handbook">Read Handbook</a>
             </div>
         </div>
@@ -4259,7 +4259,7 @@ code {{ font-family:var(--mono); }}
                     <div class="section-kicker">Core Reading</div>
                     <h2>Handbook paths for different audiences</h2>
                 </div>
-                <p>These documents explain the product from the operator, delivery, architecture, hosted sync, and historical perspectives.</p>
+                <p>These documents explain the product from the client, operator, delivery, architecture, hosted sync, and historical perspectives.</p>
             </div>
             <div class="handbook-grid">{featured_cards}</div>
             <div style="margin-top:18px">{featured_articles}</div>
@@ -4332,7 +4332,7 @@ code {{ font-family:var(--mono); }}
         </section>
 
         <div class="wiki-footer">
-            Generated from <code>.vision/vision.json</code>, project markdown, and DX Terminal state.
+            Generated from <code>.vision/vision.json</code>, project markdown, and live DX Terminal state.
         </div>
     </main>
 </div>
@@ -4354,13 +4354,16 @@ try {{
     startOnLoad:false,
     theme:'base',
     themeVariables:{{
-      primaryColor:'#ffffff',
-      primaryTextColor:'#1c2733',
-      primaryBorderColor:'#c3ced9',
-      lineColor:'#27587e',
-      secondaryColor:'#f3eee5',
-      tertiaryColor:'#fffdf9',
-      fontFamily:'Avenir Next, Segoe UI, sans-serif'
+      primaryColor:'#0e1b2d',
+      primaryTextColor:'#eef4ff',
+      primaryBorderColor:'#32517c',
+      lineColor:'#06b6d4',
+      secondaryColor:'#132235',
+      tertiaryColor:'#08111d',
+      fontFamily:'Avenir Next, IBM Plex Sans, Segoe UI, sans-serif',
+      background:'#0e1b2d',
+      clusterBkg:'#132235',
+      clusterBorder:'#32517c'
     }}
   }});
   await mermaidModule.default.run({{ querySelector: '.mermaid' }});
