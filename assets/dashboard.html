@@ -937,6 +937,131 @@ async function renderGauges(){
       <div class="gauge-bar"><div class="gauge-fill" style="width:${revPct}%;background:var(--yellow)"></div></div></div>`;
 }
 
+function activeProjectForHub(){
+  if(currentSpace&&currentSpace!=='all')return currentSpace;
+  if(selectedVisionProject)return selectedVisionProject;
+  if(wsState&&wsState.workspaces&&wsState.workspaces.length)return wsState.workspaces[0];
+  if(statusData&&statusData.panes){
+    const pane=statusData.panes.find(p=>p.project&&p.project!=='--');
+    if(pane)return pane.project;
+  }
+  return null;
+}
+
+function providerBadge(provider,compact){
+  const data=provider||{};
+  const id=(data.id||'unknown').toString();
+  const label=compact?(data.short||data.label||id):(data.label||data.short||id);
+  return `<span class="provider-pill provider-${escHtml(id)}">${escHtml(label)}</span>`;
+}
+
+async function renderExecutionHub(){
+  const section=document.getElementById('execution-hub');
+  const summaryEl=document.getElementById('project-brief');
+  const runtimeEl=document.getElementById('runtime-brief');
+  const docsEl=document.getElementById('worktree-brief');
+  const project=activeProjectForHub();
+  if(!project){
+    section.style.display='none';
+    return;
+  }
+
+  const brief=await fetchJSON(`/api/project/brief?project=${encodeURIComponent(project)}`);
+  if(!brief||brief.error){
+    section.style.display='none';
+    return;
+  }
+
+  section.style.display='';
+  if(brief.focus)storeVisionFocus(project,brief.focus);
+  const docs=brief.docs||{};
+  const guidanceDocs=docs.guidance_docs||[];
+  const visionDocs=docs.vision_docs||[];
+  const delivery=brief.delivery||{};
+  const phaseCounts=delivery.phase_counts||{};
+  const git=brief.git||null;
+  const gitState=!git?'No repo':git.dirty_files===0&&git.ahead===0?'Clean':`${git.dirty_files||0} dirty · ↑${git.ahead||0} ↓${git.behind||0}`;
+  const readyFeatures=(delivery.ready_features||[]).slice(0,3);
+  const blockingFeatures=(delivery.blocking_features||[]).slice(0,3);
+
+  summaryEl.innerHTML=`
+    <div class="exec-hero">
+      <div class="exec-title">
+        <div>
+          <div class="exec-project">${escHtml(brief.project||project)}</div>
+          <div class="exec-mission">${escHtml((brief.mission||'No project mission yet').toString())}</div>
+        </div>
+        <a class="exec-link" href="${escHtml(brief.wiki_url||'/wiki')}" target="_blank">Open Wiki</a>
+      </div>
+      ${renderFocusStrip(project)}
+      <div class="exec-kpis">
+        <div class="exec-kpi"><div class="label">Runtimes</div><div class="value">${brief.runtime_count||0}</div><div class="meta">${brief.worktree_count||0} isolated worktrees</div></div>
+        <div class="exec-kpi"><div class="label">Documentation</div><div class="value">${docs.vision_doc_count||0}</div><div class="meta">${docs.guidance_doc_count||0} guidance docs</div></div>
+        <div class="exec-kpi"><div class="label">Git Sync</div><div class="value">${git&&git.branch?escHtml(git.branch):'--'}</div><div class="meta">${escHtml(gitState)}</div></div>
+        <div class="exec-kpi"><div class="label">Current Gate</div><div class="value">${(blockingFeatures.length?'Blocked':readyFeatures.length?'Ready':'Active')}</div><div class="meta">${blockingFeatures.length||readyFeatures.length||0} highlighted features</div></div>
+      </div>
+      <div class="exec-phase-strip">
+        ${['planned','discovery','build','test','done'].map(phase=>`<span class="exec-phase-chip">${phase}<strong>${phaseCounts[phase]||phaseCounts[{planned:'planned',discovery:'specifying',build:'building',test:'testing',done:'done'}[phase]]||0}</strong></span>`).join('')}
+      </div>
+      <div class="exec-list">
+        ${readyFeatures.length?readyFeatures.map(feature=>`<div class="exec-row">
+          <div class="exec-row-top"><span class="exec-row-title">${escHtml(feature.feature_id||'')}</span><span class="exec-row-tags">${vddPhaseBadge(feature.phase||'planned')}<span class="doc-pill">${escHtml((feature.next_gate||'next').toString())} ready</span></span></div>
+          <div class="exec-row-meta">${escHtml((feature.title||'').toString())}</div>
+        </div>`).join(''):'<div class="empty-note">No feature is fully gate-ready yet.</div>'}
+        ${blockingFeatures.length?blockingFeatures.map(feature=>`<div class="exec-row">
+          <div class="exec-row-top"><span class="exec-row-title">${escHtml(feature.feature_id||'')}</span><span class="exec-row-tags">${vddPhaseBadge(feature.phase||'planned')}<span class="doc-pill">${escHtml((feature.next_gate||'next').toString())} blocked</span></span></div>
+          <div class="exec-row-meta">${escHtml((feature.title||'').toString())}${feature.blockers&&feature.blockers.length?` · ${feature.blockers.slice(0,3).map(b=>escHtml(String(b))).join(' · ')}`:''}</div>
+        </div>`).join(''):''}
+      </div>
+    </div>`;
+
+  const runtimes=brief.runtimes||[];
+  runtimeEl.innerHTML=runtimes.length?runtimes.slice(0,8).map(runtime=>{
+    const paneLabel=runtime.pane?`Pane ${runtime.pane}`:'Live';
+    const branch=runtime.branch_name||'';
+    const workspace=runtime.workspace_path||'';
+    const meta=[
+      runtime.role&&runtime.role!=='--'?runtime.role:null,
+      branch?`branch ${branch}`:null,
+      workspace?'isolated worktree':'shared tree'
+    ].filter(Boolean).join(' · ');
+    return `<div class="exec-row">
+      <div class="exec-row-top">
+        <span class="exec-row-title">${escHtml(paneLabel)}</span>
+        <span class="exec-row-tags">${providerBadge(runtime.provider,true)}${runtime.status?vddStatePill(runtime.status):''}</span>
+      </div>
+      <div class="exec-row-meta">${escHtml((runtime.task||runtime.window_name||runtime.cwd||'').toString())}</div>
+      <div class="exec-row-meta">${escHtml(meta)}</div>
+    </div>`;
+  }).join(''):'<div class="empty-note">No active runtimes for this project.</div>';
+
+  const worktreeRows=runtimes.filter(runtime=>runtime.workspace_path||runtime.branch_name);
+  docsEl.innerHTML=`
+    <div class="exec-list">
+      ${worktreeRows.length?worktreeRows.slice(0,6).map(runtime=>`<div class="exec-row">
+        <div class="exec-row-top">
+          <span class="exec-row-title">${escHtml(runtime.branch_name||'shared')}</span>
+          <span class="exec-row-tags">${providerBadge(runtime.provider,true)}${runtime.workspace_path?'<span class="doc-pill">worktree</span>':''}</span>
+        </div>
+        <div class="worktree-path">${escHtml((runtime.workspace_path||runtime.project_path||runtime.cwd||'').toString())}</div>
+      </div>`).join(''):'<div class="empty-note">No isolated worktree is registered yet.</div>'}
+      <div class="exec-row">
+        <div class="exec-row-top">
+          <span class="exec-row-title">Guidance Docs</span>
+          <span class="exec-row-tags">${guidanceDocs.map(doc=>`<span class="doc-pill ${escHtml((doc.kind||'shared').toString())}">${escHtml((doc.name||'').toString())}</span>`).join('')||'<span class="doc-pill">missing</span>'}</span>
+        </div>
+        <div class="exec-row-meta">${guidanceDocs.length?`Synced guidance for shared and provider-specific agents.`:'Add AGENTS.md, CLAUDE.md, CODEX.md, or GEMINI.md at the project root.'}</div>
+      </div>
+      <div class="exec-row">
+        <div class="exec-row-top">
+          <span class="exec-row-title">Research & Discovery</span>
+          <span class="exec-row-tags"><span class="doc-pill">${visionDocs.length} docs</span></span>
+        </div>
+        <div class="exec-row-meta">${visionDocs.slice(0,4).map(doc=>`${escHtml(doc.feature_id)} ${escHtml(doc.type)}`).join(' · ')||'No feature research docs yet.'}</div>
+      </div>
+    </div>`;
+}
+
 // === Pane Grid ===
 function getStatusPane(paneNum){
   return statusData&&statusData.panes?statusData.panes.find(p=>p.pane===paneNum):null;
