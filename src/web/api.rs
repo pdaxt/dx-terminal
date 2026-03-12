@@ -2336,7 +2336,9 @@ fn collect_featured_wiki_docs(project_path: &str) -> Vec<WikiDocEntry> {
         ("README.md", "overview"),
         ("docs/NON_TECH_GUIDE.md", "guide"),
         ("docs/OPERATOR_SYSTEM_GUIDE.md", "operations"),
+        ("docs/EXPERIENCE_BLUEPRINT.md", "experience"),
         ("docs/ARCHITECTURE_BLUEPRINT.md", "architecture"),
+        ("docs/HOSTED_SYNC_MODEL.md", "sync"),
         ("docs/HISTORY_OF_DX_TERMINAL.md", "history"),
     ];
 
@@ -2344,6 +2346,36 @@ fn collect_featured_wiki_docs(project_path: &str) -> Vec<WikiDocEntry> {
         .into_iter()
         .filter_map(|(relative_path, category)| load_wiki_doc(project_path, relative_path, category))
         .collect()
+}
+
+fn collect_scoped_wiki_docs(
+    project_path: &str,
+    relative_dir: &str,
+    category: &str,
+) -> Vec<WikiDocEntry> {
+    let docs_dir = FsPath::new(project_path).join(relative_dir);
+    let Ok(entries) = std::fs::read_dir(&docs_dir) else {
+        return Vec::new();
+    };
+
+    let mut docs = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if !path.is_file() || path.extension().and_then(|value| value.to_str()) != Some("md") {
+                return None;
+            }
+            let relative_path = path
+                .strip_prefix(project_path)
+                .ok()?
+                .to_string_lossy()
+                .to_string();
+            load_wiki_doc(project_path, &relative_path, category)
+        })
+        .collect::<Vec<_>>();
+
+    docs.sort_by(|left, right| left.title.cmp(&right.title));
+    docs
 }
 
 fn collect_library_wiki_docs(project_path: &str, exclude: &HashSet<String>) -> Vec<WikiDocEntry> {
