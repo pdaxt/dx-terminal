@@ -19,36 +19,21 @@ fn default_category() -> String {
     "general".into()
 }
 
-/// Load MCP registry dynamically from ~/.claude.json + optional enrichment file
+/// Load MCP registry dynamically from the shared dx-owned external catalog plus
+/// optional enrichment metadata.
 pub fn load_registry() -> Vec<McpInfo> {
+    let enrichment = load_enrichment();
     let mut registry = Vec::new();
 
-    // Load any user-defined MCP metadata from enrichment file
-    let enrichment = load_enrichment();
-
-    // Primary source: ~/.claude.json mcpServers
-    let claude_cfg = crate::claude::read_claude_config();
-    if let Some(servers) = claude_cfg.get("mcpServers").and_then(|v| v.as_object()) {
-        for (name, _server_config) in servers {
-            // Check if user has enriched this MCP with metadata
-            if let Some(enriched) = enrichment.iter().find(|e| e.name == *name) {
-                registry.push(enriched.clone());
-            } else {
-                // Auto-generate metadata from the name
-                let keywords = generate_keywords(name);
-                let category = infer_category(name);
-                registry.push(McpInfo {
-                    name: name.clone(),
-                    description: format!("MCP server: {}", name),
-                    capabilities: vec![],
-                    projects: infer_projects(name),
-                    keywords,
-                    category,
-                });
-            }
+    for entry in crate::external_mcp::load_external_catalog() {
+        if let Some(enriched) = enrichment.iter().find(|item| item.name == entry.name) {
+            registry.push(enriched.clone());
+        } else {
+            registry.push(crate::external_mcp::entry_to_registry_info(&entry));
         }
     }
 
+    registry.sort_by(|left, right| left.name.cmp(&right.name));
     registry
 }
 
@@ -61,51 +46,6 @@ fn load_enrichment() -> Vec<McpInfo> {
             if let Ok(mcps) = serde_json::from_str::<Vec<McpInfo>>(&content) {
                 return mcps;
             }
-        }
-    }
-    Vec::new()
-}
-
-/// Generate keywords from MCP name (split on hyphens, underscores)
-fn generate_keywords(name: &str) -> Vec<String> {
-    name.replace('-', " ")
-        .replace('_', " ")
-        .split_whitespace()
-        .map(|s| s.to_lowercase())
-        .collect()
-}
-
-/// Infer category from MCP name patterns
-fn infer_category(name: &str) -> String {
-    let lower = name.to_lowercase();
-    if lower.contains("monitor") || lower.contains("metric") || lower.contains("health") {
-        "monitoring".into()
-    } else if lower.contains("build") || lower.contains("deploy") || lower.contains("ci") {
-        "build".into()
-    } else if lower.contains("test") || lower.contains("playwright") || lower.contains("qa") {
-        "testing".into()
-    } else if lower.contains("dns") || lower.contains("server") || lower.contains("infra") {
-        "infrastructure".into()
-    } else if lower.contains("track") || lower.contains("issue") || lower.contains("sprint") {
-        "tracking".into()
-    } else if lower.contains("doc") || lower.contains("collab") || lower.contains("diagram") {
-        "documentation".into()
-    } else if lower.contains("vault") || lower.contains("secret") || lower.contains("auth") {
-        "security".into()
-    } else if lower.contains("graph") || lower.contains("store") || lower.contains("data") {
-        "data".into()
-    } else {
-        "general".into()
-    }
-}
-
-/// Infer project associations from MCP name patterns
-fn infer_projects(name: &str) -> Vec<String> {
-    let lower = name.to_lowercase();
-    // Extract project prefix (e.g., "dataxlr8-employees" -> "dataxlr8")
-    if let Some(prefix) = lower.split('-').next() {
-        if prefix.len() > 2 && lower.contains('-') {
-            return vec![prefix.to_string()];
         }
     }
     Vec::new()
