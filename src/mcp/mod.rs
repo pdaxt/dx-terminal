@@ -2112,6 +2112,17 @@ impl DxTerminalService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
+    #[tool(
+        description = "Inspect the tools exposed by one gateway MCP. Auto-starts the MCP by default and returns tool schemas."
+    )]
+    async fn mcp_gateway_tools(
+        &self,
+        Parameters(req): Parameters<types::GatewayToolsRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::gateway_tools::gateway_tools(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
     // === SCREEN MANAGEMENT ===
 
     #[tool(
