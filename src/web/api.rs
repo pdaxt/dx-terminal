@@ -3588,23 +3588,25 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
 <title>{project} — DX Handbook</title>
 <style>
 :root {{
-    --paper:#f3eee5;
-    --paper-strong:#fffdf9;
-    --ink:#1c2733;
-    --muted:#5d6a77;
-    --line:#d8dee5;
-    --line-strong:#c3ced9;
-    --navy:#27587e;
-    --teal:#1d6d6b;
-    --gold:#9a6b17;
-    --green:#2f7d59;
-    --coral:#a04d5f;
-    --slate:#566679;
-    --shadow:0 20px 45px rgba(20,28,38,.08);
-    --radius:20px;
+    --paper:#08111d;
+    --paper-strong:#0e1b2d;
+    --ink:#eef4ff;
+    --muted:#9db0cb;
+    --line:#20324d;
+    --line-strong:#32517c;
+    --navy:#06b6d4;
+    --teal:#22d3ee;
+    --gold:#f59e0b;
+    --green:#34d399;
+    --coral:#fb7185;
+    --slate:#8ea0bb;
+    --violet:#a855f7;
+    --pink:#ff00aa;
+    --shadow:0 24px 70px rgba(2,6,23,.45);
+    --radius:24px;
     --radius-sm:12px;
-    --serif:'Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;
-    --sans:'Avenir Next','Segoe UI','IBM Plex Sans','Helvetica Neue',sans-serif;
+    --serif:'Avenir Next','IBM Plex Sans','Segoe UI','Helvetica Neue',sans-serif;
+    --sans:'Avenir Next','IBM Plex Sans','Segoe UI','Helvetica Neue',sans-serif;
     --mono:'SF Mono','JetBrains Mono','Cascadia Code',monospace;
 }}
 * {{ box-sizing:border-box; }}
@@ -3614,10 +3616,11 @@ body {{
     font-family:var(--sans);
     color:var(--ink);
     background:
-        radial-gradient(circle at top left, rgba(39,88,126,.08), transparent 32%),
-        radial-gradient(circle at top right, rgba(29,109,107,.07), transparent 28%),
-        linear-gradient(180deg, #f8f4ed 0%, var(--paper) 100%);
-    line-height:1.65;
+        radial-gradient(circle at top left, rgba(6,182,212,.14), transparent 30%),
+        radial-gradient(circle at top right, rgba(168,85,247,.14), transparent 30%),
+        radial-gradient(circle at bottom right, rgba(255,0,170,.1), transparent 26%),
+        linear-gradient(180deg, #050b14 0%, var(--paper) 100%);
+    line-height:1.7;
 }}
 a {{ color:var(--navy); text-decoration:none; }}
 a:hover {{ text-decoration:underline; }}
@@ -3642,10 +3645,11 @@ code {{ font-family:var(--mono); }}
 .wiki-card,
 .wiki-doc-article,
 .doc-collection {{
-    background:var(--paper-strong);
+    background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
     border:1px solid var(--line);
     border-radius:var(--radius);
     box-shadow:var(--shadow);
+    backdrop-filter:blur(18px);
 }}
 .sidebar-card {{ padding:18px; }}
 .section-card {{ padding:24px; margin-bottom:22px; }}
@@ -3661,7 +3665,7 @@ code {{ font-family:var(--mono); }}
     display:flex;
     align-items:center;
     justify-content:center;
-    filter:drop-shadow(0 10px 20px rgba(39,88,126,.16));
+    filter:drop-shadow(0 16px 34px rgba(6,182,212,.18));
 }}
 .brand-mark svg {{
     width:100%;
@@ -3670,9 +3674,9 @@ code {{ font-family:var(--mono); }}
 }}
 .brand-copy h1 {{
     margin:0;
-    font-size:18px;
-    font-weight:800;
-    letter-spacing:-0.03em;
+    font-size:21px;
+    font-weight:900;
+    letter-spacing:-0.04em;
 }}
 .brand-copy p,
 .sidebar-copy,
@@ -3709,15 +3713,16 @@ code {{ font-family:var(--mono); }}
     padding:10px 14px;
     border-radius:999px;
     border:1px solid var(--line-strong);
-    background:#fff;
+    background:rgba(255,255,255,.02);
     font-size:12px;
     font-weight:700;
+    color:var(--ink);
 }}
 .sidebar-actions a.primary,
 .hero-actions a.primary {{
-    background:var(--navy);
-    color:#fff;
-    border-color:var(--navy);
+    background:linear-gradient(90deg, rgba(6,182,212,.18), rgba(168,85,247,.18));
+    color:var(--ink);
+    border-color:rgba(79,143,247,.25);
 }}
 .sidebar-nav {{
     display:grid;
@@ -3731,8 +3736,8 @@ code {{ font-family:var(--mono); }}
 }}
 .sidebar-nav a:hover,
 .sidebar-nav a.is-active {{
-    background:rgba(39,88,126,.07);
-    border-color:rgba(39,88,126,.12);
+    background:rgba(6,182,212,.08);
+    border-color:rgba(79,143,247,.18);
     text-decoration:none;
 }}
 .focus-card {{
@@ -3744,7 +3749,10 @@ code {{ font-family:var(--mono); }}
     font-weight:800;
 }}
 .hero {{
-    padding:30px;
+    padding:34px;
+    background:
+        radial-gradient(circle at top right, rgba(168,85,247,.12), transparent 35%),
+        linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
 }}
 .hero-top {{
     display:flex;
@@ -3755,13 +3763,14 @@ code {{ font-family:var(--mono); }}
 }}
 .hero h1 {{
     margin:6px 0 8px;
-    font-size:44px;
+    font-size:48px;
     line-height:1.02;
     font-family:var(--serif);
-    letter-spacing:-0.04em;
+    font-weight:900;
+    letter-spacing:-0.05em;
 }}
 .hero-mission {{
-    font-size:17px;
+    font-size:18px;
     max-width:70ch;
     color:var(--muted);
 }}
@@ -3784,7 +3793,7 @@ code {{ font-family:var(--mono); }}
     padding:6px 10px;
     border-radius:999px;
     border:1px solid var(--line);
-    background:#fff;
+    background:rgba(255,255,255,.03);
     font-size:12px;
     color:var(--muted);
 }}
@@ -3822,7 +3831,7 @@ code {{ font-family:var(--mono); }}
     padding:16px;
     border:1px solid var(--line);
     border-radius:16px;
-    background:#fff;
+    background:rgba(255,255,255,.022);
 }}
 .stat-label {{
     font-size:11px;
@@ -3849,7 +3858,8 @@ code {{ font-family:var(--mono); }}
     margin:0;
     font-size:30px;
     font-family:var(--serif);
-    letter-spacing:-0.03em;
+    letter-spacing:-0.04em;
+    font-weight:900;
 }}
 .section-head p {{
     margin:0;
@@ -3900,7 +3910,7 @@ code {{ font-family:var(--mono); }}
     font-size:11px;
     padding:4px 8px;
     border-radius:999px;
-    background:rgba(39,88,126,.08);
+    background:rgba(6,182,212,.08);
     color:var(--navy);
     font-weight:700;
 }}
@@ -3922,7 +3932,7 @@ code {{ font-family:var(--mono); }}
     color:var(--ink);
 }}
 .wiki-expandable {{
-    background:#fff;
+    background:rgba(255,255,255,.018);
     border:1px solid var(--line);
     border-radius:16px;
     padding:0 18px;
@@ -3954,7 +3964,7 @@ code {{ font-family:var(--mono); }}
     padding:16px;
     border:1px solid var(--line);
     border-radius:16px;
-    background:#fff;
+    background:rgba(255,255,255,.022);
 }}
 .timeline-date {{
     color:var(--muted);
@@ -3965,7 +3975,7 @@ code {{ font-family:var(--mono); }}
     height:8px;
     border-radius:999px;
     overflow:hidden;
-    background:#ecf0f3;
+    background:rgba(255,255,255,.05);
 }}
 .progress-fill {{
     height:100%;
@@ -3999,12 +4009,12 @@ code {{ font-family:var(--mono); }}
 .tone-overview {{ background:rgba(39,88,126,.1); color:var(--navy); border-color:rgba(39,88,126,.16); }}
 .tone-guide {{ background:rgba(29,109,107,.11); color:var(--teal); border-color:rgba(29,109,107,.18); }}
 .tone-experience {{ background:rgba(86,102,121,.1); color:var(--slate); border-color:rgba(86,102,121,.15); }}
-.tone-architecture {{ background:rgba(101,84,162,.1); color:#5f4ba6; border-color:rgba(101,84,162,.15); }}
+.tone-architecture {{ background:rgba(101,84,162,.1); color:var(--violet); border-color:rgba(101,84,162,.15); }}
 .tone-sync {{ background:rgba(47,125,89,.1); color:var(--green); border-color:rgba(47,125,89,.16); }}
 .tone-history {{ background:rgba(160,77,95,.11); color:var(--coral); border-color:rgba(160,77,95,.18); }}
-.tone-research {{ background:rgba(101,84,162,.1); color:#5f4ba6; border-color:rgba(101,84,162,.15); }}
+.tone-research {{ background:rgba(101,84,162,.1); color:var(--violet); border-color:rgba(101,84,162,.15); }}
 .tone-discovery.tone {{ }}
-.tone-design {{ background:rgba(6,182,212,.1); color:#27587e; border-color:rgba(39,88,126,.15); }}
+.tone-design {{ background:rgba(6,182,212,.1); color:var(--navy); border-color:rgba(39,88,126,.15); }}
 .tone-library {{ background:rgba(86,102,121,.08); color:var(--slate); border-color:rgba(86,102,121,.12); }}
 .mini-chip-row {{
     display:flex;
@@ -4020,7 +4030,7 @@ code {{ font-family:var(--mono); }}
 }}
 .handbook-card:hover {{
     transform:translateY(-2px);
-    box-shadow:0 18px 30px rgba(20,28,38,.08);
+    box-shadow:0 18px 38px rgba(2,6,23,.28);
     text-decoration:none;
 }}
 .handbook-card h3 {{
@@ -4042,7 +4052,7 @@ code {{ font-family:var(--mono); }}
 .wiki-rich-text h3 {{
     font-family:var(--serif);
     color:var(--ink);
-    letter-spacing:-0.02em;
+    letter-spacing:-0.03em;
 }}
 .wiki-rich-text h1 {{
     font-size:32px;
@@ -4068,13 +4078,14 @@ code {{ font-family:var(--mono); }}
     padding:16px;
     overflow:auto;
     border-radius:14px;
-    background:#16202a;
+    background:#07111d;
     color:#f4f7fb;
+    border:1px solid rgba(255,255,255,.06);
 }}
 .wiki-rich-text code {{
     padding:2px 6px;
     border-radius:8px;
-    background:rgba(39,88,126,.08);
+    background:rgba(6,182,212,.08);
     color:var(--navy);
 }}
 .wiki-rich-text pre code {{
@@ -4090,8 +4101,8 @@ code {{ font-family:var(--mono); }}
 .wiki-rich-text blockquote {{
     margin:16px 0;
     padding:12px 16px;
-    border-left:4px solid rgba(39,88,126,.3);
-    background:rgba(39,88,126,.05);
+    border-left:4px solid rgba(6,182,212,.3);
+    background:rgba(6,182,212,.05);
     color:var(--muted);
 }}
 .mermaid {{
@@ -4100,7 +4111,7 @@ code {{ font-family:var(--mono); }}
     overflow:auto;
     border-radius:16px;
     border:1px solid var(--line);
-    background:#fff;
+    background:rgba(255,255,255,.02);
     white-space:pre-wrap;
 }}
 .text-link {{
