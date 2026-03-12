@@ -154,6 +154,8 @@ pub struct Feature {
     #[serde(default)]
     pub acceptance_items: Vec<AcceptanceCriterion>,
     #[serde(default)]
+    pub design_options: Vec<DesignOption>,
+    #[serde(default)]
     pub sub_vision: Option<String>, // path to sub-vision file (recursive)
     #[serde(default)]
     pub parent_vision: Option<String>, // link up the tree
@@ -232,6 +234,47 @@ pub enum AcceptanceStatus {
 }
 
 impl Default for AcceptanceStatus {
+    fn default() -> Self {
+        Self::Draft
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DesignOption {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub status: DesignOptionStatus,
+    #[serde(default)]
+    pub relative_path: Option<String>,
+    #[serde(default)]
+    pub reference: Option<String>,
+    #[serde(default)]
+    pub approved_by: Option<String>,
+    #[serde(default)]
+    pub approved_at: Option<String>,
+    #[serde(default)]
+    pub review_notes: Vec<String>,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignOptionStatus {
+    Draft,
+    Proposed,
+    Approved,
+    Rejected,
+}
+
+impl Default for DesignOptionStatus {
     fn default() -> Self {
         Self::Draft
     }
@@ -344,6 +387,83 @@ fn acceptance_id(feature_id: &str, idx: usize) -> String {
     format!("AC{}.{}", feature_id.trim_start_matches('F'), idx + 1)
 }
 
+fn design_option_id(feature_id: &str, idx: usize) -> String {
+    format!("MO{}.{}", feature_id.trim_start_matches('F'), idx + 1)
+}
+
+fn slugify_fragment(value: &str) -> String {
+    let mut slug = String::new();
+    let mut last_dash = false;
+    for ch in value.chars() {
+        let next = if ch.is_ascii_alphanumeric() {
+            last_dash = false;
+            Some(ch.to_ascii_lowercase())
+        } else if !last_dash {
+            last_dash = true;
+            Some('-')
+        } else {
+            None
+        };
+        if let Some(next) = next {
+            slug.push(next);
+        }
+    }
+    slug.trim_matches('-').to_string()
+}
+
+fn feature_requires_design(feature: &Feature) -> bool {
+    if !feature.design_options.is_empty() {
+        return true;
+    }
+
+    let haystack = format!(
+        "{} {}",
+        feature.title.to_lowercase(),
+        feature.description.to_lowercase()
+    );
+    [
+        "ui",
+        "ux",
+        "frontend",
+        "front-end",
+        "website",
+        "landing",
+        "portal",
+        "dashboard",
+        "client",
+        "customer",
+        "shopify",
+        "design",
+        "brand",
+        "onboarding",
+    ]
+    .iter()
+    .any(|needle| haystack.contains(needle))
+}
+
+fn approved_design_count(feature: &Feature) -> usize {
+    feature
+        .design_options
+        .iter()
+        .filter(|option| option.status == DesignOptionStatus::Approved)
+        .count()
+}
+
+fn proposed_design_count(feature: &Feature) -> usize {
+    feature
+        .design_options
+        .iter()
+        .filter(|option| {
+            matches!(
+                option.status,
+                DesignOptionStatus::Draft
+                    | DesignOptionStatus::Proposed
+                    | DesignOptionStatus::Approved
+            )
+        })
+        .count()
+}
+
 fn sync_acceptance_items(feature: &mut Feature) {
     if feature.acceptance_items.is_empty() && !feature.acceptance_criteria.is_empty() {
         feature.acceptance_items = feature
@@ -439,7 +559,12 @@ fn feature_readiness_value(project_path: &str, feature: &Feature) -> serde_json:
     let non_blocking_open_questions = open_questions.saturating_sub(blocking_open_questions);
     let has_research_doc = feature_doc_exists(project_path, &feature.id, "research");
     let has_discovery_doc = feature_doc_exists(project_path, &feature.id, "discovery");
-    let has_discovery_artifact = has_research_doc || has_discovery_doc;
+    let has_design_doc = feature_doc_exists(project_path, &feature.id, "design");
+    let design_required = has_design_doc || feature_requires_design(feature);
+    let design_option_count = proposed_design_count(feature);
+    let approved_design_options = approved_design_count(feature);
+    let has_discovery_artifact =
+        has_research_doc || has_discovery_doc || has_design_doc || design_option_count > 0;
     let acceptance_count = feature.acceptance_items.len();
     let acceptance_verified = feature
         .acceptance_items
@@ -465,6 +590,15 @@ fn feature_readiness_value(project_path: &str, feature: &Feature) -> serde_json:
     }
     if acceptance_count == 0 {
         build_blockers.push("acceptance criteria missing".to_string());
+    }
+    if design_required && !has_design_doc {
+        build_blockers.push("design brief missing".to_string());
+    }
+    if design_required && design_option_count == 0 {
+        build_blockers.push("client mockup missing".to_string());
+    }
+    if design_required && approved_design_options == 0 {
+        build_blockers.push("client approval missing".to_string());
     }
 
     let mut test_blockers = Vec::new();
@@ -521,11 +655,19 @@ fn feature_readiness_value(project_path: &str, feature: &Feature) -> serde_json:
             "tasks_verified": task_verified,
             "has_research_doc": has_research_doc,
             "has_discovery_doc": has_discovery_doc,
+            "has_design_doc": has_design_doc,
             "has_discovery_artifact": has_discovery_artifact,
+            "design_required": design_required,
+            "design_options": design_option_count,
+            "design_approved": approved_design_options,
         },
         "discovery": {
             "has_research_doc": has_research_doc,
             "has_discovery_doc": has_discovery_doc,
+            "has_design_doc": has_design_doc,
+            "design_required": design_required,
+            "design_options": design_option_count,
+            "design_approved": approved_design_options,
             "blocking_open_questions": blocking_open_questions,
             "non_blocking_open_questions": non_blocking_open_questions,
             "acceptance_criteria": acceptance_count,
@@ -1176,13 +1318,17 @@ fn features_dir(project_path: &str) -> PathBuf {
     vision_dir(project_path).join("features")
 }
 
+fn mockups_dir(project_path: &str, feature_id: &str) -> PathBuf {
+    vision_dir(project_path).join("mockups").join(feature_id)
+}
+
 fn feature_doc_path(
     project_path: &str,
     doc_type: &str,
     feature_id: &str,
 ) -> Result<(PathBuf, String), String> {
     match doc_type {
-        "research" | "discovery" => {
+        "research" | "discovery" | "design" => {
             let relative = format!(".vision/{}/{}.md", doc_type, feature_id);
             Ok((
                 vision_dir(project_path).join(format!("{}/{}.md", doc_type, feature_id)),
@@ -1259,6 +1405,7 @@ pub fn add_feature(
             })
             .collect(),
         acceptance_criteria,
+        design_options: vec![],
         sub_vision: None,
         parent_vision: None,
         created_at: now(),
@@ -1313,7 +1460,7 @@ pub fn upsert_feature_doc(
     let (doc_path, relative_path) = match feature_doc_path(project_path, doc_type, feature_id) {
         Ok(paths) => paths,
         Err(e) => {
-            return serde_json::json!({"error": e, "options": ["research", "discovery"]})
+            return serde_json::json!({"error": e, "options": ["research", "discovery", "design"]})
                 .to_string()
         }
     };
@@ -1371,6 +1518,720 @@ pub fn upsert_feature_doc(
         .to_string(),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
+}
+
+fn dataxlr8_hex_logo_svg() -> &'static str {
+    r#"<svg width="72" height="72" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="dx-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#06B6D4;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#A855F7;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FF00AA;stop-opacity:1" />
+    </linearGradient>
+    <filter id="dx-glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <polygon points="100,20 170,60 170,140 100,180 30,140 30,60" stroke="url(#dx-grad)" stroke-width="6" fill="none" filter="url(#dx-glow)"/>
+  <circle cx="100" cy="100" r="25" fill="url(#dx-grad)"/>
+  <circle cx="100" cy="40" r="8" fill="url(#dx-grad)"/>
+  <circle cx="155" cy="70" r="8" fill="url(#dx-grad)"/>
+  <circle cx="155" cy="130" r="8" fill="url(#dx-grad)"/>
+  <circle cx="100" cy="160" r="8" fill="url(#dx-grad)"/>
+  <circle cx="45" cy="130" r="8" fill="url(#dx-grad)"/>
+  <circle cx="45" cy="70" r="8" fill="url(#dx-grad)"/>
+  <line x1="100" y1="40" x2="100" y2="75" stroke="url(#dx-grad)" stroke-width="3"/>
+  <line x1="155" y1="70" x2="120" y2="85" stroke="url(#dx-grad)" stroke-width="3"/>
+  <line x1="155" y1="130" x2="120" y2="115" stroke="url(#dx-grad)" stroke-width="3"/>
+  <line x1="100" y1="160" x2="100" y2="125" stroke="url(#dx-grad)" stroke-width="3"/>
+  <line x1="45" y1="130" x2="80" y2="115" stroke="url(#dx-grad)" stroke-width="3"/>
+  <line x1="45" y1="70" x2="80" y2="85" stroke="url(#dx-grad)" stroke-width="3"/>
+  <path d="M90 95 L110 100 L90 105 L95 100 Z" fill="white"/>
+</svg>"#
+}
+
+fn mockup_variant_specs(reference: &str) -> Vec<(&'static str, &'static str, &'static str)> {
+    let reference = reference.to_lowercase();
+    if reference.contains("shopify") || reference.contains("commerce") {
+        vec![
+            (
+                "merchant-command",
+                "Merchant Command",
+                "A commerce-first landing page with a bold hero, proof points, and merchant operations story.",
+            ),
+            (
+                "growth-story",
+                "Growth Story",
+                "A calmer narrative route focused on outcomes, trust, and guided onboarding for non-technical buyers.",
+            ),
+            (
+                "operator-console",
+                "Operator Console",
+                "A product-led version that leads with the operating experience and the system behind the storefront.",
+            ),
+        ]
+    } else {
+        vec![
+            (
+                "future-brief",
+                "Future Brief",
+                "A concise executive overview that explains the offer, the process, and the outcome in one pass.",
+            ),
+            (
+                "guided-journey",
+                "Guided Journey",
+                "A client-friendly flow with discovery, design options, approval, build, and test made explicit.",
+            ),
+            (
+                "product-proof",
+                "Product Proof",
+                "A stronger product-led route that pairs a live system preview with trust and implementation evidence.",
+            ),
+        ]
+    }
+}
+
+fn render_mockup_html(
+    feature: &Feature,
+    option_title: &str,
+    option_summary: &str,
+    reference: &str,
+) -> String {
+    let feature_title = &feature.title;
+    let feature_description = if feature.description.trim().is_empty() {
+        "A client-facing digital experience designed to be approved quickly and then executed through DX Terminal."
+    } else {
+        feature.description.as_str()
+    };
+    let reference_label = if reference.trim().is_empty() {
+        "Client reference"
+    } else {
+        reference
+    };
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{feature_title} — {option_title}</title>
+  <style>
+    :root {{
+      --bg:#0f0f1a;
+      --surface:#17172a;
+      --surface-2:#1d1d33;
+      --text:#f8fafc;
+      --muted:#a3aed0;
+      --cyan:#06b6d4;
+      --violet:#a855f7;
+      --pink:#ff00aa;
+      --line:rgba(255,255,255,.1);
+      --shadow:0 30px 80px rgba(3,7,18,.55);
+    }}
+    * {{ box-sizing:border-box; }}
+    body {{
+      margin:0;
+      font-family:"SF Pro Display","Segoe UI",system-ui,sans-serif;
+      color:var(--text);
+      background:
+        radial-gradient(circle at 10% 10%, rgba(6,182,212,.14), transparent 28%),
+        radial-gradient(circle at 85% 18%, rgba(168,85,247,.18), transparent 24%),
+        radial-gradient(circle at 60% 80%, rgba(255,0,170,.12), transparent 22%),
+        linear-gradient(180deg,#0b0b14 0%, #0f0f1a 100%);
+      min-height:100vh;
+    }}
+    .shell {{
+      max-width:1240px;
+      margin:0 auto;
+      padding:32px 24px 56px;
+    }}
+    .nav {{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:16px;
+      padding:12px 16px;
+      border:1px solid var(--line);
+      border-radius:24px;
+      background:rgba(15,15,26,.72);
+      backdrop-filter:blur(16px);
+      box-shadow:var(--shadow);
+    }}
+    .brand {{
+      display:flex;
+      align-items:center;
+      gap:14px;
+      font-weight:700;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+    }}
+    .brand small {{
+      display:block;
+      color:var(--muted);
+      font-size:11px;
+      letter-spacing:.18em;
+    }}
+    .brand strong {{
+      display:block;
+      font-size:15px;
+    }}
+    .nav-pill {{
+      border:1px solid rgba(6,182,212,.28);
+      color:#c4f6ff;
+      padding:8px 12px;
+      border-radius:999px;
+      font-size:12px;
+      background:rgba(6,182,212,.08);
+    }}
+    .hero {{
+      display:grid;
+      grid-template-columns:1.2fr .95fr;
+      gap:28px;
+      align-items:stretch;
+      margin-top:26px;
+    }}
+    .hero-copy,
+    .hero-card,
+    .section-card,
+    .lane {{
+      background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+      border:1px solid var(--line);
+      border-radius:28px;
+      box-shadow:var(--shadow);
+      position:relative;
+      overflow:hidden;
+    }}
+    .hero-copy {{
+      padding:36px;
+    }}
+    .hero-copy::before,
+    .hero-card::before,
+    .section-card::before {{
+      content:"";
+      position:absolute;
+      inset:0;
+      background:linear-gradient(135deg, rgba(6,182,212,.08), rgba(168,85,247,.08), rgba(255,0,170,.05));
+      pointer-events:none;
+    }}
+    .eyebrow {{
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      border:1px solid rgba(168,85,247,.26);
+      background:rgba(168,85,247,.1);
+      color:#edd4ff;
+      padding:8px 12px;
+      border-radius:999px;
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.14em;
+    }}
+    h1 {{
+      font-size:clamp(42px, 5vw, 76px);
+      line-height:.96;
+      margin:18px 0 14px;
+      max-width:12ch;
+    }}
+    .lede {{
+      font-size:18px;
+      line-height:1.7;
+      color:#d6def8;
+      max-width:58ch;
+    }}
+    .cta-row {{
+      display:flex;
+      gap:12px;
+      flex-wrap:wrap;
+      margin-top:26px;
+    }}
+    .cta-primary,
+    .cta-secondary {{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      padding:13px 18px;
+      border-radius:16px;
+      text-decoration:none;
+      font-weight:700;
+    }}
+    .cta-primary {{
+      color:white;
+      background:linear-gradient(135deg,var(--cyan),var(--violet));
+      box-shadow:0 20px 40px rgba(6,182,212,.22);
+    }}
+    .cta-secondary {{
+      color:#d6def8;
+      border:1px solid var(--line);
+      background:rgba(255,255,255,.04);
+    }}
+    .hero-card {{
+      padding:24px;
+      display:flex;
+      flex-direction:column;
+      gap:16px;
+    }}
+    .preview-window {{
+      border:1px solid rgba(255,255,255,.12);
+      background:#0c0d17;
+      border-radius:22px;
+      overflow:hidden;
+    }}
+    .window-head {{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      padding:14px 16px;
+      border-bottom:1px solid rgba(255,255,255,.06);
+      background:rgba(255,255,255,.03);
+    }}
+    .window-dot {{ width:10px; height:10px; border-radius:999px; }}
+    .window-dot.red {{ background:#ff5f57; }}
+    .window-dot.yellow {{ background:#febc2e; }}
+    .window-dot.green {{ background:#28c840; }}
+    .preview-body {{
+      padding:18px;
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:14px;
+    }}
+    .panel {{
+      background:var(--surface);
+      border:1px solid rgba(255,255,255,.06);
+      border-radius:18px;
+      padding:16px;
+      min-height:120px;
+    }}
+    .panel h3 {{
+      margin:0 0 8px;
+      font-size:14px;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      color:#c4f6ff;
+    }}
+    .panel p,
+    .panel li {{
+      color:#b8c3e3;
+      font-size:14px;
+      line-height:1.65;
+    }}
+    .grid {{
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:18px;
+      margin-top:22px;
+    }}
+    .section-card {{
+      padding:24px;
+    }}
+    .section-card h2 {{
+      margin:0 0 12px;
+      font-size:22px;
+    }}
+    .mini {{
+      color:var(--muted);
+      font-size:14px;
+      line-height:1.6;
+    }}
+    .process {{
+      display:grid;
+      grid-template-columns:repeat(5,minmax(0,1fr));
+      gap:14px;
+      margin-top:18px;
+    }}
+    .lane {{
+      padding:18px;
+      background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      border:1px solid var(--line);
+      border-radius:18px;
+    }}
+    .lane .step {{
+      font-size:11px;
+      text-transform:uppercase;
+      letter-spacing:.16em;
+      color:#c4f6ff;
+    }}
+    .lane strong {{
+      display:block;
+      margin-top:10px;
+      font-size:17px;
+    }}
+    .lane p {{
+      color:#b8c3e3;
+      font-size:13px;
+      line-height:1.6;
+    }}
+    .proof-row {{
+      display:grid;
+      grid-template-columns:repeat(4,minmax(0,1fr));
+      gap:12px;
+      margin-top:18px;
+    }}
+    .proof {{
+      border:1px solid var(--line);
+      background:rgba(255,255,255,.03);
+      padding:16px;
+      border-radius:18px;
+    }}
+    .proof strong {{
+      display:block;
+      font-size:28px;
+      margin-bottom:6px;
+    }}
+    .foot {{
+      display:flex;
+      justify-content:space-between;
+      gap:18px;
+      margin-top:24px;
+      color:var(--muted);
+      font-size:13px;
+    }}
+    @media (max-width: 980px) {{
+      .hero,
+      .grid,
+      .process,
+      .proof-row,
+      .preview-body {{
+        grid-template-columns:1fr;
+      }}
+      h1 {{ max-width:none; }}
+      .shell {{ padding:18px 14px 32px; }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="nav">
+      <div class="brand">
+        {logo}
+        <div>
+          <small>DataXLR8</small>
+          <strong>{option_title}</strong>
+        </div>
+      </div>
+      <div class="nav-pill">Reference: {reference_label}</div>
+    </div>
+
+    <section class="hero">
+      <div class="hero-copy">
+        <span class="eyebrow">Quick discovery + design direction</span>
+        <h1>{feature_title}</h1>
+        <p class="lede">{feature_description}</p>
+        <div class="cta-row">
+          <a class="cta-primary" href="#process">Review the concept flow</a>
+          <a class="cta-secondary" href="#proof">See proof and trust signals</a>
+        </div>
+      </div>
+
+      <div class="hero-card">
+        <div class="preview-window">
+          <div class="window-head">
+            <span class="window-dot red"></span>
+            <span class="window-dot yellow"></span>
+            <span class="window-dot green"></span>
+          </div>
+          <div class="preview-body">
+            <div class="panel">
+              <h3>Client Promise</h3>
+              <p>{option_summary}</p>
+            </div>
+            <div class="panel">
+              <h3>Delivery Engine</h3>
+              <ul>
+                <li>Portal-led discovery and approval</li>
+                <li>Parallel branch execution behind the scenes</li>
+                <li>Shared documentation, git, and runtime sync</li>
+              </ul>
+            </div>
+            <div class="panel">
+              <h3>What the client sees</h3>
+              <p>A guided journey, mockup options, and clear approval points instead of raw terminal activity.</p>
+            </div>
+            <div class="panel">
+              <h3>What the team sees</h3>
+              <p>Live branches, panes, test evidence, and delivery gates coordinated by DX Terminal.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid" id="proof">
+      <article class="section-card">
+        <h2>Positioning</h2>
+        <p class="mini">This concept keeps the client in the portal while the implementation team works in isolated panes and worktrees. Approval happens here. Execution happens underneath.</p>
+      </article>
+      <article class="section-card">
+        <h2>Process clarity</h2>
+        <p class="mini">The customer gets a readable journey: discovery questions, design options, approval, build progress, verification, and release readiness.</p>
+      </article>
+      <article class="section-card">
+        <h2>Brand feel</h2>
+        <p class="mini">Dark future-facing palette, hexagonal DX signature, cyan-violet glow, and terminal-derived product credibility without exposing internal complexity.</p>
+      </article>
+    </section>
+
+    <section class="section-card" id="process" style="margin-top:22px">
+      <h2>Client Journey</h2>
+      <p class="mini">A single flow from problem framing to approved direction and delivery.</p>
+      <div class="process">
+        <div class="lane"><span class="step">01</span><strong>Discovery</strong><p>Clarify goals, audience, references, and constraints.</p></div>
+        <div class="lane"><span class="step">02</span><strong>Design</strong><p>Show 2-3 quick concepts so the client can react early.</p></div>
+        <div class="lane"><span class="step">03</span><strong>Approval</strong><p>Approve one direction in the portal and unlock implementation.</p></div>
+        <div class="lane"><span class="step">04</span><strong>Build</strong><p>Parallel panes and branches execute the approved work.</p></div>
+        <div class="lane"><span class="step">05</span><strong>Test</strong><p>Evidence, docs, and release readiness stay synced in one place.</p></div>
+      </div>
+    </section>
+
+    <section class="section-card" style="margin-top:22px">
+      <h2>Proof Layer</h2>
+      <div class="proof-row">
+        <div class="proof"><strong>3x</strong>Parallel design directions before build.</div>
+        <div class="proof"><strong>1</strong>Approved source of truth for implementation.</div>
+        <div class="proof"><strong>Live</strong>Docs, git, and runtime state kept in sync.</div>
+        <div class="proof"><strong>Zero</strong>Need for the client to watch terminals.</div>
+      </div>
+      <div class="foot">
+        <span>Feature: {feature_title}</span>
+        <span>Direction: {option_title}</span>
+        <span>Reference: {reference_label}</span>
+      </div>
+    </section>
+  </div>
+</body>
+</html>"#,
+        feature_title = feature_title,
+        option_title = option_title,
+        feature_description = feature_description,
+        option_summary = option_summary,
+        reference_label = reference_label,
+        logo = dataxlr8_hex_logo_svg(),
+    )
+}
+
+pub fn seed_mockup_options(project_path: &str, feature_id: &str, reference: Option<&str>) -> String {
+    let mut vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
+        Some(f) => f,
+        None => {
+            return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string()
+        }
+    };
+
+    let reference = reference.unwrap_or("").trim();
+    let variants = mockup_variant_specs(reference);
+    let mockup_root = mockups_dir(project_path, feature_id);
+    if let Err(e) = std::fs::create_dir_all(&mockup_root) {
+        return serde_json::json!({"error": format!("mkdir: {}", e)}).to_string();
+    }
+
+    let mut created = Vec::new();
+    for (slug, title, summary) in variants {
+        let option_id = design_option_id(feature_id, feature.design_options.len());
+        let file_name = format!("{}-{}.html", option_id.to_lowercase(), slugify_fragment(slug));
+        let relative_path = format!(".vision/mockups/{}/{}", feature_id, file_name);
+        let html = render_mockup_html(feature, title, summary, reference);
+        let path = mockup_root.join(&file_name);
+        if let Err(e) = std::fs::write(&path, html) {
+            return serde_json::json!({"error": format!("write: {}", e)}).to_string();
+        }
+
+        let option = DesignOption {
+            id: option_id.clone(),
+            title: title.to_string(),
+            summary: summary.to_string(),
+            kind: "mockup".to_string(),
+            status: DesignOptionStatus::Proposed,
+            relative_path: Some(relative_path.clone()),
+            reference: if reference.is_empty() {
+                None
+            } else {
+                Some(reference.to_string())
+            },
+            approved_by: None,
+            approved_at: None,
+            review_notes: vec![],
+            created_at: now(),
+            updated_at: now(),
+        };
+        feature.design_options.push(option.clone());
+        created.push(serde_json::json!({
+            "id": option.id,
+            "title": option.title,
+            "summary": option.summary,
+            "status": option.status,
+            "path": relative_path,
+        }));
+    }
+
+    if feature.phase == FeaturePhase::Planned {
+        set_feature_lifecycle(feature, FeaturePhase::Discovery, FeatureState::Active);
+    }
+    reconcile_feature_lifecycle(project_path, feature);
+    feature.updated_at = now();
+    vision.updated_at = now();
+    let feature_phase = feature.phase.clone();
+    let feature_state = feature.state.clone();
+
+    let change = VisionChange {
+        timestamp: now(),
+        change_type: ChangeType::Added,
+        field: format!("mockups:{}", feature_id),
+        old_value: String::new(),
+        new_value: format!("{} seeded option(s)", created.len()),
+        reason: "Design mockup options seeded".to_string(),
+        triggered_by: "user".to_string(),
+        github_issue: None,
+    };
+    vision.changes.push(change.clone());
+    append_history(project_path, &change);
+
+    match save_vision(project_path, &vision) {
+        Ok(()) => serde_json::json!({
+            "status": "seeded",
+            "feature": feature_id,
+            "count": created.len(),
+            "options": created,
+            "phase": feature_phase,
+            "state": feature_state,
+        })
+        .to_string(),
+        Err(e) => serde_json::json!({"error": e}).to_string(),
+    }
+}
+
+pub fn review_design_option(
+    project_path: &str,
+    feature_id: &str,
+    option_id: &str,
+    status: &str,
+    note: Option<&str>,
+    actor: Option<&str>,
+) -> String {
+    let mut vision = match load_vision(project_path) {
+        Some(v) => v,
+        None => return serde_json::json!({"error": "no_vision"}).to_string(),
+    };
+
+    let parsed_status = match status {
+        "approved" => DesignOptionStatus::Approved,
+        "rejected" => DesignOptionStatus::Rejected,
+        "proposed" => DesignOptionStatus::Proposed,
+        "draft" => DesignOptionStatus::Draft,
+        _ => {
+            return serde_json::json!({
+                "error": "invalid_status",
+                "options": ["draft", "proposed", "approved", "rejected"]
+            })
+            .to_string()
+        }
+    };
+
+    let feature = match vision.features.iter_mut().find(|f| f.id == feature_id) {
+        Some(f) => f,
+        None => {
+            return serde_json::json!({"error": "feature_not_found", "id": feature_id}).to_string()
+        }
+    };
+
+    let Some(selected_idx) = feature
+        .design_options
+        .iter()
+        .position(|option| option.id == option_id) else {
+        return serde_json::json!({"error": "design_option_not_found", "id": option_id}).to_string();
+    };
+
+    if parsed_status == DesignOptionStatus::Approved {
+        for (idx, option) in feature.design_options.iter_mut().enumerate() {
+            if idx != selected_idx && option.status == DesignOptionStatus::Approved {
+                option.status = DesignOptionStatus::Proposed;
+                option.updated_at = now();
+            }
+        }
+    }
+
+    let option = &mut feature.design_options[selected_idx];
+    option.status = parsed_status.clone();
+    if let Some(note) = note.filter(|value| !value.trim().is_empty()) {
+        option.review_notes.push(note.to_string());
+    }
+    if parsed_status == DesignOptionStatus::Approved {
+        option.approved_by = actor
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_string());
+        option.approved_at = Some(now());
+    }
+    option.updated_at = now();
+
+    if feature.phase == FeaturePhase::Planned {
+        set_feature_lifecycle(feature, FeaturePhase::Discovery, FeatureState::Active);
+    }
+    reconcile_feature_lifecycle(project_path, feature);
+    feature.updated_at = now();
+    vision.updated_at = now();
+    let feature_phase = feature.phase.clone();
+    let feature_state = feature.state.clone();
+
+    let change = VisionChange {
+        timestamp: now(),
+        change_type: ChangeType::StatusChange,
+        field: format!("design_option:{}", option_id),
+        old_value: String::new(),
+        new_value: status.to_string(),
+        reason: "Design option review updated".to_string(),
+        triggered_by: actor
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "user".to_string()),
+        github_issue: None,
+    };
+    vision.changes.push(change.clone());
+    append_history(project_path, &change);
+
+    match save_vision(project_path, &vision) {
+        Ok(()) => serde_json::json!({
+            "status": "reviewed",
+            "feature": feature_id,
+            "option_id": option_id,
+            "option_status": parsed_status,
+            "phase": feature_phase,
+            "state": feature_state,
+            "readiness": feature_readiness_value(project_path, feature),
+        })
+        .to_string(),
+        Err(e) => serde_json::json!({"error": e}).to_string(),
+    }
+}
+
+pub fn read_mockup_html(
+    project_path: &str,
+    feature_id: &str,
+    option_id: &str,
+) -> Result<String, String> {
+    let vision = load_vision(project_path).ok_or_else(|| "no_vision".to_string())?;
+    let feature = vision
+        .features
+        .iter()
+        .find(|f| f.id == feature_id)
+        .ok_or_else(|| "feature_not_found".to_string())?;
+    let option = feature
+        .design_options
+        .iter()
+        .find(|design| design.id == option_id)
+        .ok_or_else(|| "design_option_not_found".to_string())?;
+    let relative = option
+        .relative_path
+        .as_deref()
+        .ok_or_else(|| "design_option_missing_path".to_string())?;
+    std::fs::read_to_string(FsPath::new(project_path).join(relative))
+        .map_err(|e| format!("read: {}", e))
 }
 
 pub fn start_discovery(project_path: &str, feature_id: &str) -> String {
