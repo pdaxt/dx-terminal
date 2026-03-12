@@ -594,10 +594,17 @@ mod tests {
         }))
         .expect("descriptor");
 
-        assert!(descriptor.command.ends_with(&[
-            "--port".to_string(),
-            crate::config::pane_browser_port(3).to_string(),
-        ]));
+        assert!(descriptor.command.windows(2).any(|window| {
+            window[0] == "--port"
+                && window[1] == crate::config::pane_browser_port(3).to_string()
+        }));
+        assert!(descriptor.command.windows(2).any(|window| {
+            window[0] == "--user-data-dir"
+                && window[1]
+                    == crate::config::pane_browser_profile_root(3)
+                        .to_string_lossy()
+                        .to_string()
+        }));
     }
 
     #[test]
