@@ -1083,6 +1083,8 @@ pub async fn get_project_brief(
     let summary_value = serde_json::from_str::<Value>(&summary).unwrap_or_else(|_| json!({}));
     let docs = collect_vision_docs_for_path(&project_path);
     let guidance_docs = collect_guidance_docs(&project_path, &project_path);
+    let vision_doc_count = docs.len();
+    let guidance_doc_count = guidance_docs.len();
     let focus = crate::vision_focus::read_project_focus(&project_path);
 
     let state = app.state.get_state_snapshot().await;
@@ -1090,6 +1092,7 @@ pub async fn get_project_brief(
         .await
         .unwrap_or_default();
     let runtimes = collect_project_runtimes(&state, &live_panes, &project_path, &project);
+    let runtime_count = runtimes.len();
     let worktree_count = runtimes
         .iter()
         .filter(|runtime| {
@@ -1196,8 +1199,8 @@ pub async fn get_project_brief(
         "docs": {
             "vision_docs": docs,
             "guidance_docs": guidance_docs,
-            "vision_doc_count": docs.len(),
-            "guidance_doc_count": guidance_docs.len(),
+            "vision_doc_count": vision_doc_count,
+            "guidance_doc_count": guidance_doc_count,
         },
         "delivery": {
             "phase_counts": phase_counts,
@@ -1205,7 +1208,7 @@ pub async fn get_project_brief(
             "ready_features": ready_features,
         },
         "runtimes": runtimes,
-        "runtime_count": runtimes.len(),
+        "runtime_count": runtime_count,
         "worktree_count": worktree_count,
         "git": git,
     }))

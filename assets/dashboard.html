@@ -1734,7 +1734,7 @@ function handleWSMessage(msg){
         if(p.session_id)paneSessionInfo[p.pane]={session_id:p.session_id,jsonl_path:p.jsonl_path,cwd:p.cwd};
       }
       updateWorkspaces(wsState.workspaces);
-      renderPanes();renderGauges();
+      renderPanes();renderGauges();renderExecutionHub();
       break;
 
     case 'pane_upsert':
@@ -1745,7 +1745,7 @@ function handleWSMessage(msg){
         if(idx>=0){wsState.panes[idx]=Object.assign(wsState.panes[idx],paneData);}
         else{wsState.panes.push(paneData);}
       }
-      renderPanes();renderGauges();
+      renderPanes();renderGauges();renderExecutionHub();
       break;
 
     case 'pane_removed':
@@ -1754,7 +1754,7 @@ function handleWSMessage(msg){
         const idx=wsState.panes.findIndex(p=>p.pane===msg.pane);
         if(idx>=0){wsState.panes[idx].status='lost';wsState.panes[idx].task=msg.reason||'lost';}
       }
-      renderPanes();renderGauges();
+      renderPanes();renderGauges();renderExecutionHub();
       break;
 
     case 'terminal_output':
@@ -2479,7 +2479,7 @@ async function refresh(){
   await loadCapacity();
   renderPanes();
   renderLogs();
-  await Promise.all([renderGauges(),renderRoles(),renderQueue(),renderBoard(),renderSprint(),renderDigest(),renderOverview(),renderInfra(),renderBuilds(),renderVision(),renderVddDocs(),renderSync()]);
+  await Promise.all([renderGauges(),renderExecutionHub(),renderRoles(),renderQueue(),renderBoard(),renderSprint(),renderDigest(),renderOverview(),renderInfra(),renderBuilds(),renderVision(),renderVddDocs(),renderSync()]);
 }
 
 async function renderSync(){
