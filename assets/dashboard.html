@@ -1111,6 +1111,7 @@ function renderPanes(){
         <div class="pane-project">${p.project||'--'}${sp&&sp.branch?' <span style="color:var(--dim);font-size:9px">⌥ '+sp.branch+'</span>':''}</div>
         <div class="pane-task">${paneLastActivity(p.pane)||(p.task||'').slice(0,60)}</div>
         <div class="pane-meta">
+          ${p.provider&&p.provider!=='unknown'?`<span class="badge b-provider provider-${p.provider}">${p.provider_short||p.provider_label||p.provider}</span>`:''}
           ${p.role&&p.role!=='--'?`<span class="badge b-role">${p.role}</span>`:''}
           <span class="badge b-lines" id="pane-lines-${p.pane}">${p.line_count||p.lines||0}L</span>
           ${runtime?`<span class="badge b-runtime">${runtime}</span>`:''}
@@ -1118,7 +1119,7 @@ function renderPanes(){
           ${isActive||p.live?'<span class="badge b-live">LIVE</span>':''}
           ${h==='error'?'<span class="badge b-err">ERR</span>':''}
           ${h==='done'?'<span class="badge b-done">DONE</span>':''}
-          ${sp&&sp.workspace?'<span class="badge" style="background:rgba(61,214,208,.1);color:var(--teal)">WT</span>':''}
+          ${(p.workspace_path||(sp&&sp.workspace))?'<span class="badge b-worktree">WT</span>':''}
         </div>
         ${previewLines?`<div class="pane-preview">${escHtml(previewLines)}</div>`:''}
       </div>`;
