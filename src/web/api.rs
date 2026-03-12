@@ -35,6 +35,26 @@ fn maybe_emit_vision_change(
     crate::vision_events::emit_from_result(app.as_ref(), project_path, result, feature_id);
 }
 
+fn maybe_emit_focus_change(app: &AppState, focus: &crate::vision_focus::VisionFocusEntry) {
+    let project = focus.project.clone().unwrap_or_else(|| {
+        std::path::Path::new(&focus.project_path)
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_else(|| "--".to_string())
+    });
+    app.state
+        .event_bus
+        .send(crate::state::events::StateEvent::VisionChanged {
+            project,
+            summary: "Focus updated".to_string(),
+            feature_id: focus.feature_id.clone(),
+            feature_title: None,
+            phase: None,
+            state: None,
+            readiness: None,
+        });
+}
+
 /// GET / — Serve dashboard HTML
 pub async fn index() -> Html<&'static str> {
     Html(include_str!("../../assets/dashboard.html"))
@@ -1248,7 +1268,10 @@ pub async fn update_vision_feature_status(
 }
 
 /// POST /api/vision/work — Assess work against vision
-pub async fn assess_vision_work(Json(body): Json<Value>) -> Json<Value> {
+pub async fn assess_vision_work(
+    State(app): State<AppState>,
+    Json(body): Json<Value>,
+) -> Json<Value> {
     let project = body["project"].as_str().unwrap_or("").to_string();
     let path = resolve_project_path(&VisionQuery {
         project: Some(project.clone()),
@@ -1256,7 +1279,9 @@ pub async fn assess_vision_work(Json(body): Json<Value>) -> Json<Value> {
     });
     let description = body["description"].as_str().unwrap_or("");
     let result = crate::vision::assess_work(&path, description);
-    crate::vision_focus::upsert_focus_from_work_result(&path, &result, Some("web"));
+    if let Some(focus) = crate::vision_focus::upsert_focus_from_work_result(&path, &result, Some("web")) {
+        maybe_emit_focus_change(&app, &focus);
+    }
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
@@ -1370,7 +1395,10 @@ pub async fn get_vision_doc(Query(q): Query<VisionDocQuery>) -> Json<Value> {
 }
 
 /// POST /api/vision/focus — Persist the operator's active goal/feature focus for auto-continue.
-pub async fn set_vision_focus(Json(body): Json<VisionFocusRequest>) -> Json<Value> {
+pub async fn set_vision_focus(
+    State(app): State<AppState>,
+    Json(body): Json<VisionFocusRequest>,
+) -> Json<Value> {
     let path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -1394,7 +1422,10 @@ pub async fn set_vision_focus(Json(body): Json<VisionFocusRequest>) -> Json<Valu
     };
 
     match focus {
-        Some(focus) => Json(json!({"status": "focused", "focus": focus})),
+        Some(focus) => {
+            maybe_emit_focus_change(&app, &focus);
+            Json(json!({"status": "focused", "focus": focus}))
+        }
         None => Json(json!({"error": "unable_to_set_focus"})),
     }
 }
