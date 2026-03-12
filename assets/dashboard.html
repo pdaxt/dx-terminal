@@ -1336,6 +1336,7 @@ function renderPanes(){
     const color=paneColor(p.pane);
     const preview=paneOutputs[p.pane];
     const previewLines=preview?preview.trim().split('\n').slice(-2).join('\n'):'';
+    const browserPort=paneBrowserPortForRuntime(p,sp);
     if(isActive)activeCount++;
     const h=p.health||p.status||'idle';
     const sc=h==='active'||isActive?'s-active':h==='done'?'s-done':h==='error'?'s-error':h==='stuck'?'s-stuck':'s-idle';
@@ -1369,6 +1370,7 @@ function renderPanes(){
           ${p.provider&&p.provider!=='unknown'?`<span class="badge b-provider provider-${p.provider}">${p.provider_short||p.provider_label||p.provider}</span>`:''}
           ${p.role&&p.role!=='--'?`<span class="badge b-role">${p.role}</span>`:''}
           <span class="badge b-lines" id="pane-lines-${p.pane}">${p.line_count||p.lines||0}L</span>
+          ${browserPort?`<span class="badge" style="background:rgba(77,166,255,.12);color:var(--blue)">PW ${browserPort}</span>`:''}
           ${runtime?`<span class="badge b-runtime">${runtime}</span>`:''}
           ${sp&&sp.acu?`<span class="badge" style="background:rgba(176,122,255,.1);color:var(--purple)">${sp.acu} ACU</span>`:''}
           ${isActive||p.live?'<span class="badge b-live">LIVE</span>':''}
@@ -1427,6 +1429,8 @@ function openPanel(paneNum){
     `<span class="pane-num" style="background:${color}">${paneNum}</span> ${p&&p.project!=='--'?p.project:'idle'}`;
 
   const sp=getStatusPane(paneNum);
+  const browserPort=paneBrowserPortForRuntime(p,sp);
+  const browserProfile=(p&&p.browser_profile_root)||(sp&&sp.browser_profile_root)||'';
   let startedStr='--';
   if(sp&&sp.started_at){
     const d=new Date(sp.started_at);
@@ -1443,7 +1447,9 @@ function openPanel(paneNum){
     <div><dt>Space</dt><dd>${sp&&sp.space?sp.space:'--'}</dd></div>
     <div><dt>Issue</dt><dd>${sp&&sp.issue_id?sp.issue_id:'--'}</dd></div>
     <div><dt>Target</dt><dd style="font-family:var(--mono);font-size:9px">${p&&p.tmux_target?p.tmux_target:'--'}</dd></div>
+    <div><dt>Browser</dt><dd>${browserPort?`Port ${browserPort}`:'--'}</dd></div>
     <div><dt>Command</dt><dd style="font-family:var(--mono);font-size:9px">${p&&p.command?p.command:'--'}</dd></div>
+    <div><dt>Profile</dt><dd style="font-family:var(--mono);font-size:9px">${escHtml(paneBrowserProfileLabel(browserProfile))}</dd></div>
     <div style="grid-column:1/-1"><dt>Task</dt><dd style="max-width:380px;white-space:normal;font-size:10px">${p?p.task||'--':'--'}</dd></div>`;
 
   document.getElementById('panel-actions').innerHTML=`
