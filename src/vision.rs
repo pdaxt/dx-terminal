@@ -4027,14 +4027,23 @@ mod tests {
         let blocked: serde_json::Value =
             serde_json::from_str(&discovery_ready_check(path, "F1.1")).unwrap();
         let blockers = blocked["blockers"].as_array().cloned().unwrap_or_default();
-        assert!(blockers.iter().any(|value| value.as_str() == Some("design brief missing")));
-        assert!(blockers.iter().any(|value| value.as_str() == Some("client mockup missing")));
-        assert!(blockers.iter().any(|value| value.as_str() == Some("client approval missing")));
+        assert!(blockers
+            .iter()
+            .any(|value| value.as_str() == Some("design brief missing")));
+        assert!(blockers
+            .iter()
+            .any(|value| value.as_str() == Some("client mockup missing")));
+        assert!(blockers
+            .iter()
+            .any(|value| value.as_str() == Some("client approval missing")));
 
         upsert_feature_doc(path, "F1.1", "design", "# Design brief");
-        let seeded: serde_json::Value =
-            serde_json::from_str(&seed_mockup_options(path, "F1.1", Some("website like Shopify")))
-                .unwrap();
+        let seeded: serde_json::Value = serde_json::from_str(&seed_mockup_options(
+            path,
+            "F1.1",
+            Some("website like Shopify"),
+        ))
+        .unwrap();
         assert_eq!(seeded["status"], "seeded");
         assert_eq!(seeded["count"], 3);
 
@@ -4064,9 +4073,13 @@ mod tests {
         assert_eq!(reviewed["option_status"], "approved");
         assert_eq!(reviewed["phase"], "build");
 
-        let ready: serde_json::Value = serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
+        let ready: serde_json::Value =
+            serde_json::from_str(&feature_readiness(path, "F1.1")).unwrap();
         assert_eq!(ready["readiness"]["ready_for_build"], true);
-        assert_eq!(ready["readiness"]["counts"]["design_approved"], serde_json::json!(1));
+        assert_eq!(
+            ready["readiness"]["counts"]["design_approved"],
+            serde_json::json!(1)
+        );
         assert_eq!(ready["phase"], "build");
     }
 
@@ -4085,9 +4098,12 @@ mod tests {
         );
 
         upsert_feature_doc(path, "F1.1", "design", "# Design brief");
-        let seeded: serde_json::Value =
-            serde_json::from_str(&seed_mockup_options(path, "F1.1", Some("website like Shopify")))
-                .unwrap();
+        let seeded: serde_json::Value = serde_json::from_str(&seed_mockup_options(
+            path,
+            "F1.1",
+            Some("website like Shopify"),
+        ))
+        .unwrap();
         let option_id = seeded["options"][0]["id"].as_str().unwrap();
 
         let html = read_mockup_html(path, "F1.1", option_id).unwrap();

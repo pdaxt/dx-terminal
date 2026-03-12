@@ -3656,17 +3656,17 @@ code {{ font-family:var(--mono); }}
     margin-bottom:10px;
 }}
 .brand-mark {{
-    width:46px;
-    height:46px;
-    border-radius:14px;
+    width:54px;
+    height:54px;
     display:flex;
     align-items:center;
     justify-content:center;
-    background:linear-gradient(135deg, #224c70, #2a7a78);
-    color:#fff;
-    font-family:var(--mono);
-    font-weight:800;
-    letter-spacing:-0.04em;
+    filter:drop-shadow(0 10px 20px rgba(39,88,126,.16));
+}}
+.brand-mark svg {{
+    width:100%;
+    height:100%;
+    display:block;
 }}
 .brand-copy h1 {{
     margin:0;
@@ -4139,7 +4139,25 @@ code {{ font-family:var(--mono); }}
     <aside class="wiki-sidebar">
         <div class="sidebar-card">
             <div class="brand">
-                <div class="brand-mark">DX</div>
+                <div class="brand-mark" aria-hidden="true">
+                    <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                            <linearGradient id="wiki-dx-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#06B6D4"/>
+                                <stop offset="50%" stop-color="#A855F7"/>
+                                <stop offset="100%" stop-color="#FF00AA"/>
+                            </linearGradient>
+                        </defs>
+                        <polygon points="100,20 170,60 170,140 100,180 30,140 30,60" stroke="url(#wiki-dx-grad)" stroke-width="8" fill="none"/>
+                        <circle cx="100" cy="100" r="25" fill="url(#wiki-dx-grad)"/>
+                        <circle cx="100" cy="40" r="8" fill="url(#wiki-dx-grad)"/>
+                        <circle cx="155" cy="70" r="8" fill="url(#wiki-dx-grad)"/>
+                        <circle cx="155" cy="130" r="8" fill="url(#wiki-dx-grad)"/>
+                        <circle cx="100" cy="160" r="8" fill="url(#wiki-dx-grad)"/>
+                        <circle cx="45" cy="130" r="8" fill="url(#wiki-dx-grad)"/>
+                        <circle cx="45" cy="70" r="8" fill="url(#wiki-dx-grad)"/>
+                    </svg>
+                </div>
                 <div class="brand-copy">
                     <h1>DX Handbook</h1>
                     <p class="sidebar-copy">One readable program record for operators, builders, QA, and stakeholders.</p>
