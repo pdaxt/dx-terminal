@@ -21,12 +21,18 @@ fn collect_automation_assets_with_home(project_root: &Path, home_root: &Path) ->
     let mut skill_providers = serde_json::Map::new();
 
     for (provider, dir_name) in PROVIDER_DIRS {
-        let provider_project_commands =
-            collect_command_assets(&project_root.join(dir_name).join("commands"), provider, "project");
+        let provider_project_commands = collect_command_assets(
+            &project_root.join(dir_name).join("commands"),
+            provider,
+            "project",
+        );
         let provider_user_commands =
             collect_command_assets(&home_root.join(dir_name).join("commands"), provider, "user");
-        let provider_project_skills =
-            collect_skill_assets(&project_root.join(dir_name).join("skills"), provider, "project");
+        let provider_project_skills = collect_skill_assets(
+            &project_root.join(dir_name).join("skills"),
+            provider,
+            "project",
+        );
         let provider_user_skills =
             collect_skill_assets(&home_root.join(dir_name).join("skills"), provider, "user");
 
@@ -133,10 +139,7 @@ fn project_commands_for_provider(
         .unwrap_or(0)
 }
 
-fn user_commands_for_provider(
-    providers: &serde_json::Map<String, Value>,
-    provider: &str,
-) -> usize {
+fn user_commands_for_provider(providers: &serde_json::Map<String, Value>, provider: &str) -> usize {
     providers
         .get(provider)
         .and_then(|value| value.get("user"))
@@ -314,9 +317,18 @@ mod tests {
         assert_eq!(assets["counts"]["user_commands"], json!(1));
         assert_eq!(assets["counts"]["project_skills"], json!(1));
         assert_eq!(assets["counts"]["user_skills"], json!(1));
-        assert_eq!(assets["counts"]["commands_by_provider"]["claude"]["project"], json!(1));
-        assert_eq!(assets["counts"]["commands_by_provider"]["codex"]["project"], json!(1));
-        assert_eq!(assets["counts"]["commands_by_provider"]["gemini"]["user"], json!(1));
+        assert_eq!(
+            assets["counts"]["commands_by_provider"]["claude"]["project"],
+            json!(1)
+        );
+        assert_eq!(
+            assets["counts"]["commands_by_provider"]["codex"]["project"],
+            json!(1)
+        );
+        assert_eq!(
+            assets["counts"]["commands_by_provider"]["gemini"]["user"],
+            json!(1)
+        );
         assert_eq!(assets["commands"]["project"][0]["name"], json!("handoff"));
         assert_eq!(assets["skills"]["project"][0]["name"], json!("reviewer"));
         assert_eq!(

@@ -1315,8 +1315,10 @@ fn documentation_health(
                     .map(|items| items.len())
                     .unwrap_or(0)
             });
-        if matches!(phase.as_str(), "build" | "building" | "test" | "testing" | "done")
-            && acceptance_count == 0
+        if matches!(
+            phase.as_str(),
+            "build" | "building" | "test" | "testing" | "done"
+        ) && acceptance_count == 0
         {
             missing_acceptance.push(json!({
                 "feature_id": feature_id,
@@ -1331,7 +1333,11 @@ fn documentation_health(
         .chain(vision_docs.iter())
         .filter_map(|doc| {
             let git = doc.get("git")?;
-            if !git.get("dirty").and_then(|value| value.as_bool()).unwrap_or(false) {
+            if !git
+                .get("dirty")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false)
+            {
                 return None;
             }
             Some(json!({
@@ -1376,8 +1382,7 @@ fn documentation_health(
                 .to_string()
         }
         "attention" => {
-            "Features in delivery phases still need acceptance coverage or doc cleanup."
-                .to_string()
+            "Features in delivery phases still need acceptance coverage or doc cleanup.".to_string()
         }
         _ => "Filesystem docs, git, and dashboard state are aligned.".to_string(),
     };
@@ -2861,10 +2866,9 @@ async fn enrich_ux_report_with_bridge(app: &AppState, url: &str, report: Value) 
         .cloned()
         .unwrap_or_default();
 
-    if let Some(index) = checks
-        .iter()
-        .position(|value| value.get("name").and_then(|name| name.as_str()) == Some("playwright_available"))
-    {
+    if let Some(index) = checks.iter().position(|value| {
+        value.get("name").and_then(|name| name.as_str()) == Some("playwright_available")
+    }) {
         checks[index] = bridge_check;
     } else {
         checks.push(bridge_check);
