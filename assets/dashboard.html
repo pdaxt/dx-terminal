@@ -1081,7 +1081,7 @@ async function renderExecutionHub(){
   const section=document.getElementById('execution-hub');
   const summaryEl=document.getElementById('project-brief');
   const runtimeEl=document.getElementById('runtime-brief');
-  const docsEl=document.getElementById('worktree-brief');
+  const docsEl=document.getElementById('documentation-brief');
   const automationEl=document.getElementById('automation-brief');
   const project=activeProjectForHub();
   if(!project){
@@ -1098,12 +1098,17 @@ async function renderExecutionHub(){
   section.style.display='';
   if(brief.focus)storeVisionFocus(project,brief.focus);
   const docs=brief.docs||{};
+  const documentation=brief.documentation||{};
+  const docHealth=documentation.health||{};
+  const syncContract=documentation.sync_contract||{};
   const automation=brief.automation||{};
   const automationCounts=automation.counts||{};
   const projectCommands=(automation.commands&&automation.commands.project)||[];
   const userCommands=(automation.commands&&automation.commands.user)||[];
+  const commandProviders=(automation.commands&&automation.commands.providers)||{};
   const projectSkills=(automation.skills&&automation.skills.project)||[];
   const userSkills=(automation.skills&&automation.skills.user)||[];
+  const skillProviders=(automation.skills&&automation.skills.providers)||{};
   const externalMcps=automation.external_mcps||[];
   const guidanceDocs=docs.guidance_docs||[];
   const visionDocs=docs.vision_docs||[];
@@ -1113,6 +1118,11 @@ async function renderExecutionHub(){
   const gitState=!git?'No repo':git.dirty_files===0&&git.ahead===0?'Clean':`${git.dirty_files||0} dirty · ↑${git.ahead||0} ↓${git.behind||0}`;
   const readyFeatures=(delivery.ready_features||[]).slice(0,3);
   const blockingFeatures=(delivery.blocking_features||[]).slice(0,3);
+  const runtimes=brief.runtimes||[];
+  const worktreeRows=runtimes.filter(runtime=>runtime.workspace_path||runtime.branch_name);
+  const dirtyDocs=(docHealth.dirty_docs||[]).slice(0,4);
+  const missingFeatureDocs=(docHealth.missing_feature_docs||[]).slice(0,3);
+  const missingAcceptance=(docHealth.missing_acceptance||[]).slice(0,3);
   const selectedMcp=automationSelection[project]||(externalMcps[0]&&externalMcps[0].name)||'';
   const selectedCacheKey=selectedMcp?automationCacheKey(project,selectedMcp):'';
   const selectedToolInfo=selectedCacheKey?automationToolCache[selectedCacheKey]:null;
@@ -1133,7 +1143,7 @@ async function renderExecutionHub(){
         <div class="exec-kpi"><div class="label">Documentation</div><div class="value">${docs.vision_doc_count||0}</div><div class="meta">${docs.guidance_doc_count||0} guidance docs</div></div>
         <div class="exec-kpi"><div class="label">Automation</div><div class="value">${automationCounts.external_mcps||0}</div><div class="meta">${automationCounts.project_skills||0} skills · ${automationCounts.project_commands||0} commands</div></div>
         <div class="exec-kpi"><div class="label">Git Sync</div><div class="value">${git&&git.branch?escHtml(git.branch):'--'}</div><div class="meta">${escHtml(gitState)}</div></div>
-        <div class="exec-kpi"><div class="label">Current Gate</div><div class="value">${(blockingFeatures.length?'Blocked':readyFeatures.length?'Ready':'Active')}</div><div class="meta">${blockingFeatures.length||readyFeatures.length||0} highlighted features</div></div>
+        <div class="exec-kpi"><div class="label">Docs Health</div><div class="value">${docHealth.status==='synced'?'Synced':docHealth.status==='blocked'?'Blocked':'Attention'}</div><div class="meta">${dirtyDocs.length||missingFeatureDocs.length||missingAcceptance.length||0} active doc issues</div></div>
       </div>
       <div class="exec-phase-strip">
         ${['planned','discovery','build','test','done'].map(phase=>`<span class="exec-phase-chip">${phase}<strong>${executionPhaseCount(phaseCounts,phase)}</strong></span>`).join('')}
@@ -1150,7 +1160,6 @@ async function renderExecutionHub(){
       </div>
     </div>`;
 
-  const runtimes=brief.runtimes||[];
   runtimeEl.innerHTML=runtimes.length?runtimes.slice(0,8).map(runtime=>{
     const paneLabel=runtime.pane?`Pane ${runtime.pane}`:'Live';
     const branch=runtime.branch_name||'';
@@ -1170,30 +1179,92 @@ async function renderExecutionHub(){
     </div>`;
   }).join(''):'<div class="empty-note">No active runtimes for this project.</div>';
 
-  const worktreeRows=runtimes.filter(runtime=>runtime.workspace_path||runtime.branch_name);
   docsEl.innerHTML=`
-    <div class="exec-list">
-      ${worktreeRows.length?worktreeRows.slice(0,6).map(runtime=>`<div class="exec-row">
-        <div class="exec-row-top">
-          <span class="exec-row-title">${escHtml(runtime.branch_name||'shared')}</span>
-          <span class="exec-row-tags">${providerBadge(runtime.provider,true)}${runtime.workspace_path?'<span class="doc-pill">worktree</span>':''}</span>
+    <div class="doc-health-banner">
+      <div class="doc-health-top">
+        <div>
+          <div class="automation-title">Filesystem, Git, and Dashboard Sync</div>
+          <div class="automation-sub">${escHtml((docHealth.summary||'Documentation sync status unavailable.').toString())}</div>
         </div>
-        <div class="worktree-path">${escHtml((runtime.workspace_path||runtime.project_path||runtime.cwd||'').toString())}</div>
-      </div>`).join(''):'<div class="empty-note">No isolated worktree is registered yet.</div>'}
+        ${healthPill(docHealth.status)}
+      </div>
+      <div class="doc-coverage-grid">
+        <div class="doc-mini-card">
+          <div class="label">Guidance Coverage</div>
+          <div class="meta">${docHealth.shared_guidance_present?'AGENTS.md present':'Missing AGENTS.md'}${(docHealth.missing_provider_guidance||[]).length?` · Missing ${docHealth.missing_provider_guidance.join(', ')}`:''}</div>
+        </div>
+        <div class="doc-mini-card">
+          <div class="label">Discovery Coverage</div>
+          <div class="meta">${visionDocs.length} research/discovery docs${missingFeatureDocs.length?` · ${missingFeatureDocs.length} feature gaps`:''}</div>
+        </div>
+        <div class="doc-mini-card">
+          <div class="label">Remote Mirror</div>
+          <div class="meta">${escHtml((syncContract.mode||'snapshot_plus_events').toString())} via project brief + live events</div>
+        </div>
+      </div>
+    </div>
+    <div class="exec-list">
+      <div class="exec-row">
+        <div class="exec-row-top">
+          <span class="exec-row-title">Worktrees in Play</span>
+          <span class="exec-row-tags"><span class="doc-pill">${worktreeRows.length} active</span></span>
+        </div>
+        ${worktreeRows.length?worktreeRows.slice(0,6).map(runtime=>`<div class="doc-line">
+          <div class="doc-line-main">
+            <div class="doc-line-title">${escHtml(runtime.branch_name||'shared branch')}</div>
+            <div class="doc-line-path">${escHtml((runtime.workspace_path||runtime.project_path||runtime.cwd||'').toString())}</div>
+          </div>
+          <div class="exec-row-tags">${providerBadge(runtime.provider,true)}${runtime.workspace_path?'<span class="doc-pill">worktree</span>':''}</div>
+        </div>`).join(''):'<div class="empty-note">No isolated worktree is registered yet.</div>'}
+      </div>
       <div class="exec-row">
         <div class="exec-row-top">
           <span class="exec-row-title">Guidance Docs</span>
           <span class="exec-row-tags">${guidanceDocs.map(doc=>`<span class="doc-pill ${escHtml((doc.kind||'shared').toString())}">${escHtml((doc.name||'').toString())}</span>`).join('')||'<span class="doc-pill">missing</span>'}</span>
         </div>
-        <div class="exec-row-meta">${guidanceDocs.length?`Synced guidance for shared and provider-specific agents.`:'Add AGENTS.md, CLAUDE.md, CODEX.md, or GEMINI.md at the project root.'}</div>
+        ${guidanceDocs.length?guidanceDocs.slice(0,6).map(doc=>`<div class="doc-line">
+          <div class="doc-line-main">
+            <div class="doc-line-title">${escHtml((doc.name||'').toString())}</div>
+            <div class="doc-line-path">${escHtml((doc.relative_path||doc.path||'').toString())}</div>
+          </div>
+          <div class="exec-row-tags">${docGitBadge(doc)}</div>
+        </div>`).join(''):'<div class="empty-note">Add AGENTS.md, CLAUDE.md, CODEX.md, or GEMINI.md at the project root.</div>'}
       </div>
       <div class="exec-row">
         <div class="exec-row-top">
           <span class="exec-row-title">Research & Discovery</span>
           <span class="exec-row-tags"><span class="doc-pill">${visionDocs.length} docs</span></span>
         </div>
-        <div class="exec-row-meta">${visionDocs.slice(0,4).map(doc=>`${escHtml(doc.feature_id)} ${escHtml(doc.type)}`).join(' · ')||'No feature research docs yet.'}</div>
+        ${visionDocs.length?visionDocs.slice(0,6).map(doc=>`<div class="doc-line">
+          <div class="doc-line-main">
+            <div class="doc-line-title">${escHtml((doc.feature_id||'').toString())} · ${escHtml((doc.type||'').toString())}</div>
+            <div class="doc-line-path">${escHtml((doc.relative_path||doc.file||'').toString())}</div>
+          </div>
+          <div class="exec-row-tags">${docGitBadge(doc)}</div>
+        </div>`).join(''):'<div class="empty-note">No feature research docs yet.</div>'}
       </div>
+      ${dirtyDocs.length?`<div class="exec-row">
+        <div class="exec-row-top">
+          <span class="exec-row-title">Drift Detected</span>
+          <span class="exec-row-tags"><span class="doc-pill shared">${dirtyDocs.length} docs</span></span>
+        </div>
+        ${dirtyDocs.map(doc=>`<div class="doc-line">
+          <div class="doc-line-main">
+            <div class="doc-line-title">${escHtml((doc.name||'').toString())}</div>
+            <div class="doc-line-path">${escHtml((doc.path||'').toString())}</div>
+          </div>
+          <div class="exec-row-tags"><span class="doc-pill shared">${escHtml((doc.status||'modified').toString())}</span></div>
+        </div>`).join('')}
+      </div>`:''}
+      ${(missingFeatureDocs.length||missingAcceptance.length)?`<div class="exec-row">
+        <div class="exec-row-top">
+          <span class="exec-row-title">Coverage Gaps</span>
+          <span class="exec-row-tags"><span class="doc-pill gemini">${missingFeatureDocs.length+missingAcceptance.length} items</span></span>
+        </div>
+        ${missingFeatureDocs.map(item=>`<div class="exec-row-meta">${escHtml((item.feature_id||'').toString())} needs discovery docs before ${escHtml((item.phase||'delivery').toString())} is trustworthy.</div>`).join('')}
+        ${missingAcceptance.map(item=>`<div class="exec-row-meta">${escHtml((item.feature_id||'').toString())} is in ${escHtml((item.phase||'build').toString())} without acceptance coverage.</div>`).join('')}
+      </div>`:''}
+      <div class="sync-note">Remote website sync should mirror <code>${escHtml((syncContract.snapshot||'').toString())}</code> and the live event stream (${(syncContract.events||[]).slice(0,4).map(e=>escHtml(String(e))).join(', ')}${(syncContract.events||[]).length>4?', …':''}). That keeps filesystem docs, git, and the hosted dashboard on one contract instead of separate state.</div>
     </div>`;
 
   automationEl.innerHTML=`
@@ -1224,21 +1295,23 @@ async function renderExecutionHub(){
       <div class="automation-block">
         <div class="automation-head">
           <div>
-            <div class="automation-title">Project Skills</div>
-            <div class="automation-sub">Codex skills from <code>.codex/skills</code> with user-level fallback if the project has none.</div>
+            <div class="automation-title">Skills & Workflows</div>
+            <div class="automation-sub">Provider-neutral skill inventory across project and user scopes. Codex is available today, and the contract already allows other providers to join without changing the dashboard.</div>
           </div>
           <span class="doc-pill codex">${projectSkills.length} project · ${userSkills.length} user</span>
         </div>
+        ${renderProviderAssetSummary(skillProviders,'skills')}
         ${renderAutomationItems(projectSkills.length?projectSkills:userSkills,'No project or user skills detected for this workspace.')}
       </div>
       <div class="automation-block">
         <div class="automation-head">
           <div>
-            <div class="automation-title">Command Packs</div>
-            <div class="automation-sub">Claude command markdown from <code>.claude/commands</code> with user-level fallback if the project has none.</div>
+            <div class="automation-title">Agent Command Packs</div>
+            <div class="automation-sub">Reusable command markdown and prompt packs discovered across Claude, Codex, and Gemini directories at both project and user scope.</div>
           </div>
-          <span class="doc-pill claude">${projectCommands.length} project · ${userCommands.length} user</span>
+          <span class="doc-pill shared">${projectCommands.length} project · ${userCommands.length} user</span>
         </div>
+        ${renderProviderAssetSummary(commandProviders,'command packs')}
         ${renderAutomationItems(projectCommands.length?projectCommands:userCommands,'No project or user command packs detected for this workspace.')}
       </div>
     </div>`;
