@@ -2525,16 +2525,74 @@ pub async fn get_audit_ui(Query(q): Query<FileQuery>) -> Json<Value> {
     }
 }
 
-pub async fn get_audit_ux(Query(q): Query<UrlQuery>) -> Json<Value> {
-    let url = q.url.unwrap_or_else(|| "http://localhost:3100".into());
-    Json(crate::ux_audit::audit_ux(&url))
+async fn playwright_bridge_check(app: &AppState, url: &str) -> Option<Value> {
+    let result = tools::gateway_tools::gateway_call(
+        app,
+        types::GatewayCallRequest {
+            mcp: "playwright".to_string(),
+            tool: "browser_navigate".to_string(),
+            arguments: Some(json!({ "url": url })),
+        },
+    )
+    .await;
+    let parsed = parse_mcp(&result);
+    let success = parsed.get("status").and_then(|value| value.as_str()) == Some("success");
+    let detail = if success {
+        "External Playwright MCP navigation succeeded through dx gateway".to_string()
+    } else {
+        parsed
+            .get("error")
+            .and_then(|value| value.as_str())
+            .map(|value| format!("External Playwright MCP unavailable: {}", value))
+            .unwrap_or_else(|| "External Playwright MCP unavailable".to_string())
+    };
+
+    Some(json!({
+        "name": "playwright_available",
+        "category": "setup",
+        "passed": success,
+        "details": detail,
+        "severity": if success { "info" } else { "warning" },
+    }))
 }
 
-pub async fn get_audit_frontend(Query(q): Query<UrlQuery>) -> Json<Value> {
+async fn enrich_ux_report_with_bridge(app: &AppState, url: &str, report: Value) -> Value {
+    let Some(bridge_check) = playwright_bridge_check(app, url).await else {
+        return report;
+    };
+
+    let mut checks = report
+        .get("checks")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    if let Some(index) = checks
+        .iter()
+        .position(|value| value.get("name").and_then(|name| name.as_str()) == Some("playwright_available"))
+    {
+        checks[index] = bridge_check;
+    } else {
+        checks.push(bridge_check);
+    }
+
+    crate::ux_audit::rebuild_report(url, checks)
+}
+
+pub async fn get_audit_ux(State(app): State<AppState>, Query(q): Query<UrlQuery>) -> Json<Value> {
+    let url = q.url.unwrap_or_else(|| "http://localhost:3100".into());
+    let ux = crate::ux_audit::audit_ux(&url);
+    Json(enrich_ux_report_with_bridge(&app, &url, ux).await)
+}
+
+pub async fn get_audit_frontend(
+    State(app): State<AppState>,
+    Query(q): Query<UrlQuery>,
+) -> Json<Value> {
     let html = include_str!("../../assets/dashboard.html");
     let ui = crate::ui_audit::audit_ui_html(html, "dashboard.html");
     let url = q.url.unwrap_or_else(|| "http://localhost:3100".into());
-    let ux = crate::ux_audit::audit_ux(&url);
+    let ux = enrich_ux_report_with_bridge(&app, &url, crate::ux_audit::audit_ux(&url)).await;
     let tokens = crate::design_tokens::design_tokens();
     let contrasts = crate::design_tokens::check_all_contrasts();
 
