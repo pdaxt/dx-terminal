@@ -3335,6 +3335,16 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
     };
 
     let focus_html = if let Some(entry) = focus {
+        let focus_source = entry
+            .source
+            .as_deref()
+            .map(|source| format!("set by {}", source))
+            .unwrap_or_else(|| "shared focus".to_string());
+        let focus_updated = entry
+            .updated_at
+            .as_deref()
+            .map(|value| format!("updated {}", value))
+            .unwrap_or_else(|| "recent".to_string());
         format!(
             r#"<div class="focus-card">
                 <span class="tone tone-overview">active focus</span>
@@ -3349,20 +3359,8 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
                     .or(entry.goal_id.as_deref())
                     .unwrap_or(project)
             ),
-            escape_html(
-                entry
-                    .source
-                    .as_deref()
-                    .map(|source| format!("set by {}", source))
-                    .unwrap_or_else(|| "shared focus".to_string())
-            ),
-            escape_html(
-                entry
-                    .updated_at
-                    .as_deref()
-                    .map(|value| format!("updated {}", value))
-                    .unwrap_or_else(|| "recent".to_string())
-            )
+            escape_html(&focus_source),
+            escape_html(&focus_updated)
         )
     } else {
         "<div class=\"focus-card\"><span class=\"tone tone-planned\">no shared focus</span><div class=\"detail-meta\">Set focus from the dashboard, MCP, or hook flow to keep auto-continue and docs aligned.</div></div>".to_string()
