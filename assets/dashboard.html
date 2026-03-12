@@ -12,7 +12,7 @@
   --text:#e6edf6;--muted:#91a3b8;--dim:#58697d;
   --blue:#4f8ff7;--green:#2fbf71;--yellow:#d8a739;--red:#e46060;--purple:#8a78e6;--teal:#22b8ad;--orange:#e79a3b;--pink:#d96aa6;
   --mono:'SF Mono','JetBrains Mono','Cascadia Code','Fira Code',Monaco,Consolas,monospace;
-  --sans:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',sans-serif;
+  --sans:'Avenir Next','Segoe UI','IBM Plex Sans','Helvetica Neue',sans-serif;
   --radius:10px;--radius-sm:6px;
   --shadow:0 4px 20px rgba(0,0,0,.5);
   --transition:all .2s cubic-bezier(.4,0,.2,1);
@@ -21,7 +21,7 @@
   --glow-purple:0 0 20px rgba(176,122,255,.15);
 }
 
-body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;line-height:1.45;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 
 /* === Layout: sidebar + main + terminal panel === */
 .app{display:grid;grid-template-columns:1fr;grid-template-rows:auto 1fr;height:100vh}
@@ -115,45 +115,45 @@ select:hover{border-color:var(--border-bright)}
 @media(max-width:760px){.execution-stack{grid-template-columns:1fr}}
 .exec-hero{display:grid;gap:12px}
 .exec-title{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.exec-project{font-size:18px;font-weight:800;letter-spacing:-.4px}
-.exec-mission{font-size:12px;color:var(--muted);line-height:1.5;max-width:70ch}
+.exec-project{font-size:20px;font-weight:800;letter-spacing:-.4px}
+.exec-mission{font-size:13px;color:var(--muted);line-height:1.55;max-width:70ch}
 .exec-link{font-size:10px;font-weight:700;color:var(--blue);text-decoration:none;padding:6px 10px;border:1px solid rgba(79,143,247,.25);border-radius:999px}
 .exec-link:hover{background:rgba(79,143,247,.08)}
 .exec-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
 @media(max-width:960px){.exec-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:760px){.exec-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .exec-kpi{padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.01))}
-.exec-kpi .label{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);font-weight:700}
-.exec-kpi .value{font-size:18px;font-weight:800;margin-top:3px}
-.exec-kpi .meta{font-size:10px;color:var(--muted);margin-top:3px}
+.exec-kpi .label{font-size:10px;text-transform:uppercase;letter-spacing:.45px;color:var(--dim);font-weight:700}
+.exec-kpi .value{font-size:20px;font-weight:800;margin-top:3px}
+.exec-kpi .meta{font-size:11px;color:var(--muted);margin-top:3px;line-height:1.45}
 .exec-phase-strip{display:flex;gap:6px;flex-wrap:wrap}
 .exec-phase-chip{font-size:9px;padding:5px 8px;border-radius:999px;background:var(--surface2);color:var(--muted);border:1px solid rgba(255,255,255,.04);font-weight:700;text-transform:uppercase;letter-spacing:.4px}
 .exec-phase-chip strong{color:var(--text);margin-left:4px}
 .exec-list{display:grid;gap:8px}
 .exec-row{padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,.015)}
 .exec-row-top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.exec-row-title{font-size:11px;font-weight:700;color:var(--text)}
-.exec-row-meta{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.4}
+.exec-row-title{font-size:12px;font-weight:700;color:var(--text)}
+.exec-row-meta{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.45}
 .exec-row-tags{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.provider-pill{font-size:8px;font-weight:800;padding:3px 7px;border-radius:999px;text-transform:uppercase;letter-spacing:.4px;border:1px solid transparent}
+.provider-pill{font-size:9px;font-weight:800;padding:3px 8px;border-radius:999px;text-transform:uppercase;letter-spacing:.35px;border:1px solid transparent}
 .provider-claude{background:rgba(138,120,230,.12);color:var(--purple);border-color:rgba(138,120,230,.2)}
 .provider-codex{background:rgba(47,191,113,.12);color:var(--green);border-color:rgba(47,191,113,.2)}
 .provider-gemini{background:rgba(216,167,57,.12);color:var(--yellow);border-color:rgba(216,167,57,.2)}
 .provider-opencode{background:rgba(34,184,173,.12);color:var(--teal);border-color:rgba(34,184,173,.2)}
 .provider-shared{background:rgba(79,143,247,.12);color:var(--blue);border-color:rgba(79,143,247,.2)}
 .provider-unknown{background:rgba(145,163,184,.1);color:var(--muted);border-color:rgba(145,163,184,.15)}
-.doc-pill{font-size:8px;font-weight:800;padding:3px 7px;border-radius:999px;text-transform:uppercase;letter-spacing:.4px;background:var(--surface2);color:var(--muted);border:1px solid rgba(255,255,255,.04)}
+.doc-pill{font-size:9px;font-weight:800;padding:3px 8px;border-radius:999px;text-transform:uppercase;letter-spacing:.35px;background:var(--surface2);color:var(--muted);border:1px solid rgba(255,255,255,.04)}
 .doc-pill.shared{color:var(--blue)}
 .doc-pill.claude{color:var(--purple)}
 .doc-pill.codex{color:var(--green)}
 .doc-pill.gemini{color:var(--yellow)}
-.worktree-path{font-family:var(--mono);font-size:9px;color:var(--dim);word-break:break-all}
+.worktree-path{font-family:var(--mono);font-size:10px;color:var(--dim);word-break:break-all}
 .empty-note{font-size:11px;color:var(--dim);padding:10px 0}
 .automation-shell{display:grid;gap:12px}
 .automation-block{display:grid;gap:8px;padding:12px;border:1px solid var(--border);border-radius:10px;background:linear-gradient(180deg,rgba(255,255,255,.018),rgba(255,255,255,.01))}
 .automation-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.automation-title{font-size:11px;font-weight:700;color:var(--text)}
-.automation-sub{font-size:10px;color:var(--muted);line-height:1.4}
+.automation-title{font-size:12px;font-weight:700;color:var(--text)}
+.automation-sub{font-size:11px;color:var(--muted);line-height:1.45}
 .automation-chip-row{display:flex;gap:6px;flex-wrap:wrap}
 .automation-chip{appearance:none;border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:999px;padding:5px 9px;font-size:9px;font-weight:800;letter-spacing:.35px;text-transform:uppercase;cursor:pointer;transition:var(--transition)}
 .automation-chip:hover{border-color:var(--border-bright);transform:translateY(-1px)}
@@ -169,11 +169,33 @@ select:hover{border-color:var(--border-bright)}
 .automation-tool-name{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--text)}
 .automation-tool-desc{font-size:9px;color:var(--muted);line-height:1.4;margin-top:3px}
 .automation-note{font-size:10px;color:var(--dim);line-height:1.45}
+.doc-health-banner{display:grid;gap:12px;padding:12px;border:1px solid var(--border);border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,.01))}
+.doc-health-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.health-pill{font-size:10px;font-weight:800;padding:5px 10px;border-radius:999px;text-transform:uppercase;letter-spacing:.4px;border:1px solid transparent}
+.health-pill.synced{background:rgba(47,191,113,.12);color:var(--green);border-color:rgba(47,191,113,.22)}
+.health-pill.attention{background:rgba(216,167,57,.12);color:var(--yellow);border-color:rgba(216,167,57,.22)}
+.health-pill.blocked{background:rgba(228,96,96,.12);color:var(--red);border-color:rgba(228,96,96,.22)}
+.doc-coverage-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+@media(max-width:760px){.doc-coverage-grid{grid-template-columns:1fr}}
+.doc-mini-card{padding:10px 11px;border:1px solid rgba(255,255,255,.05);border-radius:8px;background:rgba(255,255,255,.02)}
+.doc-mini-card .label{font-size:10px;font-weight:700;color:var(--text)}
+.doc-mini-card .meta{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.45}
+.doc-line{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.doc-line:last-child{border-bottom:none}
+.doc-line-main{display:grid;gap:2px}
+.doc-line-title{font-size:11px;font-weight:700;color:var(--text)}
+.doc-line-path{font-family:var(--mono);font-size:9px;color:var(--dim);word-break:break-all}
+.sync-note{font-size:10px;color:var(--muted);line-height:1.5;padding:10px 12px;border:1px dashed rgba(79,143,247,.2);border-radius:8px;background:rgba(79,143,247,.04)}
+.provider-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+@media(max-width:760px){.provider-summary-grid{grid-template-columns:1fr}}
+.provider-summary{padding:9px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.05);background:rgba(255,255,255,.02)}
+.provider-summary-top{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.provider-summary-meta{font-size:10px;color:var(--muted);line-height:1.45;margin-top:4px}
 
 /* === Pane Grid === */
 .section-head{
-  font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;
-  letter-spacing:.6px;margin-bottom:10px;display:flex;align-items:center;gap:8px;
+  font-size:12px;font-weight:700;color:var(--text);
+  letter-spacing:.2px;margin-bottom:10px;display:flex;align-items:center;gap:8px;
 }
 .section-head .count{
   font-size:10px;padding:2px 7px;border-radius:10px;
@@ -280,7 +302,7 @@ select:hover{border-color:var(--border-bright)}
   box-shadow:0 2px 8px rgba(0,0,0,.2);
 }
 .card:hover{border-color:var(--border-bright);box-shadow:0 4px 16px rgba(0,0,0,.3)}
-.card h2,.card h3{font-size:10px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;letter-spacing:.7px;font-weight:700;display:flex;align-items:center;justify-content:space-between}
+.card h2,.card h3{font-size:12px;color:var(--text);margin-bottom:14px;letter-spacing:.2px;font-weight:700;display:flex;align-items:center;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.05)}
 
 /* === Queue Table === */
 .q-table{width:100%;border-collapse:collapse;font-size:11px}
@@ -312,8 +334,8 @@ select:hover{border-color:var(--border-bright)}
 /* === Kanban Board === */
 .kanban{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
 .kanban-col{min-width:140px;flex:1}
-.kanban-col h4{
-  font-size:9px;text-transform:uppercase;color:var(--dim);
+.kanban-col h3{
+  font-size:10px;text-transform:uppercase;color:var(--dim);
   padding:6px 8px;text-align:center;letter-spacing:.5px;font-weight:700;
   background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm) var(--radius-sm) 0 0;
 }
@@ -655,17 +677,17 @@ canvas{width:100%;display:block}
     <div class="gauge-row" id="gauges"><div class="loading">Loading</div></div>
     <div class="execution-grid" id="execution-hub" style="display:none">
       <div class="card">
-        <h2>Execution Map</h2>
+        <h2>Program Brief</h2>
         <div id="project-brief"></div>
       </div>
       <div class="execution-stack">
         <div class="card">
-          <h2>Active Runtimes</h2>
-          <div id="runtime-brief"></div>
+          <h2>Documentation Sync</h2>
+          <div id="documentation-brief"></div>
         </div>
         <div class="card">
-          <h2>Worktrees & Documentation</h2>
-          <div id="worktree-brief"></div>
+          <h2>Runtime Lanes</h2>
+          <div id="runtime-brief"></div>
         </div>
         <div class="card">
           <h2>Automation Catalog</h2>
@@ -673,13 +695,13 @@ canvas{width:100%;display:block}
         </div>
       </div>
     </div>
-    <div class="section-head">Agent Panes <span class="count" id="pane-count">0/9</span></div>
+    <div class="section-head">Runtime Grid <span class="count" id="pane-count">0/9</span></div>
     <div class="pane-grid" id="panes"><div class="loading">Loading agents</div></div>
 
     <div class="content-grid">
       <div>
         <div class="card">
-          <h2>Task Queue <button class="btn btn-green" onclick="toggleAdd()" style="font-size:9px;padding:2px 8px">+ Add</button></h2>
+          <h2>Delivery Queue <button class="btn btn-green" onclick="toggleAdd()" style="font-size:9px;padding:2px 8px">+ Add</button></h2>
           <div class="add-form" id="add-form">
             <div><label>Project</label><input id="qa-project" placeholder="project-name" style="width:130px"></div>
             <div><label>Task</label><input id="qa-task" placeholder="Task description" style="width:180px"></div>
@@ -692,7 +714,7 @@ canvas{width:100%;display:block}
       </div>
       <div>
         <div class="card">
-          <h2>Board</h2>
+          <h2>Tracker Board</h2>
           <div class="kanban" id="kanban"></div>
         </div>
       </div>
@@ -704,7 +726,7 @@ canvas{width:100%;display:block}
         <div id="roles"></div>
       </div>
       <div class="card">
-        <h2>Activity</h2>
+        <h2>Event Feed</h2>
         <div class="log-list" id="logs"></div>
       </div>
     </div>
