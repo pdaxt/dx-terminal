@@ -2834,7 +2834,10 @@ async function renderVddDocs(){
     project=selectedVisionProject||list.visions[0].project;
   }
   await loadVisionFocus(project);
-  const docs=await fetchJSON(`/api/vision/docs?project=${encodeURIComponent(project)}`);
+  const [docs,tree]=await Promise.all([
+    fetchJSON(`/api/vision/docs?project=${encodeURIComponent(project)}`),
+    fetchJSON(`/api/vision/tree?project=${encodeURIComponent(project)}`)
+  ]);
   if(!docs||!docs.docs||!docs.docs.length){section.style.display='none';return;}
   section.style.display='';
   document.getElementById('vdd-docs-count').textContent=docs.docs.length+' docs';
@@ -2842,17 +2845,36 @@ async function renderVddDocs(){
   const viewerEl=document.getElementById('vdd-doc-viewer');
   // If viewer is open, don't re-render list
   if(viewerEl.style.display!=='none') return;
-  listEl.innerHTML=docs.docs.map(d=>{
+  const featureMap=new Map();
+  (((tree&&tree.goals)||[])).forEach(goal=>{
+    (goal.features||[]).forEach(feature=>featureMap.set(feature.id,feature));
+  });
+  listEl.innerHTML=`<div class="vdd-doc-grid">${docs.docs.map(d=>{
     const badgeClass=d.type==='research'?'research':(d.type==='design'?'design':'discovery');
+    const feature=featureMap.get(d.feature_id)||{};
+    const phase=normalizeVddPhase(feature.phase||feature.status||'planned');
     const focused=isFocusedFeature(project,d.feature_id);
-    return `<div class="vdd-doc-item${focused?' focused':''}" onclick="openVddDoc('${escHtml(project)}','${escHtml(d.feature_id)}')">
-      <span class="vdd-doc-badge ${badgeClass}">${d.type}</span>
-      <span style="font-size:11px;color:var(--text);font-weight:600;flex:1">${escHtml(d.feature_id)}</span>
-      ${focused?'<span class="vdd-focus-chip">active</span>':''}
-      <span style="font-size:10px;color:var(--dim)">${escHtml(d.preview.substring(0,80))}</span>
-      <span style="font-size:9px;color:var(--dim)">${(d.size/1024).toFixed(1)}KB</span>
-    </div>`;
-  }).join('');
+    return `<article class="vdd-doc-item${focused?' focused':''}" onclick="openVddDoc('${escHtml(project)}','${escHtml(d.feature_id)}')">
+      <div class="vdd-doc-top">
+        <div class="vdd-doc-top-left">
+          <span class="vdd-doc-badge ${badgeClass}">${d.type}</span>
+          ${vddPhaseBadge(phase)}
+          ${feature.state?vddStatePill(feature.state):''}
+        </div>
+        ${focused?'<span class="vdd-focus-chip">active</span>':''}
+      </div>
+      <div class="vdd-doc-title">${escHtml((feature.title||d.feature_id||'').toString())}</div>
+      <div class="vdd-doc-meta">
+        <span style="font-size:10px;color:var(--dim);font-family:var(--mono)">${escHtml((d.feature_id||'').toString())}</span>
+        ${feature.acceptance_items&&feature.acceptance_items.length?`<span class="doc-pill">${feature.acceptance_items.length} acceptance</span>`:''}
+      </div>
+      <div class="vdd-doc-preview">${escHtml((d.preview||'No preview available yet.').toString())}</div>
+      <div class="vdd-doc-foot">
+        <span>${(d.size/1024).toFixed(1)}KB</span>
+        <span>${escHtml((feature.tasks_total||0).toString())} task${feature.tasks_total===1?'':'s'}</span>
+      </div>
+    </article>`;
+  }).join('')}</div>`;
 }
 async function setVisionFocus(project,featureId){
   if(!project||!featureId)return null;
@@ -2902,23 +2924,23 @@ async function openVddDoc(project,featureId){
   html+=renderAcceptanceList(doc.acceptance_items||[],{indent:0});
   // Research doc
   if(doc.research&&doc.research.html){
-    html+=`<div style="border-left:3px solid var(--purple);padding-left:12px;margin-bottom:16px">
-      <div style="font-size:9px;font-weight:700;color:var(--purple);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Research</div>
+    html+=`<section class="vdd-article-card research">
+      <div class="vdd-article-label">Research</div>
       ${doc.research.html}
-    </div>`;
+    </section>`;
   }
   // Discovery doc
   if(doc.discovery&&doc.discovery.html){
-    html+=`<div style="border-left:3px solid var(--teal);padding-left:12px;margin-bottom:16px">
-      <div style="font-size:9px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Discovery</div>
+    html+=`<section class="vdd-article-card discovery">
+      <div class="vdd-article-label">Discovery</div>
       ${doc.discovery.html}
-    </div>`;
+    </section>`;
   }
   if(doc.design&&doc.design.html){
-    html+=`<div style="border-left:3px solid #7fe7ff;padding-left:12px;margin-bottom:16px">
-      <div style="font-size:9px;font-weight:700;color:#7fe7ff;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Design Brief</div>
+    html+=`<section class="vdd-article-card design">
+      <div class="vdd-article-label">Design Brief</div>
       ${doc.design.html}
-    </div>`;
+    </section>`;
   }
   if(!doc.research&&!doc.discovery&&!doc.design){
     html+='<div class="no-data">No research, discovery, or design docs found for this feature</div>';
