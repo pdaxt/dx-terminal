@@ -304,6 +304,10 @@ fn feature_is_done(feature: &Value) -> bool {
     matches!(feature_phase(feature), "done" | "verified")
 }
 
+fn feature_id(feature: &Value) -> Option<&str> {
+    feature.get("id").and_then(|v| v.as_str())
+}
+
 fn task_is_complete(task: &Value) -> bool {
     matches!(
         task.get("status").and_then(|s| s.as_str()),
@@ -329,11 +333,96 @@ fn first_unverified_acceptance<'a>(feature: &'a Value) -> Option<&'a Value> {
         })
 }
 
+fn find_feature_by_id<'a>(features: &'a [Value], wanted_feature_id: &str) -> Option<&'a Value> {
+    features
+        .iter()
+        .find(|feature| feature_id(feature) == Some(wanted_feature_id))
+}
+
+fn active_features_for_goal<'a>(features: &'a [Value], goal_id: &str) -> Vec<&'a Value> {
+    features
+        .iter()
+        .filter(|feature| {
+            feature.get("goal_id").and_then(|v| v.as_str()) == Some(goal_id)
+                && !feature_is_done(feature)
+        })
+        .collect()
+}
+
+fn session_for_classification(classification: &Classification) -> SessionEdits {
+    let mut session = load_session();
+    session.has_vision = true;
+
+    match classification {
+        Classification::ExistingGoal {
+            project_path,
+            goal,
+            features,
+            ..
+        } => {
+            session.project = Some(project_path.clone());
+            session.current_goal_id = goal
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let active = features
+                .iter()
+                .filter(|feature| !feature_is_done(feature))
+                .collect::<Vec<_>>();
+            session.current_feature_id = if active.len() == 1 {
+                feature_id(active[0]).map(|s| s.to_string())
+            } else {
+                None
+            };
+        }
+        Classification::ExistingFeature {
+            project_path,
+            goal,
+            feature,
+            ..
+        } => {
+            session.project = Some(project_path.clone());
+            session.current_goal_id = goal
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            session.current_feature_id = feature_id(feature).map(|s| s.to_string());
+        }
+        Classification::UnmatchedWork { project_path, .. } => {
+            session.project = Some(project_path.clone());
+            session.current_goal_id = None;
+            session.current_feature_id = None;
+        }
+        Classification::NewVision { .. } => {
+            session.current_goal_id = None;
+            session.current_feature_id = None;
+        }
+    }
+
+    session
+}
+
 fn select_stop_feature<'a>(
     project: &str,
     vision: &'a Value,
     features: &'a [Value],
+    session: &SessionEdits,
 ) -> Option<&'a Value> {
+    if let Some(current_feature_id) = session.current_feature_id.as_deref() {
+        if let Some(feature) = find_feature_by_id(features, current_feature_id) {
+            if !feature_is_done(feature) {
+                return Some(feature);
+            }
+        }
+    }
+
+    if let Some(current_goal_id) = session.current_goal_id.as_deref() {
+        let active = active_features_for_goal(features, current_goal_id);
+        if active.len() == 1 {
+            return active.into_iter().next();
+        }
+    }
+
     if let Some(branch) = get_current_branch(Some(project)) {
         if let Some((feature, _task)) = find_task_by_branch(vision, &branch) {
             if !feature_is_done(feature) {
