@@ -1181,6 +1181,7 @@ fn handle_user_prompt(event: &Value) -> Option<Value> {
 
     let classification = classify_prompt(prompt, &visions)?;
     let context = build_context(&classification)?;
+    save_session(&session_for_classification(&classification));
 
     Some(json!({ "decision": "approve", "reason": context }))
 }
@@ -1214,6 +1215,13 @@ fn handle_pre_tool_use(event: &Value) -> Option<Value> {
     let has_task = linked.is_some();
 
     if let Some((feature, task)) = linked {
+        session.current_goal_id = feature
+            .get("goal_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        session.current_feature_id = feature_id(feature).map(|s| s.to_string());
+        save_session(&session);
+
         let phase = feature_phase(feature);
         if phase == "discovery" && !is_doc_like_edit(file_path) {
             let fid = feature.get("id").and_then(|i| i.as_str()).unwrap_or("?");
@@ -1377,6 +1385,16 @@ fn handle_post_tool_use(event: &Value) -> Option<Value> {
     let command_success = extract_command_success(event);
 
     if let Some((feature, task)) = find_task_by_branch(&vision, &branch) {
+        let mut session = load_session();
+        session.project = Some(project.clone());
+        session.has_vision = true;
+        session.current_goal_id = feature
+            .get("goal_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        session.current_feature_id = feature_id(feature).map(|s| s.to_string());
+        save_session(&session);
+
         let tid = task.get("id").and_then(|i| i.as_str()).unwrap_or("?");
         let ttitle = task.get("title").and_then(|t| t.as_str()).unwrap_or("?");
         let fid = feature.get("id").and_then(|i| i.as_str()).unwrap_or("?");
@@ -1510,7 +1528,7 @@ fn handle_stop(_event: &Value) -> Option<Value> {
         .cloned()
         .unwrap_or_default();
 
-    if let Some(feature) = select_stop_feature(project, &vision, &features) {
+    if let Some(feature) = select_stop_feature(project, &vision, &features, &session) {
         if let Some(instruction) = next_step_instruction(feature) {
             let last_message = _event
                 .get("last_assistant_message")
@@ -1751,6 +1769,8 @@ mod tests {
             commits: vec![],
             project: Some(project.to_string_lossy().into()),
             has_vision: true,
+            current_goal_id: None,
+            current_feature_id: None,
         });
 
         let result = handle_stop(&json!({
@@ -1778,5 +1798,54 @@ mod tests {
             .as_str()
             .unwrap_or("")
             .contains("Add runtime heartbeat"));
+    }
+
+    #[test]
+    fn test_select_stop_feature_prefers_session_feature_focus() {
+        let features = vec![
+            json!({
+                "id": "F1.1",
+                "goal_id": "G1",
+                "title": "First feature",
+                "phase": "build"
+            }),
+            json!({
+                "id": "F1.2",
+                "goal_id": "G1",
+                "title": "Second feature",
+                "phase": "test"
+            }),
+        ];
+        let vision = json!({ "features": features });
+        let features_ref = vision["features"].as_array().unwrap();
+        let session = SessionEdits {
+            files: vec![],
+            commits: vec![],
+            project: Some("/tmp/demo".into()),
+            has_vision: true,
+            current_goal_id: Some("G1".into()),
+            current_feature_id: Some("F1.2".into()),
+        };
+
+        let selected = select_stop_feature("/tmp/demo", &vision, features_ref, &session).unwrap();
+        assert_eq!(feature_id(selected), Some("F1.2"));
+    }
+
+    #[test]
+    fn test_session_for_existing_feature_persists_focus() {
+        let classification = Classification::ExistingFeature {
+            project: "demo".into(),
+            project_path: "/tmp/demo".into(),
+            goal: json!({"id": "G1"}),
+            feature: json!({"id": "F1.2"}),
+            features: vec![],
+            score: 5,
+            vision: json!({}),
+        };
+
+        let session = session_for_classification(&classification);
+        assert_eq!(session.project.as_deref(), Some("/tmp/demo"));
+        assert_eq!(session.current_goal_id.as_deref(), Some("G1"));
+        assert_eq!(session.current_feature_id.as_deref(), Some("F1.2"));
     }
 }
