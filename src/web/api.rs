@@ -1085,6 +1085,7 @@ pub async fn get_project_brief(
     let summary_value = serde_json::from_str::<Value>(&summary).unwrap_or_else(|_| json!({}));
     let docs = collect_vision_docs_for_path(&project_path);
     let guidance_docs = collect_guidance_docs(&project_path, &project_path);
+    let automation = crate::agent_assets::collect_automation_assets(&project_path);
     let vision_doc_count = docs.len();
     let guidance_doc_count = guidance_docs.len();
     let focus = crate::vision_focus::read_project_focus(&project_path);
@@ -1204,6 +1205,7 @@ pub async fn get_project_brief(
             "vision_doc_count": vision_doc_count,
             "guidance_doc_count": guidance_doc_count,
         },
+        "automation": automation,
         "delivery": {
             "phase_counts": phase_counts,
             "blocking_features": blocking_features,
