@@ -244,7 +244,12 @@ mod tests {
         let normalized = normalize_project_path("demo").unwrap();
 
         std::env::set_current_dir(original).unwrap();
-        assert_eq!(normalized, tmp.path().join("demo").to_string_lossy());
+        assert_eq!(
+            normalized,
+            std::fs::canonicalize(tmp.path().join("demo"))
+                .unwrap()
+                .to_string_lossy()
+        );
     }
 
     #[test]
