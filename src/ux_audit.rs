@@ -35,6 +35,10 @@ impl UxCheck {
 
 /// Run UX audit on a URL using Playwright
 pub fn audit_ux(url: &str) -> Value {
+    audit_ux_with_html(url, None)
+}
+
+pub fn audit_ux_with_html(url: &str, html_override: Option<&str>) -> Value {
     let mut checks = Vec::new();
 
     // Try Playwright-based checks first
@@ -56,7 +60,11 @@ pub fn audit_ux(url: &str) -> Value {
     }
 
     // Static HTML analysis (fetch page and analyze)
-    match fetch_page_html(url) {
+    let html = html_override
+        .map(|value| Ok(value.to_string()))
+        .unwrap_or_else(|| fetch_page_html(url));
+
+    match html {
         Ok(html) => {
             checks.extend(check_heading_hierarchy(&html));
             checks.extend(check_aria_labels(&html));
