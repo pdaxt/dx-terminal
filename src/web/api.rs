@@ -82,6 +82,16 @@ pub struct PaneQuery {
     pub lines: Option<usize>,
 }
 
+#[derive(Deserialize, Default)]
+pub struct GatewayListQuery {
+    pub running_only: Option<bool>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct GatewayToolQuery {
+    pub mcp: Option<String>,
+}
+
 // === DX Terminal state endpoints — thin adapters over MCP tools ===
 
 /// GET /api/status — All panes with PTY state (via tools::status)
@@ -173,6 +183,59 @@ pub async fn get_logs(
         types::LogsRequest {
             pane: None,
             lines: None,
+        },
+    )
+    .await;
+    Json(parse_mcp(&result))
+}
+
+/// GET /api/gateway/list — External MCP registry bridged through dx
+pub async fn get_gateway_list(
+    State(app): State<AppState>,
+    Query(q): Query<GatewayListQuery>,
+) -> Json<Value> {
+    let result = tools::gateway_tools::gateway_list(
+        &app,
+        types::GatewayListRequest {
+            running_only: q.running_only,
+        },
+    )
+    .await;
+    Json(parse_mcp(&result))
+}
+
+/// GET /api/gateway/tools?mcp=NAME — Tool schemas for one bridged external MCP
+pub async fn get_gateway_tools(
+    State(app): State<AppState>,
+    Query(q): Query<GatewayToolQuery>,
+) -> Json<Value> {
+    let Some(mcp) = q.mcp.filter(|value| !value.trim().is_empty()) else {
+        return Json(json!({"error": "mcp query param required"}));
+    };
+    let result = tools::gateway_tools::gateway_tools(
+        &app,
+        types::GatewayToolsRequest {
+            mcp,
+            auto_start: Some(true),
+        },
+    )
+    .await;
+    Json(parse_mcp(&result))
+}
+
+/// POST /api/gateway/call — Invoke one tool on a bridged external MCP
+pub async fn post_gateway_call(State(app): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
+    let mcp = body["mcp"].as_str().unwrap_or("").to_string();
+    let tool = body["tool"].as_str().unwrap_or("").to_string();
+    if mcp.is_empty() || tool.is_empty() {
+        return Json(json!({"error": "mcp and tool are required"}));
+    }
+    let result = tools::gateway_tools::gateway_call(
+        &app,
+        types::GatewayCallRequest {
+            mcp,
+            tool,
+            arguments: body.get("arguments").cloned(),
         },
     )
     .await;
