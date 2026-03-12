@@ -31,5 +31,6 @@ pub mod ui_audit;
 pub mod ux_audit;
 pub mod vision;
 pub mod vision_events;
+pub mod vision_focus;
 pub mod web;
 pub mod workspace;

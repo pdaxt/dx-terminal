@@ -31,6 +31,7 @@ mod ui_audit;
 mod ux_audit;
 mod vision;
 mod vision_events;
+mod vision_focus;
 mod web;
 mod workspace;
 

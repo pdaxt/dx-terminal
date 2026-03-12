@@ -30,6 +30,14 @@ pub fn emit_from_result(
         let readiness = crate::vision::feature_readiness(project_path, feature_id);
         if let Ok(readiness_value) = serde_json::from_str::<Value>(&readiness) {
             if readiness_value.get("error").is_none() {
+                let goal_id = readiness_value.get("goal_id").and_then(|v| v.as_str());
+                crate::vision_focus::upsert_focus(
+                    project_path,
+                    Some(project.as_str()),
+                    goal_id,
+                    Some(feature_id),
+                    Some("mutation"),
+                );
                 app.state.event_bus.send(StateEvent::VisionChanged {
                     project,
                     summary,
@@ -51,6 +59,14 @@ pub fn emit_from_result(
                 return;
             }
         }
+
+        crate::vision_focus::upsert_focus(
+            project_path,
+            Some(project.as_str()),
+            None,
+            Some(feature_id),
+            Some("mutation"),
+        );
     }
 
     app.state.event_bus.send(StateEvent::VisionChanged {
