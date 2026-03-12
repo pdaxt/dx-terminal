@@ -1065,6 +1065,152 @@ pub async fn get_vision_summary(Query(q): Query<VisionQuery>) -> Json<Value> {
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
+/// GET /api/project/brief?project=NAME — Canonical project execution/documentation summary
+pub async fn get_project_brief(
+    State(app): State<AppState>,
+    Query(q): Query<VisionQuery>,
+) -> Json<Value> {
+    let project_path = resolve_project_path(&q);
+    let project = q
+        .project
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| project_name_from_path(&project_path));
+
+    let tree = crate::vision::vision_tree(&project_path);
+    let tree_value = serde_json::from_str::<Value>(&tree).unwrap_or_else(|_| json!({}));
+    let summary = crate::vision::vision_summary(&project_path);
+    let summary_value = serde_json::from_str::<Value>(&summary).unwrap_or_else(|_| json!({}));
+    let docs = collect_vision_docs_for_path(&project_path);
+    let guidance_docs = collect_guidance_docs(&project_path, &project_path);
+    let focus = crate::vision_focus::read_project_focus(&project_path);
+
+    let state = app.state.get_state_snapshot().await;
+    let live_panes = tokio::task::spawn_blocking(|| crate::tmux::discover_live_panes())
+        .await
+        .unwrap_or_default();
+    let runtimes = collect_project_runtimes(&state, &live_panes, &project_path, &project);
+    let worktree_count = runtimes
+        .iter()
+        .filter(|runtime| {
+            runtime
+                .get("workspace_path")
+                .and_then(|value| value.as_str())
+                .map(|value| !value.is_empty())
+                .unwrap_or(false)
+        })
+        .count();
+
+    let mut phase_counts: HashMap<String, usize> = HashMap::new();
+    let mut blocking_features = Vec::new();
+    let mut ready_features = Vec::new();
+
+    for goal in tree_value
+        .get("goals")
+        .and_then(|value| value.as_array())
+        .into_iter()
+        .flatten()
+    {
+        for feature in goal
+            .get("features")
+            .and_then(|value| value.as_array())
+            .into_iter()
+            .flatten()
+        {
+            let feature_id = feature
+                .get("id")
+                .and_then(|value| value.as_str())
+                .unwrap_or("")
+                .to_string();
+            let phase = feature
+                .get("phase")
+                .or_else(|| feature.get("status"))
+                .and_then(|value| value.as_str())
+                .unwrap_or("planned")
+                .to_string();
+            let readiness = feature
+                .get("readiness")
+                .cloned()
+                .unwrap_or_else(|| json!({}));
+
+            *phase_counts.entry(phase.clone()).or_insert(0) += 1;
+
+            let next_gate = match phase.as_str() {
+                "planned" | "discovery" | "specifying" => Some("build"),
+                "build" | "building" => Some("test"),
+                "test" | "testing" => Some("done"),
+                _ => None,
+            };
+            if let Some(gate) = next_gate {
+                let ready_key = format!("ready_for_{}", gate);
+                let blockers = readiness
+                    .get("blockers")
+                    .and_then(|value| value.get(gate))
+                    .and_then(|value| value.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                if readiness
+                    .get(&ready_key)
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false)
+                {
+                    ready_features.push(json!({
+                        "feature_id": feature_id,
+                        "title": feature.get("title").cloned().unwrap_or(json!("")),
+                        "phase": phase,
+                        "next_gate": gate,
+                    }));
+                } else if !blockers.is_empty() {
+                    blocking_features.push(json!({
+                        "feature_id": feature_id,
+                        "title": feature.get("title").cloned().unwrap_or(json!("")),
+                        "phase": phase,
+                        "next_gate": gate,
+                        "blockers": blockers,
+                    }));
+                }
+            }
+        }
+    }
+
+    let git = crate::sync::git::status(Path::new(&project_path))
+        .ok()
+        .map(|status| {
+            json!({
+                "branch": status.branch,
+                "dirty_files": status.dirty_count,
+                "ahead": status.ahead,
+                "behind": status.behind,
+                "has_remote": status.has_remote,
+            })
+        })
+        .unwrap_or_else(|| json!(null));
+
+    Json(json!({
+        "project": project,
+        "path": project_path,
+        "mission": tree_value.get("mission").cloned().unwrap_or(json!("")),
+        "summary": tree_value.get("summary").cloned().unwrap_or(summary_value),
+        "focus": focus,
+        "wiki_url": format!("/wiki?project={}", project),
+        "docs": {
+            "vision_docs": docs,
+            "guidance_docs": guidance_docs,
+            "vision_doc_count": docs.len(),
+            "guidance_doc_count": guidance_docs.len(),
+        },
+        "delivery": {
+            "phase_counts": phase_counts,
+            "blocking_features": blocking_features,
+            "ready_features": ready_features,
+        },
+        "runtimes": runtimes,
+        "runtime_count": runtimes.len(),
+        "worktree_count": worktree_count,
+        "git": git,
+    }))
+}
+
 /// GET /api/vision/diff?project=NAME — Recent vision changes
 pub async fn get_vision_diff(Query(q): Query<VisionQuery>) -> Json<Value> {
     let path = resolve_project_path(&q);
