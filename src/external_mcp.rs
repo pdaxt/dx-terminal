@@ -595,8 +595,7 @@ mod tests {
         .expect("descriptor");
 
         assert!(descriptor.command.windows(2).any(|window| {
-            window[0] == "--port"
-                && window[1] == crate::config::pane_browser_port(3).to_string()
+            window[0] == "--port" && window[1] == crate::config::pane_browser_port(3).to_string()
         }));
         assert!(descriptor.command.windows(2).any(|window| {
             window[0] == "--user-data-dir"

@@ -2269,7 +2269,8 @@ struct WikiDocEntry {
 }
 
 fn slugify_doc_id(value: &str) -> String {
-    value.chars()
+    value
+        .chars()
         .map(|ch| match ch {
             'a'..='z' | 'A'..='Z' | '0'..='9' => ch.to_ascii_lowercase(),
             _ => '-',
@@ -2344,7 +2345,9 @@ fn collect_featured_wiki_docs(project_path: &str) -> Vec<WikiDocEntry> {
 
     candidates
         .into_iter()
-        .filter_map(|(relative_path, category)| load_wiki_doc(project_path, relative_path, category))
+        .filter_map(|(relative_path, category)| {
+            load_wiki_doc(project_path, relative_path, category)
+        })
         .collect()
 }
 
@@ -2503,13 +2506,13 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
         }
     };
 
-    let principles = vision["principles"]
+    let principles = vision["principles"].as_array().cloned().unwrap_or_default();
+    let goals = vision["goals"].as_array().cloned().unwrap_or_default();
+    let features = vision["features"].as_array().cloned().unwrap_or_default();
+    let adrs = vision["architecture"]
         .as_array()
         .cloned()
         .unwrap_or_default();
-    let goals = vision["goals"].as_array().cloned().unwrap_or_default();
-    let features = vision["features"].as_array().cloned().unwrap_or_default();
-    let adrs = vision["architecture"].as_array().cloned().unwrap_or_default();
     let milestones = vision["milestones"].as_array().cloned().unwrap_or_default();
     let changes = vision["changes"].as_array().cloned().unwrap_or_default();
 
@@ -2519,7 +2522,10 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
 
     let mut goals_html = String::new();
     for goal in &goals {
-        let id = goal.get("id").and_then(|value| value.as_str()).unwrap_or("");
+        let id = goal
+            .get("id")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
         let title = goal
             .get("title")
             .and_then(|value| value.as_str())
@@ -2544,10 +2550,7 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
                     .iter()
                     .filter_map(|item| item.as_str())
                     .map(|metric| {
-                        format!(
-                            "<span class=\"mini-chip\">{}</span>",
-                            escape_html(metric)
-                        )
+                        format!("<span class=\"mini-chip\">{}</span>", escape_html(metric))
                     })
                     .collect::<Vec<_>>()
                     .join("")
@@ -2651,7 +2654,8 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
             .get("tasks")
             .and_then(|value| value.as_array())
             .map(|tasks| {
-                tasks.iter()
+                tasks
+                    .iter()
                     .map(|task| {
                         let task_title = task
                             .get("title")
@@ -2691,10 +2695,12 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
             })
             .unwrap_or_default();
 
-        let acceptance_items = if let Some(items) =
-            feature.get("acceptance_items").and_then(|value| value.as_array())
+        let acceptance_items = if let Some(items) = feature
+            .get("acceptance_items")
+            .and_then(|value| value.as_array())
         {
-            items.iter()
+            items
+                .iter()
                 .map(|item| {
                     let text = item
                         .get("text")
@@ -2709,8 +2715,7 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
                             .and_then(|value| value.as_str()),
                         item.get("verification_source")
                             .and_then(|value| value.as_str()),
-                        item.get("verified_by")
-                            .and_then(|value| value.as_str()),
+                        item.get("verified_by").and_then(|value| value.as_str()),
                     ]
                     .into_iter()
                     .flatten()
@@ -2730,10 +2735,7 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
                         if meta.is_empty() {
                             String::new()
                         } else {
-                            format!(
-                                "<div class=\"detail-meta\">{}</div>",
-                                escape_html(&meta)
-                            )
+                            format!("<div class=\"detail-meta\">{}</div>", escape_html(&meta))
                         }
                     )
                 })
@@ -2796,7 +2798,11 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
                                     {}
                                 </div>
                             </li>"#,
-                            if status == "answered" { "done" } else { "discovery" },
+                            if status == "answered" {
+                                "done"
+                            } else {
+                                "discovery"
+                            },
                             escape_html(status),
                             escape_html(text),
                             if blocking {
@@ -2807,10 +2813,7 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
                             if answer.is_empty() {
                                 String::new()
                             } else {
-                                format!(
-                                    "<div class=\"detail-meta\">{}</div>",
-                                    escape_html(answer)
-                                )
+                                format!("<div class=\"detail-meta\">{}</div>", escape_html(answer))
                             }
                         )
                     })
@@ -2888,7 +2891,9 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
                 "<div class=\"detail-meta\"><strong>Next gate:</strong> blocked before {}</div>",
                 escape_html(gate)
             ),
-            None => "<div class=\"detail-meta\"><strong>Lifecycle:</strong> complete</div>".to_string(),
+            None => {
+                "<div class=\"detail-meta\"><strong>Lifecycle:</strong> complete</div>".to_string()
+            }
         };
 
         features_html.push_str(&format!(
@@ -3031,10 +3036,7 @@ pub async fn wiki_page(Query(q): Query<VisionQuery>) -> Html<String> {
     let adr_html = adrs
         .iter()
         .map(|adr| {
-            let id = adr
-                .get("id")
-                .and_then(|value| value.as_str())
-                .unwrap_or("");
+            let id = adr.get("id").and_then(|value| value.as_str()).unwrap_or("");
             let title = adr
                 .get("title")
                 .and_then(|value| value.as_str())
@@ -4175,9 +4177,14 @@ try {{
         } else {
             mission
         }),
-        updated = escape_html(if updated.is_empty() { "unknown" } else { updated }),
+        updated = escape_html(if updated.is_empty() {
+            "unknown"
+        } else {
+            updated
+        }),
         path = escape_html(&path),
-        total_docs = featured_docs.len() + library_docs.len() + research_docs.len() + discovery_docs.len(),
+        total_docs =
+            featured_docs.len() + library_docs.len() + research_docs.len() + discovery_docs.len(),
         goal_count = goals.len(),
         feature_count = features.len(),
         milestone_count = milestones.len(),
