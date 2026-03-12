@@ -1805,8 +1805,18 @@ async function renderVddDocs(){
     </div>`;
   }).join('');
 }
+function setVisionFocus(project,featureId){
+  if(!project||!featureId)return;
+  fetch('/api/vision/focus',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({project,feature_id:featureId,source:'dashboard'})
+  }).catch(()=>{});
+}
 async function openVddDoc(project,featureId){
+  const focusChanged=!activeVddDoc||activeVddDoc.project!==project||activeVddDoc.featureId!==featureId;
   activeVddDoc={project,featureId};
+  if(focusChanged)setVisionFocus(project,featureId);
   const doc=await fetchJSON(`/api/vision/doc?project=${encodeURIComponent(project)}&feature_id=${encodeURIComponent(featureId)}`);
   if(!doc) return;
   const listEl=document.getElementById('vdd-doc-list');
