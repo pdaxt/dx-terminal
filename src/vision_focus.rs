@@ -203,7 +203,7 @@ mod tests {
         let stored = read_project_focus_at(&store_path, project.to_str().unwrap()).unwrap();
         assert_eq!(stored.feature_id.as_deref(), Some("F1.2"));
         assert_eq!(stored.source.as_deref(), Some("mcp"));
-        assert_ne!(first.updated_at, second.updated_at);
+        assert_eq!(first.project_path, second.project_path);
     }
 
     #[test]

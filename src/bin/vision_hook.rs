@@ -416,6 +416,23 @@ fn select_stop_feature<'a>(
         }
     }
 
+    if let Some(focus) = dx_terminal::vision_focus::read_project_focus(project) {
+        if let Some(feature_id) = focus.feature_id.as_deref() {
+            if let Some(feature) = find_feature_by_id(features, feature_id) {
+                if !feature_is_done(feature) {
+                    return Some(feature);
+                }
+            }
+        }
+
+        if let Some(goal_id) = focus.goal_id.as_deref() {
+            let active = active_features_for_goal(features, goal_id);
+            if active.len() == 1 {
+                return active.into_iter().next();
+            }
+        }
+    }
+
     if let Some(current_goal_id) = session.current_goal_id.as_deref() {
         let active = active_features_for_goal(features, current_goal_id);
         if active.len() == 1 {
@@ -1847,5 +1864,61 @@ mod tests {
         assert_eq!(session.project.as_deref(), Some("/tmp/demo"));
         assert_eq!(session.current_goal_id.as_deref(), Some("G1"));
         assert_eq!(session.current_feature_id.as_deref(), Some("F1.2"));
+    }
+
+    #[test]
+    fn test_select_stop_feature_prefers_shared_focus_when_session_is_broad() {
+        static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+        let _guard = TEST_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let original_dx_root = std::env::var("DX_ROOT").ok();
+        std::env::set_var("DX_ROOT", tmp.path());
+
+        let project = tmp.path().join("demo");
+        std::fs::create_dir_all(&project).unwrap();
+        dx_terminal::vision_focus::upsert_focus(
+            project.to_str().unwrap(),
+            Some("demo"),
+            Some("G1"),
+            Some("F1.2"),
+            Some("dashboard"),
+        );
+
+        let features = vec![
+            json!({
+                "id": "F1.1",
+                "goal_id": "G1",
+                "title": "First feature",
+                "phase": "build"
+            }),
+            json!({
+                "id": "F1.2",
+                "goal_id": "G1",
+                "title": "Second feature",
+                "phase": "test"
+            }),
+        ];
+        let vision = json!({ "features": features });
+        let features_ref = vision["features"].as_array().unwrap();
+        let session = SessionEdits {
+            files: vec![],
+            commits: vec![],
+            project: Some(project.to_string_lossy().into()),
+            has_vision: true,
+            current_goal_id: Some("G1".into()),
+            current_feature_id: None,
+        };
+
+        let selected =
+            select_stop_feature(project.to_str().unwrap(), &vision, features_ref, &session)
+                .unwrap();
+
+        match original_dx_root {
+            Some(value) => std::env::set_var("DX_ROOT", value),
+            None => std::env::remove_var("DX_ROOT"),
+        }
+
+        assert_eq!(feature_id(selected), Some("F1.2"));
     }
 }
