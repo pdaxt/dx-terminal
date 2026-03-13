@@ -9,6 +9,7 @@ pub mod collab;
 pub mod config;
 pub mod dashboard;
 pub mod design_tokens;
+pub mod dxos;
 pub mod engine;
 pub mod external_mcp;
 pub mod factory;

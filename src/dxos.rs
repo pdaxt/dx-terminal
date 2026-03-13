@@ -165,7 +165,7 @@ fn default_state(project_path: &str, project_name: Option<&str>) -> ControlPlane
         },
         defaults: ControlPlaneDefaults::default(),
         debates: Vec::new(),
-        updated_at: state::now(),
+        updated_at: crate::state::now(),
     }
 }
 
@@ -302,7 +302,7 @@ pub fn debate_start(
     }
 
     let mut state = load_control_plane(project_path, project_name);
-    let now = state::now();
+    let now = crate::state::now();
     let debate = DebateRecord {
         id: next_debate_id(&state),
         title: title.trim().to_string(),
@@ -387,10 +387,10 @@ pub fn debate_add_proposal(
             .into_iter()
             .filter(|value| !value.trim().is_empty())
             .collect(),
-        created_at: state::now(),
+        created_at: crate::state::now(),
     };
     let proposal_id = proposal.id.clone();
-    debate.updated_at = state::now();
+    debate.updated_at = crate::state::now();
     debate.proposals.push(proposal);
     state.updated_at = debate.updated_at.clone();
 
@@ -450,10 +450,10 @@ pub fn debate_add_contradiction(
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty()),
         rationale: rationale.trim().to_string(),
-        created_at: state::now(),
+        created_at: crate::state::now(),
     };
     let contradiction_id = contradiction.id.clone();
-    debate.updated_at = state::now();
+    debate.updated_at = crate::state::now();
     debate.contradictions.push(contradiction);
     state.updated_at = debate.updated_at.clone();
 
@@ -520,9 +520,9 @@ pub fn debate_cast_vote(
             .filter(|value| !value.is_empty()),
         stance,
         rationale: rationale.trim().to_string(),
-        created_at: state::now(),
+        created_at: crate::state::now(),
     };
-    debate.updated_at = state::now();
+    debate.updated_at = crate::state::now();
     debate.votes.push(vote);
     state.updated_at = debate.updated_at.clone();
 
@@ -576,7 +576,7 @@ pub fn debate_finalize(
         return json!({"error": "proposal_not_found"}).to_string();
     }
 
-    let now = state::now();
+    let now = crate::state::now();
     debate.status = "decided".to_string();
     debate.updated_at = now.clone();
     debate.decision = Some(DecisionRecord {
