@@ -2107,6 +2107,7 @@ pub async fn start_dxos_debate(
     Json(body): Json<DxosDebateStartBody>,
 ) -> ApiJson {
     require_control_token(&headers)?;
+    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2122,9 +2123,17 @@ pub async fn start_dxos_debate(
         body.requested_by.as_deref(),
     );
     maybe_emit_debate_change(&app, &project_path, &result);
-    Ok(Json(
-        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
-    ))
+    let value = serde_json::from_str(&result).unwrap_or(json!({"raw": result}));
+    record_control_action(
+        &app,
+        &project_path,
+        body.project.as_deref(),
+        &actor,
+        "debate_start",
+        &body.title,
+        &value,
+    );
+    Ok(Json(value))
 }
 
 /// POST /api/dxos/debate/proposal — Add a proposal to a debate
@@ -2134,6 +2143,7 @@ pub async fn add_dxos_debate_proposal(
     Json(body): Json<DxosDebateProposalBody>,
 ) -> ApiJson {
     require_control_token(&headers)?;
+    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2149,9 +2159,17 @@ pub async fn add_dxos_debate_proposal(
         body.evidence,
     );
     maybe_emit_debate_change(&app, &project_path, &result);
-    Ok(Json(
-        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
-    ))
+    let value = serde_json::from_str(&result).unwrap_or(json!({"raw": result}));
+    record_control_action(
+        &app,
+        &project_path,
+        body.project.as_deref(),
+        &actor,
+        "debate_proposal",
+        &body.debate_id,
+        &value,
+    );
+    Ok(Json(value))
 }
 
 /// POST /api/dxos/debate/contradiction — Add a contradiction to a proposal
@@ -2161,6 +2179,7 @@ pub async fn add_dxos_debate_contradiction(
     Json(body): Json<DxosDebateContradictionBody>,
 ) -> ApiJson {
     require_control_token(&headers)?;
+    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2175,9 +2194,17 @@ pub async fn add_dxos_debate_contradiction(
         &body.rationale,
     );
     maybe_emit_debate_change(&app, &project_path, &result);
-    Ok(Json(
-        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
-    ))
+    let value = serde_json::from_str(&result).unwrap_or(json!({"raw": result}));
+    record_control_action(
+        &app,
+        &project_path,
+        body.project.as_deref(),
+        &actor,
+        "debate_contradiction",
+        &body.debate_id,
+        &value,
+    );
+    Ok(Json(value))
 }
 
 /// POST /api/dxos/debate/vote — Cast or update a vote
@@ -2187,6 +2214,7 @@ pub async fn vote_dxos_debate(
     Json(body): Json<DxosDebateVoteBody>,
 ) -> ApiJson {
     require_control_token(&headers)?;
+    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2202,9 +2230,17 @@ pub async fn vote_dxos_debate(
         &body.rationale,
     );
     maybe_emit_debate_change(&app, &project_path, &result);
-    Ok(Json(
-        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
-    ))
+    let value = serde_json::from_str(&result).unwrap_or(json!({"raw": result}));
+    record_control_action(
+        &app,
+        &project_path,
+        body.project.as_deref(),
+        &actor,
+        "debate_vote",
+        &body.debate_id,
+        &value,
+    );
+    Ok(Json(value))
 }
 
 /// POST /api/dxos/debate/decision — Finalize a debate decision
@@ -2214,6 +2250,7 @@ pub async fn finalize_dxos_debate(
     Json(body): Json<DxosDebateDecisionBody>,
 ) -> ApiJson {
     require_control_token(&headers)?;
+    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2228,9 +2265,17 @@ pub async fn finalize_dxos_debate(
         &body.rationale,
     );
     maybe_emit_debate_change(&app, &project_path, &result);
-    Ok(Json(
-        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
-    ))
+    let value = serde_json::from_str(&result).unwrap_or(json!({"raw": result}));
+    record_control_action(
+        &app,
+        &project_path,
+        body.project.as_deref(),
+        &actor,
+        "debate_finalize",
+        &body.debate_id,
+        &value,
+    );
+    Ok(Json(value))
 }
 
 /// POST /api/dxos/session/upsert — Create or update a session contract
@@ -2240,6 +2285,7 @@ pub async fn upsert_dxos_session(
     Json(body): Json<DxosSessionUpsertBody>,
 ) -> ApiJson {
     require_control_token(&headers)?;
+    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2270,9 +2316,17 @@ pub async fn upsert_dxos_session(
         body.status.as_deref(),
     );
     maybe_emit_dxos_session_change(&app, &project_path, &result);
-    Ok(Json(
-        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
-    ))
+    let value = serde_json::from_str(&result).unwrap_or(json!({"raw": result}));
+    record_control_action(
+        &app,
+        &project_path,
+        body.project.as_deref(),
+        &actor,
+        "session_upsert",
+        body.session_id.as_deref().unwrap_or(&body.role),
+        &value,
+    );
+    Ok(Json(value))
 }
 
 /// POST /api/dxos/session/launch — Launch a real runtime lane through the DX broker
@@ -2282,6 +2336,7 @@ pub async fn launch_dxos_session(
     Json(body): Json<DxosSessionLaunchBody>,
 ) -> ApiJson {
     require_control_token(&headers)?;
+    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2305,9 +2360,17 @@ pub async fn launch_dxos_session(
         },
     )
     .await;
-    Ok(Json(
-        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
-    ))
+    let value = serde_json::from_str(&result).unwrap_or(json!({"raw": result}));
+    record_control_action(
+        &app,
+        &project_path,
+        body.project.as_deref(),
+        &actor,
+        "session_launch",
+        body.pane.as_deref().unwrap_or("auto"),
+        &value,
+    );
+    Ok(Json(value))
 }
 
 /// POST /api/dxos/session/status — Update a session status
@@ -2317,6 +2380,7 @@ pub async fn update_dxos_session_status(
     Json(body): Json<DxosSessionStatusBody>,
 ) -> ApiJson {
     require_control_token(&headers)?;
+    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2329,9 +2393,17 @@ pub async fn update_dxos_session_status(
         body.note.as_deref(),
     );
     maybe_emit_dxos_session_change(&app, &project_path, &result);
-    Ok(Json(
-        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
-    ))
+    let value = serde_json::from_str(&result).unwrap_or(json!({"raw": result}));
+    record_control_action(
+        &app,
+        &project_path,
+        body.project.as_deref(),
+        &actor,
+        "session_status",
+        &body.session_id,
+        &value,
+    );
+    Ok(Json(value))
 }
 
 /// POST /api/dxos/work/delegate — Delegate a structured work order
@@ -2341,6 +2413,7 @@ pub async fn delegate_dxos_work(
     Json(body): Json<DxosWorkDelegateBody>,
 ) -> ApiJson {
     require_control_token(&headers)?;
+    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2358,9 +2431,17 @@ pub async fn delegate_dxos_work(
         body.expected_outputs,
     );
     maybe_emit_dxos_session_change(&app, &project_path, &result);
-    Ok(Json(
-        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
-    ))
+    let value = serde_json::from_str(&result).unwrap_or(json!({"raw": result}));
+    record_control_action(
+        &app,
+        &project_path,
+        body.project.as_deref(),
+        &actor,
+        "work_delegate",
+        &body.title,
+        &value,
+    );
+    Ok(Json(value))
 }
 
 /// POST /api/dxos/work/block — Block a work order
@@ -2370,6 +2451,7 @@ pub async fn block_dxos_work(
     Json(body): Json<DxosWorkBlockBody>,
 ) -> ApiJson {
     require_control_token(&headers)?;
+    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2382,9 +2464,17 @@ pub async fn block_dxos_work(
         body.requested_permission.as_deref(),
     );
     maybe_emit_dxos_session_change(&app, &project_path, &result);
-    Ok(Json(
-        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
-    ))
+    let value = serde_json::from_str(&result).unwrap_or(json!({"raw": result}));
+    record_control_action(
+        &app,
+        &project_path,
+        body.project.as_deref(),
+        &actor,
+        "work_block",
+        &body.work_order_id,
+        &value,
+    );
+    Ok(Json(value))
 }
 
 /// POST /api/dxos/work/resolve — Resolve a blocked work order
