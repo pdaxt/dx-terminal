@@ -2350,11 +2350,12 @@ pub async fn launch_dxos_session(
         project: body.project.clone(),
         path: body.path.clone(),
     });
+    let requested_pane = body.pane.clone().unwrap_or_else(|| "auto".to_string());
     let result = tools::spawn(
         &app,
         types::SpawnRequest {
-            pane: body.pane.unwrap_or_else(|| "auto".to_string()),
-            project: project_path,
+            pane: requested_pane.clone(),
+            project: project_path.clone(),
             role: body.role,
             provider: body.provider,
             model: body.model,
@@ -2376,7 +2377,7 @@ pub async fn launch_dxos_session(
         body.project.as_deref(),
         &actor,
         "session_launch",
-        body.pane.as_deref().unwrap_or("auto"),
+        &requested_pane,
         &value,
     );
     Ok(Json(value))
