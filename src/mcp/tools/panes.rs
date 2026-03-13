@@ -34,6 +34,8 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     };
 
     let role = req.role.unwrap_or_else(|| "developer".into());
+    let provider = req.provider.unwrap_or_else(|| "claude".into());
+    let model = req.model.clone();
     let task = req.task.unwrap_or_default();
     let prompt = req.prompt.unwrap_or_default();
     let theme = config::theme_name(pane_num);
@@ -91,6 +93,11 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         ("DX_THEME".to_string(), theme.to_string()),
         ("DX_PROJECT".to_string(), project_name.clone()),
         ("DX_ROLE".to_string(), role.clone()),
+        ("DX_PROVIDER".to_string(), provider.clone()),
+        (
+            "DX_MODEL".to_string(),
+            model.clone().unwrap_or_default(),
+        ),
         ("DX_BROWSER_PORT".to_string(), browser_port.to_string()),
         ("PLAYWRIGHT_PORT".to_string(), browser_port.to_string()),
         (
@@ -115,16 +122,19 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
 
     // Spawn via tmux — creates a visible window the user can attach to
     let window_name = format!(
-        "dx-{}-{}",
+        "dx-{}-{}-{}",
+        provider,
         pane_num,
         config::theme_name(pane_num).to_lowercase()
     );
-    let tmux_result = tmux::spawn_agent(
+    let tmux_result = tmux::spawn_agent_for_provider(
+        &provider,
         &window_name,
         &spawn_cwd,
         &task_prompt,
         &env_vars,
         autonomous,
+        model.as_deref(),
     );
 
     let (tmux_status, tmux_target) = match &tmux_result {
@@ -144,6 +154,8 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         project: project_name.clone(),
         project_path: project_path.clone(),
         role: role.clone(),
+        provider: Some(provider.clone()),
+        model: model.clone(),
         dxos_session_id: None,
         task: task.clone(),
         issue_id: None,
@@ -165,8 +177,8 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         Some(&project_name),
         None,
         &role,
-        Some("claude"),
-        None,
+        Some(&provider),
+        model.as_deref(),
         Some(if autonomous {
             "high_autonomy"
         } else {
@@ -241,6 +253,8 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         "theme": theme,
         "project": project_name,
         "role": role,
+        "provider": provider,
+        "model": model,
         "task": task,
         "project_path": project_path,
         "workspace": ws_path,
@@ -394,6 +408,8 @@ pub async fn restart(app: &App, req: RestartRequest) -> String {
                 pane_data.project_path
             },
             role: Some(pane_data.role),
+            provider: pane_data.provider,
+            model: pane_data.model,
             task: Some(pane_data.task),
             prompt: None,
             autonomous: None,
@@ -583,6 +599,8 @@ pub async fn assign(app: &App, req: AssignRequest) -> String {
             pane: pane_num.to_string(),
             project: project_path,
             role: Some(role.clone()),
+            provider: None,
+            model: None,
             task: Some(task),
             prompt: Some(prompt),
             autonomous: None,
@@ -632,6 +650,8 @@ pub async fn assign_adhoc(app: &App, req: AssignAdhocRequest) -> String {
             pane: pane_num.to_string(),
             project,
             role: req.role.or(Some("developer".into())),
+            provider: None,
+            model: None,
             task: Some(req.task),
             prompt: None,
             autonomous: None,

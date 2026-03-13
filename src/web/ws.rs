@@ -578,6 +578,14 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
                 .get("role")
                 .and_then(|r| r.as_str())
                 .map(|s| s.to_string());
+            let provider = cmd
+                .get("provider")
+                .and_then(|p| p.as_str())
+                .map(|s| s.to_string());
+            let model = cmd
+                .get("model")
+                .and_then(|m| m.as_str())
+                .map(|s| s.to_string());
             let task = cmd
                 .get("task")
                 .and_then(|t| t.as_str())
@@ -591,6 +599,8 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
                     pane,
                     project,
                     role,
+                    provider,
+                    model,
                     task,
                     prompt: None,
                     autonomous: None,
