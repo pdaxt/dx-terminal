@@ -1,4 +1,3 @@
-use crate::state;
 use crate::state::events::StateEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -135,7 +134,7 @@ pub struct ControlPlaneState {
     pub updated_at: String,
 }
 
-fn project_name(project_path: &str, project_name: Option<&str>) -> String {
+fn resolved_project_name(project_path: &str, project_name: Option<&str>) -> String {
     project_name
         .filter(|value| !value.trim().is_empty())
         .map(|value| value.trim().to_string())
@@ -160,7 +159,7 @@ fn default_state(project_path: &str, project_name: Option<&str>) -> ControlPlane
     ControlPlaneState {
         version: 1,
         project: ProjectDescriptor {
-            name: project_name(project_path, project_name),
+            name: resolved_project_name(project_path, project_name),
             path: project_path.to_string(),
         },
         defaults: ControlPlaneDefaults::default(),
@@ -175,7 +174,7 @@ pub fn load_control_plane(project_path: &str, project_name: Option<&str>) -> Con
         if let Ok(contents) = std::fs::read_to_string(&path) {
             if let Ok(mut state) = serde_json::from_str::<ControlPlaneState>(&contents) {
                 if state.project.name.trim().is_empty() {
-                    state.project.name = project_name(project_path, project_name);
+                    state.project.name = resolved_project_name(project_path, project_name);
                 }
                 if state.project.path.trim().is_empty() {
                     state.project.path = project_path.to_string();
@@ -637,6 +636,7 @@ pub fn debate_event_from_result(project_path: &str, result: &str) -> Option<Stat
         .and_then(Value::as_str)
         .map(|value| value.to_string())
         .unwrap_or_else(|| project_name(project_path, None));
+        .unwrap_or_else(|| resolved_project_name(project_path, None));
     Some(StateEvent::DebateChanged {
         project,
         debate_id: value
