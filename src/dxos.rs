@@ -417,11 +417,10 @@ fn save_control_plane(project_path: &str, state: &ControlPlaneState) -> Result<(
     save_control_plane_mirror(project_path, state)
 }
 
-pub fn control_plane_registry() -> String {
-    let registry_path = global_control_plane_store_path();
+fn control_plane_registry_value_for_store_path(registry_path: &Path) -> Value {
     let conn = match open_control_plane_db(&registry_path) {
         Ok(conn) => conn,
-        Err(error) => return json!({"error": error}).to_string(),
+        Err(error) => return json!({"error": error}),
     };
     let mut stmt = match conn.prepare(
         "SELECT project_path, project_name, updated_at
@@ -429,7 +428,7 @@ pub fn control_plane_registry() -> String {
          ORDER BY updated_at DESC, project_name ASC",
     ) {
         Ok(stmt) => stmt,
-        Err(error) => return json!({"error": format!("prepare: {}", error)}).to_string(),
+        Err(error) => return json!({"error": format!("prepare: {}", error)}),
     };
     let rows = match stmt.query_map([], |row| {
         Ok(json!({
@@ -439,48 +438,28 @@ pub fn control_plane_registry() -> String {
         }))
     }) {
         Ok(rows) => rows,
-        Err(error) => return json!({"error": format!("query: {}", error)}).to_string(),
+        Err(error) => return json!({"error": format!("query: {}", error)}),
     };
     let projects = rows.filter_map(Result::ok).collect::<Vec<_>>();
     json!({
         "backend": "sqlite_with_repo_mirror",
         "database_path": registry_path.to_string_lossy().to_string(),
+        "project_count": projects.len(),
         "projects": projects,
     })
-    .to_string()
+}
+
+fn control_plane_registry_value_for_project_path(project_path: &str) -> Value {
+    control_plane_registry_value_for_store_path(&control_plane_store_path(project_path))
+}
+
+pub fn control_plane_registry() -> String {
+    control_plane_registry_value_for_store_path(&global_control_plane_store_path()).to_string()
 }
 
 #[cfg(test)]
 fn control_plane_registry_for_project(project_path: &str) -> String {
-    let conn = match control_plane_db(project_path) {
-        Ok(conn) => conn,
-        Err(error) => return json!({"error": error}).to_string(),
-    };
-    let mut stmt = match conn.prepare(
-        "SELECT project_path, project_name, updated_at
-         FROM dxos_control_planes
-         ORDER BY updated_at DESC, project_name ASC",
-    ) {
-        Ok(stmt) => stmt,
-        Err(error) => return json!({"error": format!("prepare: {}", error)}).to_string(),
-    };
-    let rows = match stmt.query_map([], |row| {
-        Ok(json!({
-            "path": row.get::<_, String>(0)?,
-            "name": row.get::<_, String>(1)?,
-            "updated_at": row.get::<_, String>(2)?,
-        }))
-    }) {
-        Ok(rows) => rows,
-        Err(error) => return json!({"error": format!("query: {}", error)}).to_string(),
-    };
-    let projects = rows.filter_map(Result::ok).collect::<Vec<_>>();
-    json!({
-        "backend": "sqlite_with_repo_mirror",
-        "database_path": control_plane_store_path(project_path).to_string_lossy().to_string(),
-        "projects": projects,
-    })
-    .to_string()
+    control_plane_registry_value_for_project_path(project_path).to_string()
 }
 
 fn next_debate_id(state: &ControlPlaneState) -> String {
@@ -818,6 +797,12 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
         .iter()
         .filter(|work_order| work_order.status == "blocked")
         .count();
+    let capability_registry = json!({
+        "capability_source": "dx_registry",
+        "mcp_count": registry.len(),
+        "category_counts": categories,
+    });
+    let control_plane_registry = control_plane_registry_value_for_project_path(project_path);
 
     json!({
         "project": state.project,
@@ -833,11 +818,9 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             "decided": decided_debates,
             "recent": recent,
         },
-        "registry": {
-            "capability_source": "dx_registry",
-            "mcp_count": registry.len(),
-            "category_counts": categories,
-        },
+        "registry": capability_registry.clone(),
+        "capability_registry": capability_registry,
+        "control_plane_registry": control_plane_registry,
         "storage": control_plane_storage_summary(project_path),
         "runtime_contract": {
             "launch_broker": {

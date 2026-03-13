@@ -2519,7 +2519,9 @@ async function renderExecutionHub(){
   const leadInboxWork=blockedOrApprovalWork.filter(order=>(order.escalation_target||'lead')!=='human');
   const humanEscalations=blockedOrApprovalWork.filter(order=>(order.escalation_target||'lead')==='human');
   const dxosDebates=(dxos.debates&&dxos.debates.recent)||[];
-  const dxosRegistry=dxos.registry||{};
+  const dxosCapabilityRegistry=dxos.capability_registry||dxos.registry||{};
+  const dxosProjectRegistry=dxos.control_plane_registry||{};
+  const dxosRegisteredProjects=(dxosProjectRegistry.projects||[]);
   const dxosStorage=dxos.storage||{};
   const leadSessions=dxosSessions.filter(session=>!session.supervisor_session_id);
   const workerSessions=dxosSessions.filter(session=>session.supervisor_session_id);
@@ -2570,7 +2572,7 @@ async function renderExecutionHub(){
       <div class="spotlight-card">
         <div class="label">Decision Council</div>
         <div class="value">${(dxos.debates&&dxos.debates.open)||0} open debate${((dxos.debates&&dxos.debates.open)||0)===1?'':'s'}</div>
-        <div class="meta">${(dxos.debates&&dxos.debates.decided)||0} decided records · ${dxosRegistry.mcp_count||0} shared MCPs</div>
+        <div class="meta">${(dxos.debates&&dxos.debates.decided)||0} decided records · ${dxosCapabilityRegistry.mcp_count||0} shared MCPs</div>
       </div>
     </div>`;
   }
@@ -2665,6 +2667,10 @@ async function renderExecutionHub(){
         <div class="label">Delegation queue</div>
         <div class="meta">${dxosDelegation.active_work_orders||0} in flight · ${leadInboxWork.length} lead inbox · ${humanEscalations.length} human escalation${humanEscalations.length===1?'':'s'}</div>
       </div>
+      <div class="doc-mini-card">
+        <div class="label">DXOS Store</div>
+        <div class="meta">${escHtml((dxosStorage.backend||'sqlite_with_repo_mirror').toString())} · ${dxosProjectRegistry.project_count||dxosStorage.registered_projects||0} project records</div>
+      </div>
     </div>
     <div class="exec-list">
       <div class="exec-row">
@@ -2708,6 +2714,34 @@ async function renderExecutionHub(){
         <div class="exec-list">${renderDxosWorkOrderRows(leadInboxWork.length?leadInboxWork:(blockedOrApprovalWork.length?blockedOrApprovalWork:delegatedWork),dxosSessions,4,blockedOrApprovalWork.length?'blocked':'all')}</div>
         <div class="exec-list-title">Human escalation</div>
         <div class="exec-list">${renderDxosWorkOrderRows(humanEscalations,dxosSessions,3,'blocked')}</div>
+      </div>
+      <div class="exec-row">
+        <div class="exec-row-top">
+          <span class="exec-row-title">DXOS store and project registry</span>
+          <span class="exec-row-tags"><span class="doc-pill shared">${dxosProjectRegistry.project_count||dxosStorage.registered_projects||0} projects</span></span>
+        </div>
+        <div class="doc-line">
+          <div class="doc-line-main">
+            <div class="doc-line-title">Canonical SQLite store</div>
+            <div class="doc-line-path">${escHtml((dxosStorage.database_path||dxosProjectRegistry.database_path||'Unavailable').toString())}</div>
+          </div>
+          <div class="exec-row-tags"><span class="doc-pill shared">${escHtml((dxosStorage.canonical||'dx_root_sqlite').toString())}</span></div>
+        </div>
+        <div class="doc-line">
+          <div class="doc-line-main">
+            <div class="doc-line-title">Compatibility mirror</div>
+            <div class="doc-line-path">${escHtml((dxosStorage.mirror_path||'Unavailable').toString())}</div>
+          </div>
+          <div class="exec-row-tags"><span class="doc-pill">${escHtml((dxosStorage.mirror||'repo_local_json').toString())}</span></div>
+        </div>
+        <div class="exec-list-title">Registered projects in this DXOS store</div>
+        <div class="exec-list">${dxosRegisteredProjects.length?dxosRegisteredProjects.slice(0,5).map(item=>`<div class="doc-line">
+          <div class="doc-line-main">
+            <div class="doc-line-title">${escHtml((item.name||shortPathLabel(item.path)||'Unnamed project').toString())}</div>
+            <div class="doc-line-path">${escHtml((item.path||'').toString())}</div>
+          </div>
+          <div class="exec-row-tags"><span class="doc-pill shared">${escHtml((item.updated_at||'').toString())}</span></div>
+        </div>`).join(''):'<div class="empty-note">No shared DXOS project registry records were found yet.</div>'}</div>
       </div>
     </div>
     ${renderDxosOperatorControls(project,activeStage,dxosSessions)}`;

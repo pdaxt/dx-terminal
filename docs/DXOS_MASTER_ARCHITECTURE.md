@@ -100,6 +100,7 @@ DXOS now exposes a brokered runtime model with:
 - HTTP control-plane launch endpoints, so hosted portals and local dashboards can create lanes without depending on a WebSocket-only spawn path
 - HTTP pane-control endpoints for `talk` and `kill`, so hosted portals can supervise live lanes through the control plane while WebSocket remains focused on live streaming and event delivery
 - HTTP pane restart endpoints, so recovery actions also stay inside the control plane instead of depending on a local socket or manual terminal intervention
+- SQLite-backed DXOS control-plane storage as the canonical backend, with the repo-local `.dxos/control-plane.json` retained only as a compatibility mirror
 
 tmux remains a migration adapter only. The target substrate is DX-owned PTY sessions, and the operator surfaces now render adapter choice and live substrate state explicitly.
 
@@ -218,5 +219,6 @@ The first architecture slice now implemented in the repo is:
 - resolving a blocked work order now persists an explicit resolution note and pushes that guidance back into the worker lane automatically through the live runtime target when one exists
 - if DXOS can clear the blocker but cannot reach the worker lane, the failure is recorded back onto the session contract so the portal still shows the unresolved operational gap
 - the stop hook now continues work while the next high-value task remains clear, which keeps auto-continue aligned with DXOS language instead of relying on looser “obvious next step” wording
+- SQLite-backed DXOS control-plane storage is now the canonical backend, the repo-local `.dxos/control-plane.json` remains only as a compatibility mirror, and the portal exposes both the store paths and the registered-project registry so operators can see which state is authoritative
 
 That gives the platform a native place to reason, disagree, decide, supervise, and delegate inside the system itself.
