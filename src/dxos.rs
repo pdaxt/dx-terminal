@@ -1366,6 +1366,72 @@ pub fn session_list(project_path: &str, project_name: Option<&str>) -> String {
     .to_string()
 }
 
+pub fn runtime_launch_context(project_path: &str, project_name: Option<&str>, session_id: &str) -> Value {
+    let trimmed_session_id = session_id.trim();
+    if trimmed_session_id.is_empty() {
+        return json!({"error": "session_id_required"});
+    }
+
+    let state = load_control_plane(project_path, project_name);
+    let Some(session) = state
+        .sessions
+        .iter()
+        .find(|item| item.id == trimmed_session_id)
+    else {
+        return json!({
+            "error": "session_not_found",
+            "session_id": trimmed_session_id,
+            "project": state.project.name,
+        });
+    };
+
+    let mut work_orders = state
+        .work_orders
+        .iter()
+        .filter(|work_order| {
+            work_order.worker_session_id.as_deref() == Some(trimmed_session_id)
+                && !matches!(work_order.status.as_str(), "completed" | "cancelled")
+        })
+        .collect::<Vec<_>>();
+    work_orders.sort_by(|left, right| {
+        let left_rank = match left.status.as_str() {
+            "assigned" => 0,
+            "blocked" => 1,
+            "planned" => 2,
+            _ => 3,
+        };
+        let right_rank = match right.status.as_str() {
+            "assigned" => 0,
+            "blocked" => 1,
+            "planned" => 2,
+            _ => 3,
+        };
+        left_rank
+            .cmp(&right_rank)
+            .then_with(|| right.updated_at.cmp(&left.updated_at))
+    });
+
+    let adoption = state.adoptions.iter().find(|adoption| {
+        adoption.lead_session_id == trimmed_session_id
+            && !matches!(adoption.status.as_str(), "completed" | "cancelled")
+    });
+    let debate = adoption.and_then(|adoption| {
+        state
+            .debates
+            .iter()
+            .find(|debate| debate.id == adoption.debate_id)
+    });
+
+    json!({
+        "project": state.project,
+        "session": session_summary(session),
+        "primary_work_order": work_orders.first().map(|work_order| work_order_summary(work_order)),
+        "work_orders": work_orders.iter().map(|work_order| work_order_summary(work_order)).collect::<Vec<_>>(),
+        "adoption": adoption.map(adoption_summary),
+        "debate": debate.map(debate_summary),
+    })
+}
+
 pub fn start_project_adoption(
     project_path: &str,
     project_name: Option<&str>,
