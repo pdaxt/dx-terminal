@@ -2648,21 +2648,66 @@ pub async fn start_dxos_adoption(
         project: body.project.clone(),
         path: body.path.clone(),
     });
+    let project = body
+        .project
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| project_name_from_path(&project_path));
+    let derived_defaults = if body.summary.is_none()
+        || body.objective.is_none()
+        || body.feature_id.is_none()
+        || body.stage.is_none()
+    {
+        Some(derive_adoption_defaults(
+            &project,
+            &build_project_brief_payload(&app, &project_path, &project).await,
+        ))
+    } else {
+        None
+    };
     let actor = require_control_access(
         &app,
         &headers,
         &project_path,
-        body.project.as_deref(),
+        Some(&project),
         "adoption_start",
-        body.summary.as_deref().unwrap_or("project_adoption"),
+        body.summary
+            .as_deref()
+            .or_else(|| {
+                derived_defaults
+                    .as_ref()
+                    .and_then(|value| value.get("summary"))
+                    .and_then(Value::as_str)
+            })
+            .unwrap_or("project_adoption"),
     )?;
     let result = crate::dxos::start_project_adoption(
         &project_path,
-        body.project.as_deref(),
-        body.summary.as_deref(),
-        body.objective.as_deref(),
-        body.feature_id.as_deref(),
-        body.stage.as_deref(),
+        Some(&project),
+        body.summary.as_deref().or_else(|| {
+            derived_defaults
+                .as_ref()
+                .and_then(|value| value.get("summary"))
+                .and_then(Value::as_str)
+        }),
+        body.objective.as_deref().or_else(|| {
+            derived_defaults
+                .as_ref()
+                .and_then(|value| value.get("objective"))
+                .and_then(Value::as_str)
+        }),
+        body.feature_id.as_deref().or_else(|| {
+            derived_defaults
+                .as_ref()
+                .and_then(|value| value.get("feature_id"))
+                .and_then(Value::as_str)
+        }),
+        body.stage.as_deref().or_else(|| {
+            derived_defaults
+                .as_ref()
+                .and_then(|value| value.get("stage"))
+                .and_then(Value::as_str)
+        }),
         body.participants,
         body.requested_by.as_deref(),
     );
@@ -2672,7 +2717,7 @@ pub async fn start_dxos_adoption(
     record_control_action(
         &app,
         &project_path,
-        body.project.as_deref(),
+        Some(&project),
         &actor,
         "adoption_start",
         value
