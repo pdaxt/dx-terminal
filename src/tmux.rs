@@ -38,15 +38,6 @@ impl RuntimeProvider {
         }
     }
 
-    pub fn id(&self) -> &'static str {
-        match self {
-            Self::Claude => "claude",
-            Self::Codex => "codex",
-            Self::Gemini => "gemini",
-            Self::OpenCode => "opencode",
-        }
-    }
-
     pub fn label(&self) -> &'static str {
         match self {
             Self::Claude => "Claude Code",
