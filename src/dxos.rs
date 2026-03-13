@@ -745,7 +745,10 @@ fn authorize_operator_action_with_profiles(
         }));
     }
     let Some(operator) = profiles.iter().find(|profile| profile.id == actor) else {
-        return Err(format!("Operator '{}' is not registered for DXOS control.", actor));
+        return Err(format!(
+            "Operator '{}' is not registered for DXOS control.",
+            actor
+        ));
     };
     if !operator
         .project_scopes
