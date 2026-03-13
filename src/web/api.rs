@@ -59,6 +59,12 @@ fn maybe_emit_focus_change(app: &AppState, focus: &crate::vision_focus::VisionFo
         });
 }
 
+fn maybe_emit_debate_change(app: &AppState, project_path: &str, result: &str) {
+    if let Some(event) = crate::dxos::debate_event_from_result(project_path, result) {
+        app.state.event_bus.send(event);
+    }
+}
+
 /// GET / — Serve dashboard HTML
 pub async fn index() -> Html<&'static str> {
     Html(include_str!("../../assets/dashboard.html"))
@@ -918,6 +924,66 @@ pub struct VisionQuery {
     pub path: Option<String>,
 }
 
+#[derive(Deserialize, Default)]
+pub struct DxosDebateStartBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub title: String,
+    pub objective: String,
+    pub stage: Option<String>,
+    pub feature_id: Option<String>,
+    #[serde(default)]
+    pub participants: Vec<String>,
+    pub requested_by: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct DxosDebateProposalBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub debate_id: String,
+    pub author: String,
+    pub model: Option<String>,
+    pub summary: String,
+    pub rationale: String,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct DxosDebateContradictionBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub debate_id: String,
+    pub proposal_id: String,
+    pub author: String,
+    pub model: Option<String>,
+    pub rationale: String,
+}
+
+#[derive(Deserialize, Default)]
+pub struct DxosDebateVoteBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub debate_id: String,
+    pub proposal_id: String,
+    pub voter: String,
+    pub model: Option<String>,
+    pub stance: String,
+    pub rationale: String,
+}
+
+#[derive(Deserialize, Default)]
+pub struct DxosDebateDecisionBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub debate_id: String,
+    pub chosen_proposal_id: String,
+    pub decided_by: String,
+    pub summary: String,
+    pub rationale: String,
+}
+
 fn resolve_project_path(q: &VisionQuery) -> String {
     if let Some(ref p) = q.path {
         return p.clone();
@@ -1580,6 +1646,7 @@ pub async fn get_project_brief(
         "health": documentation_health(&guidance_docs, &docs, &runtimes, &feature_records),
         "sync_contract": documentation_sync_contract(&project),
     });
+    let dxos = crate::dxos::control_plane_snapshot(&project_path, Some(&project));
 
     Json(json!({
         "project": project,
@@ -1612,6 +1679,7 @@ pub async fn get_project_brief(
         "runtime_count": runtime_count,
         "worktree_count": worktree_count,
         "git": git,
+        "dxos": dxos,
     }))
 }
 
