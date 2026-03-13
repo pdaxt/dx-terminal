@@ -632,13 +632,204 @@ pub fn audit_list(project_path: &str, project_name: Option<&str>, limit: usize) 
     .to_string()
 }
 
+fn default_allowed_actions_for_role(role: &str) -> Vec<String> {
+    match role {
+        "admin" => vec!["*".to_string()],
+        "lead" => vec![
+            "session_*".to_string(),
+            "work_*".to_string(),
+            "debate_*".to_string(),
+            "pane_talk".to_string(),
+            "pane_restart".to_string(),
+        ],
+        "reviewer" => vec![
+            "debate_*".to_string(),
+            "work_resolve".to_string(),
+            "session_block".to_string(),
+            "pane_talk".to_string(),
+        ],
+        "operator" => vec![
+            "session_*".to_string(),
+            "work_*".to_string(),
+            "debate_*".to_string(),
+            "pane_*".to_string(),
+        ],
+        "observer" => Vec::new(),
+        _ => vec![
+            "session_*".to_string(),
+            "work_*".to_string(),
+            "debate_*".to_string(),
+            "pane_talk".to_string(),
+        ],
+    }
+}
+
+fn parse_control_operator_registry_value(raw: &str) -> Vec<ControlOperatorProfile> {
+    let parsed: Value = match serde_json::from_str(raw) {
+        Ok(value) => value,
+        Err(_) => return Vec::new(),
+    };
+    let entries = parsed
+        .get("operators")
+        .cloned()
+        .unwrap_or(parsed)
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    entries
+        .into_iter()
+        .filter_map(|entry| serde_json::from_value::<ControlOperatorProfile>(entry).ok())
+        .filter_map(|mut operator| {
+            operator.id = operator.id.trim().to_string();
+            operator.role = operator.role.trim().to_lowercase();
+            if operator.id.is_empty() {
+                return None;
+            }
+            if operator.role.is_empty() {
+                operator.role = "operator".to_string();
+            }
+            if operator.project_scopes.is_empty() {
+                operator.project_scopes.push("*".to_string());
+            }
+            if operator.allowed_actions.is_empty() {
+                operator.allowed_actions = default_allowed_actions_for_role(&operator.role);
+            }
+            Some(operator)
+        })
+        .collect()
+}
+
+fn load_control_operator_profiles() -> Vec<ControlOperatorProfile> {
+    config::control_operators_json()
+        .map(|raw| parse_control_operator_registry_value(&raw))
+        .unwrap_or_default()
+}
+
+fn authorization_pattern_matches(pattern: &str, value: &str) -> bool {
+    let trimmed = pattern.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    if trimmed == "*" {
+        return true;
+    }
+    if let Some(prefix) = trimmed.strip_suffix('*') {
+        return value.starts_with(prefix);
+    }
+    trimmed == value
+}
+
+fn project_scope_matches(pattern: &str, project_path: &str, project_name: Option<&str>) -> bool {
+    let normalized_name = resolved_project_name(project_path, project_name);
+    authorization_pattern_matches(pattern, project_path)
+        || authorization_pattern_matches(pattern, &normalized_name)
+        || (project_path.trim().is_empty()
+            && (authorization_pattern_matches(pattern, "global")
+                || authorization_pattern_matches(pattern, "--")))
+}
+
+fn authorize_operator_action_with_profiles(
+    profiles: &[ControlOperatorProfile],
+    project_path: &str,
+    project_name: Option<&str>,
+    actor: &str,
+    action_kind: &str,
+) -> Result<Value, String> {
+    if profiles.is_empty() {
+        return Ok(json!({
+            "mode": "authenticated_open",
+            "id": actor,
+            "role": "operator",
+            "project_scopes": ["*"],
+            "allowed_actions": ["*"],
+        }));
+    }
+    let Some(operator) = profiles.iter().find(|profile| profile.id == actor) else {
+        return Err(format!("Operator '{}' is not registered for DXOS control.", actor));
+    };
+    if !operator
+        .project_scopes
+        .iter()
+        .any(|scope| project_scope_matches(scope, project_path, project_name))
+    {
+        return Err(format!(
+            "Operator '{}' cannot control project '{}'.",
+            actor,
+            resolved_project_name(project_path, project_name)
+        ));
+    }
+    if !operator
+        .allowed_actions
+        .iter()
+        .any(|pattern| authorization_pattern_matches(pattern, action_kind))
+    {
+        return Err(format!(
+            "Operator '{}' with role '{}' is not allowed to perform '{}'.",
+            actor, operator.role, action_kind
+        ));
+    }
+    Ok(json!({
+        "mode": "operator_policy",
+        "id": operator.id,
+        "role": operator.role,
+        "project_scopes": operator.project_scopes,
+        "allowed_actions": operator.allowed_actions,
+        "note": operator.note,
+    }))
+}
+
+pub fn authorize_operator_action(
+    project_path: &str,
+    project_name: Option<&str>,
+    actor: &str,
+    action_kind: &str,
+) -> Result<Value, String> {
+    authorize_operator_action_with_profiles(
+        &load_control_operator_profiles(),
+        project_path,
+        project_name,
+        actor,
+        action_kind,
+    )
+}
+
+pub fn control_operator_registry() -> Value {
+    let operators = load_control_operator_profiles();
+    json!({
+        "configured": !operators.is_empty(),
+        "count": operators.len(),
+        "operators": operators.iter().map(|operator| json!({
+            "id": operator.id,
+            "role": operator.role,
+            "project_scopes": operator.project_scopes,
+            "allowed_actions": operator.allowed_actions,
+            "note": operator.note,
+        })).collect::<Vec<_>>(),
+    })
+}
+
 pub fn control_auth_contract() -> Value {
     let token_configured = config::control_token().is_some();
+    let operator_registry = control_operator_registry();
+    let operator_policy_configured = operator_registry
+        .get("configured")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
     json!({
-        "mode": if token_configured { "control_token" } else { "local_trusted" },
+        "mode": if token_configured && operator_policy_configured {
+            "token_and_operator_policy"
+        } else if token_configured {
+            "control_token"
+        } else if operator_policy_configured {
+            "local_role_policy"
+        } else {
+            "local_trusted"
+        },
         "configured": token_configured,
+        "operator_policy_configured": operator_policy_configured,
         "required_header": "x-dx-control-token",
         "authorization_scheme": "Bearer",
+        "operators": operator_registry["operators"].clone(),
         "required_for": [
             "/api/dxos/session/launch",
             "/api/dxos/session/upsert",
