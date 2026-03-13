@@ -1209,6 +1209,7 @@ let dxosPendingLaunches={};
 let dxosPolicyCache={};
 let dxosRuntimeBrokerCache={};
 let dxosControlAuthCache={};
+let dxosRecoveryCache={};
 const DX_CONTROL_TOKEN_KEY='dx_control_token';
 const DX_OPERATOR_IDENTITY_KEY='dx_operator_identity';
 
@@ -2765,6 +2766,29 @@ function renderRecoveryGapRows(gaps){
   }).join('');
 }
 
+function renderAdoptionRows(adoptions){
+  const list=Array.isArray(adoptions)?adoptions:[];
+  if(!list.length){
+    return '<div class="empty-note">No governed adoption workflow has been started for this project yet.</div>';
+  }
+  return list.slice(0,3).map(item=>{
+    const tone=item.status==='active'?'shared':item.status==='planned'?'codex':'gemini';
+    const links=[
+      item.lead_session_id?`lead ${item.lead_session_id}`:null,
+      item.debate_id?`council ${item.debate_id}`:null,
+      item.feature_id?`feature ${item.feature_id}`:null
+    ].filter(Boolean).join(' · ');
+    return `<div class="exec-row">
+      <div class="exec-row-top">
+        <span class="exec-row-title">${escHtml((item.summary||'Project adoption').toString())}</span>
+        <span class="exec-row-tags"><span class="doc-pill ${tone}">${escHtml((item.status||'active').toString())}</span>${item.stage?vddPhaseBadge(item.stage):''}</span>
+      </div>
+      <div class="exec-row-meta">${escHtml((item.objective||'').toString())}</div>
+      <div class="exec-row-meta" style="margin-top:6px">${escHtml(links||'No linked recovery artifacts yet.')}</div>
+    </div>`;
+  }).join('');
+}
+
 function applyRecoverySuggestion(encoded){
   const project=activeProjectForHub();
   if(project&&!operatorAllowsAction(project,'session_launch')){
@@ -2810,6 +2834,53 @@ async function launchRecoverySuggestion(encoded){
     }
   }
   await launchDxosLane();
+  return false;
+}
+
+async function startDxosAdoption(){
+  const project=activeProjectForHub();
+  if(!project)return false;
+  if(!operatorAllowsAction(project,'adoption_start')){
+    setDxosPortalNotice('adoption','Operator policy blocks project adoption for this project.','red');
+    return false;
+  }
+  const recovery=(dxosRecoveryCache&&dxosRecoveryCache[project])||{};
+  const nextAction=recovery.next_action||{};
+  const focus=currentProjectFocus(project)||{};
+  const payload={
+    project,
+    summary: recovery.summary||`Adopt ${project} into DXOS and build the first governed recovery plan.`,
+    objective: nextAction.task_prompt||recovery.summary||`Inventory ${project}, reconstruct the active features and stages, and seed the first governed recovery council.`,
+    feature_id: nextAction.feature_id||focus.feature_id||null,
+    stage: nextAction.stage||focus.stage||'discovery',
+    requested_by: storedDxOperatorIdentity()||null,
+    participants: [storedDxOperatorIdentity()||'portal-operator','design-review','qa-review','docs-steward'].filter(Boolean)
+  };
+  setDxosPortalNotice('adoption',`Starting governed recovery for ${project}…`,'yellow');
+  const result=await fetchJSON('/api/dxos/adoption/start',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(payload)
+  });
+  if(!result){
+    setDxosPortalNotice('adoption','Unable to reach the DXOS adoption endpoint.','red');
+    return false;
+  }
+  if(noteDxControlAuthFailure(result)){
+    return false;
+  }
+  if(result.error){
+    const tone=result.error==='adoption_in_progress'?'yellow':'red';
+    setDxosPortalNotice('adoption',String(result.error||'Unable to start the recovery workflow.'),tone);
+    await renderExecutionHub();
+    return false;
+  }
+  setDxosPortalNotice(
+    'adoption',
+    `Recovery workflow ${result.adoption_id||''} started with lead ${result.lead_session_id||''} and council ${result.debate_id||''}.`,
+    'green'
+  );
+  await renderExecutionHub();
   return false;
 }
 
@@ -2884,6 +2955,7 @@ async function renderExecutionHub(){
   const delivery=brief.delivery||{};
   const runtimeContract=brief.runtime_contract||{};
   const dxos=brief.dxos||{};
+  if(typeof dxosRecoveryCache==='object')dxosRecoveryCache[project]=brief.recovery||{};
   dxosPolicyCache[project]=dxos.provider_policy||{};
   dxosRuntimeBrokerCache[project]=((dxos.runtime_contract&&dxos.runtime_contract.launch_broker)||runtimeContract.launch_broker||{});
   dxosControlAuthCache[project]=(runtimeContract.auth||{});
@@ -2902,6 +2974,7 @@ async function renderExecutionHub(){
   const dxosProjectRegistry=dxos.control_plane_registry||{};
   const dxosRegisteredProjects=(dxosProjectRegistry.projects||[]);
   const dxosStorage=dxos.storage||{};
+  const dxosAdoptions=(dxos.adoptions&&dxos.adoptions.recent)||[];
   const leadSessions=dxosSessions.filter(session=>!session.supervisor_session_id);
   const workerSessions=dxosSessions.filter(session=>session.supervisor_session_id);
   const phaseCounts=delivery.phase_counts||{};
@@ -3018,6 +3091,12 @@ async function renderExecutionHub(){
             </div>
             <div class="exec-row-meta">${recoveryNextAction&&recoveryNextAction.reason?escHtml(String(recoveryNextAction.reason)):'DXOS has not suggested the next lane yet.'}</div>
           </div>
+          <div class="exec-list-title">Governed adoption workflow</div>
+          <div class="exec-list">${renderAdoptionRows(dxosAdoptions)}</div>
+          ${showOperatorControls?`<div class="exec-row-actions" style="margin-top:10px">
+            <button class="design-action" onclick="return startDxosAdoption()" ${operatorActionDisabledAttrs(project,'adoption_start','project adoption')}>Start recovery council</button>
+          </div>
+          ${renderDxosPortalNotice('adoption')}`:''}
           <div class="exec-list-title">Adoption gaps</div>
           <div class="exec-list">${renderRecoveryGapRows(recoveryGaps)}</div>
         </div>
