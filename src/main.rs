@@ -24,6 +24,7 @@ mod pty;
 mod quality;
 mod queue;
 mod recovery_planning;
+mod provider_plugins;
 mod runtime_broker;
 mod scanner;
 mod screen;
