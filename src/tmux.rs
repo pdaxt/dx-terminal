@@ -20,34 +20,6 @@ pub struct TmuxAgent {
     pub name: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RuntimeProvider {
-    Claude,
-    Codex,
-    Gemini,
-    OpenCode,
-}
-
-impl RuntimeProvider {
-    pub fn from_str(value: &str) -> Self {
-        match value.trim().to_lowercase().as_str() {
-            "codex" | "openai" => Self::Codex,
-            "gemini" | "google" => Self::Gemini,
-            "opencode" | "open-code" => Self::OpenCode,
-            _ => Self::Claude,
-        }
-    }
-
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Claude => "Claude Code",
-            Self::Codex => "Codex CLI",
-            Self::Gemini => "Gemini CLI",
-            Self::OpenCode => "OpenCode",
-        }
-    }
-}
-
 /// Create a new tmux window and return its target.
 /// Window is named after the task (e.g., "factory-dev", "factory-qa").
 pub fn create_window(name: &str) -> Result<TmuxAgent> {
@@ -114,24 +86,13 @@ pub fn send_command(target: &str, cmd: &str) -> Result<()> {
     Ok(())
 }
 
-/// Spawn a Claude agent in a new tmux window.
-/// Returns the TmuxAgent with target info.
-///
-/// `env_vars` are exported before running claude (e.g. P=3, MACHINE_IP, etc.)
-/// `autonomous` controls whether --dangerously-skip-permissions is used.
-pub fn spawn_agent_for_provider(
-    provider: &str,
-    window_name: &str,
-    project_path: &str,
-    prompt: &str,
+/// Execute a provider launch plan in a visible tmux window.
+pub fn spawn_planned_agent(
+    plan: &crate::runtime_broker::RuntimeLaunchPlan,
     env_vars: &[(String, String)],
-    autonomous: bool,
-    model: Option<&str>,
 ) -> Result<TmuxAgent> {
-    let provider = RuntimeProvider::from_str(provider);
-    let agent = create_window(window_name)?;
+    let agent = create_window(&plan.window_name)?;
 
-    // Export environment variables
     if !env_vars.is_empty() {
         let exports: Vec<String> = env_vars
             .iter()
@@ -141,16 +102,32 @@ pub fn spawn_agent_for_provider(
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
-    // cd to project directory
-    send_command(&agent.target, &format!("cd {}", shell_escape(project_path)))?;
-
-    // Small delay to let cd complete
+    send_command(&agent.target, &format!("cd {}", shell_escape(&plan.project_path)))?;
     std::thread::sleep(std::time::Duration::from_millis(200));
-
-    let cmd = build_provider_command(provider, prompt, autonomous, model)?;
-    send_command(&agent.target, &cmd)?;
+    send_command(&agent.target, &plan.command)?;
 
     Ok(agent)
+}
+
+/// Compatibility wrapper while panes move to the DX runtime broker.
+pub fn spawn_agent_for_provider(
+    provider: &str,
+    window_name: &str,
+    project_path: &str,
+    prompt: &str,
+    env_vars: &[(String, String)],
+    autonomous: bool,
+    model: Option<&str>,
+) -> Result<TmuxAgent> {
+    let plan = crate::runtime_broker::plan_tmux_launch(
+        provider,
+        window_name,
+        project_path,
+        prompt,
+        autonomous,
+        model,
+    )?;
+    spawn_planned_agent(&plan, env_vars)
 }
 
 pub fn spawn_agent(
@@ -386,23 +363,11 @@ pub fn infer_provider(command: &str, window_name: &str, jsonl_path: Option<&str>
 }
 
 pub fn provider_label(provider: &str) -> &'static str {
-    match provider {
-        "claude" => "Claude Code",
-        "codex" => "Codex CLI",
-        "gemini" => "Gemini CLI",
-        "opencode" => "OpenCode",
-        _ => "Unknown",
-    }
+    crate::runtime_broker::provider_label(provider)
 }
 
 pub fn provider_short(provider: &str) -> &'static str {
-    match provider {
-        "claude" => "Claude",
-        "codex" => "Codex",
-        "gemini" => "Gemini",
-        "opencode" => "Open",
-        _ => "Unknown",
-    }
+    crate::runtime_broker::provider_short(provider)
 }
 
 pub fn detect_attention_request(output: &str) -> Option<AttentionRequest> {
@@ -719,67 +684,6 @@ mod provider_tests {
     }
 
     #[test]
-    fn parses_runtime_provider_names() {
-        assert_eq!(RuntimeProvider::from_str("claude"), RuntimeProvider::Claude);
-        assert_eq!(RuntimeProvider::from_str("codex"), RuntimeProvider::Codex);
-        assert_eq!(RuntimeProvider::from_str("openai"), RuntimeProvider::Codex);
-        assert_eq!(RuntimeProvider::from_str("gemini"), RuntimeProvider::Gemini);
-        assert_eq!(
-            RuntimeProvider::from_str("opencode"),
-            RuntimeProvider::OpenCode
-        );
-        assert_eq!(
-            RuntimeProvider::from_str("something-else"),
-            RuntimeProvider::Claude
-        );
-    }
-
-    #[test]
-    fn builds_claude_command_with_model_and_permissions() {
-        let cmd = build_provider_command_with_binary(
-            RuntimeProvider::Claude,
-            "/bin/claude",
-            "ship it",
-            true,
-            Some("claude-sonnet-4-6"),
-        );
-        assert!(cmd.contains("/bin/claude"));
-        assert!(cmd.contains("--dangerously-skip-permissions"));
-        assert!(cmd.contains("--model 'claude-sonnet-4-6'"));
-        assert!(cmd.ends_with("-p 'ship it'"));
-    }
-
-    #[test]
-    fn builds_codex_command_with_full_auto() {
-        let cmd = build_provider_command_with_binary(
-            RuntimeProvider::Codex,
-            "/bin/codex",
-            "review this diff",
-            true,
-            Some("gpt-5.4"),
-        );
-        assert!(cmd.contains("/bin/codex"));
-        assert!(cmd.contains("--full-auto"));
-        assert!(cmd.contains("-m 'gpt-5.4'"));
-        assert!(cmd.ends_with("'review this diff'"));
-    }
-
-    #[test]
-    fn builds_gemini_interactive_command() {
-        let cmd = build_provider_command_with_binary(
-            RuntimeProvider::Gemini,
-            "/bin/gemini",
-            "design three options",
-            false,
-            Some("gemini-2.5-pro"),
-        );
-        assert!(cmd.contains("/bin/gemini"));
-        assert!(cmd.contains("--prompt-interactive 'design three options'"));
-        assert!(cmd.contains("-m 'gemini-2.5-pro'"));
-        assert!(!cmd.contains("--yolo"));
-    }
-
-    #[test]
     fn detects_attention_requests() {
         let permission = detect_attention_request("Waiting\nPermission required to continue [y/n]");
         assert_eq!(
@@ -826,122 +730,4 @@ pub fn capture_output_extended(target: &str, lines: u32) -> String {
 /// Shell-escape a path (wrap in single quotes).
 fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
-}
-
-fn build_provider_command(
-    provider: RuntimeProvider,
-    prompt: &str,
-    autonomous: bool,
-    model: Option<&str>,
-) -> Result<String> {
-    let binary = resolve_provider_binary(provider).ok_or_else(|| {
-        anyhow::anyhow!(
-            "{} binary not found on PATH or standard install locations",
-            provider.label()
-        )
-    })?;
-    Ok(build_provider_command_with_binary(
-        provider, &binary, prompt, autonomous, model,
-    ))
-}
-
-fn build_provider_command_with_binary(
-    provider: RuntimeProvider,
-    binary: &str,
-    prompt: &str,
-    autonomous: bool,
-    model: Option<&str>,
-) -> String {
-    let escaped_prompt = shell_escape(prompt);
-    let model_arg = model
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(shell_escape);
-
-    match provider {
-        RuntimeProvider::Claude => {
-            let perms_flag = if autonomous {
-                " --dangerously-skip-permissions"
-            } else {
-                ""
-            };
-            let model_flag = model_arg
-                .as_deref()
-                .map(|value| format!(" --model {}", value))
-                .unwrap_or_default();
-            format!(
-                "{}{}{} -p {}",
-                binary, perms_flag, model_flag, escaped_prompt
-            )
-        }
-        RuntimeProvider::Codex => {
-            let auto_flag = if autonomous { " --full-auto" } else { "" };
-            let model_flag = model_arg
-                .as_deref()
-                .map(|value| format!(" -m {}", value))
-                .unwrap_or_default();
-            format!("{}{}{} {}", binary, auto_flag, model_flag, escaped_prompt)
-        }
-        RuntimeProvider::Gemini => {
-            let auto_flag = if autonomous { " --yolo" } else { "" };
-            let model_flag = model_arg
-                .as_deref()
-                .map(|value| format!(" -m {}", value))
-                .unwrap_or_default();
-            format!(
-                "{}{}{} --prompt-interactive {}",
-                binary, auto_flag, model_flag, escaped_prompt
-            )
-        }
-        RuntimeProvider::OpenCode => {
-            let model_flag = model_arg
-                .as_deref()
-                .map(|value| format!(" -m {}", value))
-                .unwrap_or_default();
-            format!("{}{} {}", binary, model_flag, escaped_prompt)
-        }
-    }
-}
-
-fn resolve_provider_binary(provider: RuntimeProvider) -> Option<String> {
-    let candidates: &[&str] = match provider {
-        RuntimeProvider::Claude => &[
-            "/opt/homebrew/bin/claude",
-            "/usr/local/bin/claude",
-            "claude",
-        ],
-        RuntimeProvider::Codex => &[
-            "/Users/pran/.nvm/versions/node/v22.22.0/bin/codex",
-            "/opt/homebrew/bin/codex",
-            "/usr/local/bin/codex",
-            "codex",
-        ],
-        RuntimeProvider::Gemini => &[
-            "/opt/homebrew/bin/gemini",
-            "/usr/local/bin/gemini",
-            "gemini",
-        ],
-        RuntimeProvider::OpenCode => &[
-            "/opt/homebrew/bin/opencode",
-            "/usr/local/bin/opencode",
-            "opencode",
-        ],
-    };
-
-    for candidate in candidates {
-        if candidate.contains('/') {
-            if std::path::Path::new(candidate).exists() {
-                return Some((*candidate).to_string());
-            }
-        } else if let Ok(output) = Command::new("which").arg(candidate).output() {
-            if output.status.success() {
-                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !path.is_empty() {
-                    return Some(path);
-                }
-            }
-        }
-    }
-
-    None
 }
