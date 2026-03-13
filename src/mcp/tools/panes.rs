@@ -15,6 +15,12 @@ use crate::tracker;
 use crate::workspace;
 use std::path::PathBuf;
 
+fn emit_dxos_session_change(app: &App, project_path: &str, result: &str) {
+    if let Some(event) = crate::dxos::session_event_from_result(project_path, result) {
+        app.state.event_bus.send(event);
+    }
+}
+
 /// Execute os_spawn logic — allocates PTY and spawns Claude agent
 pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     let pane_num = match config::resolve_pane(&req.pane) {
@@ -138,6 +144,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         project: project_name.clone(),
         project_path: project_path.clone(),
         role: role.clone(),
+        dxos_session_id: None,
         task: task.clone(),
         issue_id: None,
         space: None,
@@ -152,7 +159,43 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         machine_mac: Some(machine_id.mac.clone()),
         tmux_target: tmux_target.clone(),
     };
+    let mut pane_state = pane_state;
+    let session_result = crate::dxos::upsert_session_contract(
+        &project_path,
+        Some(&project_name),
+        None,
+        &role,
+        Some("claude"),
+        None,
+        Some(if autonomous {
+            "high_autonomy"
+        } else {
+            "guarded_auto"
+        }),
+        &task,
+        vec!["task_result".to_string(), "runtime_handoff".to_string()],
+        app.state.get_project_mcps(&project_name).await,
+        vec![project_path.clone()],
+        vec![spawn_cwd.clone()],
+        ws_path.as_deref(),
+        ws_branch.as_deref(),
+        Some(browser_port),
+        Some(pane_num),
+        tmux_target.as_deref(),
+        None,
+        Some("build"),
+        None,
+        Some("lead_then_human"),
+        Some("active"),
+    );
+    let session_value: serde_json::Value =
+        serde_json::from_str(&session_result).unwrap_or_else(|_| serde_json::json!({}));
+    pane_state.dxos_session_id = session_value
+        .get("session_id")
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
     app.state.set_pane(pane_num, pane_state).await;
+    emit_dxos_session_change(app, &project_path, &session_result);
     app.state
         .event_bus
         .send(crate::state::events::StateEvent::PaneSpawned {
@@ -207,6 +250,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         "browser_artifacts_root": browser_artifacts_root,
         "tmux": tmux_status,
         "tmux_target": tmux_target,
+        "dxos_session_id": session_value.get("session_id").cloned().unwrap_or(serde_json::Value::Null),
         "machine_ip": machine_id.ip,
         "machine_hostname": machine_id.hostname,
         "machine_mac": machine_id.mac,
@@ -265,11 +309,22 @@ pub async fn kill(app: &App, req: KillRequest) -> String {
     machine::deregister(pane_num);
 
     let mut pane_state = pane_data;
+    if let Some(session_id) = pane_state.dxos_session_id.clone() {
+        let session_result = crate::dxos::update_session_status(
+            &project_path,
+            Some(&project_name),
+            &session_id,
+            "idle",
+            Some(&format!("Pane killed: {}", reason)),
+        );
+        emit_dxos_session_change(app, &project_path, &session_result);
+    }
     pane_state.status = "idle".into();
     pane_state.task = String::new();
     pane_state.project = "--".into();
     pane_state.project_path = String::new();
     pane_state.role = "--".into();
+    pane_state.dxos_session_id = None;
     pane_state.started_at = None;
     pane_state.acu_spent = 0.0;
     pane_state.issue_id = None;
@@ -404,6 +459,37 @@ pub async fn reassign(app: &App, req: ReassignRequest) -> String {
     }
 
     app.state.set_pane(pane_num, pane_data.clone()).await;
+    if let Some(session_id) = pane_data.dxos_session_id.clone() {
+        let session_result = crate::dxos::upsert_session_contract(
+            &pane_data.project_path,
+            Some(&pane_data.project),
+            Some(&session_id),
+            &pane_data.role,
+            Some("claude"),
+            None,
+            Some("guarded_auto"),
+            &pane_data.task,
+            vec!["task_result".to_string(), "runtime_handoff".to_string()],
+            app.state.get_project_mcps(&pane_data.project).await,
+            vec![pane_data.project_path.clone()],
+            pane_data
+                .workspace_path
+                .clone()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            pane_data.workspace_path.as_deref(),
+            pane_data.branch_name.as_deref(),
+            Some(config::pane_browser_port(pane_num)),
+            Some(pane_num),
+            pane_data.tmux_target.as_deref(),
+            None,
+            Some("build"),
+            None,
+            Some("lead_then_human"),
+            Some("active"),
+        );
+        emit_dxos_session_change(app, &pane_data.project_path, &session_result);
+    }
     app.state
         .log_activity(
             pane_num,
@@ -793,12 +879,23 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
     remove_from_agents_json(pane_num);
 
     let task_display = truncate(&pane_data.task, 30);
+    if let Some(session_id) = pane_data.dxos_session_id.clone() {
+        let session_result = crate::dxos::update_session_status(
+            &pane_data.project_path,
+            Some(&pane_data.project),
+            &session_id,
+            "completed",
+            Some(&summary),
+        );
+        emit_dxos_session_change(app, &pane_data.project_path, &session_result);
+    }
     pane_data.status = "idle".into();
     pane_data.acu_spent = acu;
     pane_data.task = String::new();
     pane_data.project = "--".into();
     pane_data.project_path = String::new();
     pane_data.role = "--".into();
+    pane_data.dxos_session_id = None;
     pane_data.started_at = None;
     pane_data.issue_id = None;
     pane_data.space = None;
