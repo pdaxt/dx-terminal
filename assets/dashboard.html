@@ -3149,7 +3149,7 @@ async function renderExecutionHub(){
             <div class="exec-row-meta">${recoveryNextAction&&recoveryNextAction.reason?escHtml(String(recoveryNextAction.reason)):'DXOS has not suggested the next lane yet.'}</div>
           </div>
           <div class="exec-list-title">Governed adoption workflow</div>
-          <div class="exec-list">${renderAdoptionRows(dxosAdoptions)}</div>
+          <div class="exec-list">${renderAdoptionRows(project,dxosAdoptions,showOperatorControls)}</div>
           ${showOperatorControls?`<div class="exec-row-actions" style="margin-top:10px">
             <button class="design-action" onclick="return startDxosAdoption()" ${operatorActionDisabledAttrs(project,'adoption_start','project adoption')}>Start recovery council</button>
           </div>
