@@ -1,4 +1,6 @@
+use crate::config;
 use crate::state::events::StateEvent;
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -251,6 +253,104 @@ fn control_plane_dir(project_path: &str) -> PathBuf {
 
 fn control_plane_file(project_path: &str) -> PathBuf {
     control_plane_dir(project_path).join("control-plane.json")
+}
+
+fn control_plane_store_dir() -> PathBuf {
+    config::dx_root().join("dxos")
+}
+
+fn control_plane_store_path() -> PathBuf {
+    control_plane_store_dir().join("control-plane.sqlite3")
+}
+
+const CONTROL_PLANE_STORE_SCHEMA: &str = r#"
+CREATE TABLE IF NOT EXISTS dxos_control_planes (
+    project_path TEXT PRIMARY KEY,
+    project_name TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    payload_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dxos_control_planes_updated_at
+    ON dxos_control_planes(updated_at DESC);
+"#;
+
+fn control_plane_db() -> Result<Connection, String> {
+    let dir = control_plane_store_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir: {}", e))?;
+    let conn = Connection::open(control_plane_store_path()).map_err(|e| format!("open: {}", e))?;
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;",
+    )
+    .map_err(|e| format!("pragma: {}", e))?;
+    conn.execute_batch(CONTROL_PLANE_STORE_SCHEMA)
+        .map_err(|e| format!("schema: {}", e))?;
+    Ok(conn)
+}
+
+fn load_control_plane_from_store(project_path: &str) -> Option<ControlPlaneState> {
+    let conn = control_plane_db().ok()?;
+    let payload: String = conn
+        .query_row(
+            "SELECT payload_json FROM dxos_control_planes WHERE project_path = ?1",
+            params![project_path],
+            |row| row.get(0),
+        )
+        .ok()?;
+    serde_json::from_str::<ControlPlaneState>(&payload).ok()
+}
+
+fn store_control_plane_in_sqlite(state: &ControlPlaneState) -> Result<(), String> {
+    let conn = control_plane_db()?;
+    let payload = serde_json::to_string_pretty(state).map_err(|e| format!("serialize: {}", e))?;
+    conn.execute(
+        "INSERT INTO dxos_control_planes(project_path, project_name, updated_at, payload_json)
+         VALUES(?1, ?2, ?3, ?4)
+         ON CONFLICT(project_path) DO UPDATE SET
+            project_name = excluded.project_name,
+            updated_at = excluded.updated_at,
+            payload_json = excluded.payload_json",
+        params![
+            state.project.path,
+            state.project.name,
+            state.updated_at,
+            payload
+        ],
+    )
+    .map_err(|e| format!("upsert: {}", e))?;
+    Ok(())
+}
+
+fn save_control_plane_mirror(project_path: &str, state: &ControlPlaneState) -> Result<(), String> {
+    let dir = control_plane_dir(project_path);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir: {}", e))?;
+    let json = serde_json::to_string_pretty(state).map_err(|e| format!("serialize: {}", e))?;
+    std::fs::write(control_plane_file(project_path), json).map_err(|e| format!("write: {}", e))
+}
+
+fn control_plane_store_project_count() -> usize {
+    control_plane_db()
+        .ok()
+        .and_then(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM dxos_control_planes",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .ok()
+        })
+        .unwrap_or(0)
+        .max(0) as usize
+}
+
+fn control_plane_storage_summary(project_path: &str) -> Value {
+    json!({
+        "backend": "sqlite_with_repo_mirror",
+        "canonical": "dx_root_sqlite",
+        "mirror": "repo_local_json",
+        "database_path": control_plane_store_path().to_string_lossy().to_string(),
+        "mirror_path": control_plane_file(project_path).to_string_lossy().to_string(),
+        "registered_projects": control_plane_store_project_count(),
+    })
 }
 
 fn default_state(project_path: &str, project_name: Option<&str>) -> ControlPlaneState {

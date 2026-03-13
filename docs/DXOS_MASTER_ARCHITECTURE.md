@@ -99,6 +99,7 @@ DXOS now exposes a brokered runtime model with:
 - server-side auto-allocation of the next free lane when operators launch a session without binding it to a specific pane up front
 - HTTP control-plane launch endpoints, so hosted portals and local dashboards can create lanes without depending on a WebSocket-only spawn path
 - HTTP pane-control endpoints for `talk` and `kill`, so hosted portals can supervise live lanes through the control plane while WebSocket remains focused on live streaming and event delivery
+- HTTP pane restart endpoints, so recovery actions also stay inside the control plane instead of depending on a local socket or manual terminal intervention
 
 tmux remains a migration adapter only. The target substrate is DX-owned PTY sessions, and the operator surfaces now render adapter choice and live substrate state explicitly.
 
