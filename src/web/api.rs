@@ -1300,6 +1300,15 @@ pub struct DxosAdoptionStartBody {
 }
 
 #[derive(Deserialize, Default)]
+pub struct DxosAdoptionStatusBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub adoption_id: String,
+    pub status: String,
+    pub note: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
 pub struct DxosDebateStartBody {
     pub project: Option<String>,
     pub path: Option<String>,
@@ -2607,6 +2616,45 @@ pub async fn start_dxos_adoption(
             .get("adoption_id")
             .and_then(Value::as_str)
             .unwrap_or("project_adoption"),
+        &value,
+    );
+    Ok(Json(value))
+}
+
+/// POST /api/dxos/adoption/status — Update a project adoption workflow status
+pub async fn update_dxos_adoption_status(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DxosAdoptionStatusBody>,
+) -> ApiJson {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        body.project.as_deref(),
+        "adoption_status",
+        &body.adoption_id,
+    )?;
+    let result = crate::dxos::update_project_adoption_status(
+        &project_path,
+        body.project.as_deref(),
+        &body.adoption_id,
+        &body.status,
+        body.note.as_deref(),
+    );
+    maybe_emit_dxos_session_change(&app, &project_path, &result);
+    let value = serde_json::from_str(&result).unwrap_or(json!({"raw": result}));
+    record_control_action(
+        &app,
+        &project_path,
+        body.project.as_deref(),
+        &actor,
+        "adoption_status",
+        &body.adoption_id,
         &value,
     );
     Ok(Json(value))
