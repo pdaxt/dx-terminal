@@ -2943,6 +2943,25 @@ impl DxTerminalService {
         self.emit_dxos_session_change(&project_path, &result);
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
+
+    #[tool(
+        description = "Raise a blocker or permission request from a worker session. DXOS routes it to the supervising lead first, then falls back to human escalation when no lead exists."
+    )]
+    async fn dxos_session_raise_blocker(
+        &self,
+        Parameters(req): Parameters<types::DxosSessionRaiseBlockerRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::dxos_tools::resolve_project_path(req.project.as_deref());
+        let result = tools::dxos_tools::session_raise_blocker(
+            req.project.as_deref(),
+            &req.worker_session_id,
+            &req.blocker,
+            req.requested_permission.as_deref(),
+            req.resolution_hint.as_deref(),
+        );
+        self.emit_dxos_session_change(&project_path, &result);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
 }
 
 #[tool_handler]
