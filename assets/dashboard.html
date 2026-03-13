@@ -1840,8 +1840,16 @@ function renderDxosOperatorControls(project,activeStage,sessions){
               <select class="action-select" id="dxos-launch-pane">${paneOptions||'<option value="">No pane available</option>'}</select>
             </div>
             <div class="action-field">
+              <label for="dxos-launch-provider">Provider</label>
+              <select class="action-select" id="dxos-launch-provider">${providerOptions('claude')}</select>
+            </div>
+            <div class="action-field">
               <label for="dxos-launch-role">Role</label>
               <select class="action-select" id="dxos-launch-role">${roleOptions('design')}</select>
+            </div>
+            <div class="action-field">
+              <label for="dxos-launch-model">Model</label>
+              <input class="action-input" id="dxos-launch-model" placeholder="optional model override">
             </div>
             <div class="action-field">
               <label for="dxos-launch-feature">Feature</label>
@@ -1862,7 +1870,7 @@ function renderDxosOperatorControls(project,activeStage,sessions){
           </div>
           <div class="action-actions">
             <button class="design-action" onclick="launchDxosLane()">Launch lane</button>
-            <span class="action-note">Current adapter: Claude-compatible tmux lane</span>
+            <span class="action-note">Current adapter: provider-aware tmux broker for Claude, Codex, and Gemini</span>
           </div>
           ${renderDxosPortalNotice('launch')}
         </div>

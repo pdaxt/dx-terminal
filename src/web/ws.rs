@@ -222,9 +222,11 @@ async fn build_full_snapshot(app: &App) -> Value {
         };
 
         let provider = if let Some(lp) = live {
-            tmux::infer_provider(&lp.command, &lp.window_name, lp.jsonl_path.as_deref())
+            tmux::infer_provider(&lp.command, &lp.window_name, lp.jsonl_path.as_deref()).to_string()
+        } else if let Some(ref p) = ps {
+            p.provider.clone().unwrap_or_else(|| "unknown".to_string())
         } else {
-            "unknown"
+            "unknown".to_string()
         };
 
         let task = if let Some(ref p) = ps {
@@ -272,8 +274,8 @@ async fn build_full_snapshot(app: &App) -> Value {
             "role": role,
             "dxos_session_id": ps.and_then(|p| p.dxos_session_id.clone()),
             "provider": provider,
-            "provider_label": tmux::provider_label(provider),
-            "provider_short": tmux::provider_short(provider),
+            "provider_label": tmux::provider_label(&provider),
+            "provider_short": tmux::provider_short(&provider),
             "output": tail,
             "line_count": line_vec.len(),
             "tmux_target": tmux_target,
@@ -290,6 +292,7 @@ async fn build_full_snapshot(app: &App) -> Value {
             "workspace_path": ps.and_then(|p| p.workspace_path.clone()),
             "branch_name": ps.and_then(|p| p.branch_name.clone()),
             "base_branch": ps.and_then(|p| p.base_branch.clone()),
+            "model": ps.and_then(|p| p.model.clone()),
         }));
     }
 
