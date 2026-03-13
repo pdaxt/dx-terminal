@@ -10,6 +10,7 @@ pub mod config;
 pub mod dashboard;
 pub mod design_tokens;
 pub mod dxos;
+pub mod dxos_runtime;
 pub mod engine;
 pub mod external_mcp;
 pub mod factory;

@@ -2023,7 +2023,36 @@ pub async fn resolve_dxos_work(
         body.resolution.as_deref(),
     );
     maybe_emit_dxos_session_change(&app, &project_path, &result);
-    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+    let delivery = crate::dxos_runtime::deliver_work_order_resolution(
+        app.as_ref(),
+        &project_path,
+        body.project.as_deref(),
+        &result,
+        body.resolution.as_deref(),
+    )
+    .await;
+    if delivery.status == "failed" {
+        if let (Some(session_id), Some(error)) = (
+            delivery.worker_session_id.as_deref(),
+            delivery.error.as_deref(),
+        ) {
+            let failure = crate::dxos::record_session_delivery_failure(
+                &project_path,
+                body.project.as_deref(),
+                session_id,
+                error,
+            );
+            maybe_emit_dxos_session_change(&app, &project_path, &failure);
+        }
+    }
+    let mut value = serde_json::from_str(&result).unwrap_or(json!({"raw": result}));
+    if let Some(object) = value.as_object_mut() {
+        object.insert(
+            "delivery".to_string(),
+            serde_json::to_value(&delivery).unwrap_or_else(|_| json!({"status": "unknown"})),
+        );
+    }
+    Json(value)
 }
 
 /// POST /api/dxos/session/block — Raise a worker blocker or permission request
