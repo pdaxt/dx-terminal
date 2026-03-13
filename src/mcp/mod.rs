@@ -2972,7 +2972,9 @@ impl DxTerminalService {
                     .unwrap_or_else(|_| serde_json::json!({"status": "unknown"})),
             );
         }
-        Ok(CallToolResult::success(vec![Content::text(value.to_string())]))
+        Ok(CallToolResult::success(vec![Content::text(
+            value.to_string(),
+        )]))
     }
 
     #[tool(
