@@ -1205,6 +1205,10 @@ let dxosPendingLaunches={};
 let dxosPolicyCache={};
 let dxosRuntimeBrokerCache={};
 
+function nextDxosClientRequestId(){
+  return `dxreq-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
+}
+
 // === Theme colors per pane (fallback; overridden by API theme_color) ===
 const COLORS=['#4da6ff','#44d98c','#b07aff','#ff9f43','#ff6b9d','#f0c040','#c0c8d4','#3dd6d0','#ff5c5c'];
 let apiPaneColors={};
@@ -1641,7 +1645,10 @@ function paneOptionRows(project,selected){
   const panes=(wsState&&wsState.panes)||[];
   const preferred=panes.filter(p=>!p.project||p.project==='--'||['idle','done','lost'].includes((p.status||'').toString()));
   const list=(preferred.length?preferred:panes).slice().sort((a,b)=>(a.pane||0)-(b.pane||0));
-  return list.map(p=>{
+  const nextFree=firstAvailablePane(project);
+  const headLabel=nextFree?`Auto allocate · next free Pane ${nextFree}`:'Auto allocate · next free lane';
+  const head=`<option value="auto" ${(!selected||String(selected)==='auto')?'selected':''}>${escHtml(headLabel)}</option>`;
+  return head+list.map(p=>{
     const label=[`Pane ${p.pane}`,p.project&&p.project!=='--'?p.project:'available',(p.status||'idle')].join(' · ');
     return `<option value="${p.pane}" ${String(selected)===String(p.pane)?'selected':''}>${escHtml(label)}</option>`;
   }).join('');
@@ -1729,10 +1736,10 @@ async function launchDxosLane(){
   const stage=document.getElementById('dxos-launch-stage');
   const supervisor=document.getElementById('dxos-launch-supervisor');
   if(!project||!pane||!role||!task)return;
-  const paneValue=(pane.value||'').toString().trim();
+  const paneValue=(pane.value||'auto').toString().trim()||'auto';
   const taskValue=(task.value||'').trim();
-  if(!paneValue||!taskValue){
-    setDxosPortalNotice('launch','Choose a pane and describe the work before launching a lane.','red');
+  if(!taskValue){
+    setDxosPortalNotice('launch','Describe the work before launching a lane.','red');
     await renderExecutionHub();
     return;
   }
@@ -1741,8 +1748,11 @@ async function launchDxosLane(){
     await renderExecutionHub();
     return;
   }
-  dxosPendingLaunches[String(paneValue)]={
+  const requestId=nextDxosClientRequestId();
+  dxosPendingLaunches[requestId]={
+    requestId,
     project,
+    requestedPane:paneValue,
     role:role.value||'design',
     provider:provider&&provider.value?provider.value:'claude',
     runtimeAdapter:adapter&&adapter.value?adapter.value:'pty_native_adapter',
@@ -1756,10 +1766,12 @@ async function launchDxosLane(){
   };
   const providerName=provider&&provider.value?provider.value:'claude';
   const adapterName=adapter&&adapter.value?adapter.value:'pty_native_adapter';
-  setDxosPortalNotice('launch',`Launching pane ${paneValue} on ${providerName} via ${adapterLabel(adapterName)}…`,'yellow');
+  const laneLabel=paneValue==='auto'?'the next free lane':`pane ${paneValue}`;
+  setDxosPortalNotice('launch',`Launching ${laneLabel} on ${providerName} via ${adapterLabel(adapterName)}…`,'yellow');
   await renderExecutionHub();
   wsSend({
     cmd:'spawn',
+    client_request_id:requestId,
     pane:String(paneValue),
     project,
     role:role.value||'design',
@@ -1775,10 +1787,12 @@ async function launchDxosLane(){
 }
 
 async function finalizePendingDxosLaunch(result){
+  const requestId=String(result&&result.client_request_id||'');
   const paneKey=String(result&&result.pane||'');
-  const pending=dxosPendingLaunches[paneKey];
+  const pending=(requestId&&dxosPendingLaunches[requestId])||dxosPendingLaunches[paneKey];
   if(!pending)return;
-  delete dxosPendingLaunches[paneKey];
+  if(requestId)delete dxosPendingLaunches[requestId];
+  if(paneKey)delete dxosPendingLaunches[paneKey];
   if(!result||result.error){
     setDxosPortalNotice('launch',`Lane launch failed on pane ${paneKey}: ${String((result&&result.error)||'Unknown runtime error')}`,`red`);
     await renderExecutionHub();
@@ -2078,7 +2092,7 @@ function renderDxosOperatorControls(project,activeStage,sessions){
   const focus=currentProjectFocus(project)||{};
   const featureId=(focus.feature_id||'').toString();
   const defaultStage=normalizeVddPhase(activeStage||focus.stage||'build');
-  const defaultPane=firstAvailablePane(project);
+  const defaultPane='auto';
   const launchAdapterOptions=runtimeAdapterOptions(project,'pty_native_adapter');
   const sessionAdapterOptions=runtimeAdapterOptions(project,'pty_native_adapter');
   const launchTask=featureId
