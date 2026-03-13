@@ -3085,7 +3085,14 @@ async function updateDxosAdoptionStatus(adoptionId,status,note){
     await renderExecutionHub();
     return false;
   }
-  setDxosPortalNotice('adoption',`Recovery workflow ${adoptionId} marked ${status}.`,'green');
+  const followOnCount=Array.isArray(result.follow_on_sessions)?result.follow_on_sessions.length:0;
+  setDxosPortalNotice(
+    'adoption',
+    followOnCount&&status==='completed'
+      ? `Recovery workflow ${adoptionId} marked ${status}. DXOS seeded ${followOnCount} follow-on specialist lanes into the queue.`
+      : `Recovery workflow ${adoptionId} marked ${status}.`,
+    'green'
+  );
   await renderExecutionHub();
   return false;
 }
