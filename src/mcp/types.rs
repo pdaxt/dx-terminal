@@ -28,6 +28,9 @@ pub struct SpawnRequest {
     )]
     pub client_request_id: Option<String>,
     #[serde(default)]
+    #[schemars(description = "Optional existing DXOS session contract ID to bind this launch to")]
+    pub session_id: Option<String>,
+    #[serde(default)]
     #[schemars(description = "Optional linked feature ID for DXOS session registration")]
     pub feature_id: Option<String>,
     #[serde(default)]
