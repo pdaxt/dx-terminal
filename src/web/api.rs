@@ -1761,14 +1761,14 @@ pub async fn get_project_brief(
         "runtime_contract": {
             "launch_broker": {
                 "name": "dx_runtime_broker",
-                "adapters": ["tmux_migration_adapter"],
+                "adapters": crate::runtime_broker::adapter_inventory(),
                 "providers": crate::runtime_broker::provider_inventory(),
             },
             "browser_port_base": crate::config::browser_port_base(),
             "browser_port_formula": "browser_port_base + pane",
             "browser_profile_root_template": "~/.playwright-profiles/pane-N",
             "browser_artifacts_root_template": "~/Projects/test-artifacts/sessions/pane-N",
-            "runtime_adapters": ["tmux_migration_adapter"],
+            "runtime_adapters": ["pty_native_adapter", "tmux_migration_adapter"],
             "provider_native_launch": true,
             "runtime_providers": ["claude", "codex", "gemini", "opencode"],
         },

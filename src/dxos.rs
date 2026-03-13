@@ -651,12 +651,12 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
         "runtime_contract": {
             "launch_broker": {
                 "name": "dx_runtime_broker",
-                "adapters": ["tmux_migration_adapter"],
+                "adapters": crate::runtime_broker::adapter_inventory(),
                 "providers": crate::runtime_broker::provider_inventory(),
             },
             "runtime_substrate": "custom_pty_target",
-            "runtime_adapter": "tmux_migration_adapter",
-            "runtime_adapters": ["tmux_migration_adapter"],
+            "runtime_adapter": "pty_native_adapter",
+            "runtime_adapters": ["pty_native_adapter", "tmux_migration_adapter"],
             "provider_native_launch": true,
             "runtime_providers": ["claude", "codex", "gemini", "opencode"],
             "browser_port_base": crate::config::browser_port_base(),
