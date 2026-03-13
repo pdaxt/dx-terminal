@@ -266,6 +266,8 @@ async fn execute_command(app: &App, cmd: TuiCommand) -> TuiResult {
                     pane,
                     project,
                     role,
+                    provider: None,
+                    model: None,
                     task,
                     prompt: None,
                     autonomous: None,

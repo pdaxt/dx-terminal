@@ -795,6 +795,8 @@ pub async fn auto_cycle(app: &App) -> String {
                                 pane: pane.to_string(),
                                 project: task.project.clone(),
                                 role: Some(task.role.clone()),
+                                provider: None,
+                                model: None,
                                 task: Some(task.task.clone()),
                                 prompt: Some(prompt),
                                 autonomous: None,

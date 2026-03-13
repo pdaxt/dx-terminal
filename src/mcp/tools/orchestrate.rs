@@ -102,6 +102,8 @@ pub async fn orchestrate(app: &App, req: OrchestrateRequest) -> String {
                     pane: pane.to_string(),
                     project: project.name.clone(),
                     role: Some(planned_task.role.clone()),
+                    provider: None,
+                    model: None,
                     task: Some(planned_task.task.clone()),
                     prompt: Some(planned_task.prompt.clone()),
                     autonomous: None,
