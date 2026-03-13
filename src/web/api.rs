@@ -2581,9 +2581,7 @@ pub async fn start_dxos_adoption(
         &project_path,
         body.project.as_deref(),
         "adoption_start",
-        body.summary
-            .as_deref()
-            .unwrap_or("project_adoption"),
+        body.summary.as_deref().unwrap_or("project_adoption"),
     )?;
     let result = crate::dxos::start_project_adoption(
         &project_path,

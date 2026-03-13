@@ -2162,9 +2162,13 @@ pub struct DxosAdoptionStartRequest {
     pub project: Option<String>,
     #[schemars(description = "Short adoption or recovery summary shown in the portal")]
     pub summary: Option<String>,
-    #[schemars(description = "Detailed adoption objective for the seeded recovery lead and council")]
+    #[schemars(
+        description = "Detailed adoption objective for the seeded recovery lead and council"
+    )]
     pub objective: Option<String>,
-    #[schemars(description = "Optional linked feature ID if adoption should start around one feature")]
+    #[schemars(
+        description = "Optional linked feature ID if adoption should start around one feature"
+    )]
     pub feature_id: Option<String>,
     #[schemars(description = "Starting stage, usually discovery")]
     pub stage: Option<String>,
