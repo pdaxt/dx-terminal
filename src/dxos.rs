@@ -1489,8 +1489,8 @@ pub fn start_project_adoption(
     state.work_orders.push(WorkOrderRecord {
         id: work_order_id.clone(),
         supervisor_session_id: lead_session_id.clone(),
-        worker_session_id: None,
-        status: "planned".to_string(),
+        worker_session_id: Some(lead_session_id.clone()),
+        status: "assigned".to_string(),
         escalation_target: "lead".to_string(),
         title: format!("Initial recovery work package · {}", project),
         objective: resolved_objective.clone(),
