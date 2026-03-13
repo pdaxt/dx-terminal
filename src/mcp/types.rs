@@ -2348,6 +2348,20 @@ pub struct DxosWorkResolveRequest {
     pub resolution: Option<String>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosSessionRaiseBlockerRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+    #[schemars(description = "Worker session ID raising the blocker")]
+    pub worker_session_id: String,
+    #[schemars(description = "Blocking reason or question")]
+    pub blocker: String,
+    #[schemars(description = "Requested permission or approval, if any")]
+    pub requested_permission: Option<String>,
+    #[schemars(description = "Optional hint about the guidance or resolution needed")]
+    pub resolution_hint: Option<String>,
+}
+
 // ── Screen Management ──
 
 #[derive(Debug, Deserialize, JsonSchema)]
