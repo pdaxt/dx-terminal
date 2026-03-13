@@ -349,12 +349,18 @@ pub async fn post_pane_talk(
     headers: HeaderMap,
     Json(body): Json<PaneTalkBody>,
 ) -> ApiJson {
-    require_control_token(&headers)?;
-    let actor = control_actor(&headers);
     if body.pane == 0 || body.message.trim().is_empty() {
         return Ok(Json(json!({"error": "pane and message required"})));
     }
     let pane_data = app.state.get_pane(body.pane).await;
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &pane_data.project_path,
+        Some(&pane_data.project),
+        "pane_talk",
+        &format!("pane:{}", body.pane),
+    )?;
     if let Some(target) = pane_data
         .tmux_target
         .filter(|target| crate::tmux::pane_exists(target))
@@ -452,10 +458,16 @@ pub async fn post_pane_kill(
     headers: HeaderMap,
     Json(body): Json<PaneKillBody>,
 ) -> ApiJson {
-    require_control_token(&headers)?;
-    let actor = control_actor(&headers);
     let pane_num = body.pane.parse::<u8>().ok().unwrap_or(0);
     let pane_data = app.state.get_pane(pane_num).await;
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &pane_data.project_path,
+        Some(&pane_data.project),
+        "pane_kill",
+        &format!("pane:{}", pane_num),
+    )?;
     let result = tools::kill(
         &app,
         types::KillRequest {
@@ -483,10 +495,16 @@ pub async fn post_pane_restart(
     headers: HeaderMap,
     Json(body): Json<PaneRestartBody>,
 ) -> ApiJson {
-    require_control_token(&headers)?;
-    let actor = control_actor(&headers);
     let pane_num = body.pane.parse::<u8>().ok().unwrap_or(0);
     let pane_data = app.state.get_pane(pane_num).await;
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &pane_data.project_path,
+        Some(&pane_data.project),
+        "pane_restart",
+        &format!("pane:{}", pane_num),
+    )?;
     let result = tools::restart(&app, types::RestartRequest { pane: body.pane }).await;
     let value = parse_mcp(&result);
     record_control_action(
