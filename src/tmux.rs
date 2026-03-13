@@ -721,7 +721,7 @@ fn build_provider_command(
     model: Option<&str>,
 ) -> Result<String> {
     let binary = resolve_provider_binary(provider).ok_or_else(|| {
-        format!(
+        anyhow::anyhow!(
             "{} binary not found on PATH or standard install locations",
             provider.label()
         )
