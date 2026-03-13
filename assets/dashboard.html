@@ -2541,11 +2541,10 @@ function renderDxosDebateRows(debates,limit){
   }).join('');
 }
 
-function renderDxosOperatorControls(project,activeStage,sessions){
+function renderDxosOperatorControls(project,activeStage,sessions,adoptions){
   const focus=currentProjectFocus(project)||{};
   const featureId=(focus.feature_id||'').toString();
   const defaultStage=normalizeVddPhase(activeStage||focus.stage||'build');
-  const defaultPane='auto';
   const controlAuth=dxosControlAuthCache[project]||{};
   const protectedControls=['control_token','token_and_operator_policy'].includes(controlAuth.mode);
   const controlTokenLoaded=!!storedDxControlToken();
@@ -2553,16 +2552,24 @@ function renderDxosOperatorControls(project,activeStage,sessions){
   const operatorPolicy=currentDxOperatorPolicy(project);
   const launchAdapterOptions=runtimeAdapterOptions(project,'pty_native_adapter');
   const sessionAdapterOptions=runtimeAdapterOptions(project,'pty_native_adapter');
-  const launchTask=featureId
-    ? `Advance ${featureId} through ${defaultStage} and report back with evidence.`
-    : `Advance the active delivery work through ${defaultStage} and report back with evidence.`;
+  const launchDraft=currentDxosLaunchDraft(project,defaultStage,featureId,sessions,adoptions);
   const leadSessionOptions=sessionOptionRows(sessions,session=>!session.supervisor_session_id,null,'Choose lead session');
   const workerSessionOptions=sessionOptionRows(sessions,()=>true,null,'Assign worker later');
   const supervisorLaunchOptions=sessionOptionRows(sessions,session=>!session.supervisor_session_id,null,'No supervising lead');
-  const paneOptions=paneOptionRows(project,defaultPane);
+  const paneOptions=paneOptionRows(project,launchDraft.pane||'auto');
   return `<div class="action-shell">
     <div class="portal-note">The operator console below is the first real portal-native control surface for DXOS. Launching a lane uses the DX runtime broker, with the native PTY path as the default substrate and tmux kept only as the migration path.</div>
     <div class="action-grid">
+      <div class="action-card">
+        <div class="action-card-head">
+          <div class="action-card-title">Seeded Follow-on Queue</div>
+          <div class="action-card-copy">Recovery completion now creates planned specialist lanes under the recovery lead. Use this queue to apply the next governed lane into the launch form or start it directly.</div>
+        </div>
+        <div class="action-form">
+          <div class="action-note">The launch form below auto-seeds from the first queued specialist lane until you make a manual edit.</div>
+          <div class="exec-list">${renderSeededFollowOnQueue(project,sessions,adoptions)}</div>
+        </div>
+      </div>
       <div class="action-card">
         <div class="action-card-head">
           <div class="action-card-title">Control Access</div>
@@ -2620,42 +2627,42 @@ function renderDxosOperatorControls(project,activeStage,sessions){
           <div class="action-form-grid">
             <div class="action-field">
               <label for="dxos-launch-pane">Pane</label>
-              <select class="action-select" id="dxos-launch-pane">${paneOptions||'<option value="">No pane available</option>'}</select>
+              <select class="action-select" id="dxos-launch-pane" onchange="persistDxosLaunchDraft()">${paneOptions||'<option value="">No pane available</option>'}</select>
             </div>
             <div class="action-field">
               <label for="dxos-launch-provider">Provider</label>
-              <select class="action-select" id="dxos-launch-provider">${runtimeProviderOptions('claude')}</select>
+              <select class="action-select" id="dxos-launch-provider" onchange="persistDxosLaunchDraft()">${runtimeProviderOptionsForPolicy(project,launchDraft.role||'design',launchDraft.stage||defaultStage,launchDraft.provider||'claude').html}</select>
             </div>
             <div class="action-field">
               <label for="dxos-launch-adapter">Runtime adapter</label>
-              <select class="action-select" id="dxos-launch-adapter" onchange="syncDxosLaunchAdapterNote()">${launchAdapterOptions.html}</select>
+              <select class="action-select" id="dxos-launch-adapter" onchange="syncDxosLaunchAdapterNote();persistDxosLaunchDraft()">${runtimeAdapterOptions(project,launchDraft.adapter||launchAdapterOptions.selected).html}</select>
             </div>
             <div class="action-field">
               <label for="dxos-launch-role">Role</label>
-              <select class="action-select" id="dxos-launch-role" onchange="syncDxosLaunchProviderOptions()">${roleOptions('design')}</select>
+              <select class="action-select" id="dxos-launch-role" onchange="syncDxosLaunchProviderOptions();persistDxosLaunchDraft()">${roleOptions(launchDraft.role||'design')}</select>
             </div>
             <div class="action-field">
               <label for="dxos-launch-model">Model</label>
-              <input class="action-input" id="dxos-launch-model" placeholder="optional model override">
+              <input class="action-input" id="dxos-launch-model" value="${escHtml(launchDraft.model||'')}" placeholder="optional model override" oninput="persistDxosLaunchDraft()">
             </div>
             <div class="action-field">
               <label for="dxos-launch-feature">Feature</label>
-              <input class="action-input" id="dxos-launch-feature" value="${escHtml(featureId)}" placeholder="F1.2">
+              <input class="action-input" id="dxos-launch-feature" value="${escHtml(launchDraft.feature||featureId)}" placeholder="F1.2" oninput="persistDxosLaunchDraft()">
             </div>
             <div class="action-field">
               <label for="dxos-launch-stage">Stage</label>
-              <select class="action-select" id="dxos-launch-stage" onchange="syncDxosLaunchProviderOptions()">${stageOptions(defaultStage)}</select>
+              <select class="action-select" id="dxos-launch-stage" onchange="syncDxosLaunchProviderOptions();persistDxosLaunchDraft()">${stageOptions(launchDraft.stage||defaultStage)}</select>
             </div>
           </div>
           <div class="action-note" id="dxos-launch-provider-note"></div>
-          <div class="action-note" id="dxos-launch-adapter-note">${escHtml(renderRuntimeAdapterNote(project,launchAdapterOptions.selected))}</div>
+          <div class="action-note" id="dxos-launch-adapter-note">${escHtml(renderRuntimeAdapterNote(project,launchDraft.adapter||launchAdapterOptions.selected))}</div>
           <div class="action-field">
             <label for="dxos-launch-supervisor">Supervising Lead</label>
-            <select class="action-select" id="dxos-launch-supervisor">${supervisorLaunchOptions}</select>
+            <select class="action-select" id="dxos-launch-supervisor" onchange="persistDxosLaunchDraft()">${sessionOptionRows(sessions,session=>!session.supervisor_session_id,launchDraft.supervisor||null,'No supervising lead')}</select>
           </div>
           <div class="action-field">
             <label for="dxos-launch-task">Task prompt</label>
-            <textarea class="action-textarea" id="dxos-launch-task" placeholder="Describe the work the lane should do.">${escHtml(launchTask)}</textarea>
+            <textarea class="action-textarea" id="dxos-launch-task" placeholder="Describe the work the lane should do." oninput="persistDxosLaunchDraft()">${escHtml(launchDraft.task||'')}</textarea>
           </div>
           <div class="action-actions">
             <button class="design-action" onclick="launchDxosLane()" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Launch lane</button>
