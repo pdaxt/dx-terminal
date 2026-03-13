@@ -1544,6 +1544,30 @@ pub fn start_project_adoption(
     participants: Vec<String>,
     requested_by: Option<&str>,
 ) -> String {
+    start_project_adoption_with_plan(
+        project_path,
+        project_name,
+        summary,
+        objective,
+        feature_id,
+        stage,
+        participants,
+        requested_by,
+        Vec::new(),
+    )
+}
+
+pub fn start_project_adoption_with_plan(
+    project_path: &str,
+    project_name: Option<&str>,
+    summary: Option<&str>,
+    objective: Option<&str>,
+    feature_id: Option<&str>,
+    stage: Option<&str>,
+    participants: Vec<String>,
+    requested_by: Option<&str>,
+    follow_on_suggestions: Vec<SuggestedSessionPlan>,
+) -> String {
     let mut state = load_control_plane(project_path, project_name);
     if let Some(existing) = state
         .adoptions
@@ -1599,6 +1623,14 @@ pub fn start_project_adoption(
             .filter(|value| !value.trim().is_empty())
             .collect::<Vec<_>>()
     };
+    let follow_on_suggestions = follow_on_suggestions
+        .into_iter()
+        .filter(|item| {
+            !item.role.trim().is_empty()
+                && !item.stage.trim().is_empty()
+                && !item.task_prompt.trim().is_empty()
+        })
+        .collect::<Vec<_>>();
 
     state.sessions.push(SessionContractRecord {
         id: lead_session_id.clone(),
@@ -1699,6 +1731,9 @@ pub fn start_project_adoption(
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty()),
         participants: participants.clone(),
+        follow_on_suggestions,
+        follow_on_session_ids: Vec::new(),
+        follow_on_work_order_ids: Vec::new(),
         created_at: now.clone(),
         updated_at: now.clone(),
     });
