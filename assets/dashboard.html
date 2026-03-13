@@ -1793,8 +1793,13 @@ async function finalizePendingDxosLaunch(result){
   if(!pending)return;
   if(requestId)delete dxosPendingLaunches[requestId];
   if(paneKey)delete dxosPendingLaunches[paneKey];
+  const resolvedLaneLabel=paneKey
+    ? `pane ${paneKey}`
+    : pending&&pending.requestedPane&&pending.requestedPane!=='auto'
+    ? `pane ${pending.requestedPane}`
+    : 'the requested lane';
   if(!result||result.error){
-    setDxosPortalNotice('launch',`Lane launch failed on pane ${paneKey}: ${String((result&&result.error)||'Unknown runtime error')}`,`red`);
+    setDxosPortalNotice('launch',`Lane launch failed on ${resolvedLaneLabel}: ${String((result&&result.error)||'Unknown runtime error')}`,`red`);
     await renderExecutionHub();
     return;
   }
@@ -1828,12 +1833,12 @@ async function finalizePendingDxosLaunch(result){
       })
     });
     if(contract&&contract.error){
-      setDxosPortalNotice('launch',`Lane launched on pane ${paneKey}, but DXOS enrichment failed for ${result.dxos_session_id}.`,'red');
+      setDxosPortalNotice('launch',`Lane launched on ${resolvedLaneLabel}, but DXOS enrichment failed for ${result.dxos_session_id}.`,'red');
     }else{
-      setDxosPortalNotice('launch',`Lane ${paneKey} launched and linked to ${result.dxos_session_id}.`,'green');
+      setDxosPortalNotice('launch',`Lane on ${resolvedLaneLabel} launched and linked to ${result.dxos_session_id}.`,'green');
     }
   }else{
-    setDxosPortalNotice('launch',`Lane ${paneKey} launched, but no DXOS session id was returned by the adapter.`,'yellow');
+    setDxosPortalNotice('launch',`Lane on ${resolvedLaneLabel} launched, but no DXOS session id was returned by the adapter.`,'yellow');
   }
   await renderExecutionHub();
 }
@@ -3599,8 +3604,13 @@ function handleWSMessage(msg){
 
     case 'cmd_result':
       if(msg.cmd==='spawn'&&msg.result){
-        if(msg.result.error&&(!msg.result.pane)&&Object.keys(dxosPendingLaunches).length===1){
-          msg.result.pane=Object.keys(dxosPendingLaunches)[0];
+        if(msg.result.error&&(!msg.result.client_request_id)&&(!msg.result.pane)&&Object.keys(dxosPendingLaunches).length===1){
+          const pendingKey=Object.keys(dxosPendingLaunches)[0];
+          const pending=dxosPendingLaunches[pendingKey];
+          msg.result.client_request_id=pending&&pending.requestId?pending.requestId:pendingKey;
+          msg.result.pane=pending&&pending.requestedPane&&pending.requestedPane!=='auto'
+            ? pending.requestedPane
+            : '';
         }
         void finalizePendingDxosLaunch(msg.result);
       }
