@@ -2414,7 +2414,7 @@ function renderDxosOperatorControls(project,activeStage,sessions){
             <textarea class="action-textarea" id="dxos-launch-task" placeholder="Describe the work the lane should do.">${escHtml(launchTask)}</textarea>
           </div>
           <div class="action-actions">
-            <button class="design-action" onclick="launchDxosLane()">Launch lane</button>
+            <button class="design-action" onclick="launchDxosLane()" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Launch lane</button>
             <span class="action-note">Default substrate: DX PTY, with tmux retained only for migration and recovery</span>
           </div>
           ${renderDxosPortalNotice('launch')}
@@ -2473,7 +2473,7 @@ function renderDxosOperatorControls(project,activeStage,sessions){
             </div>
           </div>
           <div class="action-actions">
-            <button class="design-action" onclick="registerDxosSessionContract()">Register session</button>
+            <button class="design-action" onclick="registerDxosSessionContract()" ${operatorActionDisabledAttrs(project,'session_upsert','session registration')}>Register session</button>
             <span class="action-note">Provider-neutral control-plane record</span>
           </div>
           ${renderDxosPortalNotice('session')}
@@ -2522,7 +2522,7 @@ function renderDxosOperatorControls(project,activeStage,sessions){
             </div>
           </div>
           <div class="action-actions">
-            <button class="design-action" onclick="delegateDxosWork()">Delegate work</button>
+            <button class="design-action" onclick="delegateDxosWork()" ${operatorActionDisabledAttrs(project,'work_delegate','work delegation')}>Delegate work</button>
             <span class="action-note">Lead-reviewed handoff with blocker tracking</span>
           </div>
           ${renderDxosPortalNotice('work')}
@@ -2557,7 +2557,7 @@ function renderDxosOperatorControls(project,activeStage,sessions){
             <input class="action-input" id="dxos-debate-participants" value="claude,codex,gemini" placeholder="claude,codex,gemini">
           </div>
           <div class="action-actions">
-            <button class="design-action" onclick="startDxosDebateFromPortal()">Start debate</button>
+            <button class="design-action" onclick="startDxosDebateFromPortal()" ${operatorActionDisabledAttrs(project,'debate_start','decision council start')}>Start debate</button>
             <span class="action-note">Formal reasoning record with votes and contradictions</span>
           </div>
           ${renderDxosPortalNotice('debate')}
