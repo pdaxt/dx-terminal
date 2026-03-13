@@ -1335,11 +1335,11 @@ pub fn delegate_work_order(
 
     let now = crate::state::now();
     let work_order_id = next_work_order_id(&state);
-        state.work_orders.push(WorkOrderRecord {
-            id: work_order_id.clone(),
-            supervisor_session_id: supervisor_session_id.trim().to_string(),
-            worker_session_id: worker_session_id
-                .map(|value| value.trim().to_string())
+    state.work_orders.push(WorkOrderRecord {
+        id: work_order_id.clone(),
+        supervisor_session_id: supervisor_session_id.trim().to_string(),
+        worker_session_id: worker_session_id
+            .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty()),
         status: if worker_session_id.is_some() {
             "assigned".to_string()
@@ -1359,16 +1359,16 @@ pub fn delegate_work_order(
             .into_iter()
             .filter(|value| !value.trim().is_empty())
             .collect(),
-            blockers: Vec::new(),
-            requested_permissions: Vec::new(),
-            expected_outputs: expected_outputs
-                .into_iter()
-                .filter(|value| !value.trim().is_empty())
-                .collect(),
-            resolution_notes: Vec::new(),
-            created_at: now.clone(),
-            updated_at: now.clone(),
-        });
+        blockers: Vec::new(),
+        requested_permissions: Vec::new(),
+        expected_outputs: expected_outputs
+            .into_iter()
+            .filter(|value| !value.trim().is_empty())
+            .collect(),
+        resolution_notes: Vec::new(),
+        created_at: now.clone(),
+        updated_at: now.clone(),
+    });
     state.updated_at = now;
 
     match save_control_plane(project_path, &state) {
@@ -2018,6 +2018,14 @@ mod tests {
         );
         let resolved_value: Value = serde_json::from_str(&resolved).unwrap();
         assert_eq!(resolved_value["work_order"]["status"], "assigned");
+        assert_eq!(
+            resolved_value["work_order"]["last_resolution"],
+            "Permission granted by lead"
+        );
+        assert_eq!(
+            resolved_value["work_order"]["resolution_notes"][0]["message"],
+            "Permission granted by lead"
+        );
 
         let listed_after_resolve: Value =
             serde_json::from_str(&session_list(project, Some("demo"))).unwrap();

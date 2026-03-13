@@ -166,7 +166,9 @@ pub async fn deliver_work_order_resolution(
         }
     }
 
-    let delivery = if let Some(target) = tmux_target.as_ref().filter(|target| tmux::pane_exists(target))
+    let delivery = if let Some(target) = tmux_target
+        .as_ref()
+        .filter(|target| tmux::pane_exists(target))
     {
         match tokio::task::spawn_blocking({
             let target = target.clone();
