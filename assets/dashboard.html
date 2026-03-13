@@ -1201,6 +1201,7 @@ let automationToolCache={};
 let automationToolLoading={};
 let dxosPortalState={};
 let dxosPendingLaunches={};
+let dxosPolicyCache={};
 
 // === Theme colors per pane (fallback; overridden by API theme_color) ===
 const COLORS=['#4da6ff','#44d98c','#b07aff','#ff9f43','#ff6b9d','#f0c040','#c0c8d4','#3dd6d0','#ff5c5c'];
@@ -1432,6 +1433,94 @@ function runtimeProviderOptions(selected){
     ['opencode','OpenCode']
   ];
   return providers.map(([value,label])=>`<option value="${value}" ${chosen===value?'selected':''}>${label}</option>`).join('');
+}
+
+function dxosPolicyRules(project){
+  const policy=(project&&dxosPolicyCache[project])||{};
+  return Array.isArray(policy.rules)?policy.rules:[];
+}
+
+function dxosPolicyRule(project,role,stage){
+  const roleId=(role||'design').toString().toLowerCase();
+  const stageId=normalizeVddPhase(stage||'build');
+  const rules=dxosPolicyRules(project);
+  return rules.find(rule=>String(rule.role||'').toLowerCase()===roleId&&normalizeVddPhase(rule.stage||'build')===stageId)
+    || rules.find(rule=>String(rule.role||'').toLowerCase()===roleId)
+    || null;
+}
+
+function providerLabel(id){
+  const labels={shared:'DX shared',claude:'Claude',codex:'Codex',gemini:'Gemini',opencode:'OpenCode'};
+  return labels[id]||id||'Unknown';
+}
+
+function runtimeProviderOptionsForPolicy(project,role,stage,selected){
+  const chosen=(selected||'').toString();
+  const rule=dxosPolicyRule(project,role,stage);
+  const providers=((rule&&Array.isArray(rule.allowed_providers))?rule.allowed_providers:['claude','codex','gemini','opencode']).filter(id=>id!=='shared');
+  const preferred=(rule&&rule.preferred_provider)||providers[0]||'claude';
+  const selectedValue=providers.includes(chosen)?chosen:preferred;
+  return {
+    selected:selectedValue,
+    html:providers.map(value=>`<option value="${value}" ${selectedValue===value?'selected':''}>${providerLabel(value)}</option>`).join(''),
+    rule
+  };
+}
+
+function contractProviderOptionsForPolicy(project,role,stage,selected){
+  const chosen=(selected||'shared').toString();
+  const runtime=runtimeProviderOptionsForPolicy(project,role,stage,chosen==='shared'?'':chosen);
+  const values=['shared'].concat(runtime.rule&&Array.isArray(runtime.rule.allowed_providers)
+    ? runtime.rule.allowed_providers.filter(id=>id!=='shared')
+    : ['claude','codex','gemini','opencode']);
+  const unique=[...new Set(values)];
+  const selectedValue=unique.includes(chosen)?chosen:'shared';
+  return {
+    selected:selectedValue,
+    html:unique.map(value=>`<option value="${value}" ${selectedValue===value?'selected':''}>${providerLabel(value)}</option>`).join(''),
+    rule:runtime.rule
+  };
+}
+
+function renderProviderPolicyNote(rule,selected,contractMode){
+  if(!rule)return 'DXOS policy data is unavailable for this project.';
+  const preferred=providerLabel(rule.preferred_provider);
+  const allowed=(rule.allowed_providers||[]).map(providerLabel).join(', ');
+  const selectedId=(selected||'').toString();
+  const warning=selectedId&&selectedId!=='shared'&&!(rule.allowed_providers||[]).includes(selectedId)
+    ? ` Selected provider is outside policy for this role and stage.`
+    : '';
+  const sharedCopy=contractMode?' Shared is allowed only for unbound planning contracts.':'';
+  const models=(rule.suggested_models||[]).slice(0,3).join(', ');
+  return `Prefer ${preferred}. Allowed: ${allowed}.${sharedCopy}${models?` Suggested models: ${models}.`:''} ${rule.rationale||''}${warning}`.trim();
+}
+
+function syncDxosLaunchProviderOptions(){
+  const project=activeProjectForHub();
+  const provider=document.getElementById('dxos-launch-provider');
+  const role=document.getElementById('dxos-launch-role');
+  const stage=document.getElementById('dxos-launch-stage');
+  const note=document.getElementById('dxos-launch-provider-note');
+  if(!provider||!role||!stage)return;
+  const current=provider.value||'';
+  const options=runtimeProviderOptionsForPolicy(project,role.value,stage.value,current);
+  provider.innerHTML=options.html||runtimeProviderOptions('claude');
+  provider.value=options.selected||provider.value||'claude';
+  if(note)note.textContent=renderProviderPolicyNote(options.rule,provider.value,false);
+}
+
+function syncDxosSessionProviderOptions(){
+  const project=activeProjectForHub();
+  const provider=document.getElementById('dxos-session-provider');
+  const role=document.getElementById('dxos-session-role');
+  const stage=document.getElementById('dxos-session-stage');
+  const note=document.getElementById('dxos-session-provider-note');
+  if(!provider||!role||!stage)return;
+  const current=provider.value||'shared';
+  const options=contractProviderOptionsForPolicy(project,role.value,stage.value,current);
+  provider.innerHTML=options.html||providerOptions('shared');
+  provider.value=options.selected||provider.value||'shared';
+  if(note)note.textContent=renderProviderPolicyNote(options.rule,provider.value,true);
 }
 
 function sessionOptionRows(sessions,filterFn,selected,placeholder){
