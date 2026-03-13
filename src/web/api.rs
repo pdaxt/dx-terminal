@@ -74,7 +74,10 @@ fn maybe_emit_dxos_session_change(app: &AppState, project_path: &str, result: &s
 }
 
 fn control_token_from_headers(headers: &HeaderMap) -> Option<String> {
-    if let Some(value) = headers.get("x-dx-control-token").and_then(|value| value.to_str().ok()) {
+    if let Some(value) = headers
+        .get("x-dx-control-token")
+        .and_then(|value| value.to_str().ok())
+    {
         let token = value.trim();
         if !token.is_empty() {
             return Some(token.to_string());
@@ -239,7 +242,9 @@ pub async fn post_pane_talk(
                 "runtime_adapter": "tmux_migration_adapter",
             }))),
             Ok(Err(error)) => Ok(Json(json!({"error": format!("{}", error)}))),
-            Err(error) => Ok(Json(json!({"error": format!("task join error: {}", error)}))),
+            Err(error) => Ok(Json(
+                json!({"error": format!("task join error: {}", error)}),
+            )),
         }
     } else {
         let send_result = {
@@ -1980,7 +1985,9 @@ pub async fn start_dxos_debate(
         body.requested_by.as_deref(),
     );
     maybe_emit_debate_change(&app, &project_path, &result);
-    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
+    Ok(Json(
+        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
+    ))
 }
 
 /// POST /api/dxos/debate/proposal — Add a proposal to a debate
@@ -2005,7 +2012,9 @@ pub async fn add_dxos_debate_proposal(
         body.evidence,
     );
     maybe_emit_debate_change(&app, &project_path, &result);
-    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
+    Ok(Json(
+        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
+    ))
 }
 
 /// POST /api/dxos/debate/contradiction — Add a contradiction to a proposal
@@ -2029,7 +2038,9 @@ pub async fn add_dxos_debate_contradiction(
         &body.rationale,
     );
     maybe_emit_debate_change(&app, &project_path, &result);
-    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
+    Ok(Json(
+        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
+    ))
 }
 
 /// POST /api/dxos/debate/vote — Cast or update a vote
@@ -2054,7 +2065,9 @@ pub async fn vote_dxos_debate(
         &body.rationale,
     );
     maybe_emit_debate_change(&app, &project_path, &result);
-    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
+    Ok(Json(
+        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
+    ))
 }
 
 /// POST /api/dxos/debate/decision — Finalize a debate decision
@@ -2078,7 +2091,9 @@ pub async fn finalize_dxos_debate(
         &body.rationale,
     );
     maybe_emit_debate_change(&app, &project_path, &result);
-    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
+    Ok(Json(
+        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
+    ))
 }
 
 /// POST /api/dxos/session/upsert — Create or update a session contract
@@ -2118,7 +2133,9 @@ pub async fn upsert_dxos_session(
         body.status.as_deref(),
     );
     maybe_emit_dxos_session_change(&app, &project_path, &result);
-    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
+    Ok(Json(
+        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
+    ))
 }
 
 /// POST /api/dxos/session/launch — Launch a real runtime lane through the DX broker
@@ -2151,7 +2168,9 @@ pub async fn launch_dxos_session(
         },
     )
     .await;
-    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
+    Ok(Json(
+        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
+    ))
 }
 
 /// POST /api/dxos/session/status — Update a session status
@@ -2173,7 +2192,9 @@ pub async fn update_dxos_session_status(
         body.note.as_deref(),
     );
     maybe_emit_dxos_session_change(&app, &project_path, &result);
-    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
+    Ok(Json(
+        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
+    ))
 }
 
 /// POST /api/dxos/work/delegate — Delegate a structured work order
@@ -2200,7 +2221,9 @@ pub async fn delegate_dxos_work(
         body.expected_outputs,
     );
     maybe_emit_dxos_session_change(&app, &project_path, &result);
-    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
+    Ok(Json(
+        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
+    ))
 }
 
 /// POST /api/dxos/work/block — Block a work order
@@ -2222,7 +2245,9 @@ pub async fn block_dxos_work(
         body.requested_permission.as_deref(),
     );
     maybe_emit_dxos_session_change(&app, &project_path, &result);
-    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
+    Ok(Json(
+        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
+    ))
 }
 
 /// POST /api/dxos/work/resolve — Resolve a blocked work order
@@ -2295,7 +2320,9 @@ pub async fn raise_dxos_session_blocker(
         body.resolution_hint.as_deref(),
     );
     maybe_emit_dxos_session_change(&app, &project_path, &result);
-    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
+    Ok(Json(
+        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
+    ))
 }
 
 /// GET /api/vision/diff?project=NAME — Recent vision changes
