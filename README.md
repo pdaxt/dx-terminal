@@ -13,7 +13,7 @@ Single binary. No login. No telemetry. Open source.
 
 <img src="demo/demo-screenshot.png" alt="DX Terminal showing 16 AI agents with real-time dashboard, task queue, vision tracking, and sync status" width="800">
 
-[Quick Start](#install) · [Operating Model](#operating-model) · [Web Dashboard](#web-dashboard) · [MCP Server](#mcp-server) · [Architecture](#architecture) · [Operator Guide](docs/OPERATOR_SYSTEM_GUIDE.md) · [Experience Blueprint](docs/EXPERIENCE_BLUEPRINT.md) · [Hosted Sync Model](docs/HOSTED_SYNC_MODEL.md) · [Contributing](#contributing)
+[Quick Start](#install) · [Operating Model](#operating-model) · [Web Dashboard](#web-dashboard) · [MCP Server](#mcp-server) · [Architecture](#architecture) · [DXOS Master Architecture](docs/DXOS_MASTER_ARCHITECTURE.md) · [Operator Guide](docs/OPERATOR_SYSTEM_GUIDE.md) · [Experience Blueprint](docs/EXPERIENCE_BLUEPRINT.md) · [Hosted Sync Model](docs/HOSTED_SYNC_MODEL.md) · [Contributing](#contributing)
 
 </div>
 
