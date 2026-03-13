@@ -2350,6 +2350,7 @@ async function renderExecutionHub(){
   const runtimeContract=brief.runtime_contract||{};
   const dxos=brief.dxos||{};
   dxosPolicyCache[project]=dxos.provider_policy||{};
+  dxosRuntimeBrokerCache[project]=((dxos.runtime_contract&&dxos.runtime_contract.launch_broker)||runtimeContract.launch_broker||{});
   const dxosSessions=(dxos.sessions&&dxos.sessions.records)||[];
   const dxosSessionSummary=dxos.sessions||{};
   const dxosDelegation=dxos.delegation||{};
