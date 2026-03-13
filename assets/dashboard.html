@@ -1807,7 +1807,7 @@ function persistDxosLaunchDraft(){
   };
 }
 
-function applyDxosSessionContractToLaunchForm(sessionId,opts){
+function applyDxosSessionContractToLaunchForm(sessionId,label){
   const project=activeProjectForHub();
   if(!project||!sessionId)return false;
   const session=(dxosSessionCache[project]||[]).find(item=>String(item.id||'')===String(sessionId));
@@ -1854,8 +1854,8 @@ function applyDxosSessionContractToLaunchForm(sessionId,opts){
   feature.value=draft.feature;
   supervisor.value=draft.supervisor;
   task.value=draft.task;
-  const label=(opts&&opts.label)||`${session.role||'specialist'} ${session.id||''}`;
-  setDxosPortalNotice('launch',`${label} loaded into the launch form. Review provider, substrate, and prompt before launching.`,'green');
+  const laneLabel=(label||`${session.role||'specialist'} ${session.id||''}`).toString();
+  setDxosPortalNotice('launch',`${laneLabel} loaded into the launch form. Review provider, substrate, and prompt before launching.`,'green');
   return false;
 }
 
@@ -1886,7 +1886,7 @@ function renderSeededFollowOnQueue(project,sessions,adoptions){
       <div class="exec-row-meta">${escHtml(truncateCopy(session.objective||'',150)||'No queued objective recorded yet.')}</div>
       ${meta?`<div class="exec-row-meta">${escHtml(meta)}</div>`:''}
       <div class="exec-row-actions" style="margin-top:8px">
-        <button class="vdd-focus-btn" onclick="return applyDxosSessionContractToLaunchForm('${escHtml(String(session.id||''))}',{label:'${escHtml(String(session.role||'specialist'))} ${escHtml(String(session.id||''))}'})" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Apply to launch form</button>
+        <button class="vdd-focus-btn" onclick="return applyDxosSessionContractToLaunchForm('${escHtml(String(session.id||''))}','${escHtml(String(session.role||'specialist'))} ${escHtml(String(session.id||''))}')" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Apply to launch form</button>
         <button class="design-action" style="margin-left:8px" onclick="return launchDxosSessionContract('${escHtml(String(session.id||''))}','launch','${escHtml(String(session.role||'specialist'))} lane')" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Launch now</button>
       </div>
     </div>`;
@@ -2163,6 +2163,7 @@ async function launchDxosLane(){
     await renderExecutionHub();
     return;
   }
+  const currentDraft=dxosLaunchDrafts[project]||{};
   const requestId=nextDxosClientRequestId();
   dxosPendingLaunches[requestId]={
     requestId,
@@ -2176,6 +2177,7 @@ async function launchDxosLane(){
     featureId:feature&&feature.value?feature.value.trim():'',
     stage:stage&&stage.value?stage.value.trim():'',
     supervisorSessionId:supervisor&&supervisor.value?supervisor.value.trim():'',
+    sessionId:currentDraft.sessionId||'',
     expectedOutputs:['task_result','runtime_handoff'],
     allowedCapabilities:[]
   };
@@ -2191,6 +2193,7 @@ async function launchDxosLane(){
       project,
       client_request_id:requestId,
       pane:String(paneValue),
+      session_id:currentDraft.sessionId||null,
       role:role.value||'design',
       provider:providerName,
       runtime_adapter:adapterName,
@@ -2269,6 +2272,9 @@ async function finalizePendingDxosLaunch(result){
     }
   }else{
     setDxosPortalNotice('launch',`Lane on ${resolvedLaneLabel} launched, but no DXOS session id was returned by the adapter.`,'yellow');
+  }
+  if(pending&&pending.project&&dxosLaunchDrafts[pending.project]){
+    dxosLaunchDrafts[pending.project].sessionId=result&&result.dxos_session_id?result.dxos_session_id:(pending.sessionId||'');
   }
   await renderExecutionHub();
 }
