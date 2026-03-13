@@ -17,6 +17,15 @@ pub struct SpawnRequest {
     #[serde(default)]
     #[schemars(description = "Optional model name to pass through to the provider CLI")]
     pub model: Option<String>,
+    #[serde(default)]
+    #[schemars(description = "Optional linked feature ID for DXOS session registration")]
+    pub feature_id: Option<String>,
+    #[serde(default)]
+    #[schemars(description = "Optional delivery stage for DXOS policy and session registration")]
+    pub stage: Option<String>,
+    #[serde(default)]
+    #[schemars(description = "Optional supervisor session ID for DXOS delegation mapping")]
+    pub supervisor_session_id: Option<String>,
     #[schemars(description = "Task description for the agent")]
     pub task: Option<String>,
     #[schemars(description = "Optional initial prompt to send after launch")]

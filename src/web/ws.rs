@@ -589,6 +589,18 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
                 .get("model")
                 .and_then(|m| m.as_str())
                 .map(|s| s.to_string());
+            let feature_id = cmd
+                .get("feature_id")
+                .and_then(|m| m.as_str())
+                .map(|s| s.to_string());
+            let stage = cmd
+                .get("stage")
+                .and_then(|m| m.as_str())
+                .map(|s| s.to_string());
+            let supervisor_session_id = cmd
+                .get("supervisor_session_id")
+                .and_then(|m| m.as_str())
+                .map(|s| s.to_string());
             let task = cmd
                 .get("task")
                 .and_then(|t| t.as_str())
@@ -604,6 +616,9 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
                     role,
                     provider,
                     model,
+                    feature_id,
+                    stage,
+                    supervisor_session_id,
                     task,
                     prompt: None,
                     autonomous: None,
