@@ -125,12 +125,82 @@ pub struct DebateRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionContractRecord {
+    pub id: String,
+    pub status: String,
+    pub role: String,
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    pub autonomy_level: String,
+    pub objective: String,
+    #[serde(default)]
+    pub expected_outputs: Vec<String>,
+    #[serde(default)]
+    pub allowed_capabilities: Vec<String>,
+    #[serde(default)]
+    pub allowed_repos: Vec<String>,
+    #[serde(default)]
+    pub allowed_paths: Vec<String>,
+    #[serde(default)]
+    pub workspace_path: Option<String>,
+    #[serde(default)]
+    pub branch_name: Option<String>,
+    #[serde(default)]
+    pub browser_port: Option<u16>,
+    #[serde(default)]
+    pub pane: Option<u8>,
+    #[serde(default)]
+    pub tmux_target: Option<String>,
+    #[serde(default)]
+    pub feature_id: Option<String>,
+    #[serde(default)]
+    pub stage: Option<String>,
+    #[serde(default)]
+    pub supervisor_session_id: Option<String>,
+    #[serde(default)]
+    pub escalation_policy: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkOrderRecord {
+    pub id: String,
+    pub supervisor_session_id: String,
+    #[serde(default)]
+    pub worker_session_id: Option<String>,
+    pub status: String,
+    pub title: String,
+    pub objective: String,
+    #[serde(default)]
+    pub feature_id: Option<String>,
+    #[serde(default)]
+    pub stage: Option<String>,
+    #[serde(default)]
+    pub required_capabilities: Vec<String>,
+    #[serde(default)]
+    pub blockers: Vec<String>,
+    #[serde(default)]
+    pub requested_permissions: Vec<String>,
+    #[serde(default)]
+    pub expected_outputs: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ControlPlaneState {
     pub version: u32,
     pub project: ProjectDescriptor,
     pub defaults: ControlPlaneDefaults,
     #[serde(default)]
     pub debates: Vec<DebateRecord>,
+    #[serde(default)]
+    pub sessions: Vec<SessionContractRecord>,
+    #[serde(default)]
+    pub work_orders: Vec<WorkOrderRecord>,
     pub updated_at: String,
 }
 
@@ -164,6 +234,8 @@ fn default_state(project_path: &str, project_name: Option<&str>) -> ControlPlane
         },
         defaults: ControlPlaneDefaults::default(),
         debates: Vec::new(),
+        sessions: Vec::new(),
+        work_orders: Vec::new(),
         updated_at: crate::state::now(),
     }
 }
@@ -199,6 +271,14 @@ fn next_debate_id(state: &ControlPlaneState) -> String {
 
 fn next_child_id(prefix: &str, len: usize) -> String {
     format!("{}{:04}", prefix, len + 1)
+}
+
+fn next_session_id(state: &ControlPlaneState) -> String {
+    format!("SX{:04}", state.sessions.len() + 1)
+}
+
+fn next_work_order_id(state: &ControlPlaneState) -> String {
+    format!("WO{:04}", state.work_orders.len() + 1)
 }
 
 fn debate_summary(debate: &DebateRecord) -> Value {
