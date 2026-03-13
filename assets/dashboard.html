@@ -2331,7 +2331,8 @@ async function renderExecutionHub(){
         </div>
         <div class="exec-list">${renderDxosWorkOrderRows(blockedOrApprovalWork.length?blockedOrApprovalWork:delegatedWork,dxosSessions,4,blockedOrApprovalWork.length?'blocked':'all')}</div>
       </div>
-    </div>`;
+    </div>
+    ${renderDxosOperatorControls(project,activeStage,dxosSessions)}`;
 
   docsEl.innerHTML=`
     <div class="portal-note">This section is the trust contract for the whole program. If docs, Git, approvals, and dashboard state drift apart, the portal becomes unreliable for both clients and delivery teams.</div>
@@ -3260,6 +3261,12 @@ function handleWSMessage(msg){
       break;
 
     case 'cmd_result':
+      if(msg.cmd==='spawn'&&msg.result){
+        if(msg.result.error&&(!msg.result.pane)&&Object.keys(dxosPendingLaunches).length===1){
+          msg.result.pane=Object.keys(dxosPendingLaunches)[0];
+        }
+        void finalizePendingDxosLaunch(msg.result);
+      }
       // Flash capture result into panel terminal
       if(msg.cmd==='capture'&&msg.result&&msg.result.output){
         const pn=msg.result.pane;
