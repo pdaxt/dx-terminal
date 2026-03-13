@@ -2002,6 +2002,27 @@ fn recovery_assessment(
         }
     };
 
+    let primary_missing_docs = missing_feature_docs
+        .first()
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let primary_client_review = client_review_features
+        .first()
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let primary_ready = ready_features
+        .first()
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let primary_missing_acceptance = missing_acceptance
+        .first()
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let primary_blocked = blocking_features
+        .first()
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+
     let mut gaps = Vec::new();
     if !shared_guidance_present {
         gaps.push(json!({
@@ -2068,48 +2089,174 @@ fn recovery_assessment(
     }
 
     let mut suggested_sessions = Vec::new();
+    if mode == "unscoped" {
+        suggested_sessions.push(json!({
+            "role": "lead",
+            "stage": "discovery",
+            "priority": "high",
+            "feature_id": Value::Null,
+            "reason": "Map the current project into a structured DXOS feature tree before more implementation work happens.",
+            "task_prompt": format!(
+                "Adopt {} into DXOS. Inventory the existing code, reconstruct missing features and stages, and produce the first recovery plan with evidence gaps.",
+                project
+            ),
+        }));
+    }
     if !missing_feature_docs.is_empty() || !shared_guidance_present {
+        let feature_id = primary_missing_docs
+            .get("feature_id")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
         suggested_sessions.push(json!({
             "role": "discovery",
             "stage": "discovery",
+            "priority": "high",
+            "feature_id": if feature_id.is_empty() { Value::Null } else { json!(feature_id) },
             "reason": "Reconstruct missing discovery context, attach research notes, and align shared guidance before more execution happens.",
+            "task_prompt": if feature_id.is_empty() {
+                json!(format!(
+                    "Reconstruct missing discovery context for {}. Attach research notes, clarify assumptions, and align AGENTS.md plus provider guidance before more execution continues.",
+                    project
+                ))
+            } else {
+                json!(format!(
+                    "Reconstruct discovery context for {}. Attach missing research or discovery docs, list unresolved assumptions, and align shared guidance before more build work continues.",
+                    feature_id
+                ))
+            },
         }));
     }
     if !client_review_features.is_empty() {
+        let feature_id = primary_client_review
+            .get("feature_id")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
         suggested_sessions.push(json!({
             "role": "design",
             "stage": "design",
+            "priority": "high",
+            "feature_id": if feature_id.is_empty() { Value::Null } else { json!(feature_id) },
             "reason": "Prepare design options or client-review artifacts so the blocked feature set can move into build with approval.",
+            "task_prompt": if feature_id.is_empty() {
+                json!("Prepare design options and approval-ready mockups for the client-blocked feature set so build can continue with trusted direction.")
+            } else {
+                json!(format!(
+                    "Prepare approval-ready design options for {}. Generate alternatives, explain the tradeoffs, and package the best direction for client review.",
+                    feature_id
+                ))
+            },
         }));
     }
     if !ready_features.is_empty() && runtime_count == 0 {
+        let feature_id = primary_ready
+            .get("feature_id")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let next_gate = primary_ready
+            .get("next_gate")
+            .and_then(|value| value.as_str())
+            .unwrap_or("build");
+        let role = match next_gate {
+            "test" => "qa",
+            "done" => "release",
+            _ => "frontend",
+        };
+        let stage = match next_gate {
+            "test" => "test",
+            "done" => "done",
+            _ => "build",
+        };
         suggested_sessions.push(json!({
-            "role": "frontend",
-            "stage": "build",
+            "role": role,
+            "stage": stage,
+            "priority": "medium",
+            "feature_id": if feature_id.is_empty() { Value::Null } else { json!(feature_id) },
             "reason": "There is work ready to build, but no live implementation lane is running.",
+            "task_prompt": if feature_id.is_empty() {
+                json!(format!(
+                    "Start the next {} lane for {} and move the ready work forward with evidence.",
+                    role,
+                    project
+                ))
+            } else {
+                json!(format!(
+                    "Start a {} lane for {} and move it through {} with evidence and linked artifacts.",
+                    role,
+                    feature_id,
+                    stage
+                ))
+            },
         }));
     }
     if !missing_acceptance.is_empty() {
+        let feature_id = primary_missing_acceptance
+            .get("feature_id")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
         suggested_sessions.push(json!({
             "role": "qa",
             "stage": "test",
+            "priority": "high",
+            "feature_id": if feature_id.is_empty() { Value::Null } else { json!(feature_id) },
             "reason": "Backfill acceptance criteria and verification evidence before calling work complete.",
+            "task_prompt": if feature_id.is_empty() {
+                json!("Backfill missing acceptance criteria, verification evidence, and test coverage for the current delivery-stage work.")
+            } else {
+                json!(format!(
+                    "Backfill acceptance criteria and verification evidence for {} before the project treats it as complete.",
+                    feature_id
+                ))
+            },
         }));
     }
     if !dirty_docs.is_empty() {
         suggested_sessions.push(json!({
             "role": "docs",
             "stage": "build",
+            "priority": "medium",
+            "feature_id": Value::Null,
             "reason": "Clean up documentation drift so the portal, Git, and runtime state tell the same story.",
+            "task_prompt": "Reconcile documentation drift, align handbook pages with the current Git/runtime state, and leave the project in a clean sync state.",
         }));
     }
     if !blocking_features.is_empty() {
+        let feature_id = primary_blocked
+            .get("feature_id")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
         suggested_sessions.push(json!({
             "role": "lead",
             "stage": "build",
+            "priority": "high",
+            "feature_id": if feature_id.is_empty() { Value::Null } else { json!(feature_id) },
             "reason": "Review blockers, route missing approvals, and re-sequence worker lanes to restart stalled work.",
+            "task_prompt": if feature_id.is_empty() {
+                json!("Review the blocked feature set, route missing approvals or evidence, and re-sequence worker lanes so stalled work can restart.")
+            } else {
+                json!(format!(
+                    "Review blockers on {}. Route missing approvals, answer open questions, and re-sequence the next worker lane so execution can restart.",
+                    feature_id
+                ))
+            },
         }));
     }
+
+    let next_action = suggested_sessions
+        .first()
+        .cloned()
+        .unwrap_or_else(|| {
+            json!({
+                "role": "lead",
+                "stage": "build",
+                "priority": "medium",
+                "feature_id": Value::Null,
+                "reason": "Review the current project state and choose the next governed lane.",
+                "task_prompt": format!(
+                    "Review {} and identify the next governed lane that should be launched through DXOS.",
+                    project
+                ),
+            })
+        });
 
     json!({
         "mode": mode,
@@ -2120,6 +2267,7 @@ fn recovery_assessment(
         "worktree_count": worktree_count,
         "gaps": gaps,
         "suggested_sessions": suggested_sessions,
+        "next_action": next_action,
     })
 }
 
@@ -2300,10 +2448,22 @@ pub async fn get_project_brief(
         })
         .unwrap_or_else(|| json!(null));
 
+    let documentation_health = documentation_health(&guidance_docs, &docs, &runtimes, &feature_records);
     let documentation = json!({
-        "health": documentation_health(&guidance_docs, &docs, &runtimes, &feature_records),
+        "health": documentation_health.clone(),
         "sync_contract": documentation_sync_contract(&project),
     });
+    let recovery = recovery_assessment(
+        &project,
+        &phase_counts,
+        &documentation_health,
+        &blocking_features,
+        &ready_features,
+        &client_review_features,
+        runtime_count,
+        worktree_count,
+        &feature_records,
+    );
     let dxos = crate::dxos::control_plane_snapshot(&project_path, Some(&project));
 
     Json(json!({
@@ -2320,6 +2480,7 @@ pub async fn get_project_brief(
             "guidance_doc_count": guidance_doc_count,
         },
         "documentation": documentation,
+        "recovery": recovery,
         "automation": automation,
         "delivery": {
             "phase_counts": phase_counts,
