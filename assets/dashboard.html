@@ -2638,6 +2638,8 @@ async function renderExecutionHub(){
     ${renderDxosOperatorControls(project,activeStage,dxosSessions)}`;
   syncDxosLaunchProviderOptions();
   syncDxosSessionProviderOptions();
+  syncDxosLaunchAdapterNote();
+  syncDxosSessionAdapterNote();
 
   docsEl.innerHTML=`
     <div class="portal-note">This section is the trust contract for the whole program. If docs, Git, approvals, and dashboard state drift apart, the portal becomes unreliable for both clients and delivery teams.</div>
