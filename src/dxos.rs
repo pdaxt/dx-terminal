@@ -284,11 +284,11 @@ CREATE INDEX IF NOT EXISTS idx_dxos_control_planes_updated_at
     ON dxos_control_planes(updated_at DESC);
 "#;
 
-fn control_plane_db(project_path: &str) -> Result<Connection, String> {
-    let dir = control_plane_store_dir(project_path);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir: {}", e))?;
-    let conn = Connection::open(control_plane_store_path(project_path))
-        .map_err(|e| format!("open: {}", e))?;
+fn open_control_plane_db(path: &Path) -> Result<Connection, String> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("mkdir: {}", e))?;
+    }
+    let conn = Connection::open(path).map_err(|e| format!("open: {}", e))?;
     conn.execute_batch(
         "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;",
     )
@@ -296,6 +296,14 @@ fn control_plane_db(project_path: &str) -> Result<Connection, String> {
     conn.execute_batch(CONTROL_PLANE_STORE_SCHEMA)
         .map_err(|e| format!("schema: {}", e))?;
     Ok(conn)
+}
+
+fn control_plane_db(project_path: &str) -> Result<Connection, String> {
+    open_control_plane_db(&control_plane_store_path(project_path))
+}
+
+fn global_control_plane_store_path() -> PathBuf {
+    config::dx_root().join("dxos").join("control-plane.sqlite3")
 }
 
 fn load_control_plane_from_store(project_path: &str) -> Option<ControlPlaneState> {
@@ -413,13 +421,8 @@ fn save_control_plane(project_path: &str, state: &ControlPlaneState) -> Result<(
 }
 
 pub fn control_plane_registry() -> String {
-    let registry_path = config::dx_root().join("dxos").join("control-plane.sqlite3");
-    let conn = match control_plane_db(
-        registry_path
-            .parent()
-            .and_then(|_| Some(config::projects_dir().to_string_lossy().as_ref()))
-            .unwrap_or(""),
-    ) {
+    let registry_path = global_control_plane_store_path();
+    let conn = match open_control_plane_db(&registry_path) {
         Ok(conn) => conn,
         Err(error) => return json!({"error": error}).to_string(),
     };
@@ -445,6 +448,38 @@ pub fn control_plane_registry() -> String {
     json!({
         "backend": "sqlite_with_repo_mirror",
         "database_path": registry_path.to_string_lossy().to_string(),
+        "projects": projects,
+    })
+    .to_string()
+}
+
+fn control_plane_registry_for_project(project_path: &str) -> String {
+    let conn = match control_plane_db(project_path) {
+        Ok(conn) => conn,
+        Err(error) => return json!({"error": error}).to_string(),
+    };
+    let mut stmt = match conn.prepare(
+        "SELECT project_path, project_name, updated_at
+         FROM dxos_control_planes
+         ORDER BY updated_at DESC, project_name ASC",
+    ) {
+        Ok(stmt) => stmt,
+        Err(error) => return json!({"error": format!("prepare: {}", error)}).to_string(),
+    };
+    let rows = match stmt.query_map([], |row| {
+        Ok(json!({
+            "path": row.get::<_, String>(0)?,
+            "name": row.get::<_, String>(1)?,
+            "updated_at": row.get::<_, String>(2)?,
+        }))
+    }) {
+        Ok(rows) => rows,
+        Err(error) => return json!({"error": format!("query: {}", error)}).to_string(),
+    };
+    let projects = rows.filter_map(Result::ok).collect::<Vec<_>>();
+    json!({
+        "backend": "sqlite_with_repo_mirror",
+        "database_path": control_plane_store_path(project_path).to_string_lossy().to_string(),
         "projects": projects,
     })
     .to_string()
