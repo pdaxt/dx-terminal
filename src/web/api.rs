@@ -1960,8 +1960,10 @@ pub async fn get_dxos_sessions(Query(q): Query<VisionQuery>) -> Json<Value> {
 /// POST /api/dxos/debate/start — Start a formal debate
 pub async fn start_dxos_debate(
     State(app): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<DxosDebateStartBody>,
-) -> Json<Value> {
+) -> ApiJson {
+    require_control_token(&headers)?;
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -1977,14 +1979,16 @@ pub async fn start_dxos_debate(
         body.requested_by.as_deref(),
     );
     maybe_emit_debate_change(&app, &project_path, &result);
-    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
 }
 
 /// POST /api/dxos/debate/proposal — Add a proposal to a debate
 pub async fn add_dxos_debate_proposal(
     State(app): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<DxosDebateProposalBody>,
-) -> Json<Value> {
+) -> ApiJson {
+    require_control_token(&headers)?;
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2000,14 +2004,16 @@ pub async fn add_dxos_debate_proposal(
         body.evidence,
     );
     maybe_emit_debate_change(&app, &project_path, &result);
-    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
 }
 
 /// POST /api/dxos/debate/contradiction — Add a contradiction to a proposal
 pub async fn add_dxos_debate_contradiction(
     State(app): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<DxosDebateContradictionBody>,
-) -> Json<Value> {
+) -> ApiJson {
+    require_control_token(&headers)?;
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2022,14 +2028,16 @@ pub async fn add_dxos_debate_contradiction(
         &body.rationale,
     );
     maybe_emit_debate_change(&app, &project_path, &result);
-    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
 }
 
 /// POST /api/dxos/debate/vote — Cast or update a vote
 pub async fn vote_dxos_debate(
     State(app): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<DxosDebateVoteBody>,
-) -> Json<Value> {
+) -> ApiJson {
+    require_control_token(&headers)?;
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2045,14 +2053,16 @@ pub async fn vote_dxos_debate(
         &body.rationale,
     );
     maybe_emit_debate_change(&app, &project_path, &result);
-    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
 }
 
 /// POST /api/dxos/debate/decision — Finalize a debate decision
 pub async fn finalize_dxos_debate(
     State(app): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<DxosDebateDecisionBody>,
-) -> Json<Value> {
+) -> ApiJson {
+    require_control_token(&headers)?;
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2067,14 +2077,16 @@ pub async fn finalize_dxos_debate(
         &body.rationale,
     );
     maybe_emit_debate_change(&app, &project_path, &result);
-    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
 }
 
 /// POST /api/dxos/session/upsert — Create or update a session contract
 pub async fn upsert_dxos_session(
     State(app): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<DxosSessionUpsertBody>,
-) -> Json<Value> {
+) -> ApiJson {
+    require_control_token(&headers)?;
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2105,14 +2117,16 @@ pub async fn upsert_dxos_session(
         body.status.as_deref(),
     );
     maybe_emit_dxos_session_change(&app, &project_path, &result);
-    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
 }
 
 /// POST /api/dxos/session/launch — Launch a real runtime lane through the DX broker
 pub async fn launch_dxos_session(
     State(app): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<DxosSessionLaunchBody>,
-) -> Json<Value> {
+) -> ApiJson {
+    require_control_token(&headers)?;
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2136,14 +2150,16 @@ pub async fn launch_dxos_session(
         },
     )
     .await;
-    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
 }
 
 /// POST /api/dxos/session/status — Update a session status
 pub async fn update_dxos_session_status(
     State(app): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<DxosSessionStatusBody>,
-) -> Json<Value> {
+) -> ApiJson {
+    require_control_token(&headers)?;
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2156,14 +2172,16 @@ pub async fn update_dxos_session_status(
         body.note.as_deref(),
     );
     maybe_emit_dxos_session_change(&app, &project_path, &result);
-    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
 }
 
 /// POST /api/dxos/work/delegate — Delegate a structured work order
 pub async fn delegate_dxos_work(
     State(app): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<DxosWorkDelegateBody>,
-) -> Json<Value> {
+) -> ApiJson {
+    require_control_token(&headers)?;
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2181,14 +2199,16 @@ pub async fn delegate_dxos_work(
         body.expected_outputs,
     );
     maybe_emit_dxos_session_change(&app, &project_path, &result);
-    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
 }
 
 /// POST /api/dxos/work/block — Block a work order
 pub async fn block_dxos_work(
     State(app): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<DxosWorkBlockBody>,
-) -> Json<Value> {
+) -> ApiJson {
+    require_control_token(&headers)?;
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2201,14 +2221,16 @@ pub async fn block_dxos_work(
         body.requested_permission.as_deref(),
     );
     maybe_emit_dxos_session_change(&app, &project_path, &result);
-    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
 }
 
 /// POST /api/dxos/work/resolve — Resolve a blocked work order
 pub async fn resolve_dxos_work(
     State(app): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<DxosWorkResolveBody>,
-) -> Json<Value> {
+) -> ApiJson {
+    require_control_token(&headers)?;
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2249,14 +2271,16 @@ pub async fn resolve_dxos_work(
             serde_json::to_value(&delivery).unwrap_or_else(|_| json!({"status": "unknown"})),
         );
     }
-    Json(value)
+    Ok(Json(value))
 }
 
 /// POST /api/dxos/session/block — Raise a worker blocker or permission request
 pub async fn raise_dxos_session_blocker(
     State(app): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<DxosSessionBlockBody>,
-) -> Json<Value> {
+) -> ApiJson {
+    require_control_token(&headers)?;
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2270,7 +2294,7 @@ pub async fn raise_dxos_session_blocker(
         body.resolution_hint.as_deref(),
     );
     maybe_emit_dxos_session_change(&app, &project_path, &result);
-    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+    Ok(Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result}))))
 }
 
 /// GET /api/vision/diff?project=NAME — Recent vision changes
