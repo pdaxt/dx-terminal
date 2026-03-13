@@ -1366,7 +1366,11 @@ pub fn session_list(project_path: &str, project_name: Option<&str>) -> String {
     .to_string()
 }
 
-pub fn runtime_launch_context(project_path: &str, project_name: Option<&str>, session_id: &str) -> Value {
+pub fn runtime_launch_context(
+    project_path: &str,
+    project_name: Option<&str>,
+    session_id: &str,
+) -> Value {
     let trimmed_session_id = session_id.trim();
     if trimmed_session_id.is_empty() {
         return json!({"error": "session_id_required"});

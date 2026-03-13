@@ -33,7 +33,8 @@ fn value_string_array(value: Option<&Value>) -> Vec<String> {
     value
         .and_then(Value::as_array)
         .map(|items| {
-            items.iter()
+            items
+                .iter()
                 .filter_map(|item| item.as_str().map(|value| value.to_string()))
                 .collect::<Vec<_>>()
         })
@@ -66,7 +67,10 @@ fn build_dxos_runtime_context_section(context: &Value) -> Option<String> {
         format!(
             "- Session: {} ({})",
             session_id,
-            session.get("role").and_then(Value::as_str).unwrap_or("worker")
+            session
+                .get("role")
+                .and_then(Value::as_str)
+                .unwrap_or("worker")
         ),
     ];
 
@@ -123,8 +127,7 @@ fn build_dxos_runtime_context_section(context: &Value) -> Option<String> {
                 }
             }
 
-            let required_capabilities =
-                value_string_array(work_order.get("required_capabilities"));
+            let required_capabilities = value_string_array(work_order.get("required_capabilities"));
             if !required_capabilities.is_empty() {
                 lines.push(format!(
                     "- Required capabilities: {}",
@@ -151,7 +154,10 @@ fn build_dxos_runtime_context_section(context: &Value) -> Option<String> {
             if let Some(last_resolution) = work_order.get("last_resolution").and_then(Value::as_str)
             {
                 if !last_resolution.trim().is_empty() {
-                    lines.push(format!("- Latest lead guidance: {}", last_resolution.trim()));
+                    lines.push(format!(
+                        "- Latest lead guidance: {}",
+                        last_resolution.trim()
+                    ));
                 }
             }
         }
@@ -191,7 +197,10 @@ fn build_dxos_runtime_context_section(context: &Value) -> Option<String> {
             lines.push(format!(
                 "- Debate: {} ({})",
                 debate_id,
-                debate.get("status").and_then(Value::as_str).unwrap_or("open")
+                debate
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .unwrap_or("open")
             ));
             if let Some(title) = debate.get("title").and_then(Value::as_str) {
                 if !title.trim().is_empty() {
@@ -525,7 +534,9 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
 
     let dxos_launch_context = dxos_session_id
         .as_deref()
-        .map(|session_id| crate::dxos::runtime_launch_context(&project_path, Some(&project_name), session_id))
+        .map(|session_id| {
+            crate::dxos::runtime_launch_context(&project_path, Some(&project_name), session_id)
+        })
         .unwrap_or_else(|| serde_json::json!({}));
     inject_dxos_runtime_env(&mut env_vars, &dxos_launch_context);
 
