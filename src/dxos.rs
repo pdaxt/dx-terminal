@@ -364,7 +364,11 @@ pub fn debate_add_proposal(
     }
 
     let mut state = load_control_plane(project_path, project_name);
-    let Some(debate) = state.debates.iter_mut().find(|debate| debate.id == debate_id) else {
+    let Some(debate) = state
+        .debates
+        .iter_mut()
+        .find(|debate| debate.id == debate_id)
+    else {
         return json!({"error": "debate_not_found"}).to_string();
     };
     if debate.status != "open" {
@@ -428,13 +432,21 @@ pub fn debate_add_contradiction(
     }
 
     let mut state = load_control_plane(project_path, project_name);
-    let Some(debate) = state.debates.iter_mut().find(|debate| debate.id == debate_id) else {
+    let Some(debate) = state
+        .debates
+        .iter_mut()
+        .find(|debate| debate.id == debate_id)
+    else {
         return json!({"error": "debate_not_found"}).to_string();
     };
     if debate.status != "open" {
         return json!({"error": "debate_closed"}).to_string();
     }
-    if !debate.proposals.iter().any(|proposal| proposal.id == proposal_id) {
+    if !debate
+        .proposals
+        .iter()
+        .any(|proposal| proposal.id == proposal_id)
+    {
         return json!({"error": "proposal_not_found"}).to_string();
     }
 
@@ -496,13 +508,21 @@ pub fn debate_cast_vote(
     }
 
     let mut state = load_control_plane(project_path, project_name);
-    let Some(debate) = state.debates.iter_mut().find(|debate| debate.id == debate_id) else {
+    let Some(debate) = state
+        .debates
+        .iter_mut()
+        .find(|debate| debate.id == debate_id)
+    else {
         return json!({"error": "debate_not_found"}).to_string();
     };
     if debate.status != "open" {
         return json!({"error": "debate_closed"}).to_string();
     }
-    if !debate.proposals.iter().any(|proposal| proposal.id == proposal_id) {
+    if !debate
+        .proposals
+        .iter()
+        .any(|proposal| proposal.id == proposal_id)
+    {
         return json!({"error": "proposal_not_found"}).to_string();
     }
 
@@ -562,7 +582,11 @@ pub fn debate_finalize(
     }
 
     let mut state = load_control_plane(project_path, project_name);
-    let Some(debate) = state.debates.iter_mut().find(|debate| debate.id == debate_id) else {
+    let Some(debate) = state
+        .debates
+        .iter_mut()
+        .find(|debate| debate.id == debate_id)
+    else {
         return json!({"error": "debate_not_found"}).to_string();
     };
     if debate.status != "open" {
@@ -751,6 +775,9 @@ mod tests {
         assert_eq!(decided_value["debate"]["status"], "decided");
 
         let listed: Value = serde_json::from_str(&debate_list(project, Some("demo"))).unwrap();
-        assert_eq!(listed["debates"][0]["decision"]["chosen_proposal_id"], proposal_a_id);
+        assert_eq!(
+            listed["debates"][0]["decision"]["chosen_proposal_id"],
+            proposal_a_id
+        );
     }
 }

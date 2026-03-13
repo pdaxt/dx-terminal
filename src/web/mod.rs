@@ -74,10 +74,7 @@ pub fn build_router(app: Arc<App>) -> Router {
             post(api::add_dxos_debate_contradiction),
         )
         .route("/api/dxos/debate/vote", post(api::vote_dxos_debate))
-        .route(
-            "/api/dxos/debate/decision",
-            post(api::finalize_dxos_debate),
-        )
+        .route("/api/dxos/debate/decision", post(api::finalize_dxos_debate))
         // Vision
         .route("/api/vision", get(api::get_vision))
         .route("/api/vision/summary", get(api::get_vision_summary))
