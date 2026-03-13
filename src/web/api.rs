@@ -2204,12 +2204,18 @@ pub async fn start_dxos_debate(
     headers: HeaderMap,
     Json(body): Json<DxosDebateStartBody>,
 ) -> ApiJson {
-    require_control_token(&headers)?;
-    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
     });
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        body.project.as_deref(),
+        "debate_start",
+        &body.title,
+    )?;
     let result = crate::dxos::debate_start(
         &project_path,
         body.project.as_deref(),
@@ -2240,12 +2246,18 @@ pub async fn add_dxos_debate_proposal(
     headers: HeaderMap,
     Json(body): Json<DxosDebateProposalBody>,
 ) -> ApiJson {
-    require_control_token(&headers)?;
-    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
     });
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        body.project.as_deref(),
+        "debate_proposal",
+        &body.debate_id,
+    )?;
     let result = crate::dxos::debate_add_proposal(
         &project_path,
         body.project.as_deref(),
@@ -2276,12 +2288,18 @@ pub async fn add_dxos_debate_contradiction(
     headers: HeaderMap,
     Json(body): Json<DxosDebateContradictionBody>,
 ) -> ApiJson {
-    require_control_token(&headers)?;
-    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
     });
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        body.project.as_deref(),
+        "debate_contradiction",
+        &body.debate_id,
+    )?;
     let result = crate::dxos::debate_add_contradiction(
         &project_path,
         body.project.as_deref(),
@@ -2311,12 +2329,18 @@ pub async fn vote_dxos_debate(
     headers: HeaderMap,
     Json(body): Json<DxosDebateVoteBody>,
 ) -> ApiJson {
-    require_control_token(&headers)?;
-    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
     });
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        body.project.as_deref(),
+        "debate_vote",
+        &body.debate_id,
+    )?;
     let result = crate::dxos::debate_cast_vote(
         &project_path,
         body.project.as_deref(),
@@ -2347,12 +2371,18 @@ pub async fn finalize_dxos_debate(
     headers: HeaderMap,
     Json(body): Json<DxosDebateDecisionBody>,
 ) -> ApiJson {
-    require_control_token(&headers)?;
-    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
     });
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        body.project.as_deref(),
+        "debate_finalize",
+        &body.debate_id,
+    )?;
     let result = crate::dxos::debate_finalize(
         &project_path,
         body.project.as_deref(),
@@ -2382,12 +2412,18 @@ pub async fn upsert_dxos_session(
     headers: HeaderMap,
     Json(body): Json<DxosSessionUpsertBody>,
 ) -> ApiJson {
-    require_control_token(&headers)?;
-    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
     });
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        body.project.as_deref(),
+        "session_upsert",
+        body.session_id.as_deref().unwrap_or(&body.role),
+    )?;
     let result = crate::dxos::upsert_session_contract(
         &project_path,
         body.project.as_deref(),
@@ -2433,13 +2469,19 @@ pub async fn launch_dxos_session(
     headers: HeaderMap,
     Json(body): Json<DxosSessionLaunchBody>,
 ) -> ApiJson {
-    require_control_token(&headers)?;
-    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
     });
     let requested_pane = body.pane.clone().unwrap_or_else(|| "auto".to_string());
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        body.project.as_deref(),
+        "session_launch",
+        &requested_pane,
+    )?;
     let result = tools::spawn(
         &app,
         types::SpawnRequest {
@@ -2478,12 +2520,18 @@ pub async fn update_dxos_session_status(
     headers: HeaderMap,
     Json(body): Json<DxosSessionStatusBody>,
 ) -> ApiJson {
-    require_control_token(&headers)?;
-    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
     });
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        body.project.as_deref(),
+        "session_status",
+        &body.session_id,
+    )?;
     let result = crate::dxos::update_session_status(
         &project_path,
         body.project.as_deref(),
@@ -2511,12 +2559,18 @@ pub async fn delegate_dxos_work(
     headers: HeaderMap,
     Json(body): Json<DxosWorkDelegateBody>,
 ) -> ApiJson {
-    require_control_token(&headers)?;
-    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
     });
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        body.project.as_deref(),
+        "work_delegate",
+        &body.title,
+    )?;
     let result = crate::dxos::delegate_work_order(
         &project_path,
         body.project.as_deref(),
@@ -2549,12 +2603,18 @@ pub async fn block_dxos_work(
     headers: HeaderMap,
     Json(body): Json<DxosWorkBlockBody>,
 ) -> ApiJson {
-    require_control_token(&headers)?;
-    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
     });
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        body.project.as_deref(),
+        "work_block",
+        &body.work_order_id,
+    )?;
     let result = crate::dxos::work_order_block(
         &project_path,
         body.project.as_deref(),
@@ -2582,12 +2642,18 @@ pub async fn resolve_dxos_work(
     headers: HeaderMap,
     Json(body): Json<DxosWorkResolveBody>,
 ) -> ApiJson {
-    require_control_token(&headers)?;
-    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
     });
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        body.project.as_deref(),
+        "work_resolve",
+        &body.work_order_id,
+    )?;
     let result = crate::dxos::resolve_work_order(
         &project_path,
         body.project.as_deref(),
@@ -2642,12 +2708,18 @@ pub async fn raise_dxos_session_blocker(
     headers: HeaderMap,
     Json(body): Json<DxosSessionBlockBody>,
 ) -> ApiJson {
-    require_control_token(&headers)?;
-    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
     });
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        body.project.as_deref(),
+        "session_block",
+        &body.worker_session_id,
+    )?;
     let result = crate::dxos::raise_session_blocker(
         &project_path,
         body.project.as_deref(),
