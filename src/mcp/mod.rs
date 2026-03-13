@@ -2941,7 +2941,38 @@ impl DxTerminalService {
             req.resolution.as_deref(),
         );
         self.emit_dxos_session_change(&project_path, &result);
-        Ok(CallToolResult::success(vec![Content::text(result)]))
+        let delivery = crate::dxos_runtime::deliver_work_order_resolution(
+            self.app.as_ref(),
+            &project_path,
+            None,
+            &result,
+            req.resolution.as_deref(),
+        )
+        .await;
+        if delivery.status == "failed" {
+            if let (Some(session_id), Some(error)) = (
+                delivery.worker_session_id.as_deref(),
+                delivery.error.as_deref(),
+            ) {
+                let failure = crate::dxos::record_session_delivery_failure(
+                    &project_path,
+                    None,
+                    session_id,
+                    error,
+                );
+                self.emit_dxos_session_change(&project_path, &failure);
+            }
+        }
+        let mut value = serde_json::from_str::<serde_json::Value>(&result)
+            .unwrap_or_else(|_| serde_json::json!({"raw": result}));
+        if let Some(object) = value.as_object_mut() {
+            object.insert(
+                "delivery".to_string(),
+                serde_json::to_value(&delivery)
+                    .unwrap_or_else(|_| serde_json::json!({"status": "unknown"})),
+            );
+        }
+        Ok(CallToolResult::success(vec![Content::text(value.to_string())]))
     }
 
     #[tool(

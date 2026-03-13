@@ -1570,20 +1570,31 @@ function openDxosSessionPane(pane){
 async function resolveDxosWorkOrder(workOrderId){
   const project=activeProjectForHub();
   if(!project||!workOrderId)return;
+  const guidance=(window.prompt('Send the exact guidance or approval back to the worker lane:', 'Approval granted. Continue with the next high-value task in scope.')||'').trim();
+  if(!guidance)return;
   const result=await fetchJSON('/api/dxos/work/resolve',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
       project,
       work_order_id:workOrderId,
-      resolution:'Portal approval: cleared to continue.'
+      resolution:guidance
     })
   });
   if(!result||result.error){
     window.alert(`Unable to resolve work order ${workOrderId}.`);
     return;
   }
-  setDxosPortalNotice('work',`Work order ${workOrderId} cleared to continue.`,'green');
+  const delivery=result.delivery||{};
+  if(delivery.status==='delivered'){
+    const via=delivery.via?` via ${delivery.via}`:'';
+    const lane=delivery.pane?` to pane ${delivery.pane}`:'';
+    setDxosPortalNotice('work',`Work order ${workOrderId} resolved and delivered${lane}${via}.`,'green');
+  }else if(delivery.status==='failed'){
+    setDxosPortalNotice('work',`Work order ${workOrderId} resolved, but delivery back to the worker lane failed: ${delivery.error||'unknown error'}.`,'red');
+  }else{
+    setDxosPortalNotice('work',`Work order ${workOrderId} resolved.`,'green');
+  }
   await renderExecutionHub();
   if(activePaneNum)renderPaneContext(activePaneNum);
 }
@@ -1871,6 +1882,7 @@ function renderDxosWorkOrderRows(workOrders,sessions,limit,mode){
     const blockers=(order.blockers||[]).slice(0,2);
     const requiredCapabilities=(order.required_capabilities||[]).slice(0,3);
     const expectedOutputs=(order.expected_outputs||[]).slice(0,2);
+    const lastResolution=typeof order.last_resolution==='string'?order.last_resolution.trim():'';
     const escalationTarget=(order.escalation_target||'lead').toString();
     const routeLabel=escalationTarget==='human'
       ? 'human approval'
@@ -1903,6 +1915,7 @@ function renderDxosWorkOrderRows(workOrders,sessions,limit,mode){
       ${requestedPermissions.length?`<div class="exec-row-meta">Needs permission: ${escHtml(requestedPermissions.join(', '))}${(order.requested_permissions||[]).length>3?' …':''}</div>`:''}
       ${requiredCapabilities.length?`<div class="exec-row-meta">Required capabilities: ${escHtml(requiredCapabilities.join(', '))}${(order.required_capabilities||[]).length>3?' …':''}</div>`:''}
       ${expectedOutputs.length?`<div class="exec-row-meta">Expected outputs: ${escHtml(expectedOutputs.join(' · '))}${(order.expected_outputs||[]).length>2?' …':''}</div>`:''}
+      ${lastResolution?`<div class="exec-row-meta">Latest resolution: ${escHtml(truncateCopy(lastResolution,160))}</div>`:''}
     </div>`;
   }).join('');
 }
