@@ -1076,6 +1076,93 @@ fn provider_policy_matrix() -> Vec<ProviderPolicyRule> {
     rules
 }
 
+fn capabilities_for_role(role: &str) -> Vec<String> {
+    match normalize_role(role).as_str() {
+        "discovery" => vec![
+            "vision".to_string(),
+            "docs".to_string(),
+            "analysis".to_string(),
+            "research".to_string(),
+        ],
+        "design" => vec![
+            "design".to_string(),
+            "docs".to_string(),
+            "browser".to_string(),
+            "analysis".to_string(),
+        ],
+        "qa" => vec![
+            "qa".to_string(),
+            "tests".to_string(),
+            "browser".to_string(),
+            "analysis".to_string(),
+        ],
+        "docs" => vec![
+            "docs".to_string(),
+            "vision".to_string(),
+            "git".to_string(),
+            "analysis".to_string(),
+        ],
+        "release" => vec![
+            "release".to_string(),
+            "git".to_string(),
+            "qa".to_string(),
+            "analysis".to_string(),
+        ],
+        "frontend" | "backend" | "developer" => vec![
+            "git".to_string(),
+            "code".to_string(),
+            "tests".to_string(),
+            "analysis".to_string(),
+        ],
+        "lead" => vec![
+            "vision".to_string(),
+            "docs".to_string(),
+            "git".to_string(),
+            "analysis".to_string(),
+        ],
+        _ => vec![
+            "analysis".to_string(),
+            "docs".to_string(),
+            "git".to_string(),
+        ],
+    }
+}
+
+fn expected_outputs_for_role_stage(role: &str, stage: Option<&str>) -> Vec<String> {
+    match (normalize_role(role).as_str(), normalize_stage(stage).as_str()) {
+        ("discovery", _) => vec![
+            "recovery_assessment".to_string(),
+            "discovery_doc".to_string(),
+            "open_questions".to_string(),
+        ],
+        ("design", _) => vec![
+            "design_options".to_string(),
+            "approval_packet".to_string(),
+            "design_rationale".to_string(),
+        ],
+        ("qa", _) | (_, "test") => vec![
+            "verification_report".to_string(),
+            "acceptance_status".to_string(),
+            "evidence_bundle".to_string(),
+        ],
+        ("docs", _) => vec![
+            "documentation_sync".to_string(),
+            "handbook_update".to_string(),
+            "operator_handoff".to_string(),
+        ],
+        ("release", _) | (_, "done") => vec![
+            "release_packet".to_string(),
+            "rollout_note".to_string(),
+            "handoff_note".to_string(),
+        ],
+        _ => vec![
+            "implementation_artifact".to_string(),
+            "linked_diff".to_string(),
+            "handoff_note".to_string(),
+        ],
+    }
+}
+
 fn validate_provider_selection(
     role: &str,
     stage: Option<&str>,
