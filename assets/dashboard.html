@@ -2788,6 +2788,8 @@ function renderAdoptionRows(project,adoptions,showLaunch){
       <div class="exec-row-meta" style="margin-top:6px">${escHtml(links||'No linked recovery artifacts yet.')}</div>
       ${showLaunch&&item.lead_session_id?`<div class="exec-row-actions" style="margin-top:8px">
         <button class="vdd-focus-btn" onclick="return launchAdoptionLead('${escHtml(String(item.lead_session_id))}')" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Launch lead lane</button>
+        ${item.status==='active'?`<button class="vdd-focus-btn" style="margin-left:8px" onclick="return updateDxosAdoptionStatus('${escHtml(String(item.id))}','completed','Recovery plan accepted and handed off into governed delivery.')" ${operatorActionDisabledAttrs(project,'adoption_status','adoption status update')}>Mark complete</button>
+        <button class="vdd-focus-btn" style="margin-left:8px" onclick="return updateDxosAdoptionStatus('${escHtml(String(item.id))}','cancelled','Recovery workflow cancelled by operator.')" ${operatorActionDisabledAttrs(project,'adoption_status','adoption status update')}>Cancel</button>`:''}
       </div>`:''}
     </div>`;
   }).join('');
@@ -2841,6 +2843,36 @@ async function launchAdoptionLead(sessionId){
     `Recovery lead ${sessionId} launched on Pane ${result.pane||'auto'} via ${adapterLabel((result.runtime_adapter||'').toString())}.`,
     'green'
   );
+  await renderExecutionHub();
+  return false;
+}
+
+async function updateDxosAdoptionStatus(adoptionId,status,note){
+  const project=activeProjectForHub();
+  if(!project||!adoptionId)return false;
+  if(!operatorAllowsAction(project,'adoption_status')){
+    setDxosPortalNotice('adoption','Operator policy blocks adoption updates for this project.','red');
+    return false;
+  }
+  setDxosPortalNotice('adoption',`${status==='completed'?'Completing':'Updating'} recovery workflow ${adoptionId}…`,'yellow');
+  const result=await fetchJSON('/api/dxos/adoption/status',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({project,adoption_id:adoptionId,status,note})
+  });
+  if(!result){
+    setDxosPortalNotice('adoption','Unable to reach the DXOS adoption status endpoint.','red');
+    return false;
+  }
+  if(noteDxControlAuthFailure(result)){
+    return false;
+  }
+  if(result.error){
+    setDxosPortalNotice('adoption',String(result.error||'Unable to update the recovery workflow.'),'red');
+    await renderExecutionHub();
+    return false;
+  }
+  setDxosPortalNotice('adoption',`Recovery workflow ${adoptionId} marked ${status}.`,'green');
   await renderExecutionHub();
   return false;
 }

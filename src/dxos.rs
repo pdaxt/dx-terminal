@@ -875,6 +875,7 @@ pub fn control_auth_contract() -> Value {
             "/api/dxos/debate/vote",
             "/api/dxos/debate/decision",
             "/api/dxos/adoption/start",
+            "/api/dxos/adoption/status",
             "/api/pane/talk",
             "/api/pane/kill",
             "/api/pane/restart"
