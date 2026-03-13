@@ -1475,7 +1475,9 @@ function runtimeProviderOptionsForPolicy(project,role,stage,selected){
     return !availability||availability.available!==false;
   });
   const preferred=(rule&&rule.preferred_provider)||launchable[0]||providers[0]||'claude';
-  const selectedValue=(launchable.includes(chosen)||providers.includes(chosen))?chosen:preferred;
+  const selectedValue=launchable.includes(chosen)
+    ? chosen
+    : (launchable[0]||providers.includes(chosen)?chosen:preferred);
   return {
     selected:selectedValue,
     html:providers.map(value=>{
