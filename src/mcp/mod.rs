@@ -2722,6 +2722,28 @@ impl DxTerminalService {
     }
 
     #[tool(
+        description = "Start a governed DXOS project adoption workflow. This seeds the first recovery lead session and formal adoption council for an in-progress or inherited project."
+    )]
+    async fn dxos_adoption_start(
+        &self,
+        Parameters(req): Parameters<types::DxosAdoptionStartRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::dxos_tools::resolve_project_path(req.project.as_deref());
+        let result = tools::dxos_tools::adoption_start(
+            req.project.as_deref(),
+            req.summary.as_deref(),
+            req.objective.as_deref(),
+            req.feature_id.as_deref(),
+            req.stage.as_deref(),
+            req.participants,
+            req.requested_by.as_deref(),
+        );
+        self.emit_dxos_session_change(&project_path, &result);
+        self.emit_debate_change(&project_path, &result);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
         description = "Start a formal debate for a project or feature. Use this when multiple agents/models need to reason, contradict, and decide within the system."
     )]
     async fn dxos_debate_start(

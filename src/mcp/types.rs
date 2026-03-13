@@ -2157,6 +2157,25 @@ pub struct DxosDebateListRequest {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosAdoptionStartRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+    #[schemars(description = "Short adoption or recovery summary shown in the portal")]
+    pub summary: Option<String>,
+    #[schemars(description = "Detailed adoption objective for the seeded recovery lead and council")]
+    pub objective: Option<String>,
+    #[schemars(description = "Optional linked feature ID if adoption should start around one feature")]
+    pub feature_id: Option<String>,
+    #[schemars(description = "Starting stage, usually discovery")]
+    pub stage: Option<String>,
+    #[schemars(description = "Initial council or participant identities")]
+    #[serde(default)]
+    pub participants: Vec<String>,
+    #[schemars(description = "Actor requesting the adoption workflow")]
+    pub requested_by: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct DxosDebateStartRequest {
     #[schemars(description = "Project path (default: current directory)")]
     pub project: Option<String>,
