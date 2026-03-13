@@ -235,3 +235,20 @@ pub fn work_resolve(
         resolution,
     )
 }
+
+pub fn session_raise_blocker(
+    project: Option<&str>,
+    worker_session_id: &str,
+    blocker: &str,
+    requested_permission: Option<&str>,
+    resolution_hint: Option<&str>,
+) -> String {
+    dxos::raise_session_blocker(
+        &resolve_project_path(project),
+        None,
+        worker_session_id,
+        blocker,
+        requested_permission,
+        resolution_hint,
+    )
+}
