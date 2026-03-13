@@ -1439,7 +1439,11 @@ pub fn raise_session_blocker(
         }
         if let Some(hint) = resolution_hint.filter(|value| !value.trim().is_empty()) {
             let hint_line = format!("Resolution hint: {}", hint.trim());
-            if !work_order.expected_outputs.iter().any(|item| item == &hint_line) {
+            if !work_order
+                .expected_outputs
+                .iter()
+                .any(|item| item == &hint_line)
+            {
                 work_order.expected_outputs.push(hint_line);
             }
         }
