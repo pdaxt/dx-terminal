@@ -203,5 +203,8 @@ The first architecture slice now implemented in the repo is:
 - worker sessions can now raise blockers or permission requests through DXOS session context, and the control plane routes those requests to the supervising lead first before falling back to explicit human escalation
 - runtime lanes now receive `DXOS_SESSION_ID`, `DX_FEATURE_ID`, `DX_STAGE`, and `DX_SUPERVISOR_SESSION_ID` so agents in a live lane can report blocker and approval state without reconstructing their control-plane identity
 - the server-owned runtime replicator now detects clear approval/login/challenge prompts in live pane output and converts them into DXOS blocker events once, so “waiting for human action” is lifted out of raw terminal text and into the control plane
+- resolving a blocked work order now persists an explicit resolution note and pushes that guidance back into the worker lane automatically through the live runtime target when one exists
+- if DXOS can clear the blocker but cannot reach the worker lane, the failure is recorded back onto the session contract so the portal still shows the unresolved operational gap
+- the stop hook now continues work while the next high-value task remains clear, which keeps auto-continue aligned with DXOS language instead of relying on looser “obvious next step” wording
 
 That gives the platform a native place to reason, disagree, decide, supervise, and delegate inside the system itself.

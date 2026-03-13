@@ -135,6 +135,18 @@ pub async fn deliver_work_order_resolution(
         .get("worker_session_id")
         .and_then(Value::as_str)
         .map(|value| value.to_string());
+    if worker_session_id.is_none() {
+        return ResolutionDeliveryResult {
+            status: "skipped".to_string(),
+            work_order_id,
+            worker_session_id: None,
+            via: None,
+            pane: None,
+            tmux_target: None,
+            error: None,
+            message: None,
+        };
+    }
     let resolution = resolution
         .map(str::trim)
         .filter(|value| !value.is_empty())
