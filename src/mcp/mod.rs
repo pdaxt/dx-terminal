@@ -2848,6 +2848,7 @@ impl DxTerminalService {
             req.branch_name.as_deref(),
             req.browser_port,
             req.pane,
+            req.runtime_adapter.as_deref(),
             req.tmux_target.as_deref(),
             req.feature_id.as_deref(),
             req.stage.as_deref(),

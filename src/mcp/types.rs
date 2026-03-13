@@ -2273,6 +2273,8 @@ pub struct DxosSessionUpsertRequest {
     pub browser_port: Option<u16>,
     #[schemars(description = "Owned pane number")]
     pub pane: Option<u8>,
+    #[schemars(description = "Runtime adapter ID")]
+    pub runtime_adapter: Option<String>,
     #[schemars(description = "tmux target or runtime target")]
     pub tmux_target: Option<String>,
     #[schemars(description = "Linked feature ID")]
