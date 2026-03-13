@@ -2275,7 +2275,7 @@ function renderDxosOperatorControls(project,activeStage,sessions){
   const defaultStage=normalizeVddPhase(activeStage||focus.stage||'build');
   const defaultPane='auto';
   const controlAuth=dxosControlAuthCache[project]||{};
-  const protectedControls=controlAuth.mode==='control_token';
+  const protectedControls=['control_token','token_and_operator_policy'].includes(controlAuth.mode);
   const controlTokenLoaded=!!storedDxControlToken();
   const operatorIdentity=storedDxOperatorIdentity();
   const operatorPolicy=currentDxOperatorPolicy(project);
@@ -2717,7 +2717,7 @@ async function renderExecutionHub(){
   const missingFeatureDocs=(docHealth.missing_feature_docs||[]).slice(0,3);
   const missingAcceptance=(docHealth.missing_acceptance||[]).slice(0,3);
   const controlAuth=runtimeContract.auth||{};
-  const protectedControls=controlAuth.mode==='control_token';
+  const protectedControls=['control_token','token_and_operator_policy'].includes(controlAuth.mode);
   const controlTokenLoaded=!!storedDxControlToken();
   const operatorIdentity=storedDxOperatorIdentity();
   const operatorPolicy=currentDxOperatorPolicy(project);
