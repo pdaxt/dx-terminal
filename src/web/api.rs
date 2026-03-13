@@ -1062,6 +1062,16 @@ pub struct DxosWorkResolveBody {
     pub resolution: Option<String>,
 }
 
+#[derive(Deserialize, Default)]
+pub struct DxosSessionBlockBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub worker_session_id: String,
+    pub blocker: String,
+    pub requested_permission: Option<String>,
+    pub resolution_hint: Option<String>,
+}
+
 fn resolve_project_path(q: &VisionQuery) -> String {
     if let Some(ref p) = q.path {
         return p.clone();
@@ -2011,6 +2021,27 @@ pub async fn resolve_dxos_work(
         body.project.as_deref(),
         &body.work_order_id,
         body.resolution.as_deref(),
+    );
+    maybe_emit_dxos_session_change(&app, &project_path, &result);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/dxos/session/block — Raise a worker blocker or permission request
+pub async fn raise_dxos_session_blocker(
+    State(app): State<AppState>,
+    Json(body): Json<DxosSessionBlockBody>,
+) -> Json<Value> {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let result = crate::dxos::raise_session_blocker(
+        &project_path,
+        body.project.as_deref(),
+        &body.worker_session_id,
+        &body.blocker,
+        body.requested_permission.as_deref(),
+        body.resolution_hint.as_deref(),
     );
     maybe_emit_dxos_session_change(&app, &project_path, &result);
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
