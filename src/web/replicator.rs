@@ -39,6 +39,7 @@ pub fn start(app: Arc<App>) {
 async fn run_replicator(app: Arc<App>) {
     let interval = tokio::time::Duration::from_secs(1);
     let mut prev_outputs: HashMap<String, String> = HashMap::new();
+    let mut attention_signatures: HashMap<String, String> = HashMap::new();
     let mut session_tailer = SessionTailer::new();
     let mut vision_fingerprints: HashMap<String, u64> = HashMap::new();
     let mut vision_features: HashMap<String, HashMap<String, FeatureSnapshot>> = HashMap::new();
@@ -214,6 +215,48 @@ async fn run_replicator(app: Arc<App>) {
                         full_lines: output.lines().count(),
                         tmux_target: Some(target.clone()),
                     });
+                }
+
+                let pane_state = state.panes.get(&pane_num.to_string()).cloned();
+                if let Some(request) = tmux::detect_attention_request(&output) {
+                    let signature = format!(
+                        "{}|{}|{}",
+                        request.kind,
+                        request.blocker,
+                        request.requested_permission.clone().unwrap_or_default()
+                    );
+                    let should_raise = attention_signatures
+                        .get(&key)
+                        .map(|value| value != &signature)
+                        .unwrap_or(true);
+
+                    if should_raise {
+                        attention_signatures.insert(key.clone(), signature);
+                        if let Some(pane_state) = pane_state {
+                            if let (Some(session_id), false) = (
+                                pane_state.dxos_session_id.filter(|value| !value.trim().is_empty()),
+                                pane_state.project_path.trim().is_empty(),
+                            ) {
+                                let result = crate::dxos::raise_session_blocker(
+                                    &pane_state.project_path,
+                                    Some(&pane_state.project),
+                                    &session_id,
+                                    &request.blocker,
+                                    request.requested_permission.as_deref(),
+                                    Some(
+                                        "Resolve this through the supervising lead in DXOS or escalate to a human if no lead is attached.",
+                                    ),
+                                );
+                                if let Some(event) =
+                                    crate::dxos::session_event_from_result(&pane_state.project_path, &result)
+                                {
+                                    app.state.event_bus.send(event);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    attention_signatures.remove(&key);
                 }
 
                 prev_outputs.insert(key, output);
