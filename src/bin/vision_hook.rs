@@ -471,19 +471,19 @@ fn next_step_instruction(feature: &Value) -> Option<String> {
 
     let instruction = match phase {
         "planned" => format!(
-            "Continue {} ({}). Start discovery by adding acceptance criteria or discovery notes. Keep going without waiting for permission if the follow-on step stays obvious.",
+            "Continue {} ({}). Start discovery by adding acceptance criteria or discovery notes. Keep going without waiting for permission while the next high-value task stays clear.",
             feature_id, title
         ),
         "discovery" => {
             let blockers = feature_readiness_blockers(feature, "build");
             if let Some(blocker) = blockers.first() {
                 format!(
-                    "Continue discovery for {} ({}). Resolve this blocker next: {}. Keep going without waiting for permission if the follow-on step stays obvious.",
+                    "Continue discovery for {} ({}). Resolve this blocker next: {}. Keep going without waiting for permission while the next high-value task stays clear.",
                     feature_id, title, blocker
                 )
             } else {
                 format!(
-                    "Continue {} ({}). Discovery is ready, so move it into build and start the next implementation task. Keep going without waiting for permission if the follow-on step stays obvious.",
+                    "Continue {} ({}). Discovery is ready, so move it into build and start the next implementation task. Keep going without waiting for permission while the next high-value task stays clear.",
                     feature_id, title
                 )
             }
@@ -497,19 +497,19 @@ fn next_step_instruction(feature: &Value) -> Option<String> {
                     .and_then(|v| v.as_str())
                     .unwrap_or("the next build task");
                 format!(
-                    "Continue build for {} ({}). Complete the next task: {}. Keep going without waiting for permission if the follow-on step stays obvious.",
+                    "Continue build for {} ({}). Complete the next task: {}. Keep going without waiting for permission while the next high-value task stays clear.",
                     feature_id, title, task_title
                 )
             } else {
                 let blockers = feature_readiness_blockers(feature, "test");
                 if let Some(blocker) = blockers.first() {
                     format!(
-                        "Continue build for {} ({}). Clear this test blocker next: {}. Keep going without waiting for permission if the follow-on step stays obvious.",
+                        "Continue build for {} ({}). Clear this test blocker next: {}. Keep going without waiting for permission while the next high-value task stays clear.",
                         feature_id, title, blocker
                     )
                 } else {
                     format!(
-                        "Continue {} ({}). Build is complete, so run verification and attach test evidence next. Keep going without waiting for permission if the follow-on step stays obvious.",
+                        "Continue {} ({}). Build is complete, so run verification and attach test evidence next. Keep going without waiting for permission while the next high-value task stays clear.",
                         feature_id, title
                     )
                 }
@@ -522,14 +522,14 @@ fn next_step_instruction(feature: &Value) -> Option<String> {
                     .and_then(|v| v.as_str())
                     .unwrap_or("the next acceptance criterion");
                 format!(
-                    "Continue test for {} ({}). Verify this acceptance criterion next: {}. Keep going without waiting for permission if the follow-on step stays obvious.",
+                    "Continue test for {} ({}). Verify this acceptance criterion next: {}. Keep going without waiting for permission while the next high-value task stays clear.",
                     feature_id, title, criterion
                 )
             } else {
                 let blockers = feature_readiness_blockers(feature, "done");
                 if let Some(blocker) = blockers.first() {
                     format!(
-                        "Continue test for {} ({}). Clear this completion blocker next: {}. Keep going without waiting for permission if the follow-on step stays obvious.",
+                        "Continue test for {} ({}). Clear this completion blocker next: {}. Keep going without waiting for permission while the next high-value task stays clear.",
                         feature_id, title, blocker
                     )
                 } else {
@@ -1571,7 +1571,7 @@ fn handle_stop(_event: &Value) -> Option<Value> {
                 return Some(json!({
                     "decision": "block",
                     "reason": instruction,
-                    "systemMessage": "VDD auto-continue: obvious next step detected; keep going."
+                    "systemMessage": "VDD auto-continue: next high-value task detected; keep going."
                 }));
             }
         }
@@ -1751,6 +1751,7 @@ mod tests {
         let instruction = next_step_instruction(&feature).unwrap();
         assert!(instruction.contains("Complete the next task"));
         assert!(instruction.contains("Add runtime heartbeat"));
+        assert!(instruction.contains("next high-value task"));
     }
 
     #[test]
@@ -1810,6 +1811,10 @@ mod tests {
         }
 
         assert_eq!(result["decision"], "block");
+        assert_eq!(
+            result["systemMessage"].as_str().unwrap_or(""),
+            "VDD auto-continue: next high-value task detected; keep going."
+        );
         assert!(result["reason"]
             .as_str()
             .unwrap_or("")
