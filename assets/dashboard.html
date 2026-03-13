@@ -1691,6 +1691,20 @@ function openDxosSessionPane(pane){
   openPanel(paneNum);
 }
 
+async function killPaneViaApi(pane,reason){
+  const paneNum=Number(pane);
+  if(!Number.isFinite(paneNum)||paneNum<=0)return false;
+  const result=await fetchJSON('/api/pane/kill',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({pane:String(paneNum),reason:reason||'web dashboard'})
+  });
+  if(!result||result.error)return false;
+  refresh();
+  if(activePaneNum===paneNum)closePanel();
+  return true;
+}
+
 async function resolveDxosWorkOrder(workOrderId){
   const project=activeProjectForHub();
   if(!project||!workOrderId)return;
