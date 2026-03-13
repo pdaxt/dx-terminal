@@ -1780,22 +1780,26 @@ pub fn update_project_adoption_status(
     }
 
     let mut state = load_control_plane(project_path, project_name);
-    let Some(adoption) = state
+    let Some(adoption_index) = state
         .adoptions
-        .iter_mut()
-        .find(|item| item.id == adoption_id.trim())
+        .iter()
+        .position(|item| item.id == adoption_id.trim())
     else {
         return json!({"error": "adoption_not_found"}).to_string();
     };
 
-    adoption.status = normalized_status.clone();
-    adoption.last_note = note
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-    adoption.updated_at = crate::state::now();
-    state.updated_at = adoption.updated_at.clone();
-    let initial_work_order_id = adoption.initial_work_order_id.clone();
-    let adoption_note = adoption.last_note.clone();
+    let updated_at = crate::state::now();
+    {
+        let adoption = &mut state.adoptions[adoption_index];
+        adoption.status = normalized_status.clone();
+        adoption.last_note = note
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        adoption.updated_at = updated_at.clone();
+    }
+    state.updated_at = updated_at.clone();
+    let initial_work_order_id = state.adoptions[adoption_index].initial_work_order_id.clone();
+    let adoption_note = state.adoptions[adoption_index].last_note.clone();
 
     if let Some(work_order_id) = initial_work_order_id.as_deref() {
         if let Some(work_order) = state
@@ -1816,6 +1820,106 @@ pub fn update_project_adoption_status(
         }
     }
 
+    let mut follow_on_sessions = Vec::new();
+    let mut follow_on_work_orders = Vec::new();
+    if normalized_status == "completed"
+        && state.adoptions[adoption_index]
+            .follow_on_work_order_ids
+            .is_empty()
+    {
+        let lead_session_id = state.adoptions[adoption_index].lead_session_id.clone();
+        let fallback_feature_id = state.adoptions[adoption_index].feature_id.clone();
+        let follow_on_suggestions = state.adoptions[adoption_index]
+            .follow_on_suggestions
+            .clone();
+        for suggestion in follow_on_suggestions.into_iter().take(3) {
+            let session_id = next_session_id(&state);
+            let work_order_id = next_work_order_id(&state);
+            let role = normalize_role(&suggestion.role);
+            let stage = normalize_stage(Some(&suggestion.stage));
+            let feature_id = suggestion
+                .feature_id
+                .clone()
+                .or_else(|| fallback_feature_id.clone());
+            let provider_policy = provider_policy_for(&role, Some(&stage));
+            let allowed_capabilities = capabilities_for_role(&role);
+            let expected_outputs = expected_outputs_for_role_stage(&role, Some(&stage));
+            let title = if let Some(feature_id) = feature_id.as_deref() {
+                format!("Recovery follow-on · {} · {}", role, feature_id)
+            } else {
+                format!("Recovery follow-on · {}", role)
+            };
+
+            state.sessions.push(SessionContractRecord {
+                id: session_id.clone(),
+                status: "planned".to_string(),
+                role: role.clone(),
+                provider: Some(provider_policy.preferred_provider.clone()),
+                model: provider_policy.suggested_models.first().cloned(),
+                autonomy_level: "guarded_auto".to_string(),
+                objective: suggestion.task_prompt.clone(),
+                expected_outputs: expected_outputs.clone(),
+                allowed_capabilities: allowed_capabilities.clone(),
+                allowed_repos: vec![project_path.to_string()],
+                allowed_paths: vec![project_path.to_string()],
+                workspace_path: Some(project_path.to_string()),
+                branch_name: None,
+                browser_port: None,
+                pane: None,
+                runtime_adapter: Some("pty_native_adapter".to_string()),
+                tmux_target: None,
+                feature_id: feature_id.clone(),
+                stage: Some(stage.clone()),
+                supervisor_session_id: Some(lead_session_id.clone()),
+                escalation_policy: Some("lead_then_human".to_string()),
+                policy_violations: Vec::new(),
+                last_error: None,
+                created_at: updated_at.clone(),
+                updated_at: updated_at.clone(),
+            });
+            state.work_orders.push(WorkOrderRecord {
+                id: work_order_id.clone(),
+                supervisor_session_id: lead_session_id.clone(),
+                worker_session_id: Some(session_id.clone()),
+                status: "planned".to_string(),
+                escalation_target: "lead".to_string(),
+                title,
+                objective: suggestion.task_prompt.clone(),
+                feature_id: feature_id.clone(),
+                stage: Some(stage.clone()),
+                required_capabilities: allowed_capabilities,
+                blockers: Vec::new(),
+                requested_permissions: Vec::new(),
+                expected_outputs,
+                resolution_notes: Vec::new(),
+                created_at: updated_at.clone(),
+                updated_at: updated_at.clone(),
+            });
+            state.adoptions[adoption_index]
+                .follow_on_session_ids
+                .push(session_id.clone());
+            state.adoptions[adoption_index]
+                .follow_on_work_order_ids
+                .push(work_order_id.clone());
+            follow_on_sessions.push(
+                state
+                    .sessions
+                    .iter()
+                    .find(|item| item.id == session_id)
+                    .map(session_summary)
+                    .unwrap_or_else(|| json!({})),
+            );
+            follow_on_work_orders.push(
+                state
+                    .work_orders
+                    .iter()
+                    .find(|item| item.id == work_order_id)
+                    .map(work_order_summary)
+                    .unwrap_or_else(|| json!({})),
+            );
+        }
+    }
+
     match save_control_plane(project_path, &state) {
         Ok(()) => json!({
             "status": "ok",
@@ -1831,6 +1935,8 @@ pub fn update_project_adoption_status(
                     .find(|item| item.id == id)
                     .map(work_order_summary)
             }),
+            "follow_on_sessions": follow_on_sessions,
+            "follow_on_work_orders": follow_on_work_orders,
         })
         .to_string(),
         Err(error) => json!({"error": error}).to_string(),
