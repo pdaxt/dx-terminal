@@ -1712,6 +1712,187 @@ function paneOptionRows(project,selected){
   }).join('');
 }
 
+function seededFollowOnQueue(project,sessions,adoptions){
+  const sessionList=Array.isArray(sessions)?sessions:[];
+  const byId=new Map(sessionList.map(session=>[String(session.id||''),session]));
+  const adoptionList=Array.isArray(adoptions)?adoptions:[];
+  const queue=[];
+  adoptionList.forEach(adoption=>{
+    const sessionIds=Array.isArray(adoption.follow_on_session_ids)?adoption.follow_on_session_ids:[];
+    const suggestions=Array.isArray(adoption.follow_on_suggestions)?adoption.follow_on_suggestions:[];
+    sessionIds.forEach((sessionId,index)=>{
+      const session=byId.get(String(sessionId||''));
+      if(!session||String(session.status||'')!=='planned')return;
+      queue.push({
+        adoption,
+        session,
+        suggestion:suggestions[index]||null,
+        index
+      });
+    });
+  });
+  const priorityRank={high:0,medium:1,low:2};
+  return queue.sort((left,right)=>{
+    const leftPriority=String((left.suggestion&&left.suggestion.priority)||'medium').toLowerCase();
+    const rightPriority=String((right.suggestion&&right.suggestion.priority)||'medium').toLowerCase();
+    const leftRank=Object.prototype.hasOwnProperty.call(priorityRank,leftPriority)?priorityRank[leftPriority]:3;
+    const rightRank=Object.prototype.hasOwnProperty.call(priorityRank,rightPriority)?priorityRank[rightPriority]:3;
+    return leftRank-rightRank;
+  });
+}
+
+function currentDxosLaunchDraft(project,activeStage,featureId,sessions,adoptions){
+  const saved=dxosLaunchDrafts[project];
+  if(saved&&saved.__manual){
+    return saved;
+  }
+  const queued=seededFollowOnQueue(project,sessions,adoptions)[0];
+  if(queued&&queued.session){
+    const session=queued.session;
+    return {
+      pane:'auto',
+      role:session.role||'design',
+      provider:session.provider||'claude',
+      adapter:session.runtime_adapter||'pty_native_adapter',
+      model:session.model||'',
+      feature:session.feature_id||featureId||'',
+      stage:session.stage||activeStage||'build',
+      supervisor:session.supervisor_session_id||'',
+      task:session.objective||`Advance ${(session.feature_id||featureId||'the next feature')} through ${(session.stage||activeStage||'build')} and report back with evidence.`,
+      sessionId:session.id||'',
+      __manual:false
+    };
+  }
+  return saved||{
+    pane:'auto',
+    role:'design',
+    provider:'claude',
+    adapter:'pty_native_adapter',
+    model:'',
+    feature:featureId||'',
+    stage:activeStage||'build',
+    supervisor:'',
+    task:featureId
+      ? `Advance ${featureId} through ${activeStage||'build'} and report back with evidence.`
+      : `Advance the active delivery work through ${activeStage||'build'} and report back with evidence.`,
+    sessionId:'',
+    __manual:false
+  };
+}
+
+function persistDxosLaunchDraft(){
+  const project=activeProjectForHub();
+  if(!project)return;
+  const pane=document.getElementById('dxos-launch-pane');
+  const role=document.getElementById('dxos-launch-role');
+  const provider=document.getElementById('dxos-launch-provider');
+  const adapter=document.getElementById('dxos-launch-adapter');
+  const model=document.getElementById('dxos-launch-model');
+  const feature=document.getElementById('dxos-launch-feature');
+  const stage=document.getElementById('dxos-launch-stage');
+  const supervisor=document.getElementById('dxos-launch-supervisor');
+  const task=document.getElementById('dxos-launch-task');
+  dxosLaunchDrafts[project]={
+    pane:pane&&pane.value?pane.value:'auto',
+    role:role&&role.value?role.value:'design',
+    provider:provider&&provider.value?provider.value:'claude',
+    adapter:adapter&&adapter.value?adapter.value:'pty_native_adapter',
+    model:model&&model.value?model.value.trim():'',
+    feature:feature&&feature.value?feature.value.trim():'',
+    stage:stage&&stage.value?stage.value.trim():'build',
+    supervisor:supervisor&&supervisor.value?supervisor.value.trim():'',
+    task:task&&task.value?task.value:'',
+    sessionId:(dxosLaunchDrafts[project]&&dxosLaunchDrafts[project].sessionId)||'',
+    __manual:true
+  };
+}
+
+function applyDxosSessionContractToLaunchForm(sessionId,opts){
+  const project=activeProjectForHub();
+  if(!project||!sessionId)return false;
+  const session=(dxosSessionCache[project]||[]).find(item=>String(item.id||'')===String(sessionId));
+  if(!session){
+    setDxosPortalNotice('launch',`Unable to find DXOS session ${sessionId} for launch prep.`,'red');
+    return false;
+  }
+  const draft={
+    pane:'auto',
+    role:session.role||'design',
+    provider:session.provider||'claude',
+    adapter:session.runtime_adapter||'pty_native_adapter',
+    model:session.model||'',
+    feature:session.feature_id||'',
+    stage:session.stage||'build',
+    supervisor:session.supervisor_session_id||'',
+    task:session.objective||`Continue ${(session.role||'specialist')} work`,
+    sessionId:session.id||'',
+    __manual:true
+  };
+  dxosLaunchDrafts[project]=draft;
+  const pane=document.getElementById('dxos-launch-pane');
+  const role=document.getElementById('dxos-launch-role');
+  const provider=document.getElementById('dxos-launch-provider');
+  const adapter=document.getElementById('dxos-launch-adapter');
+  const model=document.getElementById('dxos-launch-model');
+  const feature=document.getElementById('dxos-launch-feature');
+  const stage=document.getElementById('dxos-launch-stage');
+  const supervisor=document.getElementById('dxos-launch-supervisor');
+  const task=document.getElementById('dxos-launch-task');
+  if(!(pane&&role&&provider&&adapter&&model&&feature&&stage&&supervisor&&task)){
+    setDxosPortalNotice('launch','The launch form is not available yet.','red');
+    return false;
+  }
+  pane.value=draft.pane;
+  role.value=draft.role;
+  stage.value=draft.stage;
+  syncDxosLaunchProviderOptions();
+  provider.value=draft.provider;
+  syncDxosLaunchProviderOptions();
+  adapter.value=draft.adapter;
+  syncDxosLaunchAdapterNote();
+  model.value=draft.model;
+  feature.value=draft.feature;
+  supervisor.value=draft.supervisor;
+  task.value=draft.task;
+  const label=(opts&&opts.label)||`${session.role||'specialist'} ${session.id||''}`;
+  setDxosPortalNotice('launch',`${label} loaded into the launch form. Review provider, substrate, and prompt before launching.`,'green');
+  return false;
+}
+
+function renderSeededFollowOnQueue(project,sessions,adoptions){
+  const queue=seededFollowOnQueue(project,sessions,adoptions);
+  if(!queue.length){
+    return '<div class="empty-note">No planned follow-on specialist lanes are queued from recovery yet.</div>';
+  }
+  return queue.slice(0,4).map(entry=>{
+    const session=entry.session||{};
+    const suggestion=entry.suggestion||{};
+    const priority=String(suggestion.priority||'medium').toLowerCase();
+    const tone=priority==='high'?'gemini':priority==='low'?'shared':'codex';
+    const meta=[
+      session.feature_id||suggestion.feature_id||null,
+      session.stage?`stage ${normalizeVddPhase(session.stage)}`:null,
+      suggestion.reason||null
+    ].filter(Boolean).join(' · ');
+    return `<div class="exec-row">
+      <div class="exec-row-top">
+        <span class="exec-row-title">${escHtml(String(session.role||'specialist'))} · ${escHtml(String(session.id||''))}</span>
+        <span class="exec-row-tags">
+          <span class="doc-pill ${tone}">${escHtml(priority)}</span>
+          ${session.stage?vddPhaseBadge(session.stage):''}
+          ${providerBadge(session.provider,true)}
+        </span>
+      </div>
+      <div class="exec-row-meta">${escHtml(truncateCopy(session.objective||'',150)||'No queued objective recorded yet.')}</div>
+      ${meta?`<div class="exec-row-meta">${escHtml(meta)}</div>`:''}
+      <div class="exec-row-actions" style="margin-top:8px">
+        <button class="vdd-focus-btn" onclick="return applyDxosSessionContractToLaunchForm('${escHtml(String(session.id||''))}',{label:'${escHtml(String(session.role||'specialist'))} ${escHtml(String(session.id||''))}'})" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Apply to launch form</button>
+        <button class="design-action" style="margin-left:8px" onclick="return launchDxosSessionContract('${escHtml(String(session.id||''))}','launch','${escHtml(String(session.role||'specialist'))} lane')" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Launch now</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 function setDxosPortalNotice(key,message,tone){
   dxosPortalState[key]={message:message||'',tone:tone||'blue'};
 }
