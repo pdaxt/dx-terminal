@@ -1949,6 +1949,15 @@ mod tests {
             blocked_value["work_order"]["requested_permissions"][0],
             "browser_control"
         );
+        let listed_after_block: Value =
+            serde_json::from_str(&session_list(project, Some("demo"))).unwrap();
+        let worker_after_block = listed_after_block["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|session| session["id"] == worker_id)
+            .unwrap();
+        assert_eq!(worker_after_block["status"], "blocked");
 
         let resolved = resolve_work_order(
             project,
@@ -1958,6 +1967,16 @@ mod tests {
         );
         let resolved_value: Value = serde_json::from_str(&resolved).unwrap();
         assert_eq!(resolved_value["work_order"]["status"], "assigned");
+
+        let listed_after_resolve: Value =
+            serde_json::from_str(&session_list(project, Some("demo"))).unwrap();
+        let worker_after_resolve = listed_after_resolve["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|session| session["id"] == worker_id)
+            .unwrap();
+        assert_eq!(worker_after_resolve["status"], "active");
 
         let completed = update_session_status(
             project,
