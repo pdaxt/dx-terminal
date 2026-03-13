@@ -1204,6 +1204,8 @@ let dxosResolutionDrafts={};
 let dxosPendingLaunches={};
 let dxosPolicyCache={};
 let dxosRuntimeBrokerCache={};
+let dxosControlAuthCache={};
+const DX_CONTROL_TOKEN_KEY='dx_control_token';
 
 function nextDxosClientRequestId(){
   return `dxreq-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
@@ -1215,11 +1217,45 @@ let apiPaneColors={};
 function paneColor(n){return apiPaneColors[n]||COLORS[(n-1)%COLORS.length]}
 
 // === Helpers ===
+function storedDxControlToken(){
+  try{return sessionStorage.getItem(DX_CONTROL_TOKEN_KEY)||'';}catch{return '';}
+}
+function rememberDxControlToken(value){
+  try{
+    const token=(value||'').toString().trim();
+    if(token)sessionStorage.setItem(DX_CONTROL_TOKEN_KEY,token);
+    else sessionStorage.removeItem(DX_CONTROL_TOKEN_KEY);
+  }catch{}
+}
+function requiresDxControlAuth(url,options){
+  const method=String((options&&options.method)||'GET').toUpperCase();
+  if(method==='GET')return false;
+  return /^\/api\/(dxos\/(debate|session|work)|pane\/(talk|kill|restart))/.test(String(url||''));
+}
+function withDxControlHeaders(url,options){
+  const request={...(options||{})};
+  const headers={...((options&&options.headers)||{})};
+  if(requiresDxControlAuth(url,request)){
+    const token=storedDxControlToken();
+    if(token){
+      headers['X-DX-Control-Token']=token;
+      if(!headers['Authorization'])headers['Authorization']=`Bearer ${token}`;
+    }
+  }
+  if(Object.keys(headers).length)request.headers=headers;
+  return request;
+}
 async function fetchJSON(url,options){
   try{
-    const r=await fetch(API+url,options);
-    if(!r.ok)return null;
-    return await r.json();
+    const r=await fetch(API+url,withDxControlHeaders(url,options));
+    const text=await r.text();
+    let data=null;
+    try{data=text?JSON.parse(text):null;}catch{data=text?{raw:text}:null;}
+    if(!r.ok){
+      if(data&&typeof data==='object')data._http_status=r.status;
+      return data||{error:`HTTP ${r.status}`,_http_status:r.status};
+    }
+    return data;
   }catch{
     return null;
   }
