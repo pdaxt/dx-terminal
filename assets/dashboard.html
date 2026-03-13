@@ -1818,6 +1818,7 @@ async function resolveDxosWorkOrder(workOrderId){
     })
   });
   if(!result||result.error){
+    noteDxControlAuthFailure(result);
     setDxosPortalNotice('work',`Unable to resolve work order ${workOrderId}: ${String((result&&result.error)||'Unknown error')}`,'red');
     return;
   }
@@ -1896,6 +1897,12 @@ async function launchDxosLane(){
   if(!result){
     delete dxosPendingLaunches[requestId];
     setDxosPortalNotice('launch','Unable to reach the DXOS launch endpoint.','red');
+    await renderExecutionHub();
+    return;
+  }
+  if(noteDxControlAuthFailure(result)){
+    delete dxosPendingLaunches[requestId];
+    setDxosPortalNotice('launch',`Lane launch blocked: ${String(result.error||'DX control token required')}`,'red');
     await renderExecutionHub();
     return;
   }
@@ -1999,6 +2006,7 @@ async function registerDxosSessionContract(){
     })
   });
   if(!result||result.error){
+    noteDxControlAuthFailure(result);
     setDxosPortalNotice('session',`Unable to register the DXOS session contract: ${String((result&&result.error)||'Unknown error')}`,'red');
   }else{
     setDxosPortalNotice('session',`Registered session ${result.session_id||''} for ${role.value||'lead'} work.`,'green');
@@ -2038,6 +2046,7 @@ async function delegateDxosWork(){
     })
   });
   if(!result||result.error){
+    noteDxControlAuthFailure(result);
     setDxosPortalNotice('work',`Unable to create the delegated work order: ${String((result&&result.error)||'Unknown error')}`,'red');
   }else{
     setDxosPortalNotice('work',`Delegated work order ${result.work_order_id||''} is now queued through DXOS.`,'green');
@@ -2072,6 +2081,7 @@ async function startDxosDebateFromPortal(){
     })
   });
   if(!result||result.error){
+    noteDxControlAuthFailure(result);
     setDxosPortalNotice('debate',`Unable to start the formal debate: ${String((result&&result.error)||'Unknown error')}`,'red');
   }else{
     setDxosPortalNotice('debate',`Debate ${result.debate_id||''} started and is ready for proposals.`,'green');
