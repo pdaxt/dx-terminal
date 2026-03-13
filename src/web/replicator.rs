@@ -175,7 +175,8 @@ async fn run_replicator(app: Arc<App>) {
         }
         pane_targets = new_targets;
 
-        if targets.is_empty() {
+        let has_pty_targets = state.panes.values().any(|pane| pane.tmux_target.is_none());
+        if targets.is_empty() && !has_pty_targets {
             continue;
         }
 
@@ -214,6 +215,102 @@ async fn run_replicator(app: Arc<App>) {
                         output: new_lines,
                         full_lines: output.lines().count(),
                         tmux_target: Some(target.clone()),
+                    });
+                }
+
+                let pane_state = state.panes.get(&pane_num.to_string()).cloned();
+                if let Some(request) = tmux::detect_attention_request(&output) {
+                    let signature = format!(
+                        "{}|{}|{}",
+                        request.kind,
+                        request.blocker,
+                        request.requested_permission.clone().unwrap_or_default()
+                    );
+                    let should_raise = attention_signatures
+                        .get(&key)
+                        .map(|value| value != &signature)
+                        .unwrap_or(true);
+
+                    if should_raise {
+                        attention_signatures.insert(key.clone(), signature);
+                        if let Some(pane_state) = pane_state {
+                            let session_id = pane_state
+                                .dxos_session_id
+                                .clone()
+                                .filter(|value| !value.trim().is_empty());
+                            if let (Some(session_id), false) =
+                                (session_id, pane_state.project_path.trim().is_empty())
+                            {
+                                let result = crate::dxos::raise_session_blocker(
+                                    &pane_state.project_path,
+                                    Some(&pane_state.project),
+                                    &session_id,
+                                    &request.blocker,
+                                    request.requested_permission.as_deref(),
+                                    Some(
+                                        "Resolve this through the supervising lead in DXOS or escalate to a human if no lead is attached.",
+                                    ),
+                                );
+                                if let Some(event) = crate::dxos::session_event_from_result(
+                                    &pane_state.project_path,
+                                    &result,
+                                ) {
+                                    app.state.event_bus.send(event);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    attention_signatures.remove(&key);
+                }
+
+                prev_outputs.insert(key, output);
+            }
+        }
+
+        let pty_captures = {
+            let mut captures = Vec::new();
+            let pty = app.pty_lock();
+            for (pane_key, pane_state) in &state.panes {
+                if pane_state.tmux_target.is_some() {
+                    continue;
+                }
+                let Ok(pane_num) = pane_key.parse::<u8>() else {
+                    continue;
+                };
+                if !pty.has_agent(pane_num) {
+                    continue;
+                }
+                let screen = pty.screen_text(pane_num).unwrap_or_default();
+                let output = if screen.trim().is_empty() {
+                    pty.last_output(pane_num, 80).unwrap_or_default()
+                } else {
+                    screen
+                };
+                captures.push((pane_num, output));
+            }
+            captures
+        };
+
+        for (pane_num, output) in pty_captures {
+            let key = format!("pty:{}", pane_num);
+            let prev = prev_outputs.get(&key).map(|s| s.as_str()).unwrap_or("");
+
+            if output != prev {
+                let new_lines = if output.len() > prev.len() && output.starts_with(prev) {
+                    output[prev.len()..].to_string()
+                } else {
+                    let lines: Vec<&str> = output.lines().collect();
+                    let tail_start = lines.len().saturating_sub(30);
+                    lines[tail_start..].join("\n")
+                };
+
+                if !new_lines.trim().is_empty() {
+                    app.state.event_bus.send(StateEvent::OutputChunk {
+                        pane: pane_num,
+                        output: new_lines,
+                        full_lines: output.lines().count(),
+                        tmux_target: None,
                     });
                 }
 
