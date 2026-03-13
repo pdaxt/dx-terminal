@@ -42,6 +42,8 @@ pub struct PaneState {
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]
+    pub runtime_adapter: Option<String>,
+    #[serde(default)]
     pub dxos_session_id: Option<String>,
     #[serde(default)]
     pub task: String,
@@ -85,6 +87,7 @@ impl Default for PaneState {
             role: String::new(),
             provider: None,
             model: None,
+            runtime_adapter: None,
             dxos_session_id: None,
             task: String::new(),
             issue_id: None,
