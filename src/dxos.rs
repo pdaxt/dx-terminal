@@ -142,6 +142,26 @@ pub struct DebateRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectAdoptionRecord {
+    pub id: String,
+    pub status: String,
+    pub mode: String,
+    pub summary: String,
+    pub objective: String,
+    #[serde(default)]
+    pub feature_id: Option<String>,
+    pub stage: String,
+    pub lead_session_id: String,
+    pub debate_id: String,
+    #[serde(default)]
+    pub requested_by: Option<String>,
+    #[serde(default)]
+    pub participants: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionContractRecord {
     pub id: String,
     pub status: String,
@@ -255,6 +275,8 @@ pub struct ControlPlaneState {
     pub version: u32,
     pub project: ProjectDescriptor,
     pub defaults: ControlPlaneDefaults,
+    #[serde(default)]
+    pub adoptions: Vec<ProjectAdoptionRecord>,
     #[serde(default)]
     pub debates: Vec<DebateRecord>,
     #[serde(default)]
@@ -419,6 +441,7 @@ fn default_state(project_path: &str, project_name: Option<&str>) -> ControlPlane
             path: project_path.to_string(),
         },
         defaults: ControlPlaneDefaults::default(),
+        adoptions: Vec::new(),
         debates: Vec::new(),
         sessions: Vec::new(),
         work_orders: Vec::new(),
