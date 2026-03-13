@@ -2117,6 +2117,108 @@ pub struct VisionUpdateGoalRequest {
     pub status: String,
 }
 
+// ── DXOS Control Plane / Debate Engine ──
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosControlPlaneRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosDebateListRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosDebateStartRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+    #[schemars(description = "Debate title")]
+    pub title: String,
+    #[schemars(description = "Decision objective or question to resolve")]
+    pub objective: String,
+    #[schemars(description = "Optional delivery stage, e.g. discovery/design/build")]
+    pub stage: Option<String>,
+    #[schemars(description = "Optional linked feature ID")]
+    pub feature_id: Option<String>,
+    #[schemars(description = "Participant identities, models, or roles")]
+    #[serde(default)]
+    pub participants: Vec<String>,
+    #[schemars(description = "Actor requesting the debate")]
+    pub requested_by: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosDebateProposalRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+    #[schemars(description = "Debate ID")]
+    pub debate_id: String,
+    #[schemars(description = "Author identity")]
+    pub author: String,
+    #[schemars(description = "Optional model identifier")]
+    pub model: Option<String>,
+    #[schemars(description = "Short proposal summary")]
+    pub summary: String,
+    #[schemars(description = "Detailed reasoning for the proposal")]
+    pub rationale: String,
+    #[schemars(description = "Evidence refs, artifact paths, URLs, or citations")]
+    #[serde(default)]
+    pub evidence: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosDebateContradictionRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+    #[schemars(description = "Debate ID")]
+    pub debate_id: String,
+    #[schemars(description = "Proposal ID being challenged")]
+    pub proposal_id: String,
+    #[schemars(description = "Author identity")]
+    pub author: String,
+    #[schemars(description = "Optional model identifier")]
+    pub model: Option<String>,
+    #[schemars(description = "Contradicting rationale")]
+    pub rationale: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosDebateVoteRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+    #[schemars(description = "Debate ID")]
+    pub debate_id: String,
+    #[schemars(description = "Proposal ID being voted on")]
+    pub proposal_id: String,
+    #[schemars(description = "Voter identity")]
+    pub voter: String,
+    #[schemars(description = "Optional model identifier")]
+    pub model: Option<String>,
+    #[schemars(description = "Vote stance: support/oppose/abstain")]
+    pub stance: String,
+    #[schemars(description = "Vote rationale")]
+    pub rationale: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosDebateFinalizeRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+    #[schemars(description = "Debate ID")]
+    pub debate_id: String,
+    #[schemars(description = "Chosen proposal ID")]
+    pub chosen_proposal_id: String,
+    #[schemars(description = "Actor finalizing the decision")]
+    pub decided_by: String,
+    #[schemars(description = "Final decision summary")]
+    pub summary: String,
+    #[schemars(description = "Decision rationale")]
+    pub rationale: String,
+}
+
 // ── Screen Management ──
 
 #[derive(Debug, Deserialize, JsonSchema)]
