@@ -2015,41 +2015,11 @@ pub fn session_event_from_result(project_path: &str, result: &str) -> Option<Sta
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, MutexGuard};
     use tempfile::tempdir;
-
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
-
-    struct DxRootGuard {
-        _lock: MutexGuard<'static, ()>,
-        original: Option<String>,
-    }
-
-    impl Drop for DxRootGuard {
-        fn drop(&mut self) {
-            match self.original.take() {
-                Some(value) => std::env::set_var("DX_ROOT", value),
-                None => std::env::remove_var("DX_ROOT"),
-            }
-        }
-    }
-
-    fn setup_dx_root(root: &std::path::Path) -> DxRootGuard {
-        let lock = TEST_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let original = std::env::var("DX_ROOT").ok();
-        std::env::set_var("DX_ROOT", root);
-        DxRootGuard {
-            _lock: lock,
-            original,
-        }
-    }
 
     #[test]
     fn control_plane_defaults_are_project_scoped() {
         let tmp = tempdir().unwrap();
-        let _guard = setup_dx_root(tmp.path());
         let project_path = tmp.path().join("demo");
         std::fs::create_dir_all(&project_path).unwrap();
         let state = load_control_plane(project_path.to_str().unwrap(), Some("demo"));
@@ -2061,7 +2031,6 @@ mod tests {
     #[test]
     fn debate_roundtrip_persists_and_tallies_votes() {
         let tmp = tempdir().unwrap();
-        let _guard = setup_dx_root(tmp.path());
         let project_path = tmp.path().join("demo");
         std::fs::create_dir_all(&project_path).unwrap();
         let project = project_path.to_str().unwrap();
@@ -2165,7 +2134,6 @@ mod tests {
     #[test]
     fn session_contract_and_work_order_roundtrip() {
         let tmp = tempdir().unwrap();
-        let _guard = setup_dx_root(tmp.path());
         let project_path = tmp.path().join("demo");
         std::fs::create_dir_all(&project_path).unwrap();
         let project = project_path.to_str().unwrap();
@@ -2309,7 +2277,6 @@ mod tests {
     #[test]
     fn provider_policy_blocks_invalid_runtime_choice() {
         let tmp = tempdir().unwrap();
-        let _guard = setup_dx_root(tmp.path());
         let project_path = tmp.path().join("demo");
         std::fs::create_dir_all(&project_path).unwrap();
         let project = project_path.to_str().unwrap();
@@ -2352,7 +2319,6 @@ mod tests {
     #[test]
     fn launch_failure_persists_session_error() {
         let tmp = tempdir().unwrap();
-        let _guard = setup_dx_root(tmp.path());
         let project_path = tmp.path().join("demo");
         std::fs::create_dir_all(&project_path).unwrap();
         let project = project_path.to_str().unwrap();
@@ -2408,7 +2374,6 @@ mod tests {
     #[test]
     fn session_blocker_routes_to_lead_before_human() {
         let tmp = tempdir().unwrap();
-        let _guard = setup_dx_root(tmp.path());
         let project_path = tmp.path().join("demo");
         std::fs::create_dir_all(&project_path).unwrap();
         let project = project_path.to_str().unwrap();
@@ -2491,7 +2456,6 @@ mod tests {
     #[test]
     fn sqlite_store_becomes_canonical_and_registry_lists_project() {
         let tmp = tempdir().unwrap();
-        let _guard = setup_dx_root(tmp.path());
         let project_path = tmp.path().join("demo");
         std::fs::create_dir_all(&project_path).unwrap();
         let project = project_path.to_str().unwrap();
@@ -2524,9 +2488,9 @@ mod tests {
         let value: Value = serde_json::from_str(&result).unwrap();
         assert_eq!(value["session"]["status"], "active");
 
-        let db_path = control_plane_store_path();
+        let db_path = control_plane_store_path(project);
         assert!(db_path.exists());
-        let registry: Value = serde_json::from_str(&control_plane_registry()).unwrap();
+        let registry: Value = serde_json::from_str(&control_plane_registry_for_project(project)).unwrap();
         assert_eq!(registry["backend"], "sqlite_with_repo_mirror");
         assert!(registry["projects"]
             .as_array()
@@ -2538,7 +2502,6 @@ mod tests {
     #[test]
     fn legacy_repo_json_is_imported_into_sqlite_store() {
         let tmp = tempdir().unwrap();
-        let _guard = setup_dx_root(tmp.path());
         let project_path = tmp.path().join("demo");
         std::fs::create_dir_all(control_plane_dir(project_path.to_str().unwrap())).unwrap();
         let state = default_state(project_path.to_str().unwrap(), Some("demo"));
@@ -2551,9 +2514,11 @@ mod tests {
 
         let loaded = load_control_plane(project_path.to_str().unwrap(), Some("demo"));
         assert_eq!(loaded.project.name, "demo");
-        assert!(control_plane_store_path().exists());
+        assert!(control_plane_store_path(project_path.to_str().unwrap()).exists());
 
-        let registry: Value = serde_json::from_str(&control_plane_registry()).unwrap();
+        let registry: Value =
+            serde_json::from_str(&control_plane_registry_for_project(project_path.to_str().unwrap()))
+                .unwrap();
         assert!(registry["projects"]
             .as_array()
             .unwrap()
