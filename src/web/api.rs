@@ -184,7 +184,10 @@ pub async fn post_pane_talk(
         return Json(json!({"error": "pane and message required"}));
     }
     let pane_data = app.state.get_pane(body.pane).await;
-    if let Some(target) = pane_data.tmux_target.filter(|target| crate::tmux::pane_exists(target)) {
+    if let Some(target) = pane_data
+        .tmux_target
+        .filter(|target| crate::tmux::pane_exists(target))
+    {
         match tokio::task::spawn_blocking(move || crate::tmux::send_command(&target, &body.message))
             .await
         {

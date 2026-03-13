@@ -3717,8 +3717,8 @@ function wsSend(cmd){if(ws&&ws.readyState===1)ws.send(JSON.stringify(cmd))}
 
 // === Command Palette ===
 const COMMANDS=[
-  {name:'Spawn agent',key:'s',action:()=>{const project=prompt('Project path:');if(project){const role=prompt('Role (developer/qa/devops):','developer')||'developer';wsSend({cmd:'spawn',project,role});setTimeout(refresh,1500);}}},
-  {name:'Kill agent',key:'k',action:()=>{if(activePaneNum)wsSend({cmd:'kill',pane:String(activePaneNum),reason:'palette'})}},
+  {name:'Spawn agent',key:'s',action:async()=>{const project=prompt('Project path:');if(project){const role=prompt('Role (developer/qa/devops):','developer')||'developer';await fetchJSON('/api/dxos/session/launch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project,pane:'auto',role,task:`Advance the next high-value task for ${project}.`,client_request_id:nextDxosClientRequestId()})});refresh();}}},
+  {name:'Kill agent',key:'k',action:()=>{if(activePaneNum)killPaneViaApi(activePaneNum,'palette')}},
   {name:'Refresh all',key:'r',action:()=>refresh()},
   {name:'Toggle queue form',key:'q',action:()=>toggleAdd()},
   {name:'Close panel',key:'Esc',action:()=>closePanel()},
