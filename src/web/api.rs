@@ -2100,6 +2100,13 @@ pub async fn get_dxos_sessions(Query(q): Query<VisionQuery>) -> Json<Value> {
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
+/// GET /api/dxos/audit?project=NAME — Recent control-plane audit records
+pub async fn get_dxos_audit(Query(q): Query<VisionQuery>) -> Json<Value> {
+    let project_path = resolve_project_path(&q);
+    let result = crate::dxos::audit_list(&project_path, q.project.as_deref(), 20);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
 /// POST /api/dxos/debate/start — Start a formal debate
 pub async fn start_dxos_debate(
     State(app): State<AppState>,
@@ -2484,6 +2491,7 @@ pub async fn resolve_dxos_work(
     Json(body): Json<DxosWorkResolveBody>,
 ) -> ApiJson {
     require_control_token(&headers)?;
+    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2524,6 +2532,15 @@ pub async fn resolve_dxos_work(
             serde_json::to_value(&delivery).unwrap_or_else(|_| json!({"status": "unknown"})),
         );
     }
+    record_control_action(
+        &app,
+        &project_path,
+        body.project.as_deref(),
+        &actor,
+        "work_resolve",
+        &body.work_order_id,
+        &value,
+    );
     Ok(Json(value))
 }
 
@@ -2534,6 +2551,7 @@ pub async fn raise_dxos_session_blocker(
     Json(body): Json<DxosSessionBlockBody>,
 ) -> ApiJson {
     require_control_token(&headers)?;
+    let actor = control_actor(&headers);
     let project_path = resolve_project_path(&VisionQuery {
         project: body.project.clone(),
         path: body.path.clone(),
@@ -2547,9 +2565,17 @@ pub async fn raise_dxos_session_blocker(
         body.resolution_hint.as_deref(),
     );
     maybe_emit_dxos_session_change(&app, &project_path, &result);
-    Ok(Json(
-        serde_json::from_str(&result).unwrap_or(json!({"raw": result})),
-    ))
+    let value = serde_json::from_str(&result).unwrap_or(json!({"raw": result}));
+    record_control_action(
+        &app,
+        &project_path,
+        body.project.as_deref(),
+        &actor,
+        "session_block",
+        &body.worker_session_id,
+        &value,
+    );
+    Ok(Json(value))
 }
 
 /// GET /api/vision/diff?project=NAME — Recent vision changes
