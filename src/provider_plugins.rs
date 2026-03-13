@@ -1,7 +1,6 @@
 use anyhow::Result;
 use serde::Serialize;
 use serde_json::{json, Value};
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
