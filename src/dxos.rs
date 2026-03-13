@@ -665,6 +665,7 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
                 "session_launch": "/api/dxos/session/launch",
                 "pane_talk": "/api/pane/talk",
                 "pane_kill": "/api/pane/kill",
+                "pane_restart": "/api/pane/restart",
                 "pane_output": "/api/pane/{id}/output",
                 "event_stream": "/api/events",
                 "websocket": "/ws",
