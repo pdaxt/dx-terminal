@@ -2744,6 +2744,24 @@ impl DxTerminalService {
     }
 
     #[tool(
+        description = "Update a DXOS project adoption workflow status. Use this to mark recovery as completed or cancelled once the project has a trustworthy handoff plan."
+    )]
+    async fn dxos_adoption_status(
+        &self,
+        Parameters(req): Parameters<types::DxosAdoptionStatusRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::dxos_tools::resolve_project_path(req.project.as_deref());
+        let result = tools::dxos_tools::adoption_status(
+            req.project.as_deref(),
+            &req.adoption_id,
+            &req.status,
+            req.note.as_deref(),
+        );
+        self.emit_dxos_session_change(&project_path, &result);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
         description = "Start a formal debate for a project or feature. Use this when multiple agents/models need to reason, contradict, and decide within the system."
     )]
     async fn dxos_debate_start(

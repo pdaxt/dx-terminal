@@ -2183,6 +2183,18 @@ pub struct DxosAdoptionStartRequest {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosAdoptionStatusRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+    #[schemars(description = "Adoption workflow ID")]
+    pub adoption_id: String,
+    #[schemars(description = "New adoption status: planned/active/completed/cancelled")]
+    pub status: String,
+    #[schemars(description = "Optional handoff or closure note")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct DxosDebateStartRequest {
     #[schemars(description = "Project path (default: current directory)")]
     pub project: Option<String>,

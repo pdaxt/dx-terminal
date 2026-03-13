@@ -34,6 +34,21 @@ pub fn adoption_start(
     )
 }
 
+pub fn adoption_status(
+    project: Option<&str>,
+    adoption_id: &str,
+    status: &str,
+    note: Option<&str>,
+) -> String {
+    dxos::update_project_adoption_status(
+        &resolve_project_path(project),
+        None,
+        adoption_id,
+        status,
+        note,
+    )
+}
+
 pub fn debate_start(
     project: Option<&str>,
     title: &str,
