@@ -1768,6 +1768,32 @@ function currentDxOperatorPolicy(project){
   return operators.find(item=>String(item.id||'')===actor)||null;
 }
 
+function currentPortalMode(project){
+  const auth=dxosControlAuthCache[project]||{};
+  if(!auth.operator_policy_configured)return 'operator';
+  if(
+    operatorAllowsAction(project,'session_launch')
+    || operatorAllowsAction(project,'pane_talk')
+    || operatorAllowsAction(project,'work_delegate')
+  )return 'operator';
+  if(
+    operatorAllowsAction(project,'work_resolve')
+    || operatorAllowsAction(project,'debate_start')
+  )return 'reviewer';
+  return 'client';
+}
+
+function portalModeMeta(mode){
+  const id=(mode||'client').toString();
+  if(id==='operator'){
+    return {label:'Operator view',copy:'Live lanes, delegation, and control actions are visible in this mode.'};
+  }
+  if(id==='reviewer'){
+    return {label:'Reviewer view',copy:'Approvals, debates, and evidence stay visible while raw execution controls remain hidden.'};
+  }
+  return {label:'Client view',copy:'The portal stays focused on progress, approvals, and trust instead of operator mechanics.'};
+}
+
 function authPatternMatches(pattern,value){
   const rule=String(pattern||'').trim();
   const target=String(value||'').trim();
@@ -2894,6 +2920,10 @@ async function renderExecutionHub(){
   const controlTokenLoaded=!!storedDxControlToken();
   const operatorIdentity=storedDxOperatorIdentity();
   const operatorPolicy=currentDxOperatorPolicy(project);
+  const portalMode=currentPortalMode(project);
+  const portalModeInfo=portalModeMeta(portalMode);
+  const showOperatorNetwork=portalMode!=='client';
+  const showOperatorControls=portalMode==='operator';
   const selectedMcp=automationSelection[project]||(externalMcps[0]&&externalMcps[0].name)||'';
   const selectedCacheKey=selectedMcp?automationCacheKey(project,selectedMcp):'';
   const selectedToolInfo=selectedCacheKey?automationToolCache[selectedCacheKey]:null;
@@ -2964,6 +2994,7 @@ async function renderExecutionHub(){
         <div class="exec-kpi"><div class="label">Decision Records</div><div class="value">${(dxos.debates&&dxos.debates.total)||0}</div><div class="meta">${(dxos.debates&&dxos.debates.decided)||0} finalized with rationale</div></div>
         <div class="exec-kpi"><div class="label">Control Audit</div><div class="value">${(dxos.audit&&dxos.audit.total)||0}</div><div class="meta">${dxosAudit.length?`latest: ${escHtml(String(dxosAudit[0].action_kind||'action')).replace(/_/g,' ')}`:'no control actions logged yet'}</div></div>
         <div class="exec-kpi"><div class="label">Git State</div><div class="value">${git&&git.branch?escHtml(git.branch):'--'}</div><div class="meta">${escHtml(gitState)}</div></div>
+        <div class="exec-kpi"><div class="label">Portal View</div><div class="value">${escHtml(portalModeInfo.label)}</div><div class="meta">${escHtml(portalModeInfo.copy)}</div></div>
       </div>
       <div class="journey-map">
         ${['planned','discovery','build','test','done'].map(phase=>{
@@ -3013,7 +3044,7 @@ async function renderExecutionHub(){
           <div class="exec-list">${renderPriorityRows(blockingFeatures,'blocked')}</div>
         </div>
       </div>
-      <div class="exec-rail-grid">
+      ${showOperatorNetwork?`<div class="exec-rail-grid">
         <div class="exec-rail">
           <div class="exec-rail-title">Lead and worker sessions</div>
           <div class="exec-rail-copy">These are the governed DXOS contracts behind panes, worktrees, browser lanes, and provider selection.</div>
@@ -3034,10 +3065,65 @@ async function renderExecutionHub(){
         <div class="exec-rail-copy">Formal debates, contradictions, and votes preserve why a design or architecture direction won before implementation accelerates.</div>
         <div class="exec-list-title">Recent formal debates</div>
         <div class="exec-list">${renderDxosDebateRows(dxosDebates,4)}</div>
-      </div>
+      </div>`:`<div class="exec-rail" style="margin-top:12px">
+        <div class="exec-rail-title">DXOS is operating behind the portal</div>
+        <div class="exec-rail-copy">This identity is in client mode, so raw execution mechanics stay hidden here. Delivery status, approvals, documentation, and release confidence remain visible without exposing lane-level controls.</div>
+      </div>`}
     </div>`;
 
-  runtimeEl.innerHTML=`<div class="portal-note">Clients only need the delivery story. Operators need the governed execution network underneath it: live lanes, session contracts, delegated work, and blocked permissions.</div>
+  const runtimePanelHtml=portalMode==='client'
+    ? `<div class="portal-note">This view keeps the runtime layer translated into plain language. DXOS is still running governed lanes behind the scenes, but the portal stays focused on trust, approvals, and delivery progress.</div>
+    <div class="doc-coverage-grid" style="margin-bottom:12px">
+      <div class="doc-mini-card">
+        <div class="label">Active specialist lanes</div>
+        <div class="meta">${brief.runtime_count||0} active lane${(brief.runtime_count||0)===1?'':'s'} · ${dxosSessionSummary.active||0} active session contract${(dxosSessionSummary.active||0)===1?'':'s'}</div>
+      </div>
+      <div class="doc-mini-card">
+        <div class="label">Work in review</div>
+        <div class="meta">${leadInboxWork.length} routed to leads · ${humanEscalations.length} escalated to humans</div>
+      </div>
+      <div class="doc-mini-card">
+        <div class="label">Decision records</div>
+        <div class="meta">${(dxos.debates&&dxos.debates.decided)||0} finalized rationale records are attached to this project.</div>
+      </div>
+    </div>
+    <div class="exec-list">
+      <div class="exec-row">
+        <div class="exec-row-top">
+          <span class="exec-row-title">Specialist lanes working behind the portal</span>
+          <span class="exec-row-tags"><span class="doc-pill shared">${runtimes.length} lanes</span></span>
+        </div>
+        ${runtimes.length?runtimes.slice(0,6).map(runtime=>{
+          const descriptor=[
+            runtime.role&&runtime.role!=='--'?runtime.role:'specialist',
+            runtime.branch_name?`branch ${runtime.branch_name}`:null,
+            runtime.workspace_path?`worktree ${shortPathLabel(runtime.workspace_path)}`:null
+          ].filter(Boolean).join(' · ');
+          return `<div class="doc-line">
+            <div class="doc-line-main">
+              <div class="doc-line-title">${escHtml((runtime.task||runtime.window_name||runtime.cwd||'Active DXOS lane').toString())}</div>
+              <div class="doc-line-path">${escHtml(descriptor||'DXOS managed specialist lane')}</div>
+            </div>
+            <div class="exec-row-tags">${providerBadge(runtime.provider,true)}${runtime.status?vddStatePill(runtime.status):''}</div>
+          </div>`;
+        }).join(''):'<div class="empty-note">No specialist lane is active right now.</div>'}
+      </div>
+      <div class="exec-row">
+        <div class="exec-row-top">
+          <span class="exec-row-title">Approvals and escalations</span>
+          <span class="exec-row-tags"><span class="doc-pill gemini">${blockedOrApprovalWork.length} tracked</span></span>
+        </div>
+        <div class="exec-list">${renderDxosWorkOrderRows(blockedOrApprovalWork,dxosSessions,4,'blocked')}</div>
+      </div>
+      <div class="exec-row">
+        <div class="exec-row-top">
+          <span class="exec-row-title">Control and audit posture</span>
+          <span class="exec-row-tags"><span class="doc-pill shared">${(dxos.audit&&dxos.audit.total)||0} audit events</span></span>
+        </div>
+        <div class="exec-row-meta">DXOS control actions are audited and tied back to operator identity when protected routes are enabled.</div>
+      </div>
+    </div>`
+    : `<div class="portal-note">Clients only need the delivery story. Operators need the governed execution network underneath it: live lanes, session contracts, delegated work, and blocked permissions.</div>
     <div class="doc-coverage-grid" style="margin-bottom:12px">
       <div class="doc-mini-card">
         <div class="label">Live runtime lanes</div>
@@ -3145,11 +3231,14 @@ async function renderExecutionHub(){
         </div>`).join(''):'<div class="empty-note">No control-plane mutations have been logged for this project yet.</div>'}</div>
       </div>
     </div>
-    ${renderDxosOperatorControls(project,activeStage,dxosSessions)}`;
-  syncDxosLaunchProviderOptions();
-  syncDxosSessionProviderOptions();
-  syncDxosLaunchAdapterNote();
-  syncDxosSessionAdapterNote();
+    ${showOperatorControls?renderDxosOperatorControls(project,activeStage,dxosSessions):`<div class="action-shell"><div class="portal-note">${portalMode==='reviewer'?'This identity is in reviewer mode. Approval, debate, and evidence surfaces stay visible, while launch and pane controls remain hidden.':'This identity is in client mode. DXOS execution controls are intentionally hidden here; use a registered operator identity for lane launch, pane control, and work delegation.'}</div></div>`}`;
+  runtimeEl.innerHTML=runtimePanelHtml;
+  if(showOperatorControls){
+    syncDxosLaunchProviderOptions();
+    syncDxosSessionProviderOptions();
+    syncDxosLaunchAdapterNote();
+    syncDxosSessionAdapterNote();
+  }
 
   docsEl.innerHTML=`
     <div class="portal-note">This section is the trust contract for the whole program. If docs, Git, approvals, and dashboard state drift apart, the portal becomes unreliable for both clients and delivery teams.</div>
