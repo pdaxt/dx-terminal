@@ -24,6 +24,7 @@ pub mod pty;
 pub mod quality;
 pub mod queue;
 pub mod recovery_planning;
+pub mod provider_plugins;
 pub mod runtime_broker;
 pub mod scanner;
 pub mod screen;
