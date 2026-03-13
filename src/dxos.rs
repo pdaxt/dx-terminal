@@ -1792,4 +1792,99 @@ mod tests {
         assert_eq!(listed["sessions"].as_array().unwrap().len(), 2);
         assert_eq!(listed["work_orders"].as_array().unwrap().len(), 1);
     }
+
+    #[test]
+    fn provider_policy_blocks_invalid_runtime_choice() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        std::fs::create_dir_all(&project_path).unwrap();
+        let project = project_path.to_str().unwrap();
+
+        let result = upsert_session_contract(
+            project,
+            Some("demo"),
+            None,
+            "security",
+            Some("opencode"),
+            Some("local-security-model"),
+            Some("guarded_auto"),
+            "Review production hardening",
+            vec!["security review".to_string()],
+            vec!["security_scan".to_string()],
+            vec![project.to_string()],
+            vec![project.to_string()],
+            Some(project),
+            Some("feat/security"),
+            Some(46003),
+            Some(3),
+            Some("dx:3.1"),
+            Some("F2.4"),
+            Some("test"),
+            None,
+            Some("lead_then_human"),
+            Some("launching"),
+        );
+        let value: Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(value["session"]["status"], "blocked");
+        assert_eq!(value["provider_policy"]["preferred_provider"], "claude");
+        assert!(value["session"]["policy_violations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item.as_str().unwrap_or("").contains("outside DXOS policy")));
+    }
+
+    #[test]
+    fn launch_failure_persists_session_error() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        std::fs::create_dir_all(&project_path).unwrap();
+        let project = project_path.to_str().unwrap();
+
+        let session = upsert_session_contract(
+            project,
+            Some("demo"),
+            None,
+            "frontend",
+            Some("codex"),
+            Some("gpt-5.4"),
+            Some("guarded_auto"),
+            "Build glass shell",
+            vec!["prototype".to_string()],
+            vec!["playwright".to_string()],
+            vec![project.to_string()],
+            vec![project.to_string()],
+            Some(project),
+            Some("feat/glass"),
+            Some(46002),
+            Some(2),
+            None,
+            Some("F1.2"),
+            Some("build"),
+            None,
+            Some("lead_then_human"),
+            Some("launching"),
+        );
+        let session_value: Value = serde_json::from_str(&session).unwrap();
+        let session_id = session_value["session_id"].as_str().unwrap();
+
+        let failed = record_session_launch_failure(
+            project,
+            Some("demo"),
+            session_id,
+            "Runtime launch failed: codex binary missing",
+        );
+        let failed_value: Value = serde_json::from_str(&failed).unwrap();
+        assert_eq!(failed_value["session"]["status"], "blocked");
+        assert_eq!(
+            failed_value["session"]["last_error"],
+            "Runtime launch failed: codex binary missing"
+        );
+
+        let listed: Value = serde_json::from_str(&session_list(project, Some("demo"))).unwrap();
+        assert_eq!(
+            listed["sessions"][0]["last_error"],
+            "Runtime launch failed: codex binary missing"
+        );
+    }
 }

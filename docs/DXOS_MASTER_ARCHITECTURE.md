@@ -197,5 +197,8 @@ The first architecture slice now implemented in the repo is:
 - DXOS debate/session events now update the execution hub surgically instead of forcing a full page refresh, so the portal can evolve into a stable control surface rather than a passive monitor
 - the tmux migration adapter now launches provider-specific lanes for Claude, Codex, and Gemini, with provider/model persisted in pane state and reflected back into the portal and DXOS session contract
 - runtime launch is no longer “Claude plus labels”; provider choice now flows from the portal form, through the websocket spawn command, into the runtime broker, and back into the control plane
+- DXOS now publishes a role-and-stage provider policy matrix, so the portal can explain which runtimes are preferred or allowed before a lane is launched
+- session contracts now persist `policy_violations` and `last_error`, which gives the portal a durable way to surface blocked provider choices and failed runtime launches instead of silently dropping them
+- runtime lanes are registered in DXOS before the adapter launches, so failed launches still leave behind a supervised session record with the intended feature, stage, and supervisor context
 
 That gives the platform a native place to reason, disagree, decide, supervise, and delegate inside the system itself.
