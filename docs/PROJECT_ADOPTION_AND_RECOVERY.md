@@ -27,6 +27,8 @@ The portal no longer hand-builds that first package. It now asks DXOS to start g
 
 That same shared recovery planner now also supplies the first follow-on specialist suggestions. When adoption is marked complete, DXOS seeds planned specialist session contracts and work orders under the recovery lead instead of stopping at a closed recovery ticket.
 
+The operator portal now surfaces those seeded follow-on lanes as a queue. The launch form auto-seeds from the first planned follow-on lane until the operator makes a manual edit, and each queued lane can be applied to the form or launched directly.
+
 ## Core Promise
 
 If a company points DXOS at an in-progress project, the platform should be able to:

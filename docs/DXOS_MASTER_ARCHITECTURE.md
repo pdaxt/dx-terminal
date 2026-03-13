@@ -230,6 +230,7 @@ The first architecture slice now implemented in the repo is:
 - seeded adoption lead contracts can now be launched directly into a live runtime lane, so DXOS no longer forces operators to recreate a planned recovery session manually before execution starts
 - seeded adoption now also creates an assigned recovery work package, and the launch path injects that work package plus adoption/council context into the live lane prompt and shared guidance files automatically
 - when adoption is marked complete, DXOS now seeds the first planned specialist follow-on session and work-order contracts from that same recovery planner output, so recovery turns into governed downstream execution instead of ending at a status flip
+- the operator launch surface now reads those seeded follow-on contracts as a priority queue and auto-seeds the launch form from the first planned specialist lane until the operator takes manual control
 - protected control routes now enforce optional operator policy as well as token auth, so named operators can be limited by role, project scope, and action families before a launch, debate, or lane mutation is accepted
 
 That gives the platform a native place to reason, disagree, decide, supervise, and delegate inside the system itself.
