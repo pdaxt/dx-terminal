@@ -2486,6 +2486,12 @@ function handleWSMessage(msg){
       }
       break;
 
+    case 'dxos_session_changed':
+      if(!selectedVisionProject||selectedVisionProject===msg.project){
+        refresh();
+      }
+      break;
+
     case 'sync_status':
       // Sync status delta from replicator
       renderSync();
