@@ -671,13 +671,29 @@ fn build_provider_command(
             provider.label()
         )
     })?;
+    Ok(build_provider_command_with_binary(
+        provider,
+        &binary,
+        prompt,
+        autonomous,
+        model,
+    ))
+}
+
+fn build_provider_command_with_binary(
+    provider: RuntimeProvider,
+    binary: &str,
+    prompt: &str,
+    autonomous: bool,
+    model: Option<&str>,
+) -> String {
     let escaped_prompt = shell_escape(prompt);
     let model_arg = model
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(shell_escape);
 
-    let cmd = match provider {
+    match provider {
         RuntimeProvider::Claude => {
             let perms_flag = if autonomous {
                 " --dangerously-skip-permissions"
@@ -716,9 +732,7 @@ fn build_provider_command(
                 .unwrap_or_default();
             format!("{}{} {}", binary, model_flag, escaped_prompt)
         }
-    };
-
-    Ok(cmd)
+    }
 }
 
 fn resolve_provider_binary(provider: RuntimeProvider) -> Option<String> {
