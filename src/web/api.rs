@@ -2315,7 +2315,11 @@ pub async fn get_vision_summary(Query(q): Query<VisionQuery>) -> Json<Value> {
 }
 
 /// GET /api/project/brief?project=NAME — Canonical project execution/documentation summary
-async fn build_project_brief_payload(app: &AppState, project_path: &str, project: &str) -> Value {
+pub(crate) async fn build_project_brief_payload(
+    app: &AppState,
+    project_path: &str,
+    project: &str,
+) -> Value {
     let tree = crate::vision::vision_tree(&project_path);
     let tree_value = serde_json::from_str::<Value>(&tree).unwrap_or_else(|_| json!({}));
     let summary = crate::vision::vision_summary(&project_path);
@@ -2531,7 +2535,7 @@ async fn build_project_brief_payload(app: &AppState, project_path: &str, project
     })
 }
 
-fn derive_adoption_defaults(project: &str, brief: &Value) -> Value {
+pub(crate) fn derive_adoption_defaults(project: &str, brief: &Value) -> Value {
     let recovery = brief.get("recovery").cloned().unwrap_or_else(|| json!({}));
     let focus = brief.get("focus").cloned().unwrap_or_else(|| json!({}));
     let next_action = recovery
