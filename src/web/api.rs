@@ -109,6 +109,58 @@ fn require_control_token(headers: &HeaderMap) -> Result<(), (StatusCode, Json<Va
     ))
 }
 
+fn control_actor(headers: &HeaderMap) -> String {
+    headers
+        .get("x-dx-actor")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("portal-operator")
+        .to_string()
+}
+
+fn record_control_action(
+    app: &AppState,
+    project_path: &str,
+    project_name: Option<&str>,
+    actor: &str,
+    action_kind: &str,
+    target: &str,
+    result: &Value,
+) {
+    if project_path.trim().is_empty() {
+        return;
+    }
+    let outcome = if result.get("error").is_some() {
+        "error"
+    } else {
+        "ok"
+    };
+    let summary = if outcome == "ok" {
+        format!("{} {}", action_kind, target)
+    } else {
+        format!("{} failed for {}", action_kind, target)
+    };
+    if let Ok(record) = crate::dxos::append_audit_record(
+        project_path,
+        project_name,
+        actor,
+        action_kind,
+        target,
+        outcome,
+        &summary,
+        result.clone(),
+    ) {
+        app.state.event_bus.send(crate::state::events::StateEvent::AuditLogged {
+            project: record.project_name,
+            action_id: record.id,
+            kind: record.action_kind,
+            target: record.target,
+            outcome: record.outcome,
+        });
+    }
+}
+
 /// GET / — Serve dashboard HTML
 pub async fn index() -> Html<&'static str> {
     Html(include_str!("../../assets/dashboard.html"))
