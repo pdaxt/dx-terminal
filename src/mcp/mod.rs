@@ -2729,12 +2729,60 @@ impl DxTerminalService {
         Parameters(req): Parameters<types::DxosAdoptionStartRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let project_path = tools::dxos_tools::resolve_project_path(req.project.as_deref());
-        let result = tools::dxos_tools::adoption_start(
-            req.project.as_deref(),
-            req.summary.as_deref(),
-            req.objective.as_deref(),
-            req.feature_id.as_deref(),
-            req.stage.as_deref(),
+        let project_name = req
+            .project
+            .clone()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| {
+                std::path::Path::new(&project_path)
+                    .file_name()
+                    .map(|value| value.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "project".to_string())
+            });
+        let derived_defaults = if req.summary.is_none()
+            || req.objective.is_none()
+            || req.feature_id.is_none()
+            || req.stage.is_none()
+        {
+            Some(crate::web::api::derive_adoption_defaults(
+                &project_name,
+                &crate::web::api::build_project_brief_payload(
+                    &self.app,
+                    &project_path,
+                    &project_name,
+                )
+                .await,
+            ))
+        } else {
+            None
+        };
+        let result = crate::dxos::start_project_adoption(
+            &project_path,
+            Some(&project_name),
+            req.summary.as_deref().or_else(|| {
+                derived_defaults
+                    .as_ref()
+                    .and_then(|value| value.get("summary"))
+                    .and_then(serde_json::Value::as_str)
+            }),
+            req.objective.as_deref().or_else(|| {
+                derived_defaults
+                    .as_ref()
+                    .and_then(|value| value.get("objective"))
+                    .and_then(serde_json::Value::as_str)
+            }),
+            req.feature_id.as_deref().or_else(|| {
+                derived_defaults
+                    .as_ref()
+                    .and_then(|value| value.get("feature_id"))
+                    .and_then(serde_json::Value::as_str)
+            }),
+            req.stage.as_deref().or_else(|| {
+                derived_defaults
+                    .as_ref()
+                    .and_then(|value| value.get("stage"))
+                    .and_then(serde_json::Value::as_str)
+            }),
             req.participants,
             req.requested_by.as_deref(),
         );
