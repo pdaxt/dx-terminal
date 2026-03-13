@@ -11,6 +11,12 @@ pub struct SpawnRequest {
         description = "Agent role: pm/architect/frontend/backend/qa/security/devops/developer"
     )]
     pub role: Option<String>,
+    #[serde(default)]
+    #[schemars(description = "Runtime provider: claude, codex, gemini, opencode")]
+    pub provider: Option<String>,
+    #[serde(default)]
+    #[schemars(description = "Optional model name to pass through to the provider CLI")]
+    pub model: Option<String>,
     #[schemars(description = "Task description for the agent")]
     pub task: Option<String>,
     #[schemars(description = "Optional initial prompt to send after launch")]
