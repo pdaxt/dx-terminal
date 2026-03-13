@@ -269,6 +269,7 @@ async fn execute_command(app: &App, cmd: TuiCommand) -> TuiResult {
                     provider: None,
                     model: None,
                     runtime_adapter: None,
+                    client_request_id: None,
                     feature_id: None,
                     stage: None,
                     supervisor_session_id: None,

@@ -105,6 +105,7 @@ pub async fn orchestrate(app: &App, req: OrchestrateRequest) -> String {
                     provider: None,
                     model: None,
                     runtime_adapter: None,
+                    client_request_id: None,
                     feature_id: None,
                     stage: None,
                     supervisor_session_id: None,
