@@ -1721,6 +1721,14 @@ function clearDxControlToken(){
   renderExecutionHub();
 }
 
+function noteDxControlAuthFailure(result){
+  if(result&&Number(result._http_status)===401){
+    setDxosPortalNotice('auth',String(result.error||'DX control token required'),'red');
+    return true;
+  }
+  return false;
+}
+
 function dxosResolutionDraft(workOrderId){
   const key=String(workOrderId||'').trim();
   if(!key)return 'Approval granted. Continue with the next high-value task in scope.';
