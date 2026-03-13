@@ -213,6 +213,8 @@ The first architecture slice now implemented in the repo is:
 - runtime lanes are registered in DXOS before the adapter launches, so failed launches still leave behind a supervised session record with the intended feature, stage, and supervisor context
 - provider-native launch planning now lives in a DX runtime broker instead of inside the tmux adapter, so provider binary discovery, command construction, and launch policy are separated from window creation
 - tmux is now explicitly a migration adapter that executes brokered launch plans; the DXOS runtime contract and project brief both advertise the broker and supported providers directly
+- DX now owns a provider-plugin bridge layer, so native Claude MCP registrations and DX-managed Codex/GPT and Gemini bridge files all merge into one shared manifest and can be exported back out as provider-specific plugin configs
+- the portal, MCP surface, and API now expose provider bridge inventory and sync operations, which makes “Claude MCP -> GPT/Gemini bridge” a first-class system capability instead of a manual copy step
 - worker sessions can now raise blockers or permission requests through DXOS session context, and the control plane routes those requests to the supervising lead first before falling back to explicit human escalation
 - runtime lanes now receive `DXOS_SESSION_ID`, `DX_FEATURE_ID`, `DX_STAGE`, and `DX_SUPERVISOR_SESSION_ID` so agents in a live lane can report blocker and approval state without reconstructing their control-plane identity
 - the server-owned runtime replicator now detects clear approval/login/challenge prompts in live pane output and converts them into DXOS blocker events once, so “waiting for human action” is lifted out of raw terminal text and into the control plane
