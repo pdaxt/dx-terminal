@@ -793,6 +793,388 @@ pub fn debate_finalize(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+pub fn upsert_session_contract(
+    project_path: &str,
+    project_name: Option<&str>,
+    session_id: Option<&str>,
+    role: &str,
+    provider: Option<&str>,
+    model: Option<&str>,
+    autonomy_level: Option<&str>,
+    objective: &str,
+    expected_outputs: Vec<String>,
+    allowed_capabilities: Vec<String>,
+    allowed_repos: Vec<String>,
+    allowed_paths: Vec<String>,
+    workspace_path: Option<&str>,
+    branch_name: Option<&str>,
+    browser_port: Option<u16>,
+    pane: Option<u8>,
+    tmux_target: Option<&str>,
+    feature_id: Option<&str>,
+    stage: Option<&str>,
+    supervisor_session_id: Option<&str>,
+    escalation_policy: Option<&str>,
+    status: Option<&str>,
+) -> String {
+    if role.trim().is_empty() || objective.trim().is_empty() {
+        return json!({"error": "role and objective required"}).to_string();
+    }
+
+    let mut state = load_control_plane(project_path, project_name);
+    let now = crate::state::now();
+    let chosen_id = session_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| next_session_id(&state));
+
+    let action = if let Some(existing) = state.sessions.iter_mut().find(|item| item.id == chosen_id) {
+        existing.status = status.unwrap_or("active").trim().to_string();
+        existing.role = role.trim().to_string();
+        existing.provider = provider
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        existing.model = model
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        existing.autonomy_level = autonomy_level.unwrap_or("guarded_auto").trim().to_string();
+        existing.objective = objective.trim().to_string();
+        existing.expected_outputs = expected_outputs
+            .into_iter()
+            .filter(|value| !value.trim().is_empty())
+            .collect();
+        existing.allowed_capabilities = allowed_capabilities
+            .into_iter()
+            .filter(|value| !value.trim().is_empty())
+            .collect();
+        existing.allowed_repos = allowed_repos
+            .into_iter()
+            .filter(|value| !value.trim().is_empty())
+            .collect();
+        existing.allowed_paths = allowed_paths
+            .into_iter()
+            .filter(|value| !value.trim().is_empty())
+            .collect();
+        existing.workspace_path = workspace_path
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        existing.branch_name = branch_name
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        existing.browser_port = browser_port;
+        existing.pane = pane;
+        existing.tmux_target = tmux_target
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        existing.feature_id = feature_id
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        existing.stage = stage
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        existing.supervisor_session_id = supervisor_session_id
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        existing.escalation_policy = escalation_policy
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        existing.updated_at = now.clone();
+        "session_updated"
+    } else {
+        state.sessions.push(SessionContractRecord {
+            id: chosen_id.clone(),
+            status: status.unwrap_or("active").trim().to_string(),
+            role: role.trim().to_string(),
+            provider: provider
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            model: model
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            autonomy_level: autonomy_level.unwrap_or("guarded_auto").trim().to_string(),
+            objective: objective.trim().to_string(),
+            expected_outputs: expected_outputs
+                .into_iter()
+                .filter(|value| !value.trim().is_empty())
+                .collect(),
+            allowed_capabilities: allowed_capabilities
+                .into_iter()
+                .filter(|value| !value.trim().is_empty())
+                .collect(),
+            allowed_repos: allowed_repos
+                .into_iter()
+                .filter(|value| !value.trim().is_empty())
+                .collect(),
+            allowed_paths: allowed_paths
+                .into_iter()
+                .filter(|value| !value.trim().is_empty())
+                .collect(),
+            workspace_path: workspace_path
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            branch_name: branch_name
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            browser_port,
+            pane,
+            tmux_target: tmux_target
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            feature_id: feature_id
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            stage: stage
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            supervisor_session_id: supervisor_session_id
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            escalation_policy: escalation_policy
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            created_at: now.clone(),
+            updated_at: now.clone(),
+        });
+        "session_registered"
+    };
+
+    state.updated_at = now;
+
+    match save_control_plane(project_path, &state) {
+        Ok(()) => json!({
+            "status": "ok",
+            "action": action,
+            "project": state.project.name,
+            "project_path": project_path,
+            "session_id": chosen_id,
+            "session": state.sessions.iter().find(|item| item.id == chosen_id).map(session_summary),
+        })
+        .to_string(),
+        Err(error) => json!({"error": error}).to_string(),
+    }
+}
+
+pub fn update_session_status(
+    project_path: &str,
+    project_name: Option<&str>,
+    session_id: &str,
+    status: &str,
+    note: Option<&str>,
+) -> String {
+    if session_id.trim().is_empty() || status.trim().is_empty() {
+        return json!({"error": "session_id and status required"}).to_string();
+    }
+
+    let mut state = load_control_plane(project_path, project_name);
+    let Some(session) = state
+        .sessions
+        .iter_mut()
+        .find(|item| item.id == session_id.trim())
+    else {
+        return json!({"error": "session_not_found"}).to_string();
+    };
+
+    session.status = status.trim().to_string();
+    if let Some(note) = note.filter(|value| !value.trim().is_empty()) {
+        session.objective = format!("{}\n\nStatus note: {}", session.objective.trim(), note.trim());
+    }
+    session.updated_at = crate::state::now();
+    state.updated_at = session.updated_at.clone();
+
+    match save_control_plane(project_path, &state) {
+        Ok(()) => json!({
+            "status": "ok",
+            "action": "session_status_updated",
+            "project": state.project.name,
+            "project_path": project_path,
+            "session_id": session_id,
+            "session": state.sessions.iter().find(|item| item.id == session_id.trim()).map(session_summary),
+        })
+        .to_string(),
+        Err(error) => json!({"error": error}).to_string(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn delegate_work_order(
+    project_path: &str,
+    project_name: Option<&str>,
+    supervisor_session_id: &str,
+    worker_session_id: Option<&str>,
+    title: &str,
+    objective: &str,
+    feature_id: Option<&str>,
+    stage: Option<&str>,
+    required_capabilities: Vec<String>,
+    expected_outputs: Vec<String>,
+) -> String {
+    if supervisor_session_id.trim().is_empty() || title.trim().is_empty() || objective.trim().is_empty()
+    {
+        return json!({
+            "error": "supervisor_session_id, title, and objective required"
+        })
+        .to_string();
+    }
+
+    let mut state = load_control_plane(project_path, project_name);
+    if !state
+        .sessions
+        .iter()
+        .any(|session| session.id == supervisor_session_id.trim())
+    {
+        return json!({"error": "supervisor_session_not_found"}).to_string();
+    }
+    if let Some(worker) = worker_session_id.filter(|value| !value.trim().is_empty()) {
+        if !state.sessions.iter().any(|session| session.id == worker.trim()) {
+            return json!({"error": "worker_session_not_found"}).to_string();
+        }
+    }
+
+    let now = crate::state::now();
+    let work_order_id = next_work_order_id(&state);
+    state.work_orders.push(WorkOrderRecord {
+        id: work_order_id.clone(),
+        supervisor_session_id: supervisor_session_id.trim().to_string(),
+        worker_session_id: worker_session_id
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+        status: if worker_session_id.is_some() {
+            "assigned".to_string()
+        } else {
+            "planned".to_string()
+        },
+        title: title.trim().to_string(),
+        objective: objective.trim().to_string(),
+        feature_id: feature_id
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+        stage: stage
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+        required_capabilities: required_capabilities
+            .into_iter()
+            .filter(|value| !value.trim().is_empty())
+            .collect(),
+        blockers: Vec::new(),
+        requested_permissions: Vec::new(),
+        expected_outputs: expected_outputs
+            .into_iter()
+            .filter(|value| !value.trim().is_empty())
+            .collect(),
+        created_at: now.clone(),
+        updated_at: now.clone(),
+    });
+    state.updated_at = now;
+
+    match save_control_plane(project_path, &state) {
+        Ok(()) => json!({
+            "status": "ok",
+            "action": "work_order_delegated",
+            "project": state.project.name,
+            "project_path": project_path,
+            "work_order_id": work_order_id,
+            "work_order": state.work_orders.iter().find(|item| item.id == work_order_id).map(work_order_summary),
+        })
+        .to_string(),
+        Err(error) => json!({"error": error}).to_string(),
+    }
+}
+
+pub fn work_order_block(
+    project_path: &str,
+    project_name: Option<&str>,
+    work_order_id: &str,
+    blocker: &str,
+    requested_permission: Option<&str>,
+) -> String {
+    if work_order_id.trim().is_empty() || blocker.trim().is_empty() {
+        return json!({"error": "work_order_id and blocker required"}).to_string();
+    }
+
+    let mut state = load_control_plane(project_path, project_name);
+    let Some(work_order) = state
+        .work_orders
+        .iter_mut()
+        .find(|item| item.id == work_order_id.trim())
+    else {
+        return json!({"error": "work_order_not_found"}).to_string();
+    };
+
+    work_order.status = "blocked".to_string();
+    if !work_order.blockers.iter().any(|item| item == blocker.trim()) {
+        work_order.blockers.push(blocker.trim().to_string());
+    }
+    if let Some(permission) = requested_permission.filter(|value| !value.trim().is_empty()) {
+        if !work_order
+            .requested_permissions
+            .iter()
+            .any(|item| item == permission.trim())
+        {
+            work_order
+                .requested_permissions
+                .push(permission.trim().to_string());
+        }
+    }
+    work_order.updated_at = crate::state::now();
+    state.updated_at = work_order.updated_at.clone();
+
+    match save_control_plane(project_path, &state) {
+        Ok(()) => json!({
+            "status": "ok",
+            "action": "work_order_blocked",
+            "project": state.project.name,
+            "project_path": project_path,
+            "work_order_id": work_order_id,
+            "work_order": state.work_orders.iter().find(|item| item.id == work_order_id.trim()).map(work_order_summary),
+        })
+        .to_string(),
+        Err(error) => json!({"error": error}).to_string(),
+    }
+}
+
+pub fn resolve_work_order(
+    project_path: &str,
+    project_name: Option<&str>,
+    work_order_id: &str,
+    resolution: Option<&str>,
+) -> String {
+    if work_order_id.trim().is_empty() {
+        return json!({"error": "work_order_id required"}).to_string();
+    }
+
+    let mut state = load_control_plane(project_path, project_name);
+    let Some(work_order) = state
+        .work_orders
+        .iter_mut()
+        .find(|item| item.id == work_order_id.trim())
+    else {
+        return json!({"error": "work_order_not_found"}).to_string();
+    };
+
+    work_order.status = "assigned".to_string();
+    work_order.blockers.clear();
+    work_order.requested_permissions.clear();
+    if let Some(resolution) = resolution.filter(|value| !value.trim().is_empty()) {
+        work_order.expected_outputs.push(format!("Resolution: {}", resolution.trim()));
+    }
+    work_order.updated_at = crate::state::now();
+    state.updated_at = work_order.updated_at.clone();
+
+    match save_control_plane(project_path, &state) {
+        Ok(()) => json!({
+            "status": "ok",
+            "action": "work_order_resolved",
+            "project": state.project.name,
+            "project_path": project_path,
+            "work_order_id": work_order_id,
+            "work_order": state.work_orders.iter().find(|item| item.id == work_order_id.trim()).map(work_order_summary),
+        })
+        .to_string(),
+        Err(error) => json!({"error": error}).to_string(),
+    }
+}
+
 pub fn debate_event_from_result(project_path: &str, result: &str) -> Option<StateEvent> {
     let value = serde_json::from_str::<Value>(result).ok()?;
     if value.get("error").is_some() {
@@ -825,6 +1207,70 @@ pub fn debate_event_from_result(project_path: &str, result: &str) -> Option<Stat
             .get("action")
             .and_then(Value::as_str)
             .unwrap_or("updated")
+            .to_string(),
+    })
+}
+
+pub fn session_event_from_result(project_path: &str, result: &str) -> Option<StateEvent> {
+    let value = serde_json::from_str::<Value>(result).ok()?;
+    if value.get("error").is_some() {
+        return None;
+    }
+    let project = value
+        .get("project")
+        .and_then(Value::as_str)
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| resolved_project_name(project_path, None));
+
+    if let Some(session) = value.get("session") {
+        return Some(StateEvent::SessionContractChanged {
+            project,
+            session_id: value
+                .get("session_id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            role: session
+                .get("role")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            status: session
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            action: value
+                .get("action")
+                .and_then(Value::as_str)
+                .unwrap_or("session_updated")
+                .to_string(),
+        });
+    }
+
+    let work_order = value.get("work_order")?;
+    Some(StateEvent::SessionContractChanged {
+        project,
+        session_id: work_order
+            .get("worker_session_id")
+            .and_then(Value::as_str)
+            .or_else(|| {
+                work_order
+                    .get("supervisor_session_id")
+                    .and_then(Value::as_str)
+            })
+            .unwrap_or("")
+            .to_string(),
+        role: "delegation".to_string(),
+        status: work_order
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        action: value
+            .get("action")
+            .and_then(Value::as_str)
+            .unwrap_or("work_order_updated")
             .to_string(),
     })
 }
