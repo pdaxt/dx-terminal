@@ -2971,7 +2971,7 @@ function openPanel(paneNum){
     <div style="grid-column:1/-1"><dt>Task</dt><dd style="max-width:380px;white-space:normal;font-size:10px">${p?p.task||'--':'--'}</dd></div>`;
 
   document.getElementById('panel-actions').innerHTML=`
-    <button class="btn btn-red" onclick="wsSend({cmd:'kill',pane:'${paneNum}',reason:'web dashboard'})">Kill</button>
+    <button class="btn btn-red" onclick="killPaneViaApi(${paneNum},'web dashboard')">Kill</button>
     <button class="btn btn-blue" onclick="wsSend({cmd:'capture',pane:${paneNum}})">Refresh</button>
     <button class="btn btn-green" onclick="copyActiveTab()" id="copy-tab-btn">Copy</button>
     <button class="btn" style="background:rgba(176,122,255,.15);color:var(--purple)" onclick="copySelection()">Copy Selection</button>`;
@@ -3017,7 +3017,7 @@ let chatHistories={};
 let talkHistory=[];
 let talkHistoryIdx=-1;
 
-function sendTalk(){
+async function sendTalk(){
   const input=document.getElementById('talk-input');
   const msg=input.value.trim();
   if(!msg||!activePaneNum)return;
@@ -3029,8 +3029,14 @@ function sendTalk(){
   const ind=document.getElementById('send-indicator');
   if(ind){ind.classList.add('active');setTimeout(()=>ind.classList.remove('active'),1500)}
 
-  // Send via WebSocket
-  wsSend({cmd:'talk',pane:activePaneNum,message:msg});
+  const result=await fetchJSON('/api/pane/talk',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({pane:activePaneNum,message:msg})
+  });
+  if(!result||result.error){
+    addChatMsg(activePaneNum,'system','Unable to deliver message to the lane.');
+  }
 
   // Save to command history for up-arrow recall
   talkHistory.unshift(msg);
@@ -3041,10 +3047,17 @@ function sendTalk(){
   input.focus();
 }
 
-function quickTalk(msg){
+async function quickTalk(msg){
   if(!activePaneNum)return;
   addChatMsg(activePaneNum,'user',msg);
-  wsSend({cmd:'talk',pane:activePaneNum,message:msg});
+  const result=await fetchJSON('/api/pane/talk',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({pane:activePaneNum,message:msg})
+  });
+  if(!result||result.error){
+    addChatMsg(activePaneNum,'system','Unable to deliver quick command to the lane.');
+  }
   const ind=document.getElementById('send-indicator');
   if(ind){ind.classList.add('active');setTimeout(()=>ind.classList.remove('active'),1500)}
 }
