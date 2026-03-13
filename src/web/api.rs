@@ -65,6 +65,12 @@ fn maybe_emit_debate_change(app: &AppState, project_path: &str, result: &str) {
     }
 }
 
+fn maybe_emit_dxos_session_change(app: &AppState, project_path: &str, result: &str) {
+    if let Some(event) = crate::dxos::session_event_from_result(project_path, result) {
+        app.state.event_bus.send(event);
+    }
+}
+
 /// GET / — Serve dashboard HTML
 pub async fn index() -> Html<&'static str> {
     Html(include_str!("../../assets/dashboard.html"))
@@ -982,6 +988,78 @@ pub struct DxosDebateDecisionBody {
     pub decided_by: String,
     pub summary: String,
     pub rationale: String,
+}
+
+#[derive(Deserialize, Default)]
+pub struct DxosSessionUpsertBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub session_id: Option<String>,
+    pub role: String,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub autonomy_level: Option<String>,
+    pub objective: String,
+    #[serde(default)]
+    pub expected_outputs: Vec<String>,
+    #[serde(default)]
+    pub allowed_capabilities: Vec<String>,
+    #[serde(default)]
+    pub allowed_repos: Vec<String>,
+    #[serde(default)]
+    pub allowed_paths: Vec<String>,
+    pub workspace_path: Option<String>,
+    pub branch_name: Option<String>,
+    pub browser_port: Option<u16>,
+    pub pane: Option<u8>,
+    pub tmux_target: Option<String>,
+    pub feature_id: Option<String>,
+    pub stage: Option<String>,
+    pub supervisor_session_id: Option<String>,
+    pub escalation_policy: Option<String>,
+    pub status: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct DxosSessionStatusBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub session_id: String,
+    pub status: String,
+    pub note: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct DxosWorkDelegateBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub supervisor_session_id: String,
+    pub worker_session_id: Option<String>,
+    pub title: String,
+    pub objective: String,
+    pub feature_id: Option<String>,
+    pub stage: Option<String>,
+    #[serde(default)]
+    pub required_capabilities: Vec<String>,
+    #[serde(default)]
+    pub expected_outputs: Vec<String>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct DxosWorkBlockBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub work_order_id: String,
+    pub blocker: String,
+    pub requested_permission: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct DxosWorkResolveBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub work_order_id: String,
+    pub resolution: Option<String>,
 }
 
 fn resolve_project_path(q: &VisionQuery) -> String {
