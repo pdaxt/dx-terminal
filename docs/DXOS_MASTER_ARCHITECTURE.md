@@ -96,6 +96,7 @@ DXOS now exposes a brokered runtime model with:
 - `pty_native_adapter` as the default substrate
 - `tmux_migration_adapter` as the compatibility path
 - provider inventory that declares preferred and supported adapters per runtime
+- server-side auto-allocation of the next free lane when operators launch a session without binding it to a specific pane up front
 
 tmux remains a migration adapter only. The target substrate is DX-owned PTY sessions, and the operator surfaces now render adapter choice and live substrate state explicitly.
 

@@ -1022,6 +1022,24 @@ pub struct DxosSessionUpsertBody {
 }
 
 #[derive(Deserialize, Default)]
+pub struct DxosSessionLaunchBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub pane: Option<String>,
+    pub role: Option<String>,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub runtime_adapter: Option<String>,
+    pub client_request_id: Option<String>,
+    pub feature_id: Option<String>,
+    pub stage: Option<String>,
+    pub supervisor_session_id: Option<String>,
+    pub task: String,
+    pub prompt: Option<String>,
+    pub autonomous: Option<bool>,
+}
+
+#[derive(Deserialize, Default)]
 pub struct DxosSessionStatusBody {
     pub project: Option<String>,
     pub path: Option<String>,
@@ -1949,6 +1967,37 @@ pub async fn upsert_dxos_session(
         body.status.as_deref(),
     );
     maybe_emit_dxos_session_change(&app, &project_path, &result);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/dxos/session/launch — Launch a real runtime lane through the DX broker
+pub async fn launch_dxos_session(
+    State(app): State<AppState>,
+    Json(body): Json<DxosSessionLaunchBody>,
+) -> Json<Value> {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let result = tools::spawn(
+        &app,
+        types::SpawnRequest {
+            pane: body.pane.unwrap_or_else(|| "auto".to_string()),
+            project: project_path,
+            role: body.role,
+            provider: body.provider,
+            model: body.model,
+            runtime_adapter: body.runtime_adapter,
+            client_request_id: body.client_request_id,
+            feature_id: body.feature_id,
+            stage: body.stage,
+            supervisor_session_id: body.supervisor_session_id,
+            task: Some(body.task),
+            prompt: body.prompt,
+            autonomous: body.autonomous,
+        },
+    )
+    .await;
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 

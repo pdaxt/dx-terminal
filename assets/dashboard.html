@@ -1743,11 +1743,6 @@ async function launchDxosLane(){
     await renderExecutionHub();
     return;
   }
-  if(!ws||ws.readyState!==1){
-    setDxosPortalNotice('launch','WebSocket is not connected, so a runtime lane cannot be launched right now.','red');
-    await renderExecutionHub();
-    return;
-  }
   const requestId=nextDxosClientRequestId();
   dxosPendingLaunches[requestId]={
     requestId,
@@ -1769,21 +1764,30 @@ async function launchDxosLane(){
   const laneLabel=paneValue==='auto'?'the next free lane':`pane ${paneValue}`;
   setDxosPortalNotice('launch',`Launching ${laneLabel} on ${providerName} via ${adapterLabel(adapterName)}…`,'yellow');
   await renderExecutionHub();
-  wsSend({
-    cmd:'spawn',
-    client_request_id:requestId,
-    pane:String(paneValue),
-    project,
-    role:role.value||'design',
-    provider:providerName,
-    runtime_adapter:adapterName,
-    model:model&&model.value?model.value.trim():undefined,
-    feature_id:feature&&feature.value?feature.value.trim():undefined,
-    stage:stage&&stage.value?stage.value.trim():undefined,
-    supervisor_session_id:supervisor&&supervisor.value?supervisor.value.trim():undefined,
-    task:taskValue
+  const result=await fetchJSON('/api/dxos/session/launch',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      project,
+      client_request_id:requestId,
+      pane:String(paneValue),
+      role:role.value||'design',
+      provider:providerName,
+      runtime_adapter:adapterName,
+      model:model&&model.value?model.value.trim():null,
+      feature_id:feature&&feature.value?feature.value.trim():null,
+      stage:stage&&stage.value?stage.value.trim():null,
+      supervisor_session_id:supervisor&&supervisor.value?supervisor.value.trim():null,
+      task:taskValue
+    })
   });
-  setTimeout(()=>refresh(),1200);
+  if(!result){
+    delete dxosPendingLaunches[requestId];
+    setDxosPortalNotice('launch','Unable to reach the DXOS launch endpoint.','red');
+    await renderExecutionHub();
+    return;
+  }
+  await finalizePendingDxosLaunch(result);
 }
 
 async function finalizePendingDxosLaunch(result){
