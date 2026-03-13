@@ -90,7 +90,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     let machine_id = machine::register(pane_num);
 
     // Environment variables for the agent
-    let env_vars = vec![
+    let mut env_vars = vec![
         ("P".to_string(), pane_num.to_string()),
         ("DX_PANE".to_string(), pane_num.to_string()),
         ("DX_THEME".to_string(), theme.to_string()),
@@ -155,6 +155,21 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         .get("session_id")
         .and_then(|value| value.as_str())
         .map(|value| value.to_string());
+    if let Some(session_id) = dxos_session_id.as_deref() {
+        env_vars.push(("DXOS_SESSION_ID".to_string(), session_id.to_string()));
+    }
+    if let Some(value) = feature_id.as_deref().filter(|value| !value.trim().is_empty()) {
+        env_vars.push(("DX_FEATURE_ID".to_string(), value.to_string()));
+    }
+    if let Some(value) = stage.as_deref().filter(|value| !value.trim().is_empty()) {
+        env_vars.push(("DX_STAGE".to_string(), value.to_string()));
+    }
+    if let Some(value) = supervisor_session_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        env_vars.push(("DX_SUPERVISOR_SESSION_ID".to_string(), value.to_string()));
+    }
     let initial_policy_violations = initial_session_value
         .get("session")
         .and_then(|value| value.get("policy_violations"))

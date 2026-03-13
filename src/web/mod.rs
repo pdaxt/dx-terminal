@@ -81,6 +81,10 @@ pub fn build_router(app: Arc<App>) -> Router {
             "/api/dxos/session/status",
             post(api::update_dxos_session_status),
         )
+        .route(
+            "/api/dxos/session/block",
+            post(api::raise_dxos_session_blocker),
+        )
         .route("/api/dxos/work/delegate", post(api::delegate_dxos_work))
         .route("/api/dxos/work/block", post(api::block_dxos_work))
         .route("/api/dxos/work/resolve", post(api::resolve_dxos_work))
