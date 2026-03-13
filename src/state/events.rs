@@ -124,6 +124,14 @@ pub enum StateEvent {
         action: String,
     },
 
+    AuditLogged {
+        project: String,
+        action_id: String,
+        kind: String,
+        target: String,
+        outcome: String,
+    },
+
     // --- Sync ---
     SyncStatusChanged {
         project: String,
