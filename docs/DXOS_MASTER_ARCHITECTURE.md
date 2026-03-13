@@ -91,7 +91,13 @@ Each session carries:
 - expected outputs
 - escalation path
 
-tmux remains a migration adapter only. The target substrate is DX-owned PTY sessions.
+DXOS now exposes a brokered runtime model with:
+
+- `pty_native_adapter` as the default substrate
+- `tmux_migration_adapter` as the compatibility path
+- provider inventory that declares preferred and supported adapters per runtime
+
+tmux remains a migration adapter only. The target substrate is DX-owned PTY sessions, and the operator surfaces now render adapter choice and live substrate state explicitly.
 
 ## Governance and Reasoning
 

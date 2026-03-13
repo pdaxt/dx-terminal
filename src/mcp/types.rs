@@ -3,7 +3,9 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SpawnRequest {
-    #[schemars(description = "Pane reference (1-9, theme name like 'cyan', or shortcut like 'c')")]
+    #[schemars(
+        description = "Pane reference (1-9, theme name like 'cyan', shortcut like 'c', or 'auto' for the next free lane)"
+    )]
     pub pane: String,
     #[schemars(description = "Project name or path (fuzzy matched against ~/Projects)")]
     pub project: String,
@@ -20,6 +22,9 @@ pub struct SpawnRequest {
     #[serde(default)]
     #[schemars(description = "Runtime adapter: pty_native_adapter or tmux_migration_adapter")]
     pub runtime_adapter: Option<String>,
+    #[serde(default)]
+    #[schemars(description = "Optional client-generated request id to correlate async launch results")]
+    pub client_request_id: Option<String>,
     #[serde(default)]
     #[schemars(description = "Optional linked feature ID for DXOS session registration")]
     pub feature_id: Option<String>,
