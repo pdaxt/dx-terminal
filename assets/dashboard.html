@@ -143,7 +143,7 @@ select:hover{border-color:var(--border-bright)}
   border-radius:16px;
   background:linear-gradient(135deg,rgba(79,143,247,.12),rgba(34,184,173,.05));
 }
-.spotlight-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.spotlight-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .spotlight-card{
   padding:12px 13px;
   border-radius:14px;
@@ -1292,9 +1292,14 @@ function activeProjectForHub(){
 }
 
 function providerBadge(provider,compact){
-  const data=provider||{};
+  const labels={claude:'Claude',codex:'Codex',gemini:'Gemini',opencode:'OpenCode',shared:'Shared',unknown:'Unknown'};
+  const data=typeof provider==='string'
+    ? {id:provider,label:labels[provider]||provider,short:labels[provider]||provider}
+    : (provider||{});
   const id=(data.id||'unknown').toString();
-  const label=compact?(data.short||data.label||id):(data.label||data.short||id);
+  const label=compact
+    ? (data.short||data.label||labels[id]||id)
+    : (data.label||data.short||labels[id]||id);
   return `<span class="provider-pill provider-${escHtml(id)}">${escHtml(label)}</span>`;
 }
 
@@ -1310,6 +1315,137 @@ function docGitBadge(doc){
   if(!status||status==='clean'||status==='unknown')return '';
   const tone=status==='untracked'?'gemini':status.includes('staged')?'codex':'shared';
   return `<span class="doc-pill ${tone}">${escHtml(status)}</span>`;
+}
+
+function dxosStatusPill(status){
+  const value=(status||'planned').toString();
+  const tone=value==='blocked'
+    ? 'gemini'
+    : value==='active'||value==='assigned'
+    ? 'codex'
+    : value==='completed'||value==='done'||value==='decided'
+    ? 'shared'
+    : value==='planned'
+    ? 'claude'
+    : 'shared';
+  return `<span class="doc-pill ${tone}">${escHtml(value.replace(/_/g,' '))}</span>`;
+}
+
+function shortPathLabel(value){
+  if(!value)return '';
+  const parts=String(value).split('/').filter(Boolean);
+  return parts[parts.length-1]||String(value);
+}
+
+function truncateCopy(value,maxLen){
+  const raw=(value||'').toString().replace(/\s+/g,' ').trim();
+  if(raw.length<=maxLen)return raw;
+  return `${raw.slice(0,Math.max(0,maxLen-1)).trim()}…`;
+}
+
+function renderDxosSessionRows(sessions,limit){
+  const all=Array.isArray(sessions)?sessions:[];
+  const list=typeof limit==='number'?all.slice(0,limit):all;
+  if(!list.length)return '<div class="empty-note">No DXOS session contracts are registered for this project yet.</div>';
+  const byId=new Map(all.map(session=>[session.id,session]));
+  return list.map(session=>{
+    const supervisor=session.supervisor_session_id?byId.get(session.supervisor_session_id):null;
+    const scope=[
+      session.feature_id||null,
+      session.stage?`stage ${normalizeVddPhase(session.stage)}`:null,
+      session.pane?`pane ${session.pane}`:null,
+      session.branch_name?`branch ${session.branch_name}`:null,
+      session.workspace_path?`worktree ${shortPathLabel(session.workspace_path)}`:null,
+      session.browser_port?`browser ${session.browser_port}`:null
+    ].filter(Boolean).join(' · ');
+    const capabilities=(session.allowed_capabilities||[]).slice(0,3);
+    const outputs=(session.expected_outputs||[]).slice(0,2);
+    return `<div class="exec-row">
+      <div class="exec-row-top">
+        <span class="exec-row-title">${escHtml((session.id||'session').toString())} · ${escHtml((session.role||'worker').toString())}</span>
+        <span class="exec-row-tags">
+          ${providerBadge(session.provider,true)}
+          ${dxosStatusPill(session.status)}
+          ${session.autonomy_level?`<span class="doc-pill">${escHtml(String(session.autonomy_level).replace(/_/g,' '))}</span>`:''}
+        </span>
+      </div>
+      <div class="exec-row-meta">${escHtml(truncateCopy(session.objective,150)||'No session objective recorded yet.')}</div>
+      ${scope?`<div class="exec-row-meta">${escHtml(scope)}</div>`:''}
+      ${supervisor?`<div class="exec-row-meta">Reports to ${escHtml(String(supervisor.id))} · ${escHtml(String(supervisor.role||'lead'))}</div>`:''}
+      ${capabilities.length?`<div class="exec-row-meta">Capabilities: ${escHtml(capabilities.join(', '))}${(session.allowed_capabilities||[]).length>3?' …':''}</div>`:''}
+      ${outputs.length?`<div class="exec-row-meta">Outputs: ${escHtml(outputs.join(' · '))}${(session.expected_outputs||[]).length>2?' …':''}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function renderDxosWorkOrderRows(workOrders,sessions,limit,mode){
+  const all=Array.isArray(workOrders)?workOrders:[];
+  const byId=new Map((Array.isArray(sessions)?sessions:[]).map(session=>[session.id,session]));
+  const filtered=(mode==='blocked'
+    ? all.filter(order=>order.status==='blocked'||((order.requested_permissions||[]).length>0))
+    : all);
+  const list=typeof limit==='number'?filtered.slice(0,limit):filtered;
+  if(!list.length){
+    return mode==='blocked'
+      ? '<div class="empty-note">No blocked work orders or pending permission requests are recorded right now.</div>'
+      : '<div class="empty-note">No delegated work orders are recorded yet.</div>';
+  }
+  return list.map(order=>{
+    const supervisor=order.supervisor_session_id?byId.get(order.supervisor_session_id):null;
+    const worker=order.worker_session_id?byId.get(order.worker_session_id):null;
+    const requestedPermissions=(order.requested_permissions||[]).slice(0,3);
+    const blockers=(order.blockers||[]).slice(0,2);
+    const requiredCapabilities=(order.required_capabilities||[]).slice(0,3);
+    const expectedOutputs=(order.expected_outputs||[]).slice(0,2);
+    const routing=[
+      order.feature_id||null,
+      order.stage?`stage ${normalizeVddPhase(order.stage)}`:null,
+      supervisor?`lead ${supervisor.role||supervisor.id}`:order.supervisor_session_id?`lead ${order.supervisor_session_id}`:null,
+      worker?`worker ${worker.role||worker.id}`:order.worker_session_id?`worker ${order.worker_session_id}`:'worker unassigned'
+    ].filter(Boolean).join(' · ');
+    return `<div class="exec-row">
+      <div class="exec-row-top">
+        <span class="exec-row-title">${escHtml((order.id||'work').toString())} · ${escHtml((order.title||'Delegated work').toString())}</span>
+        <span class="exec-row-tags">
+          ${dxosStatusPill(order.status)}
+          ${order.stage?vddPhaseBadge(order.stage):''}
+          ${requestedPermissions.length?`<span class="doc-pill gemini">${requestedPermissions.length} approvals</span>`:''}
+        </span>
+      </div>
+      <div class="exec-row-meta">${escHtml(truncateCopy(order.objective,150)||'No work order objective recorded yet.')}</div>
+      ${routing?`<div class="exec-row-meta">${escHtml(routing)}</div>`:''}
+      ${blockers.length?`<div class="exec-row-meta">Blocked by: ${escHtml(blockers.join(' · '))}${(order.blockers||[]).length>2?' …':''}</div>`:''}
+      ${requestedPermissions.length?`<div class="exec-row-meta">Needs permission: ${escHtml(requestedPermissions.join(', '))}${(order.requested_permissions||[]).length>3?' …':''}</div>`:''}
+      ${requiredCapabilities.length?`<div class="exec-row-meta">Required capabilities: ${escHtml(requiredCapabilities.join(', '))}${(order.required_capabilities||[]).length>3?' …':''}</div>`:''}
+      ${expectedOutputs.length?`<div class="exec-row-meta">Expected outputs: ${escHtml(expectedOutputs.join(' · '))}${(order.expected_outputs||[]).length>2?' …':''}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function renderDxosDebateRows(debates,limit){
+  const all=Array.isArray(debates)?debates:[];
+  const list=typeof limit==='number'?all.slice(0,limit):all;
+  if(!list.length)return '<div class="empty-note">No formal DXOS debates are recorded yet for this project.</div>';
+  return list.map(debate=>{
+    const tallies=Object.entries(debate.tallies||{}).slice(0,2).map(([proposalId,counts])=>{
+      const summary=Object.entries(counts||{}).map(([stance,count])=>`${stance} ${count}`).join(', ');
+      return `${proposalId}: ${summary}`;
+    });
+    return `<div class="exec-row">
+      <div class="exec-row-top">
+        <span class="exec-row-title">${escHtml((debate.id||'debate').toString())} · ${escHtml((debate.title||'Formal debate').toString())}</span>
+        <span class="exec-row-tags">
+          ${dxosStatusPill(debate.status)}
+          ${debate.stage?vddPhaseBadge(debate.stage):''}
+          <span class="doc-pill">${escHtml(String(debate.proposal_count||0))} proposals</span>
+        </span>
+      </div>
+      <div class="exec-row-meta">${escHtml(truncateCopy(debate.objective,150)||'No debate objective recorded yet.')}</div>
+      <div class="exec-row-meta">${escHtml(`${debate.vote_count||0} votes · ${debate.contradiction_count||0} contradictions${debate.feature_id?` · ${debate.feature_id}`:''}`)}</div>
+      ${tallies.length?`<div class="exec-row-meta">Current tallies: ${escHtml(tallies.join(' · '))}</div>`:''}
+      ${debate.decision?`<div class="exec-row-meta">Decision: ${escHtml(truncateCopy(debate.decision,140))}</div>`:'<div class="exec-row-meta">Decision pending. Use the council to compare options, contradictions, and evidence before finalizing.</div>'}
+    </div>`;
+  }).join('');
 }
 
 function renderProviderAssetSummary(providers,kind){
@@ -1457,6 +1593,17 @@ async function renderExecutionHub(){
   const visionDocs=docs.vision_docs||[];
   const delivery=brief.delivery||{};
   const runtimeContract=brief.runtime_contract||{};
+  const dxos=brief.dxos||{};
+  const dxosSessions=(dxos.sessions&&dxos.sessions.records)||[];
+  const dxosSessionSummary=dxos.sessions||{};
+  const dxosDelegation=dxos.delegation||{};
+  const delegatedWork=(dxosDelegation.recent||[]);
+  const blockedWorkOrders=delegatedWork.filter(order=>order.status==='blocked');
+  const permissionRequests=delegatedWork.filter(order=>(order.requested_permissions||[]).length);
+  const dxosDebates=(dxos.debates&&dxos.debates.recent)||[];
+  const dxosRegistry=dxos.registry||{};
+  const leadSessions=dxosSessions.filter(session=>!session.supervisor_session_id);
+  const workerSessions=dxosSessions.filter(session=>session.supervisor_session_id);
   const phaseCounts=delivery.phase_counts||{};
   const git=brief.git||null;
   const gitState=!git?'No repo':git.dirty_files===0&&git.ahead===0?'Clean':`${git.dirty_files||0} dirty · ↑${git.ahead||0} ↓${git.behind||0}`;
@@ -1499,7 +1646,12 @@ async function renderExecutionHub(){
       <div class="spotlight-card">
         <div class="label">Specialist Network</div>
         <div class="value">${brief.runtime_count||0} lane${(brief.runtime_count||0)===1?'':'s'}</div>
-        <div class="meta">${brief.worktree_count||0} isolated worktree${(brief.worktree_count||0)===1?'':'s'} · browser contract ${escHtml(String(runtimeContract.browser_port_base||46000))}+pane</div>
+        <div class="meta">${dxosSessionSummary.active||0} active session contracts · ${dxosDelegation.active_work_orders||0} delegated task${(dxosDelegation.active_work_orders||0)===1?'':'s'}</div>
+      </div>
+      <div class="spotlight-card">
+        <div class="label">Decision Council</div>
+        <div class="value">${(dxos.debates&&dxos.debates.open)||0} open debate${((dxos.debates&&dxos.debates.open)||0)===1?'':'s'}</div>
+        <div class="meta">${(dxos.debates&&dxos.debates.decided)||0} decided records · ${dxosRegistry.mcp_count||0} shared MCPs</div>
       </div>
     </div>`;
   }
@@ -1522,8 +1674,11 @@ async function renderExecutionHub(){
       <div class="exec-kpis">
         <div class="exec-kpi"><div class="label">Approvals Waiting</div><div class="value">${clientReviewFeatures.length}</div><div class="meta">${clientReviewFeatures.length?'client decisions are blocking progress':'no client decision is waiting'}</div></div>
         <div class="exec-kpi"><div class="label">Work Lanes</div><div class="value">${brief.runtime_count||0}</div><div class="meta">${brief.worktree_count||0} isolated worktrees</div></div>
+        <div class="exec-kpi"><div class="label">DXOS Sessions</div><div class="value">${dxosSessionSummary.active||0}</div><div class="meta">${leadSessions.length} lead · ${workerSessions.length} worker</div></div>
+        <div class="exec-kpi"><div class="label">Blocked Handoffs</div><div class="value">${blockedWorkOrders.length}</div><div class="meta">${permissionRequests.length} permission request${permissionRequests.length===1?'':'s'} waiting</div></div>
         <div class="exec-kpi"><div class="label">Handbook Docs</div><div class="value">${docs.vision_doc_count||0}</div><div class="meta">${docs.guidance_doc_count||0} guidance docs</div></div>
         <div class="exec-kpi"><div class="label">Release Confidence</div><div class="value">${escHtml(confidence.label)}</div><div class="meta">${escHtml(confidence.copy)}</div></div>
+        <div class="exec-kpi"><div class="label">Decision Records</div><div class="value">${(dxos.debates&&dxos.debates.total)||0}</div><div class="meta">${(dxos.debates&&dxos.debates.decided)||0} finalized with rationale</div></div>
         <div class="exec-kpi"><div class="label">Git State</div><div class="value">${git&&git.branch?escHtml(git.branch):'--'}</div><div class="meta">${escHtml(gitState)}</div></div>
       </div>
       <div class="journey-map">
@@ -1553,27 +1708,83 @@ async function renderExecutionHub(){
           <div class="exec-list">${renderPriorityRows(blockingFeatures,'blocked')}</div>
         </div>
       </div>
+      <div class="exec-rail-grid">
+        <div class="exec-rail">
+          <div class="exec-rail-title">Lead and worker sessions</div>
+          <div class="exec-rail-copy">These are the governed DXOS contracts behind panes, worktrees, browser lanes, and provider selection.</div>
+          <div class="exec-list-title">Active session contracts</div>
+          <div class="exec-list">${renderDxosSessionRows(dxosSessions,6)}</div>
+        </div>
+        <div class="exec-rail">
+          <div class="exec-rail-title">Delegation and approvals</div>
+          <div class="exec-rail-copy">Blocked work orders and permission requests should route to session leads before they interrupt a human.</div>
+          <div class="exec-list-title">${blockedWorkOrders.length||permissionRequests.length?'Blocked or approval-seeking work':'Recent delegated work'}</div>
+          <div class="exec-list">${renderDxosWorkOrderRows(blockedWorkOrders.length||permissionRequests.length?delegatedWork:delegatedWork,dxosSessions,6,blockedWorkOrders.length||permissionRequests.length?'blocked':'all')}</div>
+        </div>
+      </div>
+      <div class="exec-rail" style="margin-top:12px">
+        <div class="exec-rail-title">Decision council</div>
+        <div class="exec-rail-copy">Formal debates, contradictions, and votes preserve why a design or architecture direction won before implementation accelerates.</div>
+        <div class="exec-list-title">Recent formal debates</div>
+        <div class="exec-list">${renderDxosDebateRows(dxosDebates,4)}</div>
+      </div>
     </div>`;
 
-  runtimeEl.innerHTML=`<div class="portal-note">Clients only need the story above. This network is the execution backplane for the specialists actually doing the work.</div>${runtimes.length?runtimes.slice(0,8).map(runtime=>{
-    const paneLabel=runtime.pane?`Pane ${runtime.pane}`:'Live';
-    const branch=runtime.branch_name||'';
-    const workspace=runtime.workspace_path||'';
-    const meta=[
-      runtime.role&&runtime.role!=='--'?runtime.role:null,
-      branch?`branch ${branch}`:null,
-      workspace?'isolated worktree':'shared tree',
-      runtime.browser_port?`browser ${runtime.browser_port}`:null
-    ].filter(Boolean).join(' · ');
-    return `<div class="exec-row">
-      <div class="exec-row-top">
-        <span class="exec-row-title">${escHtml(paneLabel)}</span>
-        <span class="exec-row-tags">${providerBadge(runtime.provider,true)}${runtime.status?vddStatePill(runtime.status):''}</span>
+  runtimeEl.innerHTML=`<div class="portal-note">Clients only need the delivery story. Operators need the governed execution network underneath it: live lanes, session contracts, delegated work, and blocked permissions.</div>
+    <div class="doc-coverage-grid" style="margin-bottom:12px">
+      <div class="doc-mini-card">
+        <div class="label">Live runtime lanes</div>
+        <div class="meta">${brief.runtime_count||0} active lane${(brief.runtime_count||0)===1?'':'s'} · ${brief.worktree_count||0} isolated worktree${(brief.worktree_count||0)===1?'':'s'}</div>
       </div>
-      <div class="exec-row-meta">${escHtml((runtime.task||runtime.window_name||runtime.cwd||'').toString())}</div>
-      <div class="exec-row-meta">${escHtml(meta)}</div>
+      <div class="doc-mini-card">
+        <div class="label">Session contracts</div>
+        <div class="meta">${dxosSessionSummary.active||0} active · ${dxosSessionSummary.blocked||0} blocked · browser contract ${escHtml(String(runtimeContract.browser_port_base||46000))}+pane</div>
+      </div>
+      <div class="doc-mini-card">
+        <div class="label">Delegation queue</div>
+        <div class="meta">${dxosDelegation.active_work_orders||0} in flight · ${dxosDelegation.blocked_work_orders||0} blocked · ${(dxos.debates&&dxos.debates.open)||0} open debate${((dxos.debates&&dxos.debates.open)||0)===1?'':'s'}</div>
+      </div>
+    </div>
+    <div class="exec-list">
+      <div class="exec-row">
+        <div class="exec-row-top">
+          <span class="exec-row-title">Live terminal and browser lanes</span>
+          <span class="exec-row-tags"><span class="doc-pill">${runtimes.length} lanes</span></span>
+        </div>
+        ${runtimes.length?runtimes.slice(0,8).map(runtime=>{
+          const paneLabel=runtime.pane?`Pane ${runtime.pane}`:'Live';
+          const branch=runtime.branch_name||'';
+          const workspace=runtime.workspace_path||'';
+          const meta=[
+            runtime.role&&runtime.role!=='--'?runtime.role:null,
+            branch?`branch ${branch}`:null,
+            workspace?`worktree ${shortPathLabel(workspace)}`:'shared tree',
+            runtime.browser_port?`browser ${runtime.browser_port}`:null
+          ].filter(Boolean).join(' · ');
+          return `<div class="doc-line">
+            <div class="doc-line-main">
+              <div class="doc-line-title">${escHtml(paneLabel)} · ${escHtml((runtime.task||runtime.window_name||runtime.cwd||'').toString())}</div>
+              <div class="doc-line-path">${escHtml(meta)}</div>
+            </div>
+            <div class="exec-row-tags">${providerBadge(runtime.provider,true)}${runtime.status?vddStatePill(runtime.status):''}</div>
+          </div>`;
+        }).join(''):'<div class="empty-note">No people or agent runtimes are active in this project right now.</div>'}
+      </div>
+      <div class="exec-row">
+        <div class="exec-row-top">
+          <span class="exec-row-title">Mapped session contracts</span>
+          <span class="exec-row-tags"><span class="doc-pill shared">${dxosSessions.length} tracked</span></span>
+        </div>
+        <div class="exec-list">${renderDxosSessionRows(dxosSessions,4)}</div>
+      </div>
+      <div class="exec-row">
+        <div class="exec-row-top">
+          <span class="exec-row-title">Blocked questions and permissions</span>
+          <span class="exec-row-tags"><span class="doc-pill gemini">${Math.max(blockedWorkOrders.length,permissionRequests.length)} waiting</span></span>
+        </div>
+        <div class="exec-list">${renderDxosWorkOrderRows(blockedWorkOrders.length||permissionRequests.length?delegatedWork:delegatedWork,dxosSessions,4,blockedWorkOrders.length||permissionRequests.length?'blocked':'all')}</div>
+      </div>
     </div>`;
-  }).join(''):'<div class="empty-note">No people or agent runtimes are active in this project right now.</div>'}`;
 
   docsEl.innerHTML=`
     <div class="portal-note">This section is the trust contract for the whole program. If docs, Git, approvals, and dashboard state drift apart, the portal becomes unreliable for both clients and delivery teams.</div>
@@ -1735,6 +1946,7 @@ function renderPanes(){
     const preview=paneOutputs[p.pane];
     const previewLines=preview?preview.trim().split('\n').slice(-2).join('\n'):'';
     const browserPort=paneBrowserPortForRuntime(p,sp);
+    const dxosSessionId=p.dxos_session_id||'';
     if(isActive)activeCount++;
     const h=p.health||p.status||'idle';
     const sc=h==='active'||isActive?'s-active':h==='done'?'s-done':h==='error'?'s-error':h==='stuck'?'s-stuck':'s-idle';
@@ -1767,6 +1979,7 @@ function renderPanes(){
         <div class="pane-meta">
           ${p.provider&&p.provider!=='unknown'?`<span class="badge b-provider provider-${p.provider}">${p.provider_short||p.provider_label||p.provider}</span>`:''}
           ${p.role&&p.role!=='--'?`<span class="badge b-role">${p.role}</span>`:''}
+          ${dxosSessionId?`<span class="badge" style="background:rgba(79,143,247,.12);color:var(--blue)">DX ${escHtml(dxosSessionId)}</span>`:''}
           <span class="badge b-lines" id="pane-lines-${p.pane}">${p.line_count||p.lines||0}L</span>
           ${browserPort?`<span class="badge" style="background:rgba(77,166,255,.12);color:var(--blue)">PW ${browserPort}</span>`:''}
           ${runtime?`<span class="badge b-runtime">${runtime}</span>`:''}
@@ -1829,6 +2042,7 @@ function openPanel(paneNum){
   const sp=getStatusPane(paneNum);
   const browserPort=paneBrowserPortForRuntime(p,sp);
   const browserProfile=(p&&p.browser_profile_root)||(sp&&sp.browser_profile_root)||'';
+  const dxosSessionId=(p&&p.dxos_session_id)||(sp&&sp.dxos_session_id)||'';
   let startedStr='--';
   if(sp&&sp.started_at){
     const d=new Date(sp.started_at);
@@ -1844,6 +2058,7 @@ function openPanel(paneNum){
     <div><dt>ACU</dt><dd>${sp?sp.acu||0:0}</dd></div>
     <div><dt>Space</dt><dd>${sp&&sp.space?sp.space:'--'}</dd></div>
     <div><dt>Issue</dt><dd>${sp&&sp.issue_id?sp.issue_id:'--'}</dd></div>
+    <div><dt>DXOS Session</dt><dd>${dxosSessionId?escHtml(String(dxosSessionId)):'--'}</dd></div>
     <div><dt>Target</dt><dd style="font-family:var(--mono);font-size:9px">${p&&p.tmux_target?p.tmux_target:'--'}</dd></div>
     <div><dt>Browser</dt><dd>${browserPort?`Port ${browserPort}`:'--'}</dd></div>
     <div><dt>Command</dt><dd style="font-family:var(--mono);font-size:9px">${p&&p.command?p.command:'--'}</dd></div>
