@@ -264,7 +264,11 @@ fn read_json_plugin(path: &Path) -> Value {
     };
     parsed
         .get("dxProviderPlugin")
-        .and_then(|value| value.get("mcpServers").map(|servers| json!({ "mcpServers": servers })))
+        .and_then(|value| {
+            value
+                .get("mcpServers")
+                .map(|servers| json!({ "mcpServers": servers }))
+        })
         .unwrap_or(Value::Null)
 }
 
@@ -303,7 +307,9 @@ fn read_codex_plugin(path: &Path) -> Value {
             .and_then(|value| value.as_table())
             .map(|env| {
                 env.iter()
-                    .filter_map(|(key, value)| value.as_str().map(|value| (key.clone(), json!(value))))
+                    .filter_map(|(key, value)| {
+                        value.as_str().map(|value| (key.clone(), json!(value)))
+                    })
                     .collect::<serde_json::Map<_, _>>()
             })
             .unwrap_or_default();
@@ -398,15 +404,24 @@ fn write_json_plugin(path: &Path, payload: &Value) -> Result<()> {
     Ok(())
 }
 
-fn write_codex_plugin(path: &Path, entries: &[crate::external_mcp::ExternalMcpEntry]) -> Result<()> {
+fn write_codex_plugin(
+    path: &Path,
+    entries: &[crate::external_mcp::ExternalMcpEntry],
+) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
     let mut root = toml::map::Map::new();
     let mut plugin = toml::map::Map::new();
-    plugin.insert("version".to_string(), toml::Value::Integer(BRIDGE_VERSION.into()));
-    plugin.insert("provider".to_string(), toml::Value::String(CODEX_SOURCE.to_string()));
+    plugin.insert(
+        "version".to_string(),
+        toml::Value::Integer(BRIDGE_VERSION.into()),
+    );
+    plugin.insert(
+        "provider".to_string(),
+        toml::Value::String(CODEX_SOURCE.to_string()),
+    );
     plugin.insert(
         "source_of_truth".to_string(),
         toml::Value::String(SHARED_SOURCE.to_string()),
@@ -419,7 +434,10 @@ fn write_codex_plugin(path: &Path, entries: &[crate::external_mcp::ExternalMcpEn
     let mut servers = toml::map::Map::new();
     for entry in entries {
         let mut table = toml::map::Map::new();
-        table.insert("command".to_string(), toml::Value::String(entry.command.clone()));
+        table.insert(
+            "command".to_string(),
+            toml::Value::String(entry.command.clone()),
+        );
         table.insert(
             "args".to_string(),
             toml::Value::Array(
@@ -468,7 +486,10 @@ fn write_codex_plugin(path: &Path, entries: &[crate::external_mcp::ExternalMcpEn
                     .collect::<Vec<_>>(),
             ),
         );
-        table.insert("category".to_string(), toml::Value::String(entry.category.clone()));
+        table.insert(
+            "category".to_string(),
+            toml::Value::String(entry.category.clone()),
+        );
         if !entry.env.is_empty() {
             let env = entry
                 .env
@@ -557,7 +578,10 @@ P = "5"
         .unwrap();
 
         let payload = read_codex_plugin(&path);
-        assert_eq!(payload["mcpServers"]["playwright"]["command"], "/tmp/playwright");
+        assert_eq!(
+            payload["mcpServers"]["playwright"]["command"],
+            "/tmp/playwright"
+        );
         assert_eq!(payload["mcpServers"]["playwright"]["env"]["P"], "5");
     }
 }
