@@ -69,6 +69,7 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/dxos/registry", get(api::get_dxos_registry))
         .route("/api/dxos/debates", get(api::get_dxos_debates))
         .route("/api/dxos/sessions", get(api::get_dxos_sessions))
+        .route("/api/dxos/audit", get(api::get_dxos_audit))
         .route("/api/dxos/debate/start", post(api::start_dxos_debate))
         .route(
             "/api/dxos/debate/proposal",
