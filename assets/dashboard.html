@@ -1203,6 +1203,7 @@ let activePaneNum=null;
 let automationSelection={};
 let automationToolCache={};
 let automationToolLoading={};
+let providerBridgeSourceSelection={};
 let dxosPortalState={};
 let dxosResolutionDrafts={};
 let dxosPendingLaunches={};
@@ -1248,7 +1249,7 @@ function rememberDxOperatorIdentity(value){
 function requiresDxControlAuth(url,options){
   const method=String((options&&options.method)||'GET').toUpperCase();
   if(method==='GET')return false;
-  return /^\/api\/(dxos\/(debate|session|work)|pane\/(talk|kill|restart))/.test(String(url||''));
+  return /^\/api\/(dxos\/(debate|session|work|provider-plugins)|pane\/(talk|kill|restart))/.test(String(url||''));
 }
 function withDxControlHeaders(url,options){
   const request={...(options||{})};
