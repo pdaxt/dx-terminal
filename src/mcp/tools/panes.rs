@@ -82,6 +82,7 @@ async fn resolve_spawn_pane(app: &App, pane_ref: &str) -> Result<u8, String> {
 /// Execute os_spawn logic — allocates a DX runtime lane through the broker
 pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     let client_request_id = req.client_request_id.clone();
+    let requested_session_id = req.session_id.clone();
     let pane_num = match resolve_spawn_pane(app, &req.pane).await {
         Ok(n) => n,
         Err(error) => {
@@ -191,7 +192,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     let initial_session_result = crate::dxos::upsert_session_contract(
         &project_path,
         Some(&project_name),
-        None,
+        requested_session_id.as_deref(),
         &role,
         Some(&provider),
         model.as_deref(),

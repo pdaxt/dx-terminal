@@ -1395,6 +1395,7 @@ pub struct DxosSessionLaunchBody {
     pub project: Option<String>,
     pub path: Option<String>,
     pub pane: Option<String>,
+    pub session_id: Option<String>,
     pub role: Option<String>,
     pub provider: Option<String>,
     pub model: Option<String>,
@@ -2900,6 +2901,7 @@ pub async fn launch_dxos_session(
         types::SpawnRequest {
             pane: requested_pane.clone(),
             project: project_path.clone(),
+            session_id: body.session_id,
             role: body.role,
             provider: body.provider,
             model: body.model,
