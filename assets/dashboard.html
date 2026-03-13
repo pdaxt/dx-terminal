@@ -1810,7 +1810,7 @@ async function resolveDxosWorkOrder(workOrderId){
     })
   });
   if(!result||result.error){
-    window.alert(`Unable to resolve work order ${workOrderId}.`);
+    setDxosPortalNotice('work',`Unable to resolve work order ${workOrderId}: ${String((result&&result.error)||'Unknown error')}`,'red');
     return;
   }
   const delivery=result.delivery||{};
@@ -1991,7 +1991,7 @@ async function registerDxosSessionContract(){
     })
   });
   if(!result||result.error){
-    setDxosPortalNotice('session','Unable to register the DXOS session contract.','red');
+    setDxosPortalNotice('session',`Unable to register the DXOS session contract: ${String((result&&result.error)||'Unknown error')}`,'red');
   }else{
     setDxosPortalNotice('session',`Registered session ${result.session_id||''} for ${role.value||'lead'} work.`,'green');
   }
@@ -2030,7 +2030,7 @@ async function delegateDxosWork(){
     })
   });
   if(!result||result.error){
-    setDxosPortalNotice('work','Unable to create the delegated work order.','red');
+    setDxosPortalNotice('work',`Unable to create the delegated work order: ${String((result&&result.error)||'Unknown error')}`,'red');
   }else{
     setDxosPortalNotice('work',`Delegated work order ${result.work_order_id||''} is now queued through DXOS.`,'green');
   }
@@ -2064,7 +2064,7 @@ async function startDxosDebateFromPortal(){
     })
   });
   if(!result||result.error){
-    setDxosPortalNotice('debate','Unable to start the formal debate.','red');
+    setDxosPortalNotice('debate',`Unable to start the formal debate: ${String((result&&result.error)||'Unknown error')}`,'red');
   }else{
     setDxosPortalNotice('debate',`Debate ${result.debate_id||''} started and is ready for proposals.`,'green');
   }
@@ -2206,6 +2206,9 @@ function renderDxosOperatorControls(project,activeStage,sessions){
   const featureId=(focus.feature_id||'').toString();
   const defaultStage=normalizeVddPhase(activeStage||focus.stage||'build');
   const defaultPane='auto';
+  const controlAuth=dxosControlAuthCache[project]||{};
+  const protectedControls=controlAuth.mode==='control_token';
+  const controlTokenLoaded=!!storedDxControlToken();
   const launchAdapterOptions=runtimeAdapterOptions(project,'pty_native_adapter');
   const sessionAdapterOptions=runtimeAdapterOptions(project,'pty_native_adapter');
   const launchTask=featureId
@@ -2218,6 +2221,34 @@ function renderDxosOperatorControls(project,activeStage,sessions){
   return `<div class="action-shell">
     <div class="portal-note">The operator console below is the first real portal-native control surface for DXOS. Launching a lane uses the DX runtime broker, with the native PTY path as the default substrate and tmux kept only as the migration path.</div>
     <div class="action-grid">
+      <div class="action-card">
+        <div class="action-card-head">
+          <div class="action-card-title">Control Access</div>
+          <div class="action-card-copy">${protectedControls?'This DXOS runtime requires a control token for launch, talk, restart, kill, and all DXOS mutation routes.':'This DXOS runtime is in local trusted mode. Set DX_CONTROL_TOKEN on the server to require authenticated control actions.'}</div>
+        </div>
+        <div class="action-form">
+          <div class="action-form-grid">
+            <div class="action-field">
+              <label>Auth mode</label>
+              <div class="action-note">${escHtml((controlAuth.mode||'local_trusted').toString())}</div>
+            </div>
+            <div class="action-field">
+              <label>Portal state</label>
+              <div class="action-note">${protectedControls?(controlTokenLoaded?'token loaded in browser session':'locked until token is supplied'):'no token required'}</div>
+            </div>
+          </div>
+          ${protectedControls?`<div class="action-field">
+            <label for="dx-control-token">DX control token</label>
+            <input class="action-input" id="dx-control-token" type="password" placeholder="${controlTokenLoaded?'Stored token can be replaced':'Paste control token'}">
+          </div>
+          <div class="action-actions">
+            <button class="design-action" onclick="saveDxControlToken()">Store token</button>
+            <button class="vdd-focus-btn" onclick="clearDxControlToken();return false;">Clear</button>
+            <span class="action-note">Header ${escHtml((controlAuth.required_header||'x-dx-control-token').toString())} or Bearer auth is accepted.</span>
+          </div>`:`<div class="action-note">Hosted deployments should enable token-protected control routes before exposing this portal outside a trusted local environment.</div>`}
+          ${renderDxosPortalNotice('auth')}
+        </div>
+      </div>
       <div class="action-card">
         <div class="action-card-head">
           <div class="action-card-title">Launch Specialist Lane</div>
