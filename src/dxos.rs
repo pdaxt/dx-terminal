@@ -56,6 +56,18 @@ impl Default for ControlPlaneDefaults {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderPolicyRule {
+    pub role: String,
+    pub stage: String,
+    pub preferred_provider: String,
+    #[serde(default)]
+    pub allowed_providers: Vec<String>,
+    #[serde(default)]
+    pub suggested_models: Vec<String>,
+    pub rationale: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProposalRecord {
     pub id: String,
     pub author: String,
@@ -161,6 +173,10 @@ pub struct SessionContractRecord {
     pub supervisor_session_id: Option<String>,
     #[serde(default)]
     pub escalation_policy: Option<String>,
+    #[serde(default)]
+    pub policy_violations: Vec<String>,
+    #[serde(default)]
+    pub last_error: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -281,6 +297,191 @@ fn next_work_order_id(state: &ControlPlaneState) -> String {
     format!("WO{:04}", state.work_orders.len() + 1)
 }
 
+fn normalize_stage(stage: Option<&str>) -> String {
+    stage
+        .map(|value| value.trim().to_lowercase())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "build".to_string())
+}
+
+fn normalize_role(role: &str) -> String {
+    let normalized = role.trim().to_lowercase();
+    if normalized.is_empty() {
+        "developer".to_string()
+    } else {
+        normalized
+    }
+}
+
+fn normalize_provider(provider: Option<&str>) -> Option<String> {
+    provider
+        .map(|value| value.trim().to_lowercase())
+        .filter(|value| !value.is_empty())
+        .map(|value| match value.as_str() {
+            "openai" => "codex".to_string(),
+            "google" => "gemini".to_string(),
+            "open-code" => "opencode".to_string(),
+            other => other.to_string(),
+        })
+}
+
+fn provider_policy_for(role: &str, stage: Option<&str>) -> ProviderPolicyRule {
+    let role = normalize_role(role);
+    let stage = normalize_stage(stage);
+
+    match (role.as_str(), stage.as_str()) {
+        ("design", _) | ("discovery", _) | ("lead", "design") | ("lead", "discovery") => {
+            ProviderPolicyRule {
+                role,
+                stage,
+                preferred_provider: "claude".to_string(),
+                allowed_providers: vec![
+                    "claude".to_string(),
+                    "gemini".to_string(),
+                    "codex".to_string(),
+                    "opencode".to_string(),
+                ],
+                suggested_models: vec![
+                    "claude-opus-4.6".to_string(),
+                    "gemini-2.5-pro".to_string(),
+                    "gpt-5.4".to_string(),
+                ],
+                rationale: "Discovery and design lanes need stronger long-context reasoning and multimodal critique before implementation accelerates.".to_string(),
+            }
+        }
+        ("frontend", _)
+        | ("backend", _)
+        | ("developer", _)
+        | (_, "build") => ProviderPolicyRule {
+            role,
+            stage,
+            preferred_provider: "codex".to_string(),
+            allowed_providers: vec![
+                "codex".to_string(),
+                "claude".to_string(),
+                "gemini".to_string(),
+                "opencode".to_string(),
+            ],
+            suggested_models: vec![
+                "gpt-5.4".to_string(),
+                "claude-opus-4.6".to_string(),
+                "gemini-2.5-pro".to_string(),
+            ],
+            rationale: "Build lanes should prefer tool-stable coding runtimes while keeping higher-reasoning providers available for harder codegen and review turns.".to_string(),
+        },
+        ("qa", _)
+        | ("security", _)
+        | ("review", _)
+        | ("release", _)
+        | (_, "test") => ProviderPolicyRule {
+            role,
+            stage,
+            preferred_provider: "claude".to_string(),
+            allowed_providers: vec![
+                "claude".to_string(),
+                "codex".to_string(),
+                "gemini".to_string(),
+            ],
+            suggested_models: vec![
+                "claude-opus-4.6".to_string(),
+                "gpt-5.4".to_string(),
+                "gemini-2.5-pro".to_string(),
+            ],
+            rationale: "Verification, review, and release lanes should bias toward stronger critical evaluation and reliable tool traces over raw generation speed.".to_string(),
+        },
+        ("docs", _) => ProviderPolicyRule {
+            role,
+            stage,
+            preferred_provider: "claude".to_string(),
+            allowed_providers: vec![
+                "claude".to_string(),
+                "gemini".to_string(),
+                "codex".to_string(),
+                "opencode".to_string(),
+            ],
+            suggested_models: vec![
+                "claude-opus-4.6".to_string(),
+                "gemini-2.5-pro".to_string(),
+            ],
+            rationale: "Documentation lanes should preserve narrative quality and consistency while staying provider-neutral.".to_string(),
+        },
+        _ => ProviderPolicyRule {
+            role,
+            stage,
+            preferred_provider: "claude".to_string(),
+            allowed_providers: vec![
+                "claude".to_string(),
+                "codex".to_string(),
+                "gemini".to_string(),
+                "opencode".to_string(),
+            ],
+            suggested_models: vec![
+                "claude-opus-4.6".to_string(),
+                "gpt-5.4".to_string(),
+                "gemini-2.5-pro".to_string(),
+            ],
+            rationale: "Default DXOS policy keeps all governed runtimes available while preferring Claude for general orchestration and research-heavy work.".to_string(),
+        },
+    }
+}
+
+fn provider_policy_matrix() -> Vec<ProviderPolicyRule> {
+    let roles = [
+        "lead",
+        "discovery",
+        "design",
+        "frontend",
+        "backend",
+        "qa",
+        "docs",
+        "security",
+        "review",
+        "release",
+    ];
+    let stages = ["planned", "discovery", "design", "build", "test", "done"];
+    let mut rules = Vec::new();
+    for role in roles {
+        for stage in stages {
+            rules.push(provider_policy_for(role, Some(stage)));
+        }
+    }
+    rules
+}
+
+fn validate_provider_selection(
+    role: &str,
+    stage: Option<&str>,
+    provider: Option<&str>,
+    pane: Option<u8>,
+    tmux_target: Option<&str>,
+) -> (Option<String>, ProviderPolicyRule, Vec<String>) {
+    let policy = provider_policy_for(role, stage);
+    let normalized_provider = normalize_provider(provider);
+    let mut violations = Vec::new();
+    let runtime_bound = pane.is_some() || tmux_target.is_some();
+
+    if matches!(normalized_provider.as_deref(), Some("shared")) {
+        if runtime_bound {
+            violations.push(
+                "Provider 'shared' is only valid for unbound DXOS contracts; runtime-bound sessions need a concrete provider."
+                    .to_string(),
+            );
+        }
+    } else if let Some(selected) = normalized_provider.as_deref() {
+        if !policy.allowed_providers.iter().any(|item| item == selected) {
+            violations.push(format!(
+                "Provider '{}' is outside DXOS policy for role '{}' at stage '{}'. Allowed: {}.",
+                selected,
+                policy.role,
+                policy.stage,
+                policy.allowed_providers.join(", ")
+            ));
+        }
+    }
+
+    (normalized_provider, policy, violations)
+}
+
 fn debate_summary(debate: &DebateRecord) -> Value {
     let mut tallies: BTreeMap<String, BTreeMap<String, u32>> = BTreeMap::new();
     for vote in &debate.votes {
@@ -307,6 +508,7 @@ fn debate_summary(debate: &DebateRecord) -> Value {
 }
 
 fn session_summary(session: &SessionContractRecord) -> Value {
+    let provider_policy = provider_policy_for(&session.role, session.stage.as_deref());
     json!({
         "id": session.id,
         "status": session.status,
@@ -328,6 +530,9 @@ fn session_summary(session: &SessionContractRecord) -> Value {
         "stage": session.stage,
         "supervisor_session_id": session.supervisor_session_id,
         "escalation_policy": session.escalation_policy,
+        "policy_violations": session.policy_violations,
+        "last_error": session.last_error,
+        "provider_policy": provider_policy,
         "created_at": session.created_at,
         "updated_at": session.updated_at,
     })
@@ -401,6 +606,11 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
     json!({
         "project": state.project,
         "defaults": state.defaults,
+        "provider_policy": {
+            "runtime_providers": ["claude", "codex", "gemini", "opencode"],
+            "contract_providers": ["shared", "claude", "codex", "gemini", "opencode"],
+            "rules": provider_policy_matrix(),
+        },
         "debates": {
             "total": state.debates.len(),
             "open": open_debates,
@@ -448,6 +658,11 @@ pub fn session_list(project_path: &str, project_name: Option<&str>) -> String {
     let state = load_control_plane(project_path, project_name);
     json!({
         "project": state.project,
+        "provider_policy": {
+            "runtime_providers": ["claude", "codex", "gemini", "opencode"],
+            "contract_providers": ["shared", "claude", "codex", "gemini", "opencode"],
+            "rules": provider_policy_matrix(),
+        },
         "sessions": state.sessions.iter().map(session_summary).collect::<Vec<_>>(),
         "work_orders": state.work_orders.iter().map(work_order_summary).collect::<Vec<_>>(),
     })
@@ -828,14 +1043,27 @@ pub fn upsert_session_contract(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| next_session_id(&state));
+    let (normalized_provider, provider_policy, mut policy_violations) = validate_provider_selection(
+        role,
+        stage,
+        provider,
+        pane,
+        tmux_target,
+    );
+    let desired_status = status.unwrap_or("active").trim().to_string();
+    let computed_status = if policy_violations.is_empty() {
+        desired_status.clone()
+    } else if matches!(desired_status.as_str(), "idle" | "completed") {
+        desired_status.clone()
+    } else {
+        "blocked".to_string()
+    };
 
     let action = if let Some(existing) = state.sessions.iter_mut().find(|item| item.id == chosen_id)
     {
-        existing.status = status.unwrap_or("active").trim().to_string();
+        existing.status = computed_status;
         existing.role = role.trim().to_string();
-        existing.provider = provider
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty());
+        existing.provider = normalized_provider.clone();
         existing.model = model
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
@@ -880,16 +1108,17 @@ pub fn upsert_session_contract(
         existing.escalation_policy = escalation_policy
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
+        existing.policy_violations.clear();
+        existing.policy_violations.append(&mut policy_violations);
+        existing.last_error = None;
         existing.updated_at = now.clone();
         "session_updated"
     } else {
         state.sessions.push(SessionContractRecord {
             id: chosen_id.clone(),
-            status: status.unwrap_or("active").trim().to_string(),
+            status: computed_status,
             role: role.trim().to_string(),
-            provider: provider
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty()),
+            provider: normalized_provider.clone(),
             model: model
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty()),
@@ -934,6 +1163,8 @@ pub fn upsert_session_contract(
             escalation_policy: escalation_policy
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty()),
+            policy_violations,
+            last_error: None,
             created_at: now.clone(),
             updated_at: now.clone(),
         });
@@ -949,6 +1180,7 @@ pub fn upsert_session_contract(
             "project": state.project.name,
             "project_path": project_path,
             "session_id": chosen_id,
+            "provider_policy": provider_policy,
             "session": state.sessions.iter().find(|item| item.id == chosen_id).map(session_summary),
         })
         .to_string(),
@@ -991,6 +1223,44 @@ pub fn update_session_status(
         Ok(()) => json!({
             "status": "ok",
             "action": "session_status_updated",
+            "project": state.project.name,
+            "project_path": project_path,
+            "session_id": session_id,
+            "session": state.sessions.iter().find(|item| item.id == session_id.trim()).map(session_summary),
+        })
+        .to_string(),
+        Err(error) => json!({"error": error}).to_string(),
+    }
+}
+
+pub fn record_session_launch_failure(
+    project_path: &str,
+    project_name: Option<&str>,
+    session_id: &str,
+    error: &str,
+) -> String {
+    if session_id.trim().is_empty() || error.trim().is_empty() {
+        return json!({"error": "session_id and error required"}).to_string();
+    }
+
+    let mut state = load_control_plane(project_path, project_name);
+    let Some(session) = state
+        .sessions
+        .iter_mut()
+        .find(|item| item.id == session_id.trim())
+    else {
+        return json!({"error": "session_not_found"}).to_string();
+    };
+
+    session.status = "blocked".to_string();
+    session.last_error = Some(error.trim().to_string());
+    session.updated_at = crate::state::now();
+    state.updated_at = session.updated_at.clone();
+
+    match save_control_plane(project_path, &state) {
+        Ok(()) => json!({
+            "status": "ok",
+            "action": "session_launch_failed",
             "project": state.project.name,
             "project_path": project_path,
             "session_id": session_id,
