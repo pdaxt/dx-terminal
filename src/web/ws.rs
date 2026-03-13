@@ -237,7 +237,7 @@ async fn build_full_snapshot(app: &App) -> Value {
                 t.clone()
             }
         } else if let Some(lp) = live {
-            format!("{} in {}", tmux::provider_label(provider), lp.target)
+            format!("{} in {}", tmux::provider_label(&provider), lp.target)
         } else {
             "--".to_string()
         };
