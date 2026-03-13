@@ -260,10 +260,7 @@ fn control_plane_store_dir(project_path: &str) -> PathBuf {
     {
         let path = Path::new(project_path);
         if path.starts_with(std::env::temp_dir()) {
-            return path
-                .parent()
-                .unwrap_or(path)
-                .join(".dxos-store");
+            return path.parent().unwrap_or(path).join(".dxos-store");
         }
     }
     config::dx_root().join("dxos")
@@ -2490,7 +2487,8 @@ mod tests {
 
         let db_path = control_plane_store_path(project);
         assert!(db_path.exists());
-        let registry: Value = serde_json::from_str(&control_plane_registry_for_project(project)).unwrap();
+        let registry: Value =
+            serde_json::from_str(&control_plane_registry_for_project(project)).unwrap();
         assert_eq!(registry["backend"], "sqlite_with_repo_mirror");
         assert!(registry["projects"]
             .as_array()
@@ -2516,9 +2514,10 @@ mod tests {
         assert_eq!(loaded.project.name, "demo");
         assert!(control_plane_store_path(project_path.to_str().unwrap()).exists());
 
-        let registry: Value =
-            serde_json::from_str(&control_plane_registry_for_project(project_path.to_str().unwrap()))
-                .unwrap();
+        let registry: Value = serde_json::from_str(&control_plane_registry_for_project(
+            project_path.to_str().unwrap(),
+        ))
+        .unwrap();
         assert!(registry["projects"]
             .as_array()
             .unwrap()
