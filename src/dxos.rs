@@ -30,7 +30,7 @@ impl Default for ControlPlaneDefaults {
             deployment_model: "hybrid_saas".to_string(),
             autonomy_mode: "guarded_auto".to_string(),
             runtime_substrate: "custom_pty".to_string(),
-            runtime_adapter: "tmux_migration_adapter".to_string(),
+            runtime_adapter: "pty_native_adapter".to_string(),
             capability_source: "dx_registry".to_string(),
             governance_model: "structured_council".to_string(),
             research_mode: "formal_debate".to_string(),
