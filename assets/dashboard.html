@@ -1799,6 +1799,201 @@ function renderDxosDebateRows(debates,limit){
   }).join('');
 }
 
+function renderDxosOperatorControls(project,activeStage,sessions){
+  const focus=currentProjectFocus(project)||{};
+  const featureId=(focus.feature_id||'').toString();
+  const defaultStage=normalizeVddPhase(activeStage||focus.stage||'build');
+  const defaultPane=firstAvailablePane(project);
+  const launchTask=featureId
+    ? `Advance ${featureId} through ${defaultStage} and report back with evidence.`
+    : `Advance the active delivery work through ${defaultStage} and report back with evidence.`;
+  const leadSessionOptions=sessionOptionRows(sessions,session=>!session.supervisor_session_id,null,'Choose lead session');
+  const workerSessionOptions=sessionOptionRows(sessions,()=>true,null,'Assign worker later');
+  const supervisorLaunchOptions=sessionOptionRows(sessions,session=>!session.supervisor_session_id,null,'No supervising lead');
+  const paneOptions=paneOptionRows(project,defaultPane);
+  return `<div class="action-shell">
+    <div class="portal-note">The operator console below is the first real portal-native control surface for DXOS. Launching a lane uses the current tmux runtime adapter; session contracts, delegation, and debates are provider-neutral control-plane actions.</div>
+    <div class="action-grid">
+      <div class="action-card">
+        <div class="action-card-head">
+          <div class="action-card-title">Launch Specialist Lane</div>
+          <div class="action-card-copy">This creates a real runtime lane on the current adapter and then enriches its DXOS session contract with feature, stage, and supervisor metadata.</div>
+        </div>
+        <div class="action-form">
+          <div class="action-form-grid">
+            <div class="action-field">
+              <label for="dxos-launch-pane">Pane</label>
+              <select class="action-select" id="dxos-launch-pane">${paneOptions||'<option value="">No pane available</option>'}</select>
+            </div>
+            <div class="action-field">
+              <label for="dxos-launch-role">Role</label>
+              <select class="action-select" id="dxos-launch-role">${roleOptions('design')}</select>
+            </div>
+            <div class="action-field">
+              <label for="dxos-launch-feature">Feature</label>
+              <input class="action-input" id="dxos-launch-feature" value="${escHtml(featureId)}" placeholder="F1.2">
+            </div>
+            <div class="action-field">
+              <label for="dxos-launch-stage">Stage</label>
+              <select class="action-select" id="dxos-launch-stage">${stageOptions(defaultStage)}</select>
+            </div>
+          </div>
+          <div class="action-field">
+            <label for="dxos-launch-supervisor">Supervising Lead</label>
+            <select class="action-select" id="dxos-launch-supervisor">${supervisorLaunchOptions}</select>
+          </div>
+          <div class="action-field">
+            <label for="dxos-launch-task">Task prompt</label>
+            <textarea class="action-textarea" id="dxos-launch-task" placeholder="Describe the work the lane should do.">${escHtml(launchTask)}</textarea>
+          </div>
+          <div class="action-actions">
+            <button class="design-action" onclick="launchDxosLane()">Launch lane</button>
+            <span class="action-note">Current adapter: Claude-compatible tmux lane</span>
+          </div>
+          ${renderDxosPortalNotice('launch')}
+        </div>
+      </div>
+      <div class="action-card">
+        <div class="action-card-head">
+          <div class="action-card-title">Register Session Contract</div>
+          <div class="action-card-copy">Use this for leads, reviewers, or planned specialist sessions that should exist in DXOS before they have a live pane.</div>
+        </div>
+        <div class="action-form">
+          <div class="action-form-grid">
+            <div class="action-field">
+              <label for="dxos-session-role">Role</label>
+              <select class="action-select" id="dxos-session-role">${roleOptions('lead')}</select>
+            </div>
+            <div class="action-field">
+              <label for="dxos-session-provider">Provider</label>
+              <select class="action-select" id="dxos-session-provider">${providerOptions('shared')}</select>
+            </div>
+            <div class="action-field">
+              <label for="dxos-session-feature">Feature</label>
+              <input class="action-input" id="dxos-session-feature" value="${escHtml(featureId)}" placeholder="F1.2">
+            </div>
+            <div class="action-field">
+              <label for="dxos-session-stage">Stage</label>
+              <select class="action-select" id="dxos-session-stage">${stageOptions(defaultStage)}</select>
+            </div>
+            <div class="action-field">
+              <label for="dxos-session-supervisor">Supervisor</label>
+              <select class="action-select" id="dxos-session-supervisor">${leadSessionOptions.replace('Choose lead session','No supervisor')}</select>
+            </div>
+            <div class="action-field">
+              <label for="dxos-session-model">Model</label>
+              <input class="action-input" id="dxos-session-model" placeholder="opus-4.6 / gpt-5.4 / gemini">
+            </div>
+          </div>
+          <div class="action-field">
+            <label for="dxos-session-objective">Objective</label>
+            <textarea class="action-textarea" id="dxos-session-objective" placeholder="What should this DXOS session be responsible for?">${escHtml(featureId?`Own ${featureId} at ${defaultStage}, coordinate workers, and escalate blockers.`:'Coordinate the next delivery slice and escalate blockers.')}</textarea>
+          </div>
+          <div class="action-form-grid">
+            <div class="action-field">
+              <label for="dxos-session-capabilities">Allowed capabilities</label>
+              <input class="action-input" id="dxos-session-capabilities" placeholder="browser, docs, tests">
+            </div>
+            <div class="action-field">
+              <label for="dxos-session-outputs">Expected outputs</label>
+              <input class="action-input" id="dxos-session-outputs" placeholder="handoff note, review summary">
+            </div>
+          </div>
+          <div class="action-actions">
+            <button class="design-action" onclick="registerDxosSessionContract()">Register session</button>
+            <span class="action-note">Provider-neutral control-plane record</span>
+          </div>
+          ${renderDxosPortalNotice('session')}
+        </div>
+      </div>
+      <div class="action-card">
+        <div class="action-card-head">
+          <div class="action-card-title">Delegate Structured Work</div>
+          <div class="action-card-copy">Create a governed handoff between a lead and a worker. This is the queue the system should use instead of untracked free-form instructions.</div>
+        </div>
+        <div class="action-form">
+          <div class="action-form-grid">
+            <div class="action-field">
+              <label for="dxos-work-supervisor">Lead session</label>
+              <select class="action-select" id="dxos-work-supervisor">${leadSessionOptions}</select>
+            </div>
+            <div class="action-field">
+              <label for="dxos-work-worker">Worker session</label>
+              <select class="action-select" id="dxos-work-worker">${workerSessionOptions}</select>
+            </div>
+            <div class="action-field">
+              <label for="dxos-work-feature">Feature</label>
+              <input class="action-input" id="dxos-work-feature" value="${escHtml(featureId)}" placeholder="F1.2">
+            </div>
+            <div class="action-field">
+              <label for="dxos-work-stage">Stage</label>
+              <select class="action-select" id="dxos-work-stage">${stageOptions(defaultStage)}</select>
+            </div>
+          </div>
+          <div class="action-field">
+            <label for="dxos-work-title">Work order title</label>
+            <input class="action-input" id="dxos-work-title" value="${escHtml(featureId?`Advance ${featureId}`:'Advance active work')}" placeholder="Review design direction">
+          </div>
+          <div class="action-field">
+            <label for="dxos-work-objective">Objective</label>
+            <textarea class="action-textarea" id="dxos-work-objective" placeholder="What exactly should the worker deliver?">${escHtml(featureId?`Deliver the next concrete output for ${featureId} and escalate blockers immediately.`:'Deliver the next concrete output and escalate blockers immediately.')}</textarea>
+          </div>
+          <div class="action-form-grid">
+            <div class="action-field">
+              <label for="dxos-work-capabilities">Required capabilities</label>
+              <input class="action-input" id="dxos-work-capabilities" placeholder="browser, figma, tests">
+            </div>
+            <div class="action-field">
+              <label for="dxos-work-outputs">Expected outputs</label>
+              <input class="action-input" id="dxos-work-outputs" placeholder="screenshots, review notes">
+            </div>
+          </div>
+          <div class="action-actions">
+            <button class="design-action" onclick="delegateDxosWork()">Delegate work</button>
+            <span class="action-note">Lead-reviewed handoff with blocker tracking</span>
+          </div>
+          ${renderDxosPortalNotice('work')}
+        </div>
+      </div>
+      <div class="action-card">
+        <div class="action-card-head">
+          <div class="action-card-title">Start Decision Council</div>
+          <div class="action-card-copy">Use the formal debate engine when design, architecture, or model-routing choices need explicit proposals, contradictions, and recorded votes.</div>
+        </div>
+        <div class="action-form">
+          <div class="action-form-grid">
+            <div class="action-field">
+              <label for="dxos-debate-feature">Feature</label>
+              <input class="action-input" id="dxos-debate-feature" value="${escHtml(featureId)}" placeholder="F1.2">
+            </div>
+            <div class="action-field">
+              <label for="dxos-debate-stage">Stage</label>
+              <select class="action-select" id="dxos-debate-stage">${stageOptions(defaultStage)}</select>
+            </div>
+          </div>
+          <div class="action-field">
+            <label for="dxos-debate-title">Debate title</label>
+            <input class="action-input" id="dxos-debate-title" value="${escHtml(featureId?`${featureId} direction council`:'Project direction council')}" placeholder="Choose between two design directions">
+          </div>
+          <div class="action-field">
+            <label for="dxos-debate-objective">Objective</label>
+            <textarea class="action-textarea" id="dxos-debate-objective" placeholder="What question should the council resolve?">${escHtml(featureId?`Decide the best next direction for ${featureId} before more build effort is spent.`:'Decide the best next direction before more build effort is spent.')}</textarea>
+          </div>
+          <div class="action-field">
+            <label for="dxos-debate-participants">Participants</label>
+            <input class="action-input" id="dxos-debate-participants" value="claude,codex,gemini" placeholder="claude,codex,gemini">
+          </div>
+          <div class="action-actions">
+            <button class="design-action" onclick="startDxosDebateFromPortal()">Start debate</button>
+            <span class="action-note">Formal reasoning record with votes and contradictions</span>
+          </div>
+          ${renderDxosPortalNotice('debate')}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
 function renderProviderAssetSummary(providers,kind){
   const entries=Object.entries(providers||{}).filter(([,bucket])=>{
     const project=(bucket&&bucket.project)||[];
