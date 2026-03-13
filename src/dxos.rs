@@ -239,6 +239,18 @@ pub struct AuditRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ControlOperatorProfile {
+    pub id: String,
+    pub role: String,
+    #[serde(default)]
+    pub project_scopes: Vec<String>,
+    #[serde(default)]
+    pub allowed_actions: Vec<String>,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ControlPlaneState {
     pub version: u32,
     pub project: ProjectDescriptor,
