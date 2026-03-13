@@ -1871,10 +1871,18 @@ function renderDxosWorkOrderRows(workOrders,sessions,limit,mode){
     const blockers=(order.blockers||[]).slice(0,2);
     const requiredCapabilities=(order.required_capabilities||[]).slice(0,3);
     const expectedOutputs=(order.expected_outputs||[]).slice(0,2);
+    const escalationTarget=(order.escalation_target||'lead').toString();
+    const routeLabel=escalationTarget==='human'
+      ? 'human approval'
+      : supervisor
+      ? `lead ${supervisor.role||supervisor.id}`
+      : order.supervisor_session_id
+      ? `lead ${order.supervisor_session_id}`
+      : 'lead unassigned';
     const routing=[
       order.feature_id||null,
       order.stage?`stage ${normalizeVddPhase(order.stage)}`:null,
-      supervisor?`lead ${supervisor.role||supervisor.id}`:order.supervisor_session_id?`lead ${order.supervisor_session_id}`:null,
+      routeLabel,
       worker?`worker ${worker.role||worker.id}`:order.worker_session_id?`worker ${order.worker_session_id}`:'worker unassigned'
     ].filter(Boolean).join(' · ');
     return `<div class="exec-row">
@@ -1890,6 +1898,7 @@ function renderDxosWorkOrderRows(workOrders,sessions,limit,mode){
       </div>
       <div class="exec-row-meta">${escHtml(truncateCopy(order.objective,150)||'No work order objective recorded yet.')}</div>
       ${routing?`<div class="exec-row-meta">${escHtml(routing)}</div>`:''}
+      ${order.routed_to?`<div class="exec-row-meta">Routes through ${escHtml(String(order.routed_to))} before interrupting a human.</div>`:''}
       ${blockers.length?`<div class="exec-row-meta">Blocked by: ${escHtml(blockers.join(' · '))}${(order.blockers||[]).length>2?' …':''}</div>`:''}
       ${requestedPermissions.length?`<div class="exec-row-meta">Needs permission: ${escHtml(requestedPermissions.join(', '))}${(order.requested_permissions||[]).length>3?' …':''}</div>`:''}
       ${requiredCapabilities.length?`<div class="exec-row-meta">Required capabilities: ${escHtml(requiredCapabilities.join(', '))}${(order.required_capabilities||[]).length>3?' …':''}</div>`:''}
