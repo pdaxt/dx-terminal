@@ -589,6 +589,10 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
                 .get("model")
                 .and_then(|m| m.as_str())
                 .map(|s| s.to_string());
+            let runtime_adapter = cmd
+                .get("runtime_adapter")
+                .and_then(|m| m.as_str())
+                .map(|s| s.to_string());
             let feature_id = cmd
                 .get("feature_id")
                 .and_then(|m| m.as_str())
@@ -616,6 +620,7 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
                     role,
                     provider,
                     model,
+                    runtime_adapter,
                     feature_id,
                     stage,
                     supervisor_session_id,
