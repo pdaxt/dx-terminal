@@ -1700,6 +1700,27 @@ function renderDxosPortalNotice(key){
   return `<div class="action-status ${escHtml(entry.tone||'blue')}">${escHtml(entry.message)}</div>`;
 }
 
+function saveDxControlToken(){
+  const input=document.getElementById('dx-control-token');
+  const value=(input&&input.value||'').trim();
+  if(!value){
+    setDxosPortalNotice('auth','Enter the DX control token before saving it in this browser session.','red');
+    return;
+  }
+  rememberDxControlToken(value);
+  if(input)input.value='';
+  setDxosPortalNotice('auth','DX control token stored for this browser session. Protected control actions are unlocked.','green');
+  renderExecutionHub();
+}
+
+function clearDxControlToken(){
+  rememberDxControlToken('');
+  const input=document.getElementById('dx-control-token');
+  if(input)input.value='';
+  setDxosPortalNotice('auth','DX control token cleared from this browser session.','yellow');
+  renderExecutionHub();
+}
+
 function dxosResolutionDraft(workOrderId){
   const key=String(workOrderId||'').trim();
   if(!key)return 'Approval granted. Continue with the next high-value task in scope.';
@@ -2545,6 +2566,7 @@ async function renderExecutionHub(){
   const dxos=brief.dxos||{};
   dxosPolicyCache[project]=dxos.provider_policy||{};
   dxosRuntimeBrokerCache[project]=((dxos.runtime_contract&&dxos.runtime_contract.launch_broker)||runtimeContract.launch_broker||{});
+  dxosControlAuthCache[project]=(runtimeContract.auth||{});
   const dxosSessions=(dxos.sessions&&dxos.sessions.records)||[];
   const dxosSessionSummary=dxos.sessions||{};
   const dxosDelegation=dxos.delegation||{};
@@ -2572,6 +2594,9 @@ async function renderExecutionHub(){
   const dirtyDocs=(docHealth.dirty_docs||[]).slice(0,4);
   const missingFeatureDocs=(docHealth.missing_feature_docs||[]).slice(0,3);
   const missingAcceptance=(docHealth.missing_acceptance||[]).slice(0,3);
+  const controlAuth=runtimeContract.auth||{};
+  const protectedControls=controlAuth.mode==='control_token';
+  const controlTokenLoaded=!!storedDxControlToken();
   const selectedMcp=automationSelection[project]||(externalMcps[0]&&externalMcps[0].name)||'';
   const selectedCacheKey=selectedMcp?automationCacheKey(project,selectedMcp):'';
   const selectedToolInfo=selectedCacheKey?automationToolCache[selectedCacheKey]:null;
@@ -2706,6 +2731,10 @@ async function renderExecutionHub(){
       <div class="doc-mini-card">
         <div class="label">DXOS Store</div>
         <div class="meta">${escHtml((dxosStorage.backend||'sqlite_with_repo_mirror').toString())} · ${dxosProjectRegistry.project_count||dxosStorage.registered_projects||0} project records</div>
+      </div>
+      <div class="doc-mini-card">
+        <div class="label">Control auth</div>
+        <div class="meta">${protectedControls?'token protected':'local trusted'} · ${protectedControls?(controlTokenLoaded?'token loaded in portal session':'portal token required for control actions'):'no token required'}</div>
       </div>
     </div>
     <div class="exec-list">
