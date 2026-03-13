@@ -3980,6 +3980,7 @@ fn collect_featured_wiki_docs(project_path: &str) -> Vec<WikiDocEntry> {
         ("docs/DXOS_MASTER_ARCHITECTURE.md", "architecture"),
         ("docs/NON_TECH_GUIDE.md", "guide"),
         ("docs/CLIENT_ONBOARDING_BLUEPRINT.md", "client"),
+        ("docs/PROJECT_ADOPTION_AND_RECOVERY.md", "recovery"),
         ("docs/CLIENT_PORTAL_PLAYBOOK.md", "client"),
         ("docs/DISCOVERY_AND_DESIGN_PLAYBOOK.md", "design"),
         ("docs/OPERATOR_SYSTEM_GUIDE.md", "operations"),
