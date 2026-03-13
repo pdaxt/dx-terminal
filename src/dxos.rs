@@ -659,6 +659,7 @@ fn default_allowed_actions_for_role(role: &str) -> Vec<String> {
     match role {
         "admin" => vec!["*".to_string()],
         "lead" => vec![
+            "adoption_*".to_string(),
             "session_*".to_string(),
             "work_*".to_string(),
             "debate_*".to_string(),
@@ -672,6 +673,7 @@ fn default_allowed_actions_for_role(role: &str) -> Vec<String> {
             "pane_talk".to_string(),
         ],
         "operator" => vec![
+            "adoption_*".to_string(),
             "session_*".to_string(),
             "work_*".to_string(),
             "debate_*".to_string(),
@@ -679,6 +681,7 @@ fn default_allowed_actions_for_role(role: &str) -> Vec<String> {
         ],
         "observer" => Vec::new(),
         _ => vec![
+            "adoption_*".to_string(),
             "session_*".to_string(),
             "work_*".to_string(),
             "debate_*".to_string(),
@@ -869,6 +872,7 @@ pub fn control_auth_contract() -> Value {
             "/api/dxos/debate/contradiction",
             "/api/dxos/debate/vote",
             "/api/dxos/debate/decision",
+            "/api/dxos/adoption/start",
             "/api/pane/talk",
             "/api/pane/kill",
             "/api/pane/restart"
@@ -887,6 +891,10 @@ fn control_plane_registry_for_project(project_path: &str) -> String {
 
 fn next_debate_id(state: &ControlPlaneState) -> String {
     format!("DB{:04}", state.debates.len() + 1)
+}
+
+fn next_adoption_id(state: &ControlPlaneState) -> String {
+    format!("AD{:04}", state.adoptions.len() + 1)
 }
 
 fn next_child_id(prefix: &str, len: usize) -> String {
@@ -1115,6 +1123,24 @@ fn debate_summary(debate: &DebateRecord) -> Value {
     })
 }
 
+fn adoption_summary(adoption: &ProjectAdoptionRecord) -> Value {
+    json!({
+        "id": adoption.id,
+        "status": adoption.status,
+        "mode": adoption.mode,
+        "summary": adoption.summary,
+        "objective": adoption.objective,
+        "feature_id": adoption.feature_id,
+        "stage": adoption.stage,
+        "lead_session_id": adoption.lead_session_id,
+        "debate_id": adoption.debate_id,
+        "requested_by": adoption.requested_by,
+        "participants": adoption.participants,
+        "created_at": adoption.created_at,
+        "updated_at": adoption.updated_at,
+    })
+}
+
 fn session_summary(session: &SessionContractRecord) -> Value {
     let provider_policy = provider_policy_for(&session.role, session.stage.as_deref());
     json!({
@@ -1193,6 +1219,18 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
         .iter()
         .filter(|debate| debate.status == "decided")
         .count();
+    let active_adoptions = state
+        .adoptions
+        .iter()
+        .filter(|adoption| matches!(adoption.status.as_str(), "active" | "planned"))
+        .count();
+    let recent_adoptions = state
+        .adoptions
+        .iter()
+        .rev()
+        .take(5)
+        .map(adoption_summary)
+        .collect::<Vec<_>>();
     let recent = state
         .debates
         .iter()
@@ -1235,6 +1273,11 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             "runtime_providers": ["claude", "codex", "gemini", "opencode"],
             "contract_providers": ["shared", "claude", "codex", "gemini", "opencode"],
             "rules": provider_policy_matrix(),
+        },
+        "adoptions": {
+            "total": state.adoptions.len(),
+            "active": active_adoptions,
+            "recent": recent_adoptions,
         },
         "debates": {
             "total": state.debates.len(),
@@ -1304,6 +1347,7 @@ pub fn session_list(project_path: &str, project_name: Option<&str>) -> String {
     let state = load_control_plane(project_path, project_name);
     json!({
         "project": state.project,
+        "adoptions": state.adoptions.iter().map(adoption_summary).collect::<Vec<_>>(),
         "provider_policy": {
             "runtime_providers": ["claude", "codex", "gemini", "opencode"],
             "contract_providers": ["shared", "claude", "codex", "gemini", "opencode"],
