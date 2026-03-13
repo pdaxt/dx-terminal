@@ -119,6 +119,77 @@ fn control_actor(headers: &HeaderMap) -> String {
         .to_string()
 }
 
+fn deny_control_action(
+    app: &AppState,
+    project_path: &str,
+    project_name: Option<&str>,
+    actor: &str,
+    action_kind: &str,
+    target: &str,
+    status: StatusCode,
+    message: &str,
+) -> (StatusCode, Json<Value>) {
+    let value = json!({
+        "error": message,
+        "actor": actor,
+        "action_kind": action_kind,
+        "target": target,
+        "control_auth": crate::dxos::control_auth_contract(),
+    });
+    if !project_path.trim().is_empty() {
+        if let Ok(record) = crate::dxos::append_audit_record(
+            project_path,
+            project_name,
+            actor,
+            action_kind,
+            target,
+            "denied",
+            message,
+            value.clone(),
+        ) {
+            app.state
+                .event_bus
+                .send(crate::state::events::StateEvent::AuditLogged {
+                    project: record.project_name,
+                    action_id: record.id,
+                    kind: record.action_kind,
+                    target: record.target,
+                    outcome: record.outcome,
+                });
+        }
+    }
+    (status, Json(value))
+}
+
+fn require_control_access(
+    app: &AppState,
+    headers: &HeaderMap,
+    project_path: &str,
+    project_name: Option<&str>,
+    action_kind: &str,
+    target: &str,
+) -> Result<String, (StatusCode, Json<Value>)> {
+    if let Err(error) = require_control_token(headers) {
+        return Err(error);
+    }
+    let actor = control_actor(headers);
+    if let Err(error) =
+        crate::dxos::authorize_operator_action(project_path, project_name, &actor, action_kind)
+    {
+        return Err(deny_control_action(
+            app,
+            project_path,
+            project_name,
+            &actor,
+            action_kind,
+            target,
+            StatusCode::FORBIDDEN,
+            &error,
+        ));
+    }
+    Ok(actor)
+}
+
 fn record_control_action(
     app: &AppState,
     project_path: &str,
