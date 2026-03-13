@@ -1442,6 +1442,16 @@ function dxosPolicyRules(project){
   return Array.isArray(policy.rules)?policy.rules:[];
 }
 
+function dxosRuntimeBroker(project){
+  return (project&&dxosRuntimeBrokerCache[project])||{};
+}
+
+function runtimeProviderAvailability(project,provider){
+  const broker=dxosRuntimeBroker(project);
+  const providers=Array.isArray(broker.providers)?broker.providers:[];
+  return providers.find(item=>String(item.provider||'')===String(provider||''))||null;
+}
+
 function dxosPolicyRule(project,role,stage){
   const roleId=(role||'design').toString().toLowerCase();
   const stageId=normalizeVddPhase(stage||'build');
@@ -1460,11 +1470,20 @@ function runtimeProviderOptionsForPolicy(project,role,stage,selected){
   const chosen=(selected||'').toString();
   const rule=dxosPolicyRule(project,role,stage);
   const providers=((rule&&Array.isArray(rule.allowed_providers))?rule.allowed_providers:['claude','codex','gemini','opencode']).filter(id=>id!=='shared');
-  const preferred=(rule&&rule.preferred_provider)||providers[0]||'claude';
-  const selectedValue=providers.includes(chosen)?chosen:preferred;
+  const launchable=providers.filter(value=>{
+    const availability=runtimeProviderAvailability(project,value);
+    return !availability||availability.available!==false;
+  });
+  const preferred=(rule&&rule.preferred_provider)||launchable[0]||providers[0]||'claude';
+  const selectedValue=(launchable.includes(chosen)||providers.includes(chosen))?chosen:preferred;
   return {
     selected:selectedValue,
-    html:providers.map(value=>`<option value="${value}" ${selectedValue===value?'selected':''}>${providerLabel(value)}</option>`).join(''),
+    html:providers.map(value=>{
+      const availability=runtimeProviderAvailability(project,value);
+      const unavailable=availability&&availability.available===false;
+      const label=unavailable?`${providerLabel(value)} · unavailable`:providerLabel(value);
+      return `<option value="${value}" ${selectedValue===value?'selected':''} ${unavailable?'disabled':''}>${label}</option>`;
+    }).join(''),
     rule
   };
 }
@@ -1484,17 +1503,33 @@ function contractProviderOptionsForPolicy(project,role,stage,selected){
   };
 }
 
-function renderProviderPolicyNote(rule,selected,contractMode){
+function renderProviderPolicyNote(rule,selected,contractMode,project){
   if(!rule)return 'DXOS policy data is unavailable for this project.';
   const preferred=providerLabel(rule.preferred_provider);
   const allowed=(rule.allowed_providers||[]).map(providerLabel).join(', ');
   const selectedId=(selected||'').toString();
+  const selectedAvailability=selectedId&&selectedId!=='shared'?runtimeProviderAvailability(project,selectedId):null;
   const warning=selectedId&&selectedId!=='shared'&&!(rule.allowed_providers||[]).includes(selectedId)
     ? ` Selected provider is outside policy for this role and stage.`
     : '';
+  const availabilityWarning=selectedAvailability&&selectedAvailability.available===false
+    ? ` ${providerLabel(selectedId)} is not launchable on this machine right now.`
+    : '';
+  const availableNow=(rule.allowed_providers||[])
+    .filter(id=>id!=='shared')
+    .filter(id=>{
+      const availability=runtimeProviderAvailability(project,id);
+      return !availability||availability.available!==false;
+    })
+    .map(providerLabel)
+    .join(', ');
   const sharedCopy=contractMode?' Shared is allowed only for unbound planning contracts.':'';
   const models=(rule.suggested_models||[]).slice(0,3).join(', ');
-  return `Prefer ${preferred}. Allowed: ${allowed}.${sharedCopy}${models?` Suggested models: ${models}.`:''} ${rule.rationale||''}${warning}`.trim();
+  const availabilityCopy=availableNow?` Launchable here: ${availableNow}.`:'';
+  const binaryCopy=selectedAvailability&&selectedAvailability.available&&selectedAvailability.binary
+    ? ` ${providerLabel(selectedId)} binary: ${selectedAvailability.binary}.`
+    : '';
+  return `Prefer ${preferred}. Allowed: ${allowed}.${sharedCopy}${models?` Suggested models: ${models}.`:''}${availabilityCopy} ${rule.rationale||''}${warning}${availabilityWarning}${binaryCopy}`.trim();
 }
 
 function syncDxosLaunchProviderOptions(){
@@ -1508,7 +1543,7 @@ function syncDxosLaunchProviderOptions(){
   const options=runtimeProviderOptionsForPolicy(project,role.value,stage.value,current);
   provider.innerHTML=options.html||runtimeProviderOptions('claude');
   provider.value=options.selected||provider.value||'claude';
-  if(note)note.textContent=renderProviderPolicyNote(options.rule,provider.value,false);
+  if(note)note.textContent=renderProviderPolicyNote(options.rule,provider.value,false,project);
 }
 
 function syncDxosSessionProviderOptions(){
@@ -1522,7 +1557,7 @@ function syncDxosSessionProviderOptions(){
   const options=contractProviderOptionsForPolicy(project,role.value,stage.value,current);
   provider.innerHTML=options.html||providerOptions('shared');
   provider.value=options.selected||provider.value||'shared';
-  if(note)note.textContent=renderProviderPolicyNote(options.rule,provider.value,true);
+  if(note)note.textContent=renderProviderPolicyNote(options.rule,provider.value,true,project);
 }
 
 function sessionOptionRows(sessions,filterFn,selected,placeholder){
