@@ -220,5 +220,6 @@ The first architecture slice now implemented in the repo is:
 - if DXOS can clear the blocker but cannot reach the worker lane, the failure is recorded back onto the session contract so the portal still shows the unresolved operational gap
 - the stop hook now continues work while the next high-value task remains clear, which keeps auto-continue aligned with DXOS language instead of relying on looser “obvious next step” wording
 - SQLite-backed DXOS control-plane storage is now the canonical backend, the repo-local `.dxos/control-plane.json` remains only as a compatibility mirror, and the portal exposes both the store paths and the registered-project registry so operators can see which state is authoritative
+- mutating DXOS and pane-control HTTP routes can now be protected with a server-side `DX_CONTROL_TOKEN`, and the runtime contract publishes the auth mode so a hosted portal can distinguish trusted local control from token-gated operations
 
 That gives the platform a native place to reason, disagree, decide, supervise, and delegate inside the system itself.
