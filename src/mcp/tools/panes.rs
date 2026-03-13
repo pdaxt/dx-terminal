@@ -120,6 +120,91 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     );
     let autonomous = req.autonomous.unwrap_or(true);
 
+    let initial_session_result = crate::dxos::upsert_session_contract(
+        &project_path,
+        Some(&project_name),
+        None,
+        &role,
+        Some(&provider),
+        model.as_deref(),
+        Some(if autonomous {
+            "high_autonomy"
+        } else {
+            "guarded_auto"
+        }),
+        &task,
+        vec!["task_result".to_string(), "runtime_handoff".to_string()],
+        app.state.get_project_mcps(&project_name).await,
+        vec![project_path.clone()],
+        vec![spawn_cwd.clone()],
+        ws_path.as_deref(),
+        ws_branch.as_deref(),
+        Some(browser_port),
+        Some(pane_num),
+        None,
+        None,
+        Some("build"),
+        None,
+        Some("lead_then_human"),
+        Some("launching"),
+    );
+    let initial_session_value: serde_json::Value = serde_json::from_str(&initial_session_result)
+        .unwrap_or_else(|_| serde_json::json!({}));
+    emit_dxos_session_change(app, &project_path, &initial_session_result);
+    let dxos_session_id = initial_session_value
+        .get("session_id")
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
+    let initial_policy_violations = initial_session_value
+        .get("session")
+        .and_then(|value| value.get("policy_violations"))
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|value| value.as_str().map(|value| value.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let initial_session_status = initial_session_value
+        .get("session")
+        .and_then(|value| value.get("status"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    if initial_session_value.get("error").is_some()
+        || initial_session_status == "blocked"
+        || !initial_policy_violations.is_empty()
+    {
+        let error_message = initial_session_value
+            .get("error")
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| {
+                initial_policy_violations
+                    .join(" ")
+                    .trim()
+                    .to_string()
+            });
+        return serde_json::json!({
+            "error": if error_message.is_empty() {
+                "DXOS provider policy blocked the launch".to_string()
+            } else {
+                error_message
+            },
+            "pane": pane_num,
+            "provider": provider,
+            "model": model,
+            "dxos_session_id": dxos_session_id,
+            "policy_violations": initial_policy_violations,
+            "project": project_name,
+            "project_path": project_path,
+            "workspace": ws_path,
+            "branch": ws_branch,
+            "browser_port": browser_port,
+        })
+        .to_string();
+    }
+
     // Spawn via tmux — creates a visible window the user can attach to
     let window_name = format!(
         "dx-{}-{}-{}",
@@ -142,11 +227,29 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         Err(e) => (format!("tmux_error: {}", e), None),
     };
 
-    if tmux_result.is_err() {
-        if let Some(ref ws) = ws_path {
-            let _ = workspace::remove_worktree(&project_path, ws);
+    if let Err(error) = tmux_result {
+        if let Some(session_id) = dxos_session_id.as_deref() {
+            let failure_result = crate::dxos::record_session_launch_failure(
+                &project_path,
+                Some(&project_name),
+                session_id,
+                &format!("Runtime launch failed: {}", error),
+            );
+            emit_dxos_session_change(app, &project_path, &failure_result);
         }
-        return format!("{{\"error\": \"Tmux spawn failed: {}\"}}", tmux_status);
+        return serde_json::json!({
+            "error": format!("Tmux spawn failed: {}", tmux_status),
+            "pane": pane_num,
+            "provider": provider,
+            "model": model,
+            "dxos_session_id": dxos_session_id,
+            "project": project_name,
+            "project_path": project_path,
+            "workspace": ws_path,
+            "branch": ws_branch,
+            "browser_port": browser_port,
+        })
+        .to_string();
     }
 
     let pane_state = PaneState {
@@ -156,7 +259,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         role: role.clone(),
         provider: Some(provider.clone()),
         model: model.clone(),
-        dxos_session_id: None,
+        dxos_session_id: dxos_session_id.clone(),
         task: task.clone(),
         issue_id: None,
         space: None,
@@ -171,11 +274,10 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         machine_mac: Some(machine_id.mac.clone()),
         tmux_target: tmux_target.clone(),
     };
-    let mut pane_state = pane_state;
     let session_result = crate::dxos::upsert_session_contract(
         &project_path,
         Some(&project_name),
-        None,
+        dxos_session_id.as_deref(),
         &role,
         Some(&provider),
         model.as_deref(),
@@ -202,10 +304,6 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     );
     let session_value: serde_json::Value =
         serde_json::from_str(&session_result).unwrap_or_else(|_| serde_json::json!({}));
-    pane_state.dxos_session_id = session_value
-        .get("session_id")
-        .and_then(|value| value.as_str())
-        .map(|value| value.to_string());
     app.state.set_pane(pane_num, pane_state).await;
     emit_dxos_session_change(app, &project_path, &session_result);
     app.state
