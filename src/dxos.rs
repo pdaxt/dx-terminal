@@ -255,10 +255,10 @@ fn control_plane_file(project_path: &str) -> PathBuf {
     control_plane_dir(project_path).join("control-plane.json")
 }
 
-fn control_plane_store_dir(project_path: &str) -> PathBuf {
+fn control_plane_store_dir(_project_path: &str) -> PathBuf {
     #[cfg(test)]
     {
-        let path = Path::new(project_path);
+        let path = Path::new(_project_path);
         if path.starts_with(std::env::temp_dir()) {
             return path.parent().unwrap_or(path).join(".dxos-store");
         }
@@ -450,6 +450,7 @@ pub fn control_plane_registry() -> String {
     .to_string()
 }
 
+#[cfg(test)]
 fn control_plane_registry_for_project(project_path: &str) -> String {
     let conn = match control_plane_db(project_path) {
         Ok(conn) => conn,
