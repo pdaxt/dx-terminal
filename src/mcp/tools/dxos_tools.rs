@@ -113,3 +113,115 @@ pub fn debate_finalize(
         rationale,
     )
 }
+
+#[allow(clippy::too_many_arguments)]
+pub fn session_upsert(
+    project: Option<&str>,
+    session_id: Option<&str>,
+    role: &str,
+    provider: Option<&str>,
+    model: Option<&str>,
+    autonomy_level: Option<&str>,
+    objective: &str,
+    expected_outputs: Vec<String>,
+    allowed_capabilities: Vec<String>,
+    allowed_repos: Vec<String>,
+    allowed_paths: Vec<String>,
+    workspace_path: Option<&str>,
+    branch_name: Option<&str>,
+    browser_port: Option<u16>,
+    pane: Option<u8>,
+    tmux_target: Option<&str>,
+    feature_id: Option<&str>,
+    stage: Option<&str>,
+    supervisor_session_id: Option<&str>,
+    escalation_policy: Option<&str>,
+    status: Option<&str>,
+) -> String {
+    dxos::upsert_session_contract(
+        &resolve_project_path(project),
+        None,
+        session_id,
+        role,
+        provider,
+        model,
+        autonomy_level,
+        objective,
+        expected_outputs,
+        allowed_capabilities,
+        allowed_repos,
+        allowed_paths,
+        workspace_path,
+        branch_name,
+        browser_port,
+        pane,
+        tmux_target,
+        feature_id,
+        stage,
+        supervisor_session_id,
+        escalation_policy,
+        status,
+    )
+}
+
+pub fn session_list(project: Option<&str>) -> String {
+    dxos::session_list(&resolve_project_path(project), None)
+}
+
+pub fn session_status(
+    project: Option<&str>,
+    session_id: &str,
+    status: &str,
+    note: Option<&str>,
+) -> String {
+    dxos::update_session_status(&resolve_project_path(project), None, session_id, status, note)
+}
+
+pub fn work_delegate(
+    project: Option<&str>,
+    supervisor_session_id: &str,
+    worker_session_id: Option<&str>,
+    title: &str,
+    objective: &str,
+    feature_id: Option<&str>,
+    stage: Option<&str>,
+    required_capabilities: Vec<String>,
+    expected_outputs: Vec<String>,
+) -> String {
+    dxos::delegate_work_order(
+        &resolve_project_path(project),
+        None,
+        supervisor_session_id,
+        worker_session_id,
+        title,
+        objective,
+        feature_id,
+        stage,
+        required_capabilities,
+        expected_outputs,
+    )
+}
+
+pub fn work_block(
+    project: Option<&str>,
+    work_order_id: &str,
+    blocker: &str,
+    requested_permission: Option<&str>,
+) -> String {
+    dxos::work_order_block(
+        &resolve_project_path(project),
+        None,
+        work_order_id,
+        blocker,
+        requested_permission,
+    )
+}
+
+pub fn work_resolve(project: Option<&str>, work_order_id: &str, resolution: Option<&str>) -> String {
+    dxos::resolve_work_order(
+        &resolve_project_path(project),
+        None,
+        work_order_id,
+        resolution,
+    )
+}
