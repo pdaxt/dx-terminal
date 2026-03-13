@@ -67,6 +67,7 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/project/brief", get(api::get_project_brief))
         .route("/api/dxos/control-plane", get(api::get_dxos_control_plane))
         .route("/api/dxos/registry", get(api::get_dxos_registry))
+        .route("/api/dxos/provider-plugins", get(api::get_dxos_provider_plugins))
         .route("/api/dxos/debates", get(api::get_dxos_debates))
         .route("/api/dxos/sessions", get(api::get_dxos_sessions))
         .route("/api/dxos/audit", get(api::get_dxos_audit))
@@ -99,6 +100,10 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/dxos/work/delegate", post(api::delegate_dxos_work))
         .route("/api/dxos/work/block", post(api::block_dxos_work))
         .route("/api/dxos/work/resolve", post(api::resolve_dxos_work))
+        .route(
+            "/api/dxos/provider-plugins/sync",
+            post(api::sync_dxos_provider_plugins),
+        )
         // Vision
         .route("/api/vision", get(api::get_vision))
         .route("/api/vision/summary", get(api::get_vision_summary))
