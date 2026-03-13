@@ -331,11 +331,9 @@ fn control_plane_store_project_count() -> usize {
     control_plane_db()
         .ok()
         .and_then(|conn| {
-            conn.query_row(
-                "SELECT COUNT(*) FROM dxos_control_planes",
-                [],
-                |row| row.get::<_, i64>(0),
-            )
+            conn.query_row("SELECT COUNT(*) FROM dxos_control_planes", [], |row| {
+                row.get::<_, i64>(0)
+            })
             .ok()
         })
         .unwrap_or(0)
@@ -2493,7 +2491,11 @@ mod tests {
         std::fs::create_dir_all(control_plane_dir(project_path.to_str().unwrap())).unwrap();
         let state = default_state(project_path.to_str().unwrap(), Some("demo"));
         let legacy_json = serde_json::to_string_pretty(&state).unwrap();
-        std::fs::write(control_plane_file(project_path.to_str().unwrap()), legacy_json).unwrap();
+        std::fs::write(
+            control_plane_file(project_path.to_str().unwrap()),
+            legacy_json,
+        )
+        .unwrap();
 
         let loaded = load_control_plane(project_path.to_str().unwrap(), Some("demo"));
         assert_eq!(loaded.project.name, "demo");
