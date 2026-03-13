@@ -306,6 +306,52 @@ fn debate_summary(debate: &DebateRecord) -> Value {
     })
 }
 
+fn session_summary(session: &SessionContractRecord) -> Value {
+    json!({
+        "id": session.id,
+        "status": session.status,
+        "role": session.role,
+        "provider": session.provider,
+        "model": session.model,
+        "autonomy_level": session.autonomy_level,
+        "objective": session.objective,
+        "expected_outputs": session.expected_outputs,
+        "allowed_capabilities": session.allowed_capabilities,
+        "allowed_repos": session.allowed_repos,
+        "allowed_paths": session.allowed_paths,
+        "workspace_path": session.workspace_path,
+        "branch_name": session.branch_name,
+        "browser_port": session.browser_port,
+        "pane": session.pane,
+        "tmux_target": session.tmux_target,
+        "feature_id": session.feature_id,
+        "stage": session.stage,
+        "supervisor_session_id": session.supervisor_session_id,
+        "escalation_policy": session.escalation_policy,
+        "created_at": session.created_at,
+        "updated_at": session.updated_at,
+    })
+}
+
+fn work_order_summary(work_order: &WorkOrderRecord) -> Value {
+    json!({
+        "id": work_order.id,
+        "supervisor_session_id": work_order.supervisor_session_id,
+        "worker_session_id": work_order.worker_session_id,
+        "status": work_order.status,
+        "title": work_order.title,
+        "objective": work_order.objective,
+        "feature_id": work_order.feature_id,
+        "stage": work_order.stage,
+        "required_capabilities": work_order.required_capabilities,
+        "blockers": work_order.blockers,
+        "requested_permissions": work_order.requested_permissions,
+        "expected_outputs": work_order.expected_outputs,
+        "created_at": work_order.created_at,
+        "updated_at": work_order.updated_at,
+    })
+}
+
 pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) -> Value {
     let state = load_control_plane(project_path, project_name);
     let registry = crate::mcp_registry::load_registry();
@@ -331,6 +377,26 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
         .take(5)
         .map(debate_summary)
         .collect::<Vec<_>>();
+    let active_sessions = state
+        .sessions
+        .iter()
+        .filter(|session| matches!(session.status.as_str(), "planned" | "active" | "blocked"))
+        .count();
+    let blocked_sessions = state
+        .sessions
+        .iter()
+        .filter(|session| session.status == "blocked")
+        .count();
+    let active_work_orders = state
+        .work_orders
+        .iter()
+        .filter(|work_order| matches!(work_order.status.as_str(), "assigned" | "blocked"))
+        .count();
+    let blocked_work_orders = state
+        .work_orders
+        .iter()
+        .filter(|work_order| work_order.status == "blocked")
+        .count();
 
     json!({
         "project": state.project,
@@ -352,6 +418,18 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             "browser_port_base": crate::config::browser_port_base(),
             "browser_port_formula": "browser_port_base + pane",
         },
+        "sessions": {
+            "total": state.sessions.len(),
+            "active": active_sessions,
+            "blocked": blocked_sessions,
+            "records": state.sessions.iter().map(session_summary).collect::<Vec<_>>(),
+        },
+        "delegation": {
+            "total_work_orders": state.work_orders.len(),
+            "active_work_orders": active_work_orders,
+            "blocked_work_orders": blocked_work_orders,
+            "recent": state.work_orders.iter().rev().take(10).map(work_order_summary).collect::<Vec<_>>(),
+        },
         "updated_at": state.updated_at,
     })
 }
@@ -362,6 +440,16 @@ pub fn debate_list(project_path: &str, project_name: Option<&str>) -> String {
         "project": state.project,
         "defaults": state.defaults,
         "debates": state.debates.iter().map(debate_summary).collect::<Vec<_>>(),
+    })
+    .to_string()
+}
+
+pub fn session_list(project_path: &str, project_name: Option<&str>) -> String {
+    let state = load_control_plane(project_path, project_name);
+    json!({
+        "project": state.project,
+        "sessions": state.sessions.iter().map(session_summary).collect::<Vec<_>>(),
+        "work_orders": state.work_orders.iter().map(work_order_summary).collect::<Vec<_>>(),
     })
     .to_string()
 }
