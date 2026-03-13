@@ -585,7 +585,7 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
     let active_sessions = state
         .sessions
         .iter()
-        .filter(|session| matches!(session.status.as_str(), "planned" | "active" | "blocked"))
+        .filter(|session| matches!(session.status.as_str(), "planned" | "launching" | "active"))
         .count();
     let blocked_sessions = state
         .sessions
@@ -1209,6 +1209,9 @@ pub fn update_session_status(
     };
 
     session.status = status.trim().to_string();
+    if !matches!(session.status.as_str(), "blocked" | "failed") {
+        session.last_error = None;
+    }
     if let Some(note) = note.filter(|value| !value.trim().is_empty()) {
         session.objective = format!(
             "{}\n\nStatus note: {}",
