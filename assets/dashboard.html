@@ -1768,6 +1768,30 @@ function currentDxOperatorPolicy(project){
   return operators.find(item=>String(item.id||'')===actor)||null;
 }
 
+function authPatternMatches(pattern,value){
+  const rule=String(pattern||'').trim();
+  const target=String(value||'').trim();
+  if(!rule||!target)return false;
+  if(rule==='*')return true;
+  if(rule.endsWith('*'))return target.startsWith(rule.slice(0,-1));
+  return rule===target;
+}
+
+function operatorAllowsAction(project,actionKind){
+  const auth=dxosControlAuthCache[project]||{};
+  if(!auth.operator_policy_configured)return true;
+  const policy=currentDxOperatorPolicy(project);
+  if(!policy)return false;
+  const allowed=Array.isArray(policy.allowed_actions)?policy.allowed_actions:[];
+  return allowed.some(rule=>authPatternMatches(rule,actionKind));
+}
+
+function operatorActionDisabledAttrs(project,actionKind,label){
+  if(operatorAllowsAction(project,actionKind))return '';
+  const reason=`Operator policy blocks ${label||actionKind}`;
+  return `disabled title="${escHtml(reason)}"`;
+}
+
 function noteDxControlAuthFailure(result){
   const status=Number(result&&result._http_status||0);
   if(result&&(status===401||status===403)){
@@ -3189,6 +3213,12 @@ function paneLastActivity(pane){
   return '';
 }
 function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+function paneProjectName(paneNum){
+  const panes=(wsState&&wsState.panes)||(monitorData&&monitorData.panes)||[];
+  const pane=panes.find(item=>item.pane===paneNum);
+  if(pane&&pane.project&&pane.project!=='--')return pane.project;
+  return currentSpace&&currentSpace!=='all'?currentSpace:'';
+}
 function paneBrowserPortForRuntime(runtime,statusPane){
   if(runtime&&runtime.browser_port)return runtime.browser_port;
   if(statusPane&&statusPane.browser_port)return statusPane.browser_port;
