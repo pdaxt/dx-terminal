@@ -2708,4 +2708,54 @@ mod tests {
             .iter()
             .any(|entry| entry["path"] == project_path.to_str().unwrap()));
     }
+
+    #[test]
+    fn audit_records_are_persisted_in_sqlite_store() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        std::fs::create_dir_all(&project_path).unwrap();
+        let project = project_path.to_str().unwrap();
+
+        let record = append_audit_record(
+            project,
+            Some("demo"),
+            "portal-operator",
+            "session_launch",
+            "auto",
+            "ok",
+            "session_launch auto",
+            json!({"pane": 2}),
+        )
+        .unwrap();
+        assert_eq!(record.project_name, "demo");
+
+        let audit: Value = serde_json::from_str(&audit_list(project, Some("demo"), 10)).unwrap();
+        assert_eq!(audit["audit"]["total"], 1);
+        assert_eq!(audit["audit"]["recent"][0]["action_kind"], "session_launch");
+    }
+
+    #[test]
+    fn control_plane_snapshot_includes_recent_audit_records() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        std::fs::create_dir_all(&project_path).unwrap();
+        let project = project_path.to_str().unwrap();
+
+        append_audit_record(
+            project,
+            Some("demo"),
+            "portal-operator",
+            "pane_restart",
+            "pane:3",
+            "error",
+            "pane_restart failed for pane:3",
+            json!({"error": "runtime unavailable"}),
+        )
+        .unwrap();
+
+        let snapshot = control_plane_snapshot(project, Some("demo"));
+        assert_eq!(snapshot["audit"]["total"], 1);
+        assert_eq!(snapshot["audit"]["recent"][0]["target"], "pane:3");
+        assert_eq!(snapshot["audit"]["recent"][0]["outcome"], "error");
+    }
 }
