@@ -382,6 +382,21 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     let browser_port = config::pane_browser_port(pane_num);
     let browser_profile_root = config::pane_browser_profile_root(pane_num);
     let browser_artifacts_root = config::pane_browser_artifacts_root(pane_num);
+    let provider_bridge_sync = crate::provider_plugins::convert_provider_plugin(None, &provider, false)
+        .unwrap_or_else(|error| {
+            serde_json::json!({
+                "error": error.to_string(),
+                "target": provider,
+            })
+        });
+    let provider_bridge_path = provider_bridge_sync
+        .get("path")
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
+    let provider_bridge_exported = provider_bridge_sync
+        .get("exported_servers")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
 
     // Validate CWD exists — fall back to project_path to avoid posix_spawn ENOENT
     if !std::path::Path::new(&spawn_cwd).exists() {
@@ -415,6 +430,14 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         ("DX_PROVIDER".to_string(), provider.clone()),
         ("DX_MODEL".to_string(), model.clone().unwrap_or_default()),
         ("DX_RUNTIME_ADAPTER".to_string(), runtime_adapter.clone()),
+        (
+            "DX_PROVIDER_BRIDGE_PROVIDER".to_string(),
+            provider.clone(),
+        ),
+        (
+            "DX_PROVIDER_BRIDGE_SOURCE".to_string(),
+            "dx_shared_manifest".to_string(),
+        ),
         ("DX_BROWSER_PORT".to_string(), browser_port.to_string()),
         ("PLAYWRIGHT_PORT".to_string(), browser_port.to_string()),
         (
@@ -428,7 +451,20 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         ("MACHINE_IP".to_string(), machine_id.ip.clone()),
         ("MACHINE_HOSTNAME".to_string(), machine_id.hostname.clone()),
         ("MACHINE_MAC".to_string(), machine_id.mac.clone()),
+        (
+            "DX_PROVIDER_BRIDGE_EXPORTED_SERVERS".to_string(),
+            provider_bridge_exported.to_string(),
+        ),
     ];
+    if let Some(path) = provider_bridge_path.as_deref() {
+        env_vars.push(("DX_PROVIDER_BRIDGE_PATH".to_string(), path.to_string()));
+    }
+    if let Some(error) = provider_bridge_sync.get("error").and_then(|value| value.as_str()) {
+        env_vars.push((
+            "DX_PROVIDER_BRIDGE_SYNC_ERROR".to_string(),
+            error.to_string(),
+        ));
+    }
 
     let autonomous = req.autonomous.unwrap_or(true);
 
@@ -528,6 +564,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
             "workspace": ws_path,
             "branch": ws_branch,
             "browser_port": browser_port,
+            "provider_bridge": provider_bridge_sync,
         })
         .to_string();
     }
@@ -608,6 +645,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
                 "workspace": ws_path,
                 "branch": ws_branch,
                 "browser_port": browser_port,
+                "provider_bridge": provider_bridge_sync,
                 "runtime_broker": launch_broker_json_from_error(&window_name, &spawn_cwd),
             })
             .to_string();
@@ -646,6 +684,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
             "workspace": ws_path,
             "branch": ws_branch,
             "browser_port": browser_port,
+            "provider_bridge": provider_bridge_sync,
             "runtime_broker": launch_broker_json(&launch_plan),
         })
         .to_string();
@@ -766,6 +805,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         "launch": launch_status,
         "tmux_target": tmux_target,
         "runtime_broker": launch_broker_json(&launch_plan),
+        "provider_bridge": provider_bridge_sync,
         "dxos_session_id": session_value.get("session_id").cloned().unwrap_or(serde_json::Value::Null),
         "machine_ip": machine_id.ip,
         "machine_hostname": machine_id.hostname,
