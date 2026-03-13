@@ -778,6 +778,31 @@ mod provider_tests {
         assert!(cmd.contains("-m 'gemini-2.5-pro'"));
         assert!(!cmd.contains("--yolo"));
     }
+
+    #[test]
+    fn detects_attention_requests() {
+        let permission = detect_attention_request("Waiting\nPermission required to continue [y/n]");
+        assert_eq!(
+            permission,
+            Some(AttentionRequest {
+                kind: "permission".to_string(),
+                blocker: "Permission required to continue [y/n]".to_string(),
+                requested_permission: Some("operator_permission".to_string()),
+            })
+        );
+
+        let login = detect_attention_request("Browser says: Login required to continue");
+        assert_eq!(
+            login,
+            Some(AttentionRequest {
+                kind: "login".to_string(),
+                blocker: "Browser says: Login required to continue".to_string(),
+                requested_permission: Some("browser_login".to_string()),
+            })
+        );
+
+        assert_eq!(detect_attention_request("all good\nrunning tests"), None);
+    }
 }
 
 /// Capture output from a tmux pane — extended version with more lines for live view.
