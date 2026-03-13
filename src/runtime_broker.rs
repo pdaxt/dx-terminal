@@ -93,8 +93,13 @@ pub fn plan_tmux_launch(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(|value| value.to_string());
-    let command =
-        build_provider_command_with_binary(provider, &binary, prompt, autonomous, normalized_model.as_deref());
+    let command = build_provider_command_with_binary(
+        provider,
+        &binary,
+        prompt,
+        autonomous,
+        normalized_model.as_deref(),
+    );
 
     Ok(RuntimeLaunchPlan {
         adapter: "tmux_migration_adapter".to_string(),

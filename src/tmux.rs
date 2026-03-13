@@ -102,7 +102,10 @@ pub fn spawn_planned_agent(
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
-    send_command(&agent.target, &format!("cd {}", shell_escape(&plan.project_path)))?;
+    send_command(
+        &agent.target,
+        &format!("cd {}", shell_escape(&plan.project_path)),
+    )?;
     std::thread::sleep(std::time::Duration::from_millis(200));
     send_command(&agent.target, &plan.command)?;
 
