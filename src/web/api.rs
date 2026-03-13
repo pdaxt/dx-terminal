@@ -2224,7 +2224,9 @@ pub(crate) fn derive_adoption_defaults(project: &str, brief: &Value) -> Value {
     let recovery = brief
         .get("recovery")
         .cloned()
-        .and_then(|value| serde_json::from_value::<crate::recovery_planning::RecoveryPlan>(value).ok())
+        .and_then(|value| {
+            serde_json::from_value::<crate::recovery_planning::RecoveryPlan>(value).ok()
+        })
         .unwrap_or_default();
     let focus = brief.get("focus").cloned().unwrap_or_else(|| json!({}));
     let defaults = crate::recovery_planning::derive_adoption_defaults(

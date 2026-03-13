@@ -390,17 +390,21 @@ pub fn assess(
         });
     }
 
-    let next_action = suggested_sessions.first().cloned().unwrap_or_else(|| SuggestedSessionPlan {
-        role: "lead".to_string(),
-        stage: "build".to_string(),
-        priority: "medium".to_string(),
-        feature_id: None,
-        reason: "Review the current project state and choose the next governed lane.".to_string(),
-        task_prompt: format!(
+    let next_action = suggested_sessions
+        .first()
+        .cloned()
+        .unwrap_or_else(|| SuggestedSessionPlan {
+            role: "lead".to_string(),
+            stage: "build".to_string(),
+            priority: "medium".to_string(),
+            feature_id: None,
+            reason: "Review the current project state and choose the next governed lane."
+                .to_string(),
+            task_prompt: format!(
             "Review {} and identify the next governed lane that should be launched through DXOS.",
             project
         ),
-    });
+        });
 
     RecoveryPlan {
         mode,

@@ -1129,7 +1129,10 @@ fn capabilities_for_role(role: &str) -> Vec<String> {
 }
 
 fn expected_outputs_for_role_stage(role: &str, stage: Option<&str>) -> Vec<String> {
-    match (normalize_role(role).as_str(), normalize_stage(stage).as_str()) {
+    match (
+        normalize_role(role).as_str(),
+        normalize_stage(stage).as_str(),
+    ) {
         ("discovery", _) => vec![
             "recovery_assessment".to_string(),
             "discovery_doc".to_string(),
@@ -1798,7 +1801,9 @@ pub fn update_project_adoption_status(
         adoption.updated_at = updated_at.clone();
     }
     state.updated_at = updated_at.clone();
-    let initial_work_order_id = state.adoptions[adoption_index].initial_work_order_id.clone();
+    let initial_work_order_id = state.adoptions[adoption_index]
+        .initial_work_order_id
+        .clone();
     let adoption_note = state.adoptions[adoption_index].last_note.clone();
 
     if let Some(work_order_id) = initial_work_order_id.as_deref() {
@@ -3691,6 +3696,79 @@ mod tests {
         assert_eq!(updated["adoption"]["last_note"], "Recovery plan accepted.");
         assert_eq!(updated["work_order"]["id"], work_order_id);
         assert_eq!(updated["work_order"]["status"], "completed");
+    }
+
+    #[test]
+    fn project_adoption_completion_seeds_follow_on_specialists() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        std::fs::create_dir_all(&project_path).unwrap();
+        let project = project_path.to_str().unwrap();
+
+        let started: Value = serde_json::from_str(&start_project_adoption_with_plan(
+            project,
+            Some("demo"),
+            Some("Recover the inherited project"),
+            Some("Map the current state and create the first governed recovery plan."),
+            Some("F1.1"),
+            Some("discovery"),
+            vec!["lead".to_string(), "qa".to_string()],
+            Some("ops-lead"),
+            vec![
+                SuggestedSessionPlan {
+                    role: "design".to_string(),
+                    stage: "design".to_string(),
+                    priority: "high".to_string(),
+                    feature_id: Some("F1.1".to_string()),
+                    reason: "Prepare a client-ready direction.".to_string(),
+                    task_prompt: "Prepare design options for F1.1.".to_string(),
+                },
+                SuggestedSessionPlan {
+                    role: "qa".to_string(),
+                    stage: "test".to_string(),
+                    priority: "medium".to_string(),
+                    feature_id: Some("F1.1".to_string()),
+                    reason: "Backfill verification evidence.".to_string(),
+                    task_prompt: "Prepare verification coverage for F1.1.".to_string(),
+                },
+            ],
+        ))
+        .unwrap();
+        let adoption_id = started["adoption_id"].as_str().unwrap();
+
+        let updated: Value = serde_json::from_str(&update_project_adoption_status(
+            project,
+            Some("demo"),
+            adoption_id,
+            "completed",
+            Some("Recovery plan accepted."),
+        ))
+        .unwrap();
+
+        assert_eq!(updated["follow_on_sessions"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            updated["follow_on_work_orders"].as_array().unwrap().len(),
+            2
+        );
+        assert_eq!(updated["follow_on_sessions"][0]["status"], "planned");
+        assert_eq!(updated["follow_on_work_orders"][0]["status"], "planned");
+
+        let sessions: Value = serde_json::from_str(&session_list(project, Some("demo"))).unwrap();
+        assert_eq!(sessions["adoptions"][0]["follow_on_count"], 2);
+        assert_eq!(
+            sessions["adoptions"][0]["follow_on_session_ids"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            sessions["adoptions"][0]["follow_on_work_order_ids"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]
