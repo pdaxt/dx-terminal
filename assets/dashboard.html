@@ -2867,6 +2867,82 @@ async function selectAutomationMcp(name){
   renderExecutionHub();
 }
 
+function providerBridgeSourceOptions(selected){
+  const chosen=(selected||'dx').toString();
+  return [
+    ['dx','DX shared manifest'],
+    ['claude','Claude import'],
+    ['codex','Codex/GPT bridge'],
+    ['gemini','Gemini bridge']
+  ].map(([value,label])=>`<option value="${value}" ${chosen===value?'selected':''}>${label}</option>`).join('');
+}
+
+function rememberProviderBridgeSource(project,value){
+  if(!project)return;
+  providerBridgeSourceSelection[project]=(value||'dx').toString();
+}
+
+async function syncProviderBridge(target){
+  const project=activeProjectForHub();
+  if(!project||!target)return false;
+  if(currentDxOperatorPolicy(project)&&!operatorActionAllowed(project,'provider_plugin_sync')){
+    setDxosPortalNotice('automation','Operator policy blocks provider bridge sync for this project.','red');
+    return false;
+  }
+  const source=(providerBridgeSourceSelection[project]||'dx').toString();
+  setDxosPortalNotice('automation',`Exporting ${source==='dx'?'DX shared manifest':source} into the ${target} bridge…`,'yellow');
+  const result=await fetchJSON('/api/dxos/provider-plugins/sync',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      project,
+      source_provider:source==='dx'?null:source,
+      target_provider:target,
+      dry_run:false
+    })
+  });
+  if(!result){
+    setDxosPortalNotice('automation','Unable to reach the provider bridge sync endpoint.','red');
+    return false;
+  }
+  if(result.error){
+    setDxosPortalNotice('automation',String(result.error||'Provider bridge sync failed.'),'red');
+    return false;
+  }
+  const exported=result.result&&result.result.exported_servers!=null?result.result.exported_servers:'0';
+  setDxosPortalNotice('automation',`Provider bridge synced: ${source} -> ${target} (${exported} servers exported).`,'green');
+  await renderExecutionHub();
+  return false;
+}
+
+function renderProviderPluginRows(project,providerPlugins){
+  const providers=Array.isArray(providerPlugins&&providerPlugins.providers)?providerPlugins.providers:[];
+  if(!providers.length){
+    return '<div class="automation-note">No provider bridge plugins are registered yet.</div>';
+  }
+  return providers.map(item=>{
+    const provider=String(item.provider||'claude');
+    const mode=item.mode==='native_import_plus_plugin_export'
+      ? 'Claude native import + DX plugin export'
+      : 'DX plugin bridge';
+    return `<div class="exec-row">
+      <div class="exec-row-top">
+        <span class="exec-row-title">${escHtml(String(item.label||provider))}</span>
+        <span class="exec-row-tags">
+          ${providerBadge({id:provider,label:item.label||provider,short:provider},true)}
+          <span class="doc-pill shared">${escHtml(mode)}</span>
+          <span class="doc-pill">${escHtml(String(item.format||'json').toUpperCase())}</span>
+        </span>
+      </div>
+      <div class="exec-row-meta">${escHtml(String(item.path||''))}</div>
+      <div class="exec-row-meta">${item.imported_servers||0} imported into DX · ${item.available_servers||0} available in the shared manifest</div>
+      <div class="exec-row-actions" style="margin-top:8px">
+        <button class="vdd-focus-btn" onclick="return syncProviderBridge('${escHtml(provider)}')" ${operatorActionDisabledAttrs(project,'provider_plugin_sync','provider bridge sync')}>Sync bridge</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 function renderAutomationItems(items,emptyText){
   if(!items||!items.length)return `<div class="automation-note">${escHtml(emptyText)}</div>`;
   return `<div class="automation-grid">${items.map(item=>`<div class="automation-item">
@@ -3252,6 +3328,8 @@ async function renderExecutionHub(){
   const userSkills=(automation.skills&&automation.skills.user)||[];
   const skillProviders=(automation.skills&&automation.skills.providers)||{};
   const externalMcps=automation.external_mcps||[];
+  const providerPlugins=automation.provider_plugins||{};
+  const providerPluginRows=Array.isArray(providerPlugins.providers)?providerPlugins.providers:[];
   const guidanceDocs=docs.guidance_docs||[];
   const visionDocs=docs.vision_docs||[];
   const delivery=brief.delivery||{};
@@ -3301,6 +3379,7 @@ async function renderExecutionHub(){
   const showOperatorNetwork=portalMode!=='client';
   const showOperatorControls=portalMode==='operator';
   const selectedMcp=automationSelection[project]||(externalMcps[0]&&externalMcps[0].name)||'';
+  const selectedBridgeSource=providerBridgeSourceSelection[project]||'dx';
   const selectedCacheKey=selectedMcp?automationCacheKey(project,selectedMcp):'';
   const selectedToolInfo=selectedCacheKey?automationToolCache[selectedCacheKey]:null;
   const selectedToolLoading=selectedCacheKey?automationToolLoading[selectedCacheKey]:false;
@@ -3714,6 +3793,24 @@ async function renderExecutionHub(){
   automationEl.innerHTML=`
     <div class="automation-shell">
       <div class="portal-note">Skills, command packs, and external MCP servers are the specialist toolbox behind the portal. The contract is provider-neutral so Claude, Codex, Gemini, and future runtimes can share the same inventory.</div>
+      <div class="automation-block">
+        <div class="automation-head">
+          <div>
+            <div class="automation-title">Provider Bridge Plugins</div>
+            <div class="automation-sub">DX keeps one shared MCP manifest, imports Claude native registrations plus any existing DX bridge files, and exports provider-specific bridge plugins so Claude, Codex/GPT, and Gemini stay interchangeable.</div>
+          </div>
+          <span class="doc-pill shared">${providerPluginRows.length} providers</span>
+        </div>
+        <div class="action-field" style="margin-bottom:12px">
+          <label for="provider-bridge-source">Conversion source</label>
+          <select class="action-select" id="provider-bridge-source" onchange="rememberProviderBridgeSource('${escHtml(project)}',this.value)">
+            ${providerBridgeSourceOptions(selectedBridgeSource)}
+          </select>
+        </div>
+        <div class="automation-sub" style="margin-bottom:10px">Use the source selector to export only one provider’s MCP set, or leave it on <strong style="color:var(--text)">DX shared manifest</strong> to push the full interoperable catalog into a target bridge.</div>
+        ${renderDxosPortalNotice('automation')}
+        <div class="exec-list">${renderProviderPluginRows(project,providerPlugins)}</div>
+      </div>
       <div class="automation-block">
         <div class="automation-head">
           <div>
