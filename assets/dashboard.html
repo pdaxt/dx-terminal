@@ -1831,6 +1831,11 @@ function openDxosSessionPane(pane){
 async function killPaneViaApi(pane,reason){
   const paneNum=Number(pane);
   if(!Number.isFinite(paneNum)||paneNum<=0)return false;
+  const project=paneProjectName(paneNum);
+  if(project&&!operatorAllowsAction(project,'pane_kill')){
+    setDxosPortalNotice('auth','Operator policy blocks pane kill for this project.','red');
+    return false;
+  }
   const result=await fetchJSON('/api/pane/kill',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -1848,6 +1853,11 @@ async function killPaneViaApi(pane,reason){
 async function restartPaneViaApi(pane){
   const paneNum=Number(pane);
   if(!Number.isFinite(paneNum)||paneNum<=0)return false;
+  const project=paneProjectName(paneNum);
+  if(project&&!operatorAllowsAction(project,'pane_restart')){
+    setDxosPortalNotice('auth','Operator policy blocks pane restart for this project.','red');
+    return false;
+  }
   const result=await fetchJSON('/api/pane/restart',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -1884,6 +1894,10 @@ async function refreshPaneOutput(pane){
 async function resolveDxosWorkOrder(workOrderId){
   const project=activeProjectForHub();
   if(!project||!workOrderId)return;
+  if(!operatorAllowsAction(project,'work_resolve')){
+    setDxosPortalNotice('work','Operator policy blocks work-order resolution for this project.','red');
+    return;
+  }
   const guidance=dxosResolutionDraft(workOrderId).trim();
   if(!guidance)return;
   const result=await fetchJSON('/api/dxos/work/resolve',{
@@ -1927,6 +1941,11 @@ async function launchDxosLane(){
   const stage=document.getElementById('dxos-launch-stage');
   const supervisor=document.getElementById('dxos-launch-supervisor');
   if(!project||!pane||!role||!task)return;
+  if(!operatorAllowsAction(project,'session_launch')){
+    setDxosPortalNotice('launch','Operator policy blocks lane launch for this project.','red');
+    await renderExecutionHub();
+    return;
+  }
   const paneValue=(pane.value||'auto').toString().trim()||'auto';
   const taskValue=(task.value||'').trim();
   if(!taskValue){
@@ -2057,6 +2076,11 @@ async function registerDxosSessionContract(){
   const capabilities=document.getElementById('dxos-session-capabilities');
   const outputs=document.getElementById('dxos-session-outputs');
   if(!project||!role||!objective)return;
+  if(!operatorAllowsAction(project,'session_upsert')){
+    setDxosPortalNotice('session','Operator policy blocks session registration for this project.','red');
+    await renderExecutionHub();
+    return;
+  }
   const objectiveValue=(objective.value||'').trim();
   if(!objectiveValue){
     setDxosPortalNotice('session','Describe the objective before registering a DXOS session contract.','red');
@@ -2103,6 +2127,11 @@ async function delegateDxosWork(){
   const capabilities=document.getElementById('dxos-work-capabilities');
   const outputs=document.getElementById('dxos-work-outputs');
   if(!project||!supervisor||!title||!objective)return;
+  if(!operatorAllowsAction(project,'work_delegate')){
+    setDxosPortalNotice('work','Operator policy blocks work delegation for this project.','red');
+    await renderExecutionHub();
+    return;
+  }
   if(!supervisor.value||!(title.value||'').trim()||!(objective.value||'').trim()){
     setDxosPortalNotice('work','Choose a lead and define the delegated work before submitting it.','red');
     await renderExecutionHub();
@@ -2140,6 +2169,11 @@ async function startDxosDebateFromPortal(){
   const stage=document.getElementById('dxos-debate-stage');
   const participants=document.getElementById('dxos-debate-participants');
   if(!project||!title||!objective)return;
+  if(!operatorAllowsAction(project,'debate_start')){
+    setDxosPortalNotice('debate','Operator policy blocks debate creation for this project.','red');
+    await renderExecutionHub();
+    return;
+  }
   if(!(title.value||'').trim()||!(objective.value||'').trim()){
     setDxosPortalNotice('debate','Give the council a title and objective before starting a debate.','red');
     await renderExecutionHub();
@@ -3256,6 +3290,10 @@ function openPanel(paneNum){
     const d=new Date(sp.started_at);
     startedStr=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   }
+  const projectName=(p&&p.project&&p.project!=='--')?p.project:paneProjectName(paneNum);
+  const canKill=operatorAllowsAction(projectName,'pane_kill');
+  const canRestart=operatorAllowsAction(projectName,'pane_restart');
+  const canTalk=operatorAllowsAction(projectName,'pane_talk');
   document.getElementById('panel-meta').innerHTML=`
     <div><dt>Status</dt><dd>${p?p.status:'idle'}</dd></div>
     <div><dt>Provider</dt><dd>${p&&p.provider_label?p.provider_label:'Unknown'}</dd></div>
@@ -3276,8 +3314,8 @@ function openPanel(paneNum){
     <div style="grid-column:1/-1"><dt>Task</dt><dd style="max-width:380px;white-space:normal;font-size:10px">${p?p.task||'--':'--'}</dd></div>`;
 
   document.getElementById('panel-actions').innerHTML=`
-    <button class="btn btn-red" onclick="killPaneViaApi(${paneNum},'web dashboard')">Kill</button>
-    <button class="btn" style="background:rgba(168,85,247,.16);color:var(--purple)" onclick="restartPaneViaApi(${paneNum})">Restart</button>
+    <button class="btn btn-red" onclick="killPaneViaApi(${paneNum},'web dashboard')" ${canKill?'':'disabled title="Operator policy blocks pane kill"'}>Kill</button>
+    <button class="btn" style="background:rgba(168,85,247,.16);color:var(--purple)" onclick="restartPaneViaApi(${paneNum})" ${canRestart?'':'disabled title="Operator policy blocks pane restart"'}>Restart</button>
     <button class="btn btn-blue" onclick="refreshPaneOutput(${paneNum})">Refresh</button>
     <button class="btn btn-green" onclick="copyActiveTab()" id="copy-tab-btn">Copy</button>
     <button class="btn" style="background:rgba(176,122,255,.15);color:var(--purple)" onclick="copySelection()">Copy Selection</button>`;
@@ -3302,6 +3340,13 @@ function openPanel(paneNum){
 
   // Focus the talk input
   setTimeout(()=>{const inp=document.getElementById('talk-input');if(inp)inp.focus()},100);
+  const talkInput=document.getElementById('talk-input');
+  const talkButton=document.querySelector('.talk-bar .btn.btn-green');
+  if(talkInput){
+    talkInput.disabled=!canTalk;
+    if(!canTalk)talkInput.placeholder='Operator policy blocks pane talk for this project';
+  }
+  if(talkButton)talkButton.disabled=!canTalk;
 
   void refreshPaneOutput(paneNum);
   renderPanes(); // Update selection highlight
@@ -3327,6 +3372,12 @@ async function sendTalk(){
   const input=document.getElementById('talk-input');
   const msg=input.value.trim();
   if(!msg||!activePaneNum)return;
+  const project=paneProjectName(activePaneNum);
+  if(project&&!operatorAllowsAction(project,'pane_talk')){
+    noteDxControlAuthFailure({_http_status:403,error:'Operator policy blocks pane talk for this project.'});
+    addChatMsg(activePaneNum,'system','Operator policy blocks pane talk for this project.');
+    return;
+  }
 
   // Add to chat log
   addChatMsg(activePaneNum,'user',msg);
@@ -3356,6 +3407,12 @@ async function sendTalk(){
 
 async function quickTalk(msg){
   if(!activePaneNum)return;
+  const project=paneProjectName(activePaneNum);
+  if(project&&!operatorAllowsAction(project,'pane_talk')){
+    noteDxControlAuthFailure({_http_status:403,error:'Operator policy blocks pane talk for this project.'});
+    addChatMsg(activePaneNum,'system','Operator policy blocks pane talk for this project.');
+    return;
+  }
   addChatMsg(activePaneNum,'user',msg);
   const result=await fetchJSON('/api/pane/talk',{
     method:'POST',
