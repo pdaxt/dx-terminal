@@ -53,6 +53,12 @@ impl DxTerminalService {
             });
     }
 
+    fn emit_debate_change(&self, project_path: &str, result: &str) {
+        if let Some(event) = crate::dxos::debate_event_from_result(project_path, result) {
+            self.app.state.event_bus.send(event);
+        }
+    }
+
     // === AGENT LIFECYCLE ===
 
     #[tool(
