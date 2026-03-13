@@ -51,7 +51,10 @@ pub fn shared_catalog_path() -> PathBuf {
 /// Load the shared dx-owned external MCP catalog, importing Claude config as a source
 /// and DX provider-plugin bridges when needed so all runtimes can consume the same registry.
 pub fn load_external_catalog() -> Vec<ExternalMcpEntry> {
-    load_external_catalog_from_sources(&shared_catalog_path(), &crate::provider_plugins::catalog_import_sources())
+    load_external_catalog_from_sources(
+        &shared_catalog_path(),
+        &crate::provider_plugins::catalog_import_sources(),
+    )
 }
 
 /// Refresh the shared dx-owned catalog from known import sources.
@@ -695,9 +698,6 @@ mod tests {
             .sources
             .iter()
             .any(|value| value == SHARED_SOURCE));
-        assert!(entries[0]
-            .sources
-            .iter()
-            .any(|value| value == "claude"));
+        assert!(entries[0].sources.iter().any(|value| value == "claude"));
     }
 }

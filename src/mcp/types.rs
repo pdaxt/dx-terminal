@@ -2158,11 +2158,15 @@ pub struct DxosProviderPluginsRequest {}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DxosProviderPluginSyncRequest {
-    #[schemars(description = "Optional source provider to convert from: claude, codex/openai/gpt, gemini")]
+    #[schemars(
+        description = "Optional source provider to convert from: claude, codex/openai/gpt, gemini"
+    )]
     pub source_provider: Option<String>,
     #[schemars(description = "Target provider bridge to export: claude, codex/openai/gpt, gemini")]
     pub target_provider: String,
-    #[schemars(description = "If true, return the translated payload without writing the provider bridge file")]
+    #[schemars(
+        description = "If true, return the translated payload without writing the provider bridge file"
+    )]
     pub dry_run: Option<bool>,
 }
 
