@@ -2776,6 +2776,17 @@ function applyRecoverySuggestion(encoded){
   return false;
 }
 
+async function launchRecoverySuggestion(encoded){
+  if(applyRecoverySuggestion(encoded)===false){
+    const project=activeProjectForHub();
+    if(project&&!operatorAllowsAction(project,'session_launch')){
+      return false;
+    }
+  }
+  await launchDxosLane();
+  return false;
+}
+
 function renderRecoverySuggestionRows(project,suggestions){
   const list=Array.isArray(suggestions)?suggestions:[];
   if(!list.length){
@@ -2799,6 +2810,7 @@ function renderRecoverySuggestionRows(project,suggestions){
       <div class="exec-row-meta">${escHtml((item.reason||'').toString())}</div>
       <div class="exec-row-actions" style="margin-top:8px">
         <button class="vdd-focus-btn" onclick="return applyRecoverySuggestion('${encoded}')" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Apply to launch form</button>
+        <button class="design-action" style="margin-left:8px" onclick="return launchRecoverySuggestion('${encoded}')" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Launch now</button>
       </div>
     </div>`;
   }).join('');
