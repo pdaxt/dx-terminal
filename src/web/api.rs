@@ -97,6 +97,18 @@ pub struct PaneQuery {
 }
 
 #[derive(Deserialize, Default)]
+pub struct PaneTalkBody {
+    pub pane: u8,
+    pub message: String,
+}
+
+#[derive(Deserialize, Default)]
+pub struct PaneKillBody {
+    pub pane: String,
+    pub reason: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
 pub struct GatewayListQuery {
     pub running_only: Option<bool>,
 }
