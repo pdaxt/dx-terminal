@@ -18,6 +18,9 @@ pub struct SpawnRequest {
     #[schemars(description = "Optional model name to pass through to the provider CLI")]
     pub model: Option<String>,
     #[serde(default)]
+    #[schemars(description = "Runtime adapter: pty_native_adapter or tmux_migration_adapter")]
+    pub runtime_adapter: Option<String>,
+    #[serde(default)]
     #[schemars(description = "Optional linked feature ID for DXOS session registration")]
     pub feature_id: Option<String>,
     #[serde(default)]
