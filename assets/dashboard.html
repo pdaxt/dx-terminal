@@ -2480,6 +2480,12 @@ function handleWSMessage(msg){
       }
       break;
 
+    case 'debate_changed':
+      if(!selectedVisionProject||selectedVisionProject===msg.project){
+        refresh();
+      }
+      break;
+
     case 'sync_status':
       // Sync status delta from replicator
       renderSync();
