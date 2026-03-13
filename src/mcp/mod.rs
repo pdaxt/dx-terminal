@@ -59,6 +59,12 @@ impl DxTerminalService {
         }
     }
 
+    fn emit_dxos_session_change(&self, project_path: &str, result: &str) {
+        if let Some(event) = crate::dxos::session_event_from_result(project_path, result) {
+            self.app.state.event_bus.send(event);
+        }
+    }
+
     // === AGENT LIFECYCLE ===
 
     #[tool(
