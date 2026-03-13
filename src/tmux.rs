@@ -634,6 +634,61 @@ mod provider_tests {
         assert_eq!(infer_provider("opencode", "OpenCode", None), "opencode");
         assert_eq!(infer_provider("zsh", "shell", None), "unknown");
     }
+
+    #[test]
+    fn parses_runtime_provider_names() {
+        assert_eq!(RuntimeProvider::from_str("claude"), RuntimeProvider::Claude);
+        assert_eq!(RuntimeProvider::from_str("codex"), RuntimeProvider::Codex);
+        assert_eq!(RuntimeProvider::from_str("openai"), RuntimeProvider::Codex);
+        assert_eq!(RuntimeProvider::from_str("gemini"), RuntimeProvider::Gemini);
+        assert_eq!(RuntimeProvider::from_str("opencode"), RuntimeProvider::OpenCode);
+        assert_eq!(RuntimeProvider::from_str("something-else"), RuntimeProvider::Claude);
+    }
+
+    #[test]
+    fn builds_claude_command_with_model_and_permissions() {
+        let cmd = build_provider_command_with_binary(
+            RuntimeProvider::Claude,
+            "/bin/claude",
+            "ship it",
+            true,
+            Some("claude-sonnet-4-6"),
+        );
+        assert!(cmd.contains("/bin/claude"));
+        assert!(cmd.contains("--dangerously-skip-permissions"));
+        assert!(cmd.contains("--model 'claude-sonnet-4-6'"));
+        assert!(cmd.ends_with("-p 'ship it'"));
+    }
+
+    #[test]
+    fn builds_codex_command_with_full_auto() {
+        let cmd = build_provider_command_with_binary(
+            RuntimeProvider::Codex,
+            "/bin/codex",
+            "review this diff",
+            true,
+            Some("gpt-5.4"),
+        );
+        assert!(cmd.contains("/bin/codex"));
+        assert!(cmd.contains("--full-auto"));
+        assert!(cmd.contains("-m 'gpt-5.4'"));
+        assert!(cmd.ends_with("'review this diff'"));
+    }
+
+    #[test]
+    fn builds_gemini_interactive_command() {
+        let cmd = build_provider_command_with_binary(
+            RuntimeProvider::Gemini,
+            "/bin/gemini",
+            "design three options",
+            false,
+            Some("gemini-2.5-pro"),
+        );
+        assert!(cmd.contains("/bin/gemini"));
+        assert!(cmd.contains("--prompt-interactive 'design three options'"));
+        assert!(cmd.contains("-m 'gemini-2.5-pro'"));
+        assert!(!cmd.contains("--yolo"));
+    }
 }
 
 /// Capture output from a tmux pane — extended version with more lines for live view.
