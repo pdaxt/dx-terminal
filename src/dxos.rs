@@ -188,6 +188,8 @@ pub struct WorkOrderRecord {
     #[serde(default)]
     pub worker_session_id: Option<String>,
     pub status: String,
+    #[serde(default = "default_escalation_target")]
+    pub escalation_target: String,
     pub title: String,
     pub objective: String,
     #[serde(default)]
@@ -295,6 +297,10 @@ fn next_session_id(state: &ControlPlaneState) -> String {
 
 fn next_work_order_id(state: &ControlPlaneState) -> String {
     format!("WO{:04}", state.work_orders.len() + 1)
+}
+
+fn default_escalation_target() -> String {
+    "lead".to_string()
 }
 
 fn normalize_stage(stage: Option<&str>) -> String {
@@ -539,11 +545,18 @@ fn session_summary(session: &SessionContractRecord) -> Value {
 }
 
 fn work_order_summary(work_order: &WorkOrderRecord) -> Value {
+    let routed_to = if work_order.escalation_target == "human" {
+        "human".to_string()
+    } else {
+        work_order.supervisor_session_id.clone()
+    };
     json!({
         "id": work_order.id,
         "supervisor_session_id": work_order.supervisor_session_id,
         "worker_session_id": work_order.worker_session_id,
         "status": work_order.status,
+        "escalation_target": work_order.escalation_target,
+        "routed_to": routed_to,
         "title": work_order.title,
         "objective": work_order.objective,
         "feature_id": work_order.feature_id,
@@ -1323,6 +1336,7 @@ pub fn delegate_work_order(
         } else {
             "planned".to_string()
         },
+        escalation_target: "lead".to_string(),
         title: title.trim().to_string(),
         objective: objective.trim().to_string(),
         feature_id: feature_id
@@ -1353,6 +1367,144 @@ pub fn delegate_work_order(
             "project": state.project.name,
             "project_path": project_path,
             "work_order_id": work_order_id,
+            "work_order": state.work_orders.iter().find(|item| item.id == work_order_id).map(work_order_summary),
+        })
+        .to_string(),
+        Err(error) => json!({"error": error}).to_string(),
+    }
+}
+
+pub fn raise_session_blocker(
+    project_path: &str,
+    project_name: Option<&str>,
+    worker_session_id: &str,
+    blocker: &str,
+    requested_permission: Option<&str>,
+    resolution_hint: Option<&str>,
+) -> String {
+    if worker_session_id.trim().is_empty() || blocker.trim().is_empty() {
+        return json!({"error": "worker_session_id and blocker required"}).to_string();
+    }
+
+    let mut state = load_control_plane(project_path, project_name);
+    let Some(session_index) = state
+        .sessions
+        .iter()
+        .position(|item| item.id == worker_session_id.trim())
+    else {
+        return json!({"error": "session_not_found"}).to_string();
+    };
+
+    let worker_session = state.sessions[session_index].clone();
+    let routed_lead = worker_session
+        .supervisor_session_id
+        .clone()
+        .filter(|value| !value.trim().is_empty() && value != worker_session_id.trim())
+        .filter(|lead_id| state.sessions.iter().any(|session| &session.id == lead_id));
+    let escalation_target = if routed_lead.is_some() {
+        "lead".to_string()
+    } else {
+        "human".to_string()
+    };
+    let broker_session_id = routed_lead.unwrap_or_else(|| worker_session.id.clone());
+    let now = crate::state::now();
+
+    let existing_index = state.work_orders.iter().rposition(|item| {
+        item.worker_session_id.as_deref() == Some(worker_session_id.trim())
+            && matches!(item.status.as_str(), "planned" | "assigned" | "blocked")
+    });
+
+    let work_order_id = if let Some(index) = existing_index {
+        let work_order = &mut state.work_orders[index];
+        work_order.status = "blocked".to_string();
+        work_order.supervisor_session_id = broker_session_id.clone();
+        work_order.escalation_target = escalation_target.clone();
+        if !work_order
+            .blockers
+            .iter()
+            .any(|item| item == blocker.trim())
+        {
+            work_order.blockers.push(blocker.trim().to_string());
+        }
+        if let Some(permission) = requested_permission.filter(|value| !value.trim().is_empty()) {
+            if !work_order
+                .requested_permissions
+                .iter()
+                .any(|item| item == permission.trim())
+            {
+                work_order
+                    .requested_permissions
+                    .push(permission.trim().to_string());
+            }
+        }
+        if let Some(hint) = resolution_hint.filter(|value| !value.trim().is_empty()) {
+            let hint_line = format!("Resolution hint: {}", hint.trim());
+            if !work_order.expected_outputs.iter().any(|item| item == &hint_line) {
+                work_order.expected_outputs.push(hint_line);
+            }
+        }
+        work_order.updated_at = now.clone();
+        work_order.id.clone()
+    } else {
+        let work_order_id = next_work_order_id(&state);
+        let mut expected_outputs = vec!["lead_guidance".to_string()];
+        if let Some(permission) = requested_permission.filter(|value| !value.trim().is_empty()) {
+            expected_outputs.push(format!("permission: {}", permission.trim()));
+        }
+        if let Some(hint) = resolution_hint.filter(|value| !value.trim().is_empty()) {
+            expected_outputs.push(format!("resolution_hint: {}", hint.trim()));
+        }
+        state.work_orders.push(WorkOrderRecord {
+            id: work_order_id.clone(),
+            supervisor_session_id: broker_session_id.clone(),
+            worker_session_id: Some(worker_session.id.clone()),
+            status: "blocked".to_string(),
+            escalation_target: escalation_target.clone(),
+            title: format!("Broker: {} blocked", worker_session.role),
+            objective: format!(
+                "Unblock {} on {} and route the decision through DXOS.",
+                worker_session.id,
+                worker_session
+                    .feature_id
+                    .clone()
+                    .unwrap_or_else(|| "current work".to_string())
+            ),
+            feature_id: worker_session.feature_id.clone(),
+            stage: worker_session.stage.clone(),
+            required_capabilities: requested_permission
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .into_iter()
+                .collect(),
+            blockers: vec![blocker.trim().to_string()],
+            requested_permissions: requested_permission
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .into_iter()
+                .collect(),
+            expected_outputs,
+            created_at: now.clone(),
+            updated_at: now.clone(),
+        });
+        work_order_id
+    };
+
+    let session = &mut state.sessions[session_index];
+    session.status = "blocked".to_string();
+    session.updated_at = now.clone();
+    state.updated_at = now.clone();
+
+    match save_control_plane(project_path, &state) {
+        Ok(()) => json!({
+            "status": "ok",
+            "action": "session_blocker_raised",
+            "project": state.project.name,
+            "project_path": project_path,
+            "session_id": worker_session_id,
+            "work_order_id": work_order_id,
+            "escalation_target": escalation_target,
+            "routed_to": if broker_session_id == worker_session_id.trim() { "human".to_string() } else { broker_session_id.clone() },
+            "session": state.sessions.iter().find(|item| item.id == worker_session_id.trim()).map(session_summary),
             "work_order": state.work_orders.iter().find(|item| item.id == work_order_id).map(work_order_summary),
         })
         .to_string(),
