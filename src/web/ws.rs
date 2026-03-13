@@ -597,7 +597,7 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
             let pane = cmd
                 .get("pane")
                 .and_then(|p| p.as_str())
-                .unwrap_or("")
+                .unwrap_or("auto")
                 .to_string();
             let project = cmd
                 .get("project")
@@ -620,6 +620,10 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
                 .get("runtime_adapter")
                 .and_then(|m| m.as_str())
                 .map(|s| s.to_string());
+            let client_request_id = cmd
+                .get("client_request_id")
+                .and_then(|m| m.as_str())
+                .map(|s| s.to_string());
             let feature_id = cmd
                 .get("feature_id")
                 .and_then(|m| m.as_str())
@@ -636,8 +640,8 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
                 .get("task")
                 .and_then(|t| t.as_str())
                 .map(|s| s.to_string());
-            if pane.is_empty() || project.is_empty() {
-                return json!({"error": "pane and project required"});
+            if project.is_empty() {
+                return json!({"error": "project required"});
             }
             let result = tools::spawn(
                 app,
@@ -648,6 +652,7 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
                     provider,
                     model,
                     runtime_adapter,
+                    client_request_id,
                     feature_id,
                     stage,
                     supervisor_session_id,
