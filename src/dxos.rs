@@ -151,6 +151,8 @@ pub struct ProjectAdoptionRecord {
     #[serde(default)]
     pub last_note: Option<String>,
     #[serde(default)]
+    pub initial_work_order_id: Option<String>,
+    #[serde(default)]
     pub feature_id: Option<String>,
     pub stage: String,
     pub lead_session_id: String,
@@ -1134,6 +1136,7 @@ fn adoption_summary(adoption: &ProjectAdoptionRecord) -> Value {
         "summary": adoption.summary,
         "objective": adoption.objective,
         "last_note": adoption.last_note,
+        "initial_work_order_id": adoption.initial_work_order_id,
         "feature_id": adoption.feature_id,
         "stage": adoption.stage,
         "lead_session_id": adoption.lead_session_id,
