@@ -2777,6 +2777,7 @@ function renderAdoptionRows(project,adoptions,showLaunch){
     const links=[
       item.lead_session_id?`lead ${item.lead_session_id}`:null,
       item.debate_id?`council ${item.debate_id}`:null,
+      item.initial_work_order_id?`work ${item.initial_work_order_id}`:null,
       item.feature_id?`feature ${item.feature_id}`:null
     ].filter(Boolean).join(' · ');
     return `<div class="exec-row">
@@ -2965,7 +2966,7 @@ async function startDxosAdoption(){
   }
   setDxosPortalNotice(
     'adoption',
-    `Recovery workflow ${result.adoption_id||''} started with lead ${result.lead_session_id||''} and council ${result.debate_id||''}.`,
+    `Recovery workflow ${result.adoption_id||''} started with lead ${result.lead_session_id||''}, council ${result.debate_id||''}, and work package ${result.work_order_id||''}.`,
     'green'
   );
   await renderExecutionHub();
