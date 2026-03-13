@@ -345,6 +345,13 @@ pub struct LivePane {
     pub session_id: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AttentionRequest {
+    pub kind: String,
+    pub blocker: String,
+    pub requested_permission: Option<String>,
+}
+
 /// Infer the provider behind a live pane from its current command, window name,
 /// and optional session metadata.
 pub fn infer_provider(command: &str, window_name: &str, jsonl_path: Option<&str>) -> &'static str {
@@ -396,6 +403,91 @@ pub fn provider_short(provider: &str) -> &'static str {
         "opencode" => "Open",
         _ => "Unknown",
     }
+}
+
+pub fn detect_attention_request(output: &str) -> Option<AttentionRequest> {
+    let recent_lines = output
+        .lines()
+        .rev()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        })
+        .take(12)
+        .collect::<Vec<_>>();
+
+    for line in &recent_lines {
+        let lower = line.to_lowercase();
+        if lower.contains("captcha") {
+            return Some(AttentionRequest {
+                kind: "captcha".to_string(),
+                blocker: line.clone(),
+                requested_permission: Some("human_auth_challenge".to_string()),
+            });
+        }
+        if lower.contains("mfa")
+            || lower.contains("2fa")
+            || lower.contains("two-factor")
+            || lower.contains("verification code")
+        {
+            return Some(AttentionRequest {
+                kind: "authentication".to_string(),
+                blocker: line.clone(),
+                requested_permission: Some("human_authentication".to_string()),
+            });
+        }
+        if (lower.contains("login required")
+            || lower.contains("sign in required")
+            || (lower.contains("login") && lower.contains("required")))
+            || (lower.contains("sign in") && lower.contains("continue"))
+        {
+            return Some(AttentionRequest {
+                kind: "login".to_string(),
+                blocker: line.clone(),
+                requested_permission: Some("browser_login".to_string()),
+            });
+        }
+        if lower.contains("press enter to continue") {
+            return Some(AttentionRequest {
+                kind: "confirmation".to_string(),
+                blocker: line.clone(),
+                requested_permission: Some("human_confirmation".to_string()),
+            });
+        }
+        if (lower.contains("permission") || lower.contains("approve") || lower.contains("approval"))
+            && (lower.contains("required")
+                || lower.contains("needed")
+                || lower.contains("request")
+                || lower.contains("waiting")
+                || lower.contains("[y/")
+                || lower.contains("(y/")
+                || lower.contains("yes/no"))
+        {
+            return Some(AttentionRequest {
+                kind: "permission".to_string(),
+                blocker: line.clone(),
+                requested_permission: Some("operator_permission".to_string()),
+            });
+        }
+        if lower.contains("allow ")
+            && (lower.contains("[y/")
+                || lower.contains("(y/")
+                || lower.contains("yes/no")
+                || lower.contains("enter for yes"))
+        {
+            return Some(AttentionRequest {
+                kind: "approval".to_string(),
+                blocker: line.clone(),
+                requested_permission: Some("operator_approval".to_string()),
+            });
+        }
+    }
+
+    None
 }
 
 /// Discover all tmux panes running supported agent CLIs across all sessions.
