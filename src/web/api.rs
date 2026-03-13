@@ -151,13 +151,15 @@ fn record_control_action(
         &summary,
         result.clone(),
     ) {
-        app.state.event_bus.send(crate::state::events::StateEvent::AuditLogged {
-            project: record.project_name,
-            action_id: record.id,
-            kind: record.action_kind,
-            target: record.target,
-            outcome: record.outcome,
-        });
+        app.state
+            .event_bus
+            .send(crate::state::events::StateEvent::AuditLogged {
+                project: record.project_name,
+                action_id: record.id,
+                kind: record.action_kind,
+                target: record.target,
+                outcome: record.outcome,
+            });
     }
 }
 
