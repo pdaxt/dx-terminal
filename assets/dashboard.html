@@ -1200,6 +1200,7 @@ let automationSelection={};
 let automationToolCache={};
 let automationToolLoading={};
 let dxosPortalState={};
+let dxosResolutionDrafts={};
 let dxosPendingLaunches={};
 let dxosPolicyCache={};
 
@@ -1552,6 +1553,18 @@ function renderDxosPortalNotice(key){
   return `<div class="action-status ${escHtml(entry.tone||'blue')}">${escHtml(entry.message)}</div>`;
 }
 
+function dxosResolutionDraft(workOrderId){
+  const key=String(workOrderId||'').trim();
+  if(!key)return 'Approval granted. Continue with the next high-value task in scope.';
+  return dxosResolutionDrafts[key]||'Approval granted. Continue with the next high-value task in scope.';
+}
+
+function setDxosResolutionDraft(workOrderId,value){
+  const key=String(workOrderId||'').trim();
+  if(!key)return;
+  dxosResolutionDrafts[key]=(value||'').toString();
+}
+
 function dxosInlineAction(label,onclick,tone){
   const palette=tone==='green'
     ? 'background:rgba(47,191,113,.14);border-color:rgba(47,191,113,.24);color:var(--green)'
@@ -1570,7 +1583,7 @@ function openDxosSessionPane(pane){
 async function resolveDxosWorkOrder(workOrderId){
   const project=activeProjectForHub();
   if(!project||!workOrderId)return;
-  const guidance=(window.prompt('Send the exact guidance or approval back to the worker lane:', 'Approval granted. Continue with the next high-value task in scope.')||'').trim();
+  const guidance=dxosResolutionDraft(workOrderId).trim();
   if(!guidance)return;
   const result=await fetchJSON('/api/dxos/work/resolve',{
     method:'POST',
@@ -1595,6 +1608,7 @@ async function resolveDxosWorkOrder(workOrderId){
   }else{
     setDxosPortalNotice('work',`Work order ${workOrderId} resolved.`,'green');
   }
+  delete dxosResolutionDrafts[String(workOrderId)];
   await renderExecutionHub();
   if(activePaneNum)renderPaneContext(activePaneNum);
 }
