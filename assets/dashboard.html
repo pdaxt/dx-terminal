@@ -1446,6 +1446,53 @@ function dxosRuntimeBroker(project){
   return (project&&dxosRuntimeBrokerCache[project])||{};
 }
 
+function adapterLabel(id){
+  const labels={
+    pty_native_adapter:'DX PTY',
+    tmux_migration_adapter:'tmux migration'
+  };
+  return labels[id]||id||'Unknown adapter';
+}
+
+function runtimeAdapterInventory(project){
+  const broker=dxosRuntimeBroker(project);
+  const adapters=Array.isArray(broker.adapters)?broker.adapters:[];
+  if(adapters.length)return adapters;
+  return [
+    {adapter:'pty_native_adapter',label:'DX PTY adapter',substrate:'custom_pty_target',available:true},
+    {adapter:'tmux_migration_adapter',label:'tmux migration adapter',substrate:'tmux_window',available:true}
+  ];
+}
+
+function runtimeAdapterAvailability(project,adapter){
+  return runtimeAdapterInventory(project).find(item=>String(item.adapter||'')===String(adapter||''))||null;
+}
+
+function runtimeAdapterOptions(project,selected){
+  const adapters=runtimeAdapterInventory(project);
+  const available=adapters.filter(item=>item.available!==false);
+  const selectedValue=adapters.some(item=>item.adapter===selected)
+    ? selected
+    : (available[0]&&available[0].adapter) || (adapters[0]&&adapters[0].adapter) || 'pty_native_adapter';
+  return {
+    selected:selectedValue,
+    html:adapters.map(item=>{
+      const unavailable=item.available===false;
+      const label=unavailable?`${item.label||adapterLabel(item.adapter)} · unavailable`:(item.label||adapterLabel(item.adapter));
+      return `<option value="${escHtml(String(item.adapter||''))}" ${selectedValue===item.adapter?'selected':''} ${unavailable?'disabled':''}>${escHtml(label)}</option>`;
+    }).join('')
+  };
+}
+
+function renderRuntimeAdapterNote(project,adapter){
+  const info=runtimeAdapterAvailability(project,adapter);
+  if(!info)return 'DX runtime adapter metadata is unavailable for this project.';
+  const label=info.label||adapterLabel(info.adapter);
+  const substrate=(info.substrate||'runtime_target').replace(/_/g,' ');
+  const availability=info.available===false?' This adapter is currently unavailable on this machine.':'';
+  return `${label} uses the ${substrate} substrate.${availability}`;
+}
+
 function runtimeProviderAvailability(project,provider){
   const broker=dxosRuntimeBroker(project);
   const providers=Array.isArray(broker.providers)?broker.providers:[];
@@ -1656,6 +1703,7 @@ async function launchDxosLane(){
   const pane=document.getElementById('dxos-launch-pane');
   const role=document.getElementById('dxos-launch-role');
   const provider=document.getElementById('dxos-launch-provider');
+  const adapter=document.getElementById('dxos-launch-adapter');
   const model=document.getElementById('dxos-launch-model');
   const task=document.getElementById('dxos-launch-task');
   const feature=document.getElementById('dxos-launch-feature');
@@ -1678,6 +1726,7 @@ async function launchDxosLane(){
     project,
     role:role.value||'design',
     provider:provider&&provider.value?provider.value:'claude',
+    runtimeAdapter:adapter&&adapter.value?adapter.value:'pty_native_adapter',
     model:model&&model.value?model.value.trim():'',
     task:taskValue,
     featureId:feature&&feature.value?feature.value.trim():'',
@@ -1687,7 +1736,8 @@ async function launchDxosLane(){
     allowedCapabilities:[]
   };
   const providerName=provider&&provider.value?provider.value:'claude';
-  setDxosPortalNotice('launch',`Launching pane ${paneValue} on ${providerName} through the runtime broker…`,'yellow');
+  const adapterName=adapter&&adapter.value?adapter.value:'pty_native_adapter';
+  setDxosPortalNotice('launch',`Launching pane ${paneValue} on ${providerName} via ${adapterLabel(adapterName)}…`,'yellow');
   await renderExecutionHub();
   wsSend({
     cmd:'spawn',
@@ -1695,6 +1745,7 @@ async function launchDxosLane(){
     project,
     role:role.value||'design',
     provider:providerName,
+    runtime_adapter:adapterName,
     model:model&&model.value?model.value.trim():undefined,
     feature_id:feature&&feature.value?feature.value.trim():undefined,
     stage:stage&&stage.value?stage.value.trim():undefined,
@@ -1734,6 +1785,7 @@ async function finalizePendingDxosLaunch(result){
         branch_name:result.branch||null,
         browser_port:result.browser_port||null,
         pane:result.pane||null,
+        runtime_adapter:result.runtime_adapter||pending.runtimeAdapter||null,
         tmux_target:result.tmux_target||null,
         feature_id:pending.featureId||null,
         stage:pending.stage||null,
@@ -1757,6 +1809,7 @@ async function registerDxosSessionContract(){
   const project=activeProjectForHub();
   const role=document.getElementById('dxos-session-role');
   const provider=document.getElementById('dxos-session-provider');
+  const adapter=document.getElementById('dxos-session-adapter');
   const model=document.getElementById('dxos-session-model');
   const objective=document.getElementById('dxos-session-objective');
   const feature=document.getElementById('dxos-session-feature');
@@ -1779,6 +1832,7 @@ async function registerDxosSessionContract(){
       role:role.value||'lead',
       provider:provider&&provider.value?provider.value:null,
       model:model&&model.value?model.value.trim():null,
+      runtime_adapter:adapter&&adapter.value?adapter.value.trim():null,
       autonomy_level:'guarded_auto',
       objective:objectiveValue,
       expected_outputs:csvList(outputs&&outputs.value),
@@ -1882,6 +1936,7 @@ function renderDxosSessionRows(sessions,limit){
       session.feature_id||null,
       session.stage?`stage ${normalizeVddPhase(session.stage)}`:null,
       session.pane?`pane ${session.pane}`:null,
+      session.runtime_adapter?`adapter ${adapterLabel(session.runtime_adapter)}`:null,
       session.branch_name?`branch ${session.branch_name}`:null,
       session.workspace_path?`worktree ${shortPathLabel(session.workspace_path)}`:null,
       session.browser_port?`browser ${session.browser_port}`:null
@@ -2005,6 +2060,8 @@ function renderDxosOperatorControls(project,activeStage,sessions){
   const featureId=(focus.feature_id||'').toString();
   const defaultStage=normalizeVddPhase(activeStage||focus.stage||'build');
   const defaultPane=firstAvailablePane(project);
+  const launchAdapterOptions=runtimeAdapterOptions(project,'pty_native_adapter');
+  const sessionAdapterOptions=runtimeAdapterOptions(project,'pty_native_adapter');
   const launchTask=featureId
     ? `Advance ${featureId} through ${defaultStage} and report back with evidence.`
     : `Advance the active delivery work through ${defaultStage} and report back with evidence.`;
@@ -2013,12 +2070,12 @@ function renderDxosOperatorControls(project,activeStage,sessions){
   const supervisorLaunchOptions=sessionOptionRows(sessions,session=>!session.supervisor_session_id,null,'No supervising lead');
   const paneOptions=paneOptionRows(project,defaultPane);
   return `<div class="action-shell">
-    <div class="portal-note">The operator console below is the first real portal-native control surface for DXOS. Launching a lane uses the current tmux runtime adapter; session contracts, delegation, and debates are provider-neutral control-plane actions.</div>
+    <div class="portal-note">The operator console below is the first real portal-native control surface for DXOS. Launching a lane uses the DX runtime broker, with the native PTY path as the default substrate and tmux kept only as the migration path.</div>
     <div class="action-grid">
       <div class="action-card">
         <div class="action-card-head">
           <div class="action-card-title">Launch Specialist Lane</div>
-          <div class="action-card-copy">This creates a real runtime lane on the current adapter and then enriches its DXOS session contract with feature, stage, and supervisor metadata.</div>
+          <div class="action-card-copy">This creates a real runtime lane through the DX broker and then enriches its DXOS session contract with feature, stage, supervisor, and runtime-substrate metadata.</div>
         </div>
         <div class="action-form">
           <div class="action-form-grid">
@@ -2029,6 +2086,10 @@ function renderDxosOperatorControls(project,activeStage,sessions){
             <div class="action-field">
               <label for="dxos-launch-provider">Provider</label>
               <select class="action-select" id="dxos-launch-provider">${runtimeProviderOptions('claude')}</select>
+            </div>
+            <div class="action-field">
+              <label for="dxos-launch-adapter">Runtime adapter</label>
+              <select class="action-select" id="dxos-launch-adapter">${launchAdapterOptions.html}</select>
             </div>
             <div class="action-field">
               <label for="dxos-launch-role">Role</label>
@@ -2048,6 +2109,7 @@ function renderDxosOperatorControls(project,activeStage,sessions){
             </div>
           </div>
           <div class="action-note" id="dxos-launch-provider-note"></div>
+          <div class="action-note">${escHtml(renderRuntimeAdapterNote(project,launchAdapterOptions.selected))}</div>
           <div class="action-field">
             <label for="dxos-launch-supervisor">Supervising Lead</label>
             <select class="action-select" id="dxos-launch-supervisor">${supervisorLaunchOptions}</select>
@@ -2058,7 +2120,7 @@ function renderDxosOperatorControls(project,activeStage,sessions){
           </div>
           <div class="action-actions">
             <button class="design-action" onclick="launchDxosLane()">Launch lane</button>
-            <span class="action-note">Current adapter: provider-aware tmux broker for Claude, Codex, and Gemini</span>
+            <span class="action-note">Default substrate: DX PTY, with tmux retained only for migration and recovery</span>
           </div>
           ${renderDxosPortalNotice('launch')}
         </div>
@@ -2079,6 +2141,10 @@ function renderDxosOperatorControls(project,activeStage,sessions){
               <select class="action-select" id="dxos-session-provider">${providerOptions('shared')}</select>
             </div>
             <div class="action-field">
+              <label for="dxos-session-adapter">Runtime adapter</label>
+              <select class="action-select" id="dxos-session-adapter">${sessionAdapterOptions.html}</select>
+            </div>
+            <div class="action-field">
               <label for="dxos-session-feature">Feature</label>
               <input class="action-input" id="dxos-session-feature" value="${escHtml(featureId)}" placeholder="F1.2">
             </div>
@@ -2096,6 +2162,7 @@ function renderDxosOperatorControls(project,activeStage,sessions){
             </div>
           </div>
           <div class="action-note" id="dxos-session-provider-note"></div>
+          <div class="action-note">${escHtml(renderRuntimeAdapterNote(project,sessionAdapterOptions.selected))}</div>
           <div class="action-field">
             <label for="dxos-session-objective">Objective</label>
             <textarea class="action-textarea" id="dxos-session-objective" placeholder="What should this DXOS session be responsible for?">${escHtml(featureId?`Own ${featureId} at ${defaultStage}, coordinate workers, and escalate blockers.`:'Coordinate the next delivery slice and escalate blockers.')}</textarea>
