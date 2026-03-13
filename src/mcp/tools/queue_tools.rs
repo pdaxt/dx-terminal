@@ -797,6 +797,7 @@ pub async fn auto_cycle(app: &App) -> String {
                                 role: Some(task.role.clone()),
                                 provider: None,
                                 model: None,
+                                runtime_adapter: None,
                                 feature_id: None,
                                 stage: None,
                                 supervisor_session_id: None,
