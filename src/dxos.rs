@@ -149,6 +149,8 @@ pub struct ProjectAdoptionRecord {
     pub summary: String,
     pub objective: String,
     #[serde(default)]
+    pub last_note: Option<String>,
+    #[serde(default)]
     pub feature_id: Option<String>,
     pub stage: String,
     pub lead_session_id: String,
@@ -1130,6 +1132,7 @@ fn adoption_summary(adoption: &ProjectAdoptionRecord) -> Value {
         "mode": adoption.mode,
         "summary": adoption.summary,
         "objective": adoption.objective,
+        "last_note": adoption.last_note,
         "feature_id": adoption.feature_id,
         "stage": adoption.stage,
         "lead_session_id": adoption.lead_session_id,
@@ -1484,6 +1487,7 @@ pub fn start_project_adoption(
         mode: "recovery".to_string(),
         summary: resolved_summary.clone(),
         objective: resolved_objective.clone(),
+        last_note: None,
         feature_id: feature_id.clone(),
         stage: normalized_stage.clone(),
         lead_session_id: lead_session_id.clone(),
@@ -1510,6 +1514,52 @@ pub fn start_project_adoption(
             "adoption": state.adoptions.iter().find(|item| item.id == adoption_id).map(adoption_summary),
             "session": state.sessions.iter().find(|item| item.id == lead_session_id).map(session_summary),
             "debate": state.debates.iter().find(|item| item.id == debate_id).map(debate_summary),
+        })
+        .to_string(),
+        Err(error) => json!({"error": error}).to_string(),
+    }
+}
+
+pub fn update_project_adoption_status(
+    project_path: &str,
+    project_name: Option<&str>,
+    adoption_id: &str,
+    status: &str,
+    note: Option<&str>,
+) -> String {
+    if adoption_id.trim().is_empty() || status.trim().is_empty() {
+        return json!({"error": "adoption_id and status required"}).to_string();
+    }
+
+    let normalized_status = status.trim().to_lowercase();
+    if !matches!(normalized_status.as_str(), "planned" | "active" | "completed" | "cancelled") {
+        return json!({"error": "status must be planned/active/completed/cancelled"}).to_string();
+    }
+
+    let mut state = load_control_plane(project_path, project_name);
+    let Some(adoption) = state
+        .adoptions
+        .iter_mut()
+        .find(|item| item.id == adoption_id.trim())
+    else {
+        return json!({"error": "adoption_not_found"}).to_string();
+    };
+
+    adoption.status = normalized_status;
+    adoption.last_note = note
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    adoption.updated_at = crate::state::now();
+    state.updated_at = adoption.updated_at.clone();
+
+    match save_control_plane(project_path, &state) {
+        Ok(()) => json!({
+            "status": "ok",
+            "action": "adoption_status_updated",
+            "project": state.project.name,
+            "project_path": project_path,
+            "adoption_id": adoption_id,
+            "adoption": state.adoptions.iter().find(|item| item.id == adoption_id.trim()).map(adoption_summary),
         })
         .to_string(),
         Err(error) => json!({"error": error}).to_string(),
