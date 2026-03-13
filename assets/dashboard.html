@@ -1644,7 +1644,7 @@ async function finalizePendingDxosLaunch(result){
   if(!pending)return;
   delete dxosPendingLaunches[paneKey];
   if(!result||result.error){
-    setDxosPortalNotice('launch',`Lane launch failed on pane ${paneKey}.`,`red`);
+    setDxosPortalNotice('launch',`Lane launch failed on pane ${paneKey}: ${String((result&&result.error)||'Unknown runtime error')}`,`red`);
     await renderExecutionHub();
     return;
   }
