@@ -74,6 +74,7 @@ fn collect_automation_assets_with_home(project_root: &Path, home_root: &Path) ->
             })
         })
         .collect::<Vec<_>>();
+    let provider_plugins = crate::provider_plugins::plugin_inventory();
 
     json!({
         "commands": {
@@ -87,12 +88,18 @@ fn collect_automation_assets_with_home(project_root: &Path, home_root: &Path) ->
             "providers": skill_providers,
         },
         "external_mcps": external_mcps,
+        "provider_plugins": provider_plugins,
         "counts": {
             "project_commands": project_commands.len(),
             "user_commands": user_commands.len(),
             "project_skills": project_skills.len(),
             "user_skills": user_skills.len(),
             "external_mcps": external_mcps.len(),
+            "provider_plugins": provider_plugins
+                .get("providers")
+                .and_then(|value| value.as_array())
+                .map(|items| items.len())
+                .unwrap_or(0),
             "commands_by_provider": counts_by_provider(
                 json!({
                     "claude": {

@@ -5,7 +5,6 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 const SHARED_SOURCE: &str = "dx";
-const CLAUDE_SOURCE: &str = "claude";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExternalMcpEntry {
@@ -50,9 +49,9 @@ pub fn shared_catalog_path() -> PathBuf {
 }
 
 /// Load the shared dx-owned external MCP catalog, importing Claude config as a source
-/// when needed so all runtimes can consume the same registry.
+/// and DX provider-plugin bridges when needed so all runtimes can consume the same registry.
 pub fn load_external_catalog() -> Vec<ExternalMcpEntry> {
-    load_external_catalog_from_path(&shared_catalog_path(), &crate::claude::read_claude_config())
+    load_external_catalog_from_sources(&shared_catalog_path(), &crate::provider_plugins::catalog_import_sources())
 }
 
 /// Refresh the shared dx-owned catalog from known import sources.
@@ -80,18 +79,18 @@ pub fn sync_gateway(gateway: &mut dx_gateway::MCPRegistry) -> usize {
     count
 }
 
-fn load_external_catalog_from_path(
+fn load_external_catalog_from_sources(
     shared_path: &Path,
-    claude_config: &Value,
+    import_sources: &[crate::provider_plugins::ProviderImportSource],
 ) -> Vec<ExternalMcpEntry> {
-    let entries = merged_catalog_entries_from_path(shared_path, claude_config);
+    let entries = merged_catalog_entries_from_sources(shared_path, import_sources);
     let _ = write_shared_catalog_to(shared_path, &entries);
     entries
 }
 
-fn merged_catalog_entries_from_path(
+fn merged_catalog_entries_from_sources(
     shared_path: &Path,
-    claude_config: &Value,
+    import_sources: &[crate::provider_plugins::ProviderImportSource],
 ) -> Vec<ExternalMcpEntry> {
     let mut merged: HashMap<String, ExternalMcpEntry> = HashMap::new();
 
@@ -100,12 +99,14 @@ fn merged_catalog_entries_from_path(
         merged.insert(entry.name.clone(), entry);
     }
 
-    for imported in import_catalog_from_config(claude_config, CLAUDE_SOURCE) {
-        let imported = normalize_entry(imported);
-        match merged.get_mut(&imported.name) {
-            Some(existing) => merge_entry(existing, imported),
-            None => {
-                merged.insert(imported.name.clone(), imported);
+    for source in import_sources {
+        for imported in import_catalog_from_config(&source.payload, &source.provider) {
+            let imported = normalize_entry(imported);
+            match merged.get_mut(&imported.name) {
+                Some(existing) => merge_entry(existing, imported),
+                None => {
+                    merged.insert(imported.name.clone(), imported);
+                }
             }
         }
     }
@@ -152,6 +153,14 @@ fn import_catalog_from_config(config: &Value, source: &str) -> Vec<ExternalMcpEn
         .collect::<Vec<_>>();
     entries.sort_by(|left, right| left.name.cmp(&right.name));
     entries
+}
+
+#[cfg(test)]
+fn load_external_catalog_from_test_sources(
+    shared_path: &Path,
+    import_sources: &[crate::provider_plugins::ProviderImportSource],
+) -> Vec<ExternalMcpEntry> {
+    load_external_catalog_from_sources(shared_path, import_sources)
 }
 
 fn entry_from_value(name: &str, server: &Value, source: &str) -> Option<ExternalMcpEntry> {
@@ -535,7 +544,7 @@ mod tests {
             projects: Vec::new(),
             keywords: Vec::new(),
             category: String::new(),
-            sources: vec![CLAUDE_SOURCE.to_string()],
+            sources: vec!["claude".to_string()],
         }))
         .expect("descriptor");
 
@@ -590,7 +599,7 @@ mod tests {
             projects: Vec::new(),
             keywords: Vec::new(),
             category: String::new(),
-            sources: vec![CLAUDE_SOURCE.to_string()],
+            sources: vec!["claude".to_string()],
         }))
         .expect("descriptor");
 
@@ -619,10 +628,18 @@ mod tests {
             }
         });
 
-        let entries = load_external_catalog_from_path(&shared_path, &claude_config);
+        let entries = load_external_catalog_from_test_sources(
+            &shared_path,
+            &[crate::provider_plugins::ProviderImportSource {
+                provider: "claude".to_string(),
+                mode: "native_import".to_string(),
+                path: crate::config::claude_json_path(),
+                payload: claude_config,
+            }],
+        );
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].name, "playwright");
-        assert_eq!(entries[0].sources, vec![CLAUDE_SOURCE.to_string()]);
+        assert_eq!(entries[0].sources, vec!["claude".to_string()]);
 
         let persisted = std::fs::read_to_string(&shared_path).unwrap();
         let catalog: ExternalMcpCatalog = serde_json::from_str(&persisted).unwrap();
@@ -664,7 +681,15 @@ mod tests {
             }
         });
 
-        let entries = load_external_catalog_from_path(&path, &claude_config);
+        let entries = load_external_catalog_from_test_sources(
+            &path,
+            &[crate::provider_plugins::ProviderImportSource {
+                provider: "claude".to_string(),
+                mode: "native_import".to_string(),
+                path: crate::config::claude_json_path(),
+                payload: claude_config,
+            }],
+        );
         assert_eq!(entries[0].command, "/custom/playwright");
         assert!(entries[0]
             .sources
@@ -673,6 +698,6 @@ mod tests {
         assert!(entries[0]
             .sources
             .iter()
-            .any(|value| value == CLAUDE_SOURCE));
+            .any(|value| value == "claude"));
     }
 }
