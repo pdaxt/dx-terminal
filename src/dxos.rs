@@ -1393,4 +1393,118 @@ mod tests {
             proposal_a_id
         );
     }
+
+    #[test]
+    fn session_contract_and_work_order_roundtrip() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        std::fs::create_dir_all(&project_path).unwrap();
+        let project = project_path.to_str().unwrap();
+
+        let lead = upsert_session_contract(
+            project,
+            Some("demo"),
+            None,
+            "architect",
+            Some("claude"),
+            Some("claude-opus-4.6"),
+            Some("guarded_auto"),
+            "Lead the runtime redesign",
+            vec!["decision record".to_string()],
+            vec!["playwright".to_string(), "git".to_string()],
+            vec![project.to_string()],
+            vec![project.to_string()],
+            Some(project),
+            Some("feat/runtime"),
+            Some(46001),
+            Some(1),
+            Some("dx:1.1"),
+            Some("F1.1"),
+            Some("design"),
+            None,
+            Some("lead_then_human"),
+            Some("active"),
+        );
+        let lead_value: Value = serde_json::from_str(&lead).unwrap();
+        let lead_id = lead_value["session_id"].as_str().unwrap();
+
+        let worker = upsert_session_contract(
+            project,
+            Some("demo"),
+            None,
+            "frontend",
+            Some("openai"),
+            Some("gpt-5.4"),
+            Some("guarded_auto"),
+            "Build the shell glass layer",
+            vec!["prototype".to_string()],
+            vec!["playwright".to_string()],
+            vec![project.to_string()],
+            vec![project.to_string()],
+            Some(project),
+            Some("feat/glass"),
+            Some(46002),
+            Some(2),
+            Some("dx:2.1"),
+            Some("F1.1"),
+            Some("build"),
+            Some(lead_id),
+            Some("lead_then_human"),
+            Some("active"),
+        );
+        let worker_value: Value = serde_json::from_str(&worker).unwrap();
+        let worker_id = worker_value["session_id"].as_str().unwrap();
+
+        let work = delegate_work_order(
+            project,
+            Some("demo"),
+            lead_id,
+            Some(worker_id),
+            "Prototype glass shell",
+            "Produce a modern operator shell prototype",
+            Some("F1.1"),
+            Some("build"),
+            vec!["playwright".to_string()],
+            vec!["prototype".to_string(), "screenshots".to_string()],
+        );
+        let work_value: Value = serde_json::from_str(&work).unwrap();
+        let work_order_id = work_value["work_order_id"].as_str().unwrap();
+
+        let blocked = work_order_block(
+            project,
+            Some("demo"),
+            work_order_id,
+            "Needs browser permission",
+            Some("browser_control"),
+        );
+        let blocked_value: Value = serde_json::from_str(&blocked).unwrap();
+        assert_eq!(blocked_value["work_order"]["status"], "blocked");
+        assert_eq!(
+            blocked_value["work_order"]["requested_permissions"][0],
+            "browser_control"
+        );
+
+        let resolved = resolve_work_order(
+            project,
+            Some("demo"),
+            work_order_id,
+            Some("Permission granted by lead"),
+        );
+        let resolved_value: Value = serde_json::from_str(&resolved).unwrap();
+        assert_eq!(resolved_value["work_order"]["status"], "assigned");
+
+        let completed = update_session_status(
+            project,
+            Some("demo"),
+            worker_id,
+            "completed",
+            Some("Prototype shipped"),
+        );
+        let completed_value: Value = serde_json::from_str(&completed).unwrap();
+        assert_eq!(completed_value["session"]["status"], "completed");
+
+        let listed: Value = serde_json::from_str(&session_list(project, Some("demo"))).unwrap();
+        assert_eq!(listed["sessions"].as_array().unwrap().len(), 2);
+        assert_eq!(listed["work_orders"].as_array().unwrap().len(), 1);
+    }
 }
