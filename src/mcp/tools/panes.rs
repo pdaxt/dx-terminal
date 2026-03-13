@@ -78,13 +78,20 @@ async fn resolve_spawn_pane(app: &App, pane_ref: &str) -> Result<u8, String> {
 
 /// Execute os_spawn logic — allocates a DX runtime lane through the broker
 pub async fn spawn(app: &App, req: SpawnRequest) -> String {
+    let client_request_id = req.client_request_id.clone();
     let pane_num = match resolve_spawn_pane(app, &req.pane).await {
         Ok(n) => n,
-        Err(error) => return json_err(&error),
+        Err(error) => {
+            return serde_json::json!({
+                "error": error,
+                "client_request_id": client_request_id,
+                "pane": req.pane,
+            })
+            .to_string()
+        }
     };
 
     let role = req.role.unwrap_or_else(|| "developer".into());
-    let client_request_id = req.client_request_id.clone();
     let provider =
         runtime_broker::normalize_provider_id(req.provider.as_deref().unwrap_or("claude"))
             .to_string();
@@ -125,10 +132,12 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         spawn_cwd = project_path.clone();
         // If project_path also doesn't exist, fail early with clear error
         if !std::path::Path::new(&spawn_cwd).exists() {
-            return json_err(&format!(
-                "Neither workspace nor project path exists: {}",
-                spawn_cwd
-            ));
+            return serde_json::json!({
+                "error": format!("Neither workspace nor project path exists: {}", spawn_cwd),
+                "client_request_id": client_request_id,
+                "pane": pane_num,
+            })
+            .to_string();
         }
     }
 
