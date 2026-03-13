@@ -270,6 +270,7 @@ async fn build_full_snapshot(app: &App) -> Value {
             "project": project,
             "task": task,
             "role": role,
+            "dxos_session_id": ps.and_then(|p| p.dxos_session_id.clone()),
             "provider": provider,
             "provider_label": tmux::provider_label(provider),
             "provider_short": tmux::provider_short(provider),

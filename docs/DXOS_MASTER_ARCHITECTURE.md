@@ -186,7 +186,9 @@ The first architecture slice now implemented in the repo is:
 
 - project-scoped DXOS control-plane state
 - formal debate engine
+- native session contracts and delegated work orders
 - MCP and web APIs for proposal, contradiction, vote, and decision flows
-- live `debate_changed` events
+- MCP and web APIs for session upsert, status updates, delegation, blocking, and resolution
+- live `debate_changed` and `dxos_session_changed` events
 
-That gives the platform a native place to reason, disagree, and decide inside the system itself.
+That gives the platform a native place to reason, disagree, decide, supervise, and delegate inside the system itself.
