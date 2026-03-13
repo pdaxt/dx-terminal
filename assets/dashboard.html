@@ -2625,6 +2625,7 @@ async function renderExecutionHub(){
   const dxosSessions=(dxos.sessions&&dxos.sessions.records)||[];
   const dxosSessionSummary=dxos.sessions||{};
   const dxosDelegation=dxos.delegation||{};
+  const dxosAudit=(dxos.audit&&dxos.audit.recent)||[];
   const delegatedWork=(dxosDelegation.recent||[]);
   const blockedWorkOrders=delegatedWork.filter(order=>order.status==='blocked');
   const permissionRequests=delegatedWork.filter(order=>(order.requested_permissions||[]).length);
@@ -2716,6 +2717,7 @@ async function renderExecutionHub(){
         <div class="exec-kpi"><div class="label">Handbook Docs</div><div class="value">${docs.vision_doc_count||0}</div><div class="meta">${docs.guidance_doc_count||0} guidance docs</div></div>
         <div class="exec-kpi"><div class="label">Release Confidence</div><div class="value">${escHtml(confidence.label)}</div><div class="meta">${escHtml(confidence.copy)}</div></div>
         <div class="exec-kpi"><div class="label">Decision Records</div><div class="value">${(dxos.debates&&dxos.debates.total)||0}</div><div class="meta">${(dxos.debates&&dxos.debates.decided)||0} finalized with rationale</div></div>
+        <div class="exec-kpi"><div class="label">Control Audit</div><div class="value">${(dxos.audit&&dxos.audit.total)||0}</div><div class="meta">${dxosAudit.length?`latest: ${escHtml(String(dxosAudit[0].action_kind||'action')).replace(/_/g,' ')}`:'no control actions logged yet'}</div></div>
         <div class="exec-kpi"><div class="label">Git State</div><div class="value">${git&&git.branch?escHtml(git.branch):'--'}</div><div class="meta">${escHtml(gitState)}</div></div>
       </div>
       <div class="journey-map">
@@ -2862,6 +2864,19 @@ async function renderExecutionHub(){
           </div>
           <div class="exec-row-tags"><span class="doc-pill shared">${escHtml((item.updated_at||'').toString())}</span></div>
         </div>`).join(''):'<div class="empty-note">No shared DXOS project registry records were found yet.</div>'}</div>
+      </div>
+      <div class="exec-row">
+        <div class="exec-row-top">
+          <span class="exec-row-title">Recent control-plane audit</span>
+          <span class="exec-row-tags"><span class="doc-pill shared">${(dxos.audit&&dxos.audit.total)||0} logged</span></span>
+        </div>
+        <div class="exec-list">${dxosAudit.length?dxosAudit.slice(0,5).map(item=>`<div class="doc-line">
+          <div class="doc-line-main">
+            <div class="doc-line-title">${escHtml(String(item.action_kind||'action').replace(/_/g,' '))} · ${escHtml((item.target||'').toString())}</div>
+            <div class="doc-line-path">${escHtml((item.summary||'').toString())}</div>
+          </div>
+          <div class="exec-row-tags"><span class="doc-pill ${item.outcome==='ok'?'shared':'gemini'}">${escHtml((item.outcome||'').toString())}</span><span class="doc-pill">${escHtml((item.actor||'').toString())}</span></div>
+        </div>`).join(''):'<div class="empty-note">No control-plane mutations have been logged for this project yet.</div>'}</div>
       </div>
     </div>
     ${renderDxosOperatorControls(project,activeStage,dxosSessions)}`;
@@ -3816,6 +3831,12 @@ function handleWSMessage(msg){
         renderExecutionHub();
         renderPanes();
         if(activePaneNum)renderPaneContext(activePaneNum);
+      }
+      break;
+
+    case 'audit_logged':
+      if(!selectedVisionProject||selectedVisionProject===msg.project||currentSpace===msg.project||currentSpace==='all'){
+        renderExecutionHub();
       }
       break;
 
