@@ -72,6 +72,50 @@ pub struct ProviderAvailability {
     pub binary: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct AdapterAvailability {
+    pub adapter: String,
+    pub label: String,
+    pub substrate: String,
+    pub available: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RuntimeAdapter {
+    TmuxMigration,
+    PtyNative,
+}
+
+impl RuntimeAdapter {
+    pub fn from_str(value: &str) -> Self {
+        match value.trim().to_lowercase().as_str() {
+            "pty" | "pty_native" | "pty_native_adapter" | "dx_pty" => Self::PtyNative,
+            _ => Self::TmuxMigration,
+        }
+    }
+
+    pub fn id(&self) -> &'static str {
+        match self {
+            Self::TmuxMigration => "tmux_migration_adapter",
+            Self::PtyNative => "pty_native_adapter",
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::TmuxMigration => "tmux migration adapter",
+            Self::PtyNative => "DX PTY adapter",
+        }
+    }
+
+    pub fn substrate(&self) -> &'static str {
+        match self {
+            Self::TmuxMigration => "tmux_window",
+            Self::PtyNative => "custom_pty_target",
+        }
+    }
+}
+
 pub fn provider_label(provider: &str) -> &'static str {
     RuntimeProvider::from_str(provider).label()
 }
@@ -105,7 +149,24 @@ pub fn provider_inventory() -> Vec<ProviderAvailability> {
     .collect()
 }
 
-pub fn plan_tmux_launch(
+pub fn adapter_inventory() -> Vec<AdapterAvailability> {
+    [RuntimeAdapter::PtyNative, RuntimeAdapter::TmuxMigration]
+        .into_iter()
+        .map(|adapter| AdapterAvailability {
+            adapter: adapter.id().to_string(),
+            label: adapter.label().to_string(),
+            substrate: adapter.substrate().to_string(),
+            available: true,
+        })
+        .collect()
+}
+
+pub fn normalize_adapter_id(adapter: Option<&str>) -> &'static str {
+    RuntimeAdapter::from_str(adapter.unwrap_or("pty_native_adapter")).id()
+}
+
+pub fn plan_launch(
+    adapter: Option<&str>,
     provider: &str,
     window_name: &str,
     project_path: &str,
@@ -113,6 +174,7 @@ pub fn plan_tmux_launch(
     autonomous: bool,
     model: Option<&str>,
 ) -> Result<RuntimeLaunchPlan> {
+    let adapter = RuntimeAdapter::from_str(adapter.unwrap_or("pty_native_adapter"));
     let provider = RuntimeProvider::from_str(provider);
     let binary = resolve_provider_binary(provider).ok_or_else(|| {
         anyhow::anyhow!(
@@ -133,7 +195,7 @@ pub fn plan_tmux_launch(
     );
 
     Ok(RuntimeLaunchPlan {
-        adapter: "tmux_migration_adapter".to_string(),
+        adapter: adapter.id().to_string(),
         provider: provider.id().to_string(),
         provider_label: provider.label().to_string(),
         binary,
@@ -143,6 +205,25 @@ pub fn plan_tmux_launch(
         window_name: window_name.to_string(),
         command,
     })
+}
+
+pub fn plan_tmux_launch(
+    provider: &str,
+    window_name: &str,
+    project_path: &str,
+    prompt: &str,
+    autonomous: bool,
+    model: Option<&str>,
+) -> Result<RuntimeLaunchPlan> {
+    plan_launch(
+        Some("tmux_migration_adapter"),
+        provider,
+        window_name,
+        project_path,
+        prompt,
+        autonomous,
+        model,
+    )
 }
 
 fn build_provider_command_with_binary(
@@ -271,6 +352,19 @@ mod tests {
     }
 
     #[test]
+    fn normalizes_runtime_adapters() {
+        assert_eq!(
+            RuntimeAdapter::from_str("pty_native_adapter"),
+            RuntimeAdapter::PtyNative
+        );
+        assert_eq!(RuntimeAdapter::from_str("pty"), RuntimeAdapter::PtyNative);
+        assert_eq!(
+            RuntimeAdapter::from_str("tmux_migration_adapter"),
+            RuntimeAdapter::TmuxMigration
+        );
+    }
+
+    #[test]
     fn builds_claude_command_with_model_and_permissions() {
         let plan = RuntimeLaunchPlan {
             adapter: "tmux_migration_adapter".to_string(),
@@ -323,5 +417,22 @@ mod tests {
         assert!(cmd.contains("--prompt-interactive 'design three options'"));
         assert!(cmd.contains("-m 'gemini-2.5-pro'"));
         assert!(!cmd.contains("--yolo"));
+    }
+
+    #[test]
+    fn launch_plan_can_target_pty_adapter() {
+        let plan = plan_launch(
+            Some("pty_native_adapter"),
+            "codex",
+            "dx-codex-1",
+            "/tmp/demo",
+            "review this diff",
+            true,
+            Some("gpt-5.4"),
+        );
+        if let Ok(plan) = plan {
+            assert_eq!(plan.adapter, "pty_native_adapter");
+            assert_eq!(plan.provider, "codex");
+        }
     }
 }
