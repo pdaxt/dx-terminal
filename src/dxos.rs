@@ -661,6 +661,14 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             "runtime_providers": ["claude", "codex", "gemini", "opencode"],
             "browser_port_base": crate::config::browser_port_base(),
             "browser_port_formula": "browser_port_base + pane",
+            "control_endpoints": {
+                "session_launch": "/api/dxos/session/launch",
+                "pane_talk": "/api/pane/talk",
+                "pane_kill": "/api/pane/kill",
+                "pane_output": "/api/pane/{id}/output",
+                "event_stream": "/api/events",
+                "websocket": "/ws",
+            },
         },
         "sessions": {
             "total": state.sessions.len(),
