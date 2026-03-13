@@ -35,10 +35,9 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     };
 
     let role = req.role.unwrap_or_else(|| "developer".into());
-    let provider = runtime_broker::normalize_provider_id(
-        req.provider.as_deref().unwrap_or("claude"),
-    )
-    .to_string();
+    let provider =
+        runtime_broker::normalize_provider_id(req.provider.as_deref().unwrap_or("claude"))
+            .to_string();
     let model = req.model.clone();
     let feature_id = req.feature_id.clone();
     let stage = req.stage.clone();
