@@ -1764,7 +1764,10 @@ async function killPaneViaApi(pane,reason){
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({pane:String(paneNum),reason:reason||'web dashboard'})
   });
-  if(!result||result.error)return false;
+  if(!result||result.error){
+    noteDxControlAuthFailure(result);
+    return false;
+  }
   refresh();
   if(activePaneNum===paneNum)closePanel();
   return true;
@@ -1778,7 +1781,10 @@ async function restartPaneViaApi(pane){
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({pane:String(paneNum)})
   });
-  if(!result||result.error)return false;
+  if(!result||result.error){
+    noteDxControlAuthFailure(result);
+    return false;
+  }
   refresh();
   if(activePaneNum===paneNum){
     setTimeout(()=>openPanel(paneNum),250);
@@ -3218,7 +3224,8 @@ async function sendTalk(){
     body:JSON.stringify({pane:activePaneNum,message:msg})
   });
   if(!result||result.error){
-    addChatMsg(activePaneNum,'system','Unable to deliver message to the lane.');
+    noteDxControlAuthFailure(result);
+    addChatMsg(activePaneNum,'system',`Unable to deliver message to the lane: ${String((result&&result.error)||'unknown error')}.`);
   }
 
   // Save to command history for up-arrow recall
@@ -3239,7 +3246,8 @@ async function quickTalk(msg){
     body:JSON.stringify({pane:activePaneNum,message:msg})
   });
   if(!result||result.error){
-    addChatMsg(activePaneNum,'system','Unable to deliver quick command to the lane.');
+    noteDxControlAuthFailure(result);
+    addChatMsg(activePaneNum,'system',`Unable to deliver quick command to the lane: ${String((result&&result.error)||'unknown error')}.`);
   }
   const ind=document.getElementById('send-indicator');
   if(ind){ind.classList.add('active');setTimeout(()=>ind.classList.remove('active'),1500)}
