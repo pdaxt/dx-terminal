@@ -277,6 +277,7 @@ pub async fn post_pane_talk(
     Json(body): Json<PaneTalkBody>,
 ) -> ApiJson {
     require_control_token(&headers)?;
+    let actor = control_actor(&headers);
     if body.pane == 0 || body.message.trim().is_empty() {
         return Ok(Json(json!({"error": "pane and message required"})));
     }
@@ -288,15 +289,49 @@ pub async fn post_pane_talk(
         match tokio::task::spawn_blocking(move || crate::tmux::send_command(&target, &body.message))
             .await
         {
-            Ok(Ok(())) => Ok(Json(json!({
-                "status": "sent",
-                "pane": body.pane,
-                "runtime_adapter": "tmux_migration_adapter",
-            }))),
-            Ok(Err(error)) => Ok(Json(json!({"error": format!("{}", error)}))),
-            Err(error) => Ok(Json(
-                json!({"error": format!("task join error: {}", error)}),
-            )),
+            Ok(Ok(())) => {
+                let value = json!({
+                    "status": "sent",
+                    "pane": body.pane,
+                    "runtime_adapter": "tmux_migration_adapter",
+                });
+                record_control_action(
+                    &app,
+                    &pane_data.project_path,
+                    Some(&pane_data.project),
+                    &actor,
+                    "pane_talk",
+                    &format!("pane:{}", body.pane),
+                    &value,
+                );
+                Ok(Json(value))
+            }
+            Ok(Err(error)) => {
+                let value = json!({"error": format!("{}", error)});
+                record_control_action(
+                    &app,
+                    &pane_data.project_path,
+                    Some(&pane_data.project),
+                    &actor,
+                    "pane_talk",
+                    &format!("pane:{}", body.pane),
+                    &value,
+                );
+                Ok(Json(value))
+            }
+            Err(error) => {
+                let value = json!({"error": format!("task join error: {}", error)});
+                record_control_action(
+                    &app,
+                    &pane_data.project_path,
+                    Some(&pane_data.project),
+                    &actor,
+                    "pane_talk",
+                    &format!("pane:{}", body.pane),
+                    &value,
+                );
+                Ok(Json(value))
+            }
         }
     } else {
         let send_result = {
@@ -304,12 +339,36 @@ pub async fn post_pane_talk(
             pty.send_line(body.pane, &body.message)
         };
         match send_result {
-            Ok(()) => Ok(Json(json!({
-                "status": "sent",
-                "pane": body.pane,
-                "runtime_adapter": "pty_native_adapter",
-            }))),
-            Err(error) => Ok(Json(json!({"error": format!("{}", error)}))),
+            Ok(()) => {
+                let value = json!({
+                    "status": "sent",
+                    "pane": body.pane,
+                    "runtime_adapter": "pty_native_adapter",
+                });
+                record_control_action(
+                    &app,
+                    &pane_data.project_path,
+                    Some(&pane_data.project),
+                    &actor,
+                    "pane_talk",
+                    &format!("pane:{}", body.pane),
+                    &value,
+                );
+                Ok(Json(value))
+            }
+            Err(error) => {
+                let value = json!({"error": format!("{}", error)});
+                record_control_action(
+                    &app,
+                    &pane_data.project_path,
+                    Some(&pane_data.project),
+                    &actor,
+                    "pane_talk",
+                    &format!("pane:{}", body.pane),
+                    &value,
+                );
+                Ok(Json(value))
+            }
         }
     }
 }
@@ -321,6 +380,9 @@ pub async fn post_pane_kill(
     Json(body): Json<PaneKillBody>,
 ) -> ApiJson {
     require_control_token(&headers)?;
+    let actor = control_actor(&headers);
+    let pane_num = body.pane.parse::<u8>().ok().unwrap_or(0);
+    let pane_data = app.state.get_pane(pane_num).await;
     let result = tools::kill(
         &app,
         types::KillRequest {
@@ -329,7 +391,17 @@ pub async fn post_pane_kill(
         },
     )
     .await;
-    Ok(Json(parse_mcp(&result)))
+    let value = parse_mcp(&result);
+    record_control_action(
+        &app,
+        &pane_data.project_path,
+        Some(&pane_data.project),
+        &actor,
+        "pane_kill",
+        &format!("pane:{}", pane_num),
+        &value,
+    );
+    Ok(Json(value))
 }
 
 /// POST /api/pane/restart — Restart a live pane through the control-plane API
@@ -339,8 +411,21 @@ pub async fn post_pane_restart(
     Json(body): Json<PaneRestartBody>,
 ) -> ApiJson {
     require_control_token(&headers)?;
+    let actor = control_actor(&headers);
+    let pane_num = body.pane.parse::<u8>().ok().unwrap_or(0);
+    let pane_data = app.state.get_pane(pane_num).await;
     let result = tools::restart(&app, types::RestartRequest { pane: body.pane }).await;
-    Ok(Json(parse_mcp(&result)))
+    let value = parse_mcp(&result);
+    record_control_action(
+        &app,
+        &pane_data.project_path,
+        Some(&pane_data.project),
+        &actor,
+        "pane_restart",
+        &format!("pane:{}", pane_num),
+        &value,
+    );
+    Ok(Json(value))
 }
 
 /// GET /api/pane/:id/output — PTY output (via tools::watch)
