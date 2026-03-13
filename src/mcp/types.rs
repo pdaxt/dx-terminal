@@ -2154,6 +2154,19 @@ pub struct DxosControlPlaneRequest {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosProviderPluginsRequest {}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosProviderPluginSyncRequest {
+    #[schemars(description = "Optional source provider to convert from: claude, codex/openai/gpt, gemini")]
+    pub source_provider: Option<String>,
+    #[schemars(description = "Target provider bridge to export: claude, codex/openai/gpt, gemini")]
+    pub target_provider: String,
+    #[schemars(description = "If true, return the translated payload without writing the provider bridge file")]
+    pub dry_run: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct DxosDebateListRequest {
     #[schemars(description = "Project path (default: current directory)")]
     pub project: Option<String>,

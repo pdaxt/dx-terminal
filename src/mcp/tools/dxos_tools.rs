@@ -9,6 +9,20 @@ pub fn control_plane(project: Option<&str>) -> String {
     dxos::control_plane_snapshot(&project_path, None).to_string()
 }
 
+pub fn provider_plugins() -> String {
+    crate::provider_plugins::plugin_inventory().to_string()
+}
+
+pub fn provider_plugin_sync(
+    source_provider: Option<&str>,
+    target_provider: &str,
+    dry_run: bool,
+) -> String {
+    crate::provider_plugins::convert_provider_plugin(source_provider, target_provider, dry_run)
+        .map(|value| value.to_string())
+        .unwrap_or_else(|error| serde_json::json!({"error": error.to_string()}).to_string())
+}
+
 pub fn debate_list(project: Option<&str>) -> String {
     dxos::debate_list(&resolve_project_path(project), None)
 }

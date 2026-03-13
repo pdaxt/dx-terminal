@@ -2711,6 +2711,32 @@ impl DxTerminalService {
     }
 
     #[tool(
+        description = "Inspect the DX provider-plugin bridge inventory. Use this to see how Claude native MCPs, Codex/GPT bridge files, and Gemini bridge files are being translated through the shared DX manifest."
+    )]
+    async fn dxos_provider_plugins(
+        &self,
+        Parameters(_req): Parameters<types::DxosProviderPluginsRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::dxos_tools::provider_plugins();
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Convert the shared DX MCP manifest into a provider bridge. This is the interoperability path that turns Claude-native MCP registrations into Codex/GPT or Gemini bridge configs, and vice versa through the DX catalog."
+    )]
+    async fn dxos_provider_plugin_sync(
+        &self,
+        Parameters(req): Parameters<types::DxosProviderPluginSyncRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::dxos_tools::provider_plugin_sync(
+            req.source_provider.as_deref(),
+            &req.target_provider,
+            req.dry_run.unwrap_or(false),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
         description = "List formal debates for a project. Use this to inspect structured proposals, contradictions, votes, and final decisions."
     )]
     async fn dxos_debate_list(
