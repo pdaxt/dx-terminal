@@ -1,4 +1,5 @@
 use crate::config;
+use crate::recovery_planning::SuggestedSessionPlan;
 use crate::state::events::StateEvent;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -161,6 +162,12 @@ pub struct ProjectAdoptionRecord {
     pub requested_by: Option<String>,
     #[serde(default)]
     pub participants: Vec<String>,
+    #[serde(default)]
+    pub follow_on_suggestions: Vec<SuggestedSessionPlan>,
+    #[serde(default)]
+    pub follow_on_session_ids: Vec<String>,
+    #[serde(default)]
+    pub follow_on_work_order_ids: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -1143,6 +1150,10 @@ fn adoption_summary(adoption: &ProjectAdoptionRecord) -> Value {
         "debate_id": adoption.debate_id,
         "requested_by": adoption.requested_by,
         "participants": adoption.participants,
+        "follow_on_suggestions": adoption.follow_on_suggestions,
+        "follow_on_session_ids": adoption.follow_on_session_ids,
+        "follow_on_work_order_ids": adoption.follow_on_work_order_ids,
+        "follow_on_count": adoption.follow_on_suggestions.len(),
         "created_at": adoption.created_at,
         "updated_at": adoption.updated_at,
     })
