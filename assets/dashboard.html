@@ -3244,14 +3244,16 @@ function handleWSMessage(msg){
       break;
 
     case 'debate_changed':
-      if(!selectedVisionProject||selectedVisionProject===msg.project){
-        refresh();
+      if(!selectedVisionProject||selectedVisionProject===msg.project||currentSpace===msg.project||currentSpace==='all'){
+        renderExecutionHub();
       }
       break;
 
     case 'dxos_session_changed':
-      if(!selectedVisionProject||selectedVisionProject===msg.project){
-        refresh();
+      if(!selectedVisionProject||selectedVisionProject===msg.project||currentSpace===msg.project||currentSpace==='all'){
+        renderExecutionHub();
+        renderPanes();
+        if(activePaneNum)renderPaneContext(activePaneNum);
       }
       break;
 
