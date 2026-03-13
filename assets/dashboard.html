@@ -1756,9 +1756,18 @@ function clearDxOperatorIdentity(){
   renderExecutionHub();
 }
 
+function currentDxOperatorPolicy(project){
+  const auth=dxosControlAuthCache[project]||{};
+  const actor=storedDxOperatorIdentity();
+  const operators=Array.isArray(auth.operators)?auth.operators:[];
+  if(!actor)return null;
+  return operators.find(item=>String(item.id||'')===actor)||null;
+}
+
 function noteDxControlAuthFailure(result){
-  if(result&&Number(result._http_status)===401){
-    setDxosPortalNotice('auth',String(result.error||'DX control token required'),'red');
+  const status=Number(result&&result._http_status||0);
+  if(result&&(status===401||status===403)){
+    setDxosPortalNotice('auth',String(result.error||'DX control access denied'),'red');
     return true;
   }
   return false;
@@ -2699,6 +2708,7 @@ async function renderExecutionHub(){
   const protectedControls=controlAuth.mode==='control_token';
   const controlTokenLoaded=!!storedDxControlToken();
   const operatorIdentity=storedDxOperatorIdentity();
+  const operatorPolicy=currentDxOperatorPolicy(project);
   const selectedMcp=automationSelection[project]||(externalMcps[0]&&externalMcps[0].name)||'';
   const selectedCacheKey=selectedMcp?automationCacheKey(project,selectedMcp):'';
   const selectedToolInfo=selectedCacheKey?automationToolCache[selectedCacheKey]:null;
@@ -2837,7 +2847,7 @@ async function renderExecutionHub(){
       </div>
       <div class="doc-mini-card">
         <div class="label">Control auth</div>
-        <div class="meta">${protectedControls?'token protected':'local trusted'} · ${protectedControls?(controlTokenLoaded?'token loaded in portal session':'portal token required for control actions'):'no token required'}${operatorIdentity?` · actor ${escHtml(operatorIdentity)}`:''}</div>
+        <div class="meta">${escHtml((controlAuth.mode||'local_trusted').toString())} · ${protectedControls?(controlTokenLoaded?'token loaded in portal session':'portal token required for control actions'):'no token required'}${operatorIdentity?` · actor ${escHtml(operatorIdentity)}`:''}${operatorPolicy?` · role ${escHtml((operatorPolicy.role||'operator').toString())}`:''}</div>
       </div>
     </div>
     <div class="exec-list">
