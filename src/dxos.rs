@@ -3455,6 +3455,35 @@ mod tests {
     }
 
     #[test]
+    fn runtime_launch_context_includes_adoption_work_package() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        std::fs::create_dir_all(&project_path).unwrap();
+        let project = project_path.to_str().unwrap();
+
+        let started: Value = serde_json::from_str(&start_project_adoption(
+            project,
+            Some("demo"),
+            Some("Recover the inherited project"),
+            Some("Map the current state and create the first governed recovery plan."),
+            Some("F1.1"),
+            Some("discovery"),
+            vec!["lead".to_string(), "qa".to_string()],
+            Some("ops-lead"),
+        ))
+        .unwrap();
+
+        let lead_session_id = started["lead_session_id"].as_str().unwrap();
+        let context = runtime_launch_context(project, Some("demo"), lead_session_id);
+
+        assert_eq!(context["session"]["id"], started["lead_session_id"]);
+        assert_eq!(context["primary_work_order"]["id"], started["work_order_id"]);
+        assert_eq!(context["primary_work_order"]["status"], "assigned");
+        assert_eq!(context["adoption"]["id"], started["adoption_id"]);
+        assert_eq!(context["debate"]["id"], started["debate_id"]);
+    }
+
+    #[test]
     fn operator_policy_authorizes_scoped_actions() {
         let profiles = vec![ControlOperatorProfile {
             id: "ops-lead".to_string(),
