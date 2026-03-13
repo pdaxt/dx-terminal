@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static AUDIT_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectDescriptor {
@@ -487,7 +490,8 @@ fn next_audit_id() -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    format!("AU{}", millis)
+    let seq = AUDIT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    format!("AU{}-{}", millis, seq)
 }
 
 fn audit_summary(record: &AuditRecord) -> Value {
