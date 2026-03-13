@@ -204,8 +204,16 @@ pub struct WorkOrderRecord {
     pub requested_permissions: Vec<String>,
     #[serde(default)]
     pub expected_outputs: Vec<String>,
+    #[serde(default)]
+    pub resolution_notes: Vec<WorkResolutionRecord>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkResolutionRecord {
+    pub message: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -565,6 +573,8 @@ fn work_order_summary(work_order: &WorkOrderRecord) -> Value {
         "blockers": work_order.blockers,
         "requested_permissions": work_order.requested_permissions,
         "expected_outputs": work_order.expected_outputs,
+        "last_resolution": work_order.resolution_notes.last().map(|note| note.message.clone()),
+        "resolution_notes": work_order.resolution_notes.iter().rev().take(5).collect::<Vec<_>>(),
         "created_at": work_order.created_at,
         "updated_at": work_order.updated_at,
     })
@@ -1325,11 +1335,11 @@ pub fn delegate_work_order(
 
     let now = crate::state::now();
     let work_order_id = next_work_order_id(&state);
-    state.work_orders.push(WorkOrderRecord {
-        id: work_order_id.clone(),
-        supervisor_session_id: supervisor_session_id.trim().to_string(),
-        worker_session_id: worker_session_id
-            .map(|value| value.trim().to_string())
+        state.work_orders.push(WorkOrderRecord {
+            id: work_order_id.clone(),
+            supervisor_session_id: supervisor_session_id.trim().to_string(),
+            worker_session_id: worker_session_id
+                .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty()),
         status: if worker_session_id.is_some() {
             "assigned".to_string()
@@ -1349,15 +1359,16 @@ pub fn delegate_work_order(
             .into_iter()
             .filter(|value| !value.trim().is_empty())
             .collect(),
-        blockers: Vec::new(),
-        requested_permissions: Vec::new(),
-        expected_outputs: expected_outputs
-            .into_iter()
-            .filter(|value| !value.trim().is_empty())
-            .collect(),
-        created_at: now.clone(),
-        updated_at: now.clone(),
-    });
+            blockers: Vec::new(),
+            requested_permissions: Vec::new(),
+            expected_outputs: expected_outputs
+                .into_iter()
+                .filter(|value| !value.trim().is_empty())
+                .collect(),
+            resolution_notes: Vec::new(),
+            created_at: now.clone(),
+            updated_at: now.clone(),
+        });
     state.updated_at = now;
 
     match save_control_plane(project_path, &state) {
@@ -1487,6 +1498,7 @@ pub fn raise_session_blocker(
                 .into_iter()
                 .collect(),
             expected_outputs,
+            resolution_notes: Vec::new(),
             created_at: now.clone(),
             updated_at: now.clone(),
         });
@@ -1607,9 +1619,10 @@ pub fn resolve_work_order(
     work_order.blockers.clear();
     work_order.requested_permissions.clear();
     if let Some(resolution) = resolution.filter(|value| !value.trim().is_empty()) {
-        work_order
-            .expected_outputs
-            .push(format!("Resolution: {}", resolution.trim()));
+        work_order.resolution_notes.push(WorkResolutionRecord {
+            message: resolution.trim().to_string(),
+            created_at: crate::state::now(),
+        });
     }
     work_order.updated_at = crate::state::now();
     state.updated_at = work_order.updated_at.clone();
@@ -1635,6 +1648,44 @@ pub fn resolve_work_order(
             "project_path": project_path,
             "work_order_id": work_order_id,
             "work_order": state.work_orders.iter().find(|item| item.id == work_order_id.trim()).map(work_order_summary),
+        })
+        .to_string(),
+        Err(error) => json!({"error": error}).to_string(),
+    }
+}
+
+pub fn record_session_delivery_failure(
+    project_path: &str,
+    project_name: Option<&str>,
+    session_id: &str,
+    error: &str,
+) -> String {
+    if session_id.trim().is_empty() || error.trim().is_empty() {
+        return json!({"error": "session_id and error required"}).to_string();
+    }
+
+    let mut state = load_control_plane(project_path, project_name);
+    let Some(session) = state
+        .sessions
+        .iter_mut()
+        .find(|item| item.id == session_id.trim())
+    else {
+        return json!({"error": "session_not_found"}).to_string();
+    };
+
+    session.status = "blocked".to_string();
+    session.last_error = Some(error.trim().to_string());
+    session.updated_at = crate::state::now();
+    state.updated_at = session.updated_at.clone();
+
+    match save_control_plane(project_path, &state) {
+        Ok(()) => json!({
+            "status": "ok",
+            "action": "session_delivery_failed",
+            "project": state.project.name,
+            "project_path": project_path,
+            "session_id": session_id,
+            "session": state.sessions.iter().find(|item| item.id == session_id.trim()).map(session_summary),
         })
         .to_string(),
         Err(error) => json!({"error": error}).to_string(),
