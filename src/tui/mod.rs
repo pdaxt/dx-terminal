@@ -265,6 +265,7 @@ async fn execute_command(app: &App, cmd: TuiCommand) -> TuiResult {
                 types::SpawnRequest {
                     pane,
                     project,
+                    session_id: None,
                     role,
                     provider: None,
                     model: None,

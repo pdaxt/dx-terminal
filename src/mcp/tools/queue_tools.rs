@@ -794,6 +794,7 @@ pub async fn auto_cycle(app: &App) -> String {
                             SpawnRequest {
                                 pane: pane.to_string(),
                                 project: task.project.clone(),
+                                session_id: None,
                                 role: Some(task.role.clone()),
                                 provider: None,
                                 model: None,

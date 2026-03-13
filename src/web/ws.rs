@@ -663,6 +663,7 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
                 types::SpawnRequest {
                     pane,
                     project,
+                    session_id: None,
                     role,
                     provider,
                     model,
