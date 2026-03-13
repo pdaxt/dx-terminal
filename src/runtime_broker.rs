@@ -66,7 +66,8 @@ pub struct RuntimeLaunchPlan {
 pub struct ProviderAvailability {
     pub provider: String,
     pub label: String,
-    pub adapter: String,
+    pub preferred_adapter: String,
+    pub supported_adapters: Vec<String>,
     pub available: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub binary: Option<String>,
@@ -141,7 +142,11 @@ pub fn provider_inventory() -> Vec<ProviderAvailability> {
         ProviderAvailability {
             provider: provider.id().to_string(),
             label: provider.label().to_string(),
-            adapter: "tmux_migration_adapter".to_string(),
+            preferred_adapter: RuntimeAdapter::PtyNative.id().to_string(),
+            supported_adapters: vec![
+                RuntimeAdapter::PtyNative.id().to_string(),
+                RuntimeAdapter::TmuxMigration.id().to_string(),
+            ],
             available: binary.is_some(),
             binary,
         }
@@ -434,5 +439,23 @@ mod tests {
             assert_eq!(plan.adapter, "pty_native_adapter");
             assert_eq!(plan.provider, "codex");
         }
+    }
+
+    #[test]
+    fn provider_inventory_prefers_pty_and_exposes_supported_adapters() {
+        let providers = provider_inventory();
+        let claude = providers
+            .iter()
+            .find(|item| item.provider == "claude")
+            .expect("claude provider inventory entry");
+        assert_eq!(claude.preferred_adapter, "pty_native_adapter");
+        assert!(claude
+            .supported_adapters
+            .iter()
+            .any(|item| item == "pty_native_adapter"));
+        assert!(claude
+            .supported_adapters
+            .iter()
+            .any(|item| item == "tmux_migration_adapter"));
     }
 }
