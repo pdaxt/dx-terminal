@@ -2039,4 +2039,84 @@ mod tests {
             "Runtime launch failed: codex binary missing"
         );
     }
+
+    #[test]
+    fn session_blocker_routes_to_lead_before_human() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        std::fs::create_dir_all(&project_path).unwrap();
+        let project = project_path.to_str().unwrap();
+
+        let lead = upsert_session_contract(
+            project,
+            Some("demo"),
+            None,
+            "lead",
+            Some("claude"),
+            Some("claude-opus-4.6"),
+            Some("guarded_auto"),
+            "Coordinate delivery",
+            vec!["guidance".to_string()],
+            vec!["docs".to_string()],
+            vec![project.to_string()],
+            vec![project.to_string()],
+            Some(project),
+            Some("feat/main"),
+            Some(46001),
+            Some(1),
+            Some("dx:1.1"),
+            Some("F3.1"),
+            Some("build"),
+            None,
+            Some("lead_then_human"),
+            Some("active"),
+        );
+        let lead_value: Value = serde_json::from_str(&lead).unwrap();
+        let lead_id = lead_value["session_id"].as_str().unwrap();
+
+        let worker = upsert_session_contract(
+            project,
+            Some("demo"),
+            None,
+            "frontend",
+            Some("codex"),
+            Some("gpt-5.4"),
+            Some("guarded_auto"),
+            "Build the approval modal",
+            vec!["prototype".to_string()],
+            vec!["playwright".to_string()],
+            vec![project.to_string()],
+            vec![project.to_string()],
+            Some(project),
+            Some("feat/modal"),
+            Some(46002),
+            Some(2),
+            Some("dx:2.1"),
+            Some("F3.1"),
+            Some("build"),
+            Some(lead_id),
+            Some("lead_then_human"),
+            Some("active"),
+        );
+        let worker_value: Value = serde_json::from_str(&worker).unwrap();
+        let worker_id = worker_value["session_id"].as_str().unwrap();
+
+        let blocked = raise_session_blocker(
+            project,
+            Some("demo"),
+            worker_id,
+            "Needs browser login approval",
+            Some("browser_login"),
+            Some("Approve login and continue"),
+        );
+        let blocked_value: Value = serde_json::from_str(&blocked).unwrap();
+        assert_eq!(blocked_value["session"]["status"], "blocked");
+        assert_eq!(blocked_value["work_order"]["status"], "blocked");
+        assert_eq!(blocked_value["escalation_target"], "lead");
+        assert_eq!(blocked_value["routed_to"], lead_id);
+        assert_eq!(
+            blocked_value["work_order"]["requested_permissions"][0],
+            "browser_login"
+        );
+    }
 }
