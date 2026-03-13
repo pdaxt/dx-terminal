@@ -1775,6 +1775,13 @@ pub async fn get_dxos_debates(Query(q): Query<VisionQuery>) -> Json<Value> {
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
+/// GET /api/dxos/sessions?project=NAME — Session contracts and delegated work
+pub async fn get_dxos_sessions(Query(q): Query<VisionQuery>) -> Json<Value> {
+    let project_path = resolve_project_path(&q);
+    let result = crate::dxos::session_list(&project_path, q.project.as_deref());
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
 /// POST /api/dxos/debate/start — Start a formal debate
 pub async fn start_dxos_debate(
     State(app): State<AppState>,
@@ -1885,6 +1892,127 @@ pub async fn finalize_dxos_debate(
         &body.rationale,
     );
     maybe_emit_debate_change(&app, &project_path, &result);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/dxos/session/upsert — Create or update a session contract
+pub async fn upsert_dxos_session(
+    State(app): State<AppState>,
+    Json(body): Json<DxosSessionUpsertBody>,
+) -> Json<Value> {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let result = crate::dxos::upsert_session_contract(
+        &project_path,
+        body.project.as_deref(),
+        body.session_id.as_deref(),
+        &body.role,
+        body.provider.as_deref(),
+        body.model.as_deref(),
+        body.autonomy_level.as_deref(),
+        &body.objective,
+        body.expected_outputs,
+        body.allowed_capabilities,
+        body.allowed_repos,
+        body.allowed_paths,
+        body.workspace_path.as_deref(),
+        body.branch_name.as_deref(),
+        body.browser_port,
+        body.pane,
+        body.tmux_target.as_deref(),
+        body.feature_id.as_deref(),
+        body.stage.as_deref(),
+        body.supervisor_session_id.as_deref(),
+        body.escalation_policy.as_deref(),
+        body.status.as_deref(),
+    );
+    maybe_emit_dxos_session_change(&app, &project_path, &result);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/dxos/session/status — Update a session status
+pub async fn update_dxos_session_status(
+    State(app): State<AppState>,
+    Json(body): Json<DxosSessionStatusBody>,
+) -> Json<Value> {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let result = crate::dxos::update_session_status(
+        &project_path,
+        body.project.as_deref(),
+        &body.session_id,
+        &body.status,
+        body.note.as_deref(),
+    );
+    maybe_emit_dxos_session_change(&app, &project_path, &result);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/dxos/work/delegate — Delegate a structured work order
+pub async fn delegate_dxos_work(
+    State(app): State<AppState>,
+    Json(body): Json<DxosWorkDelegateBody>,
+) -> Json<Value> {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let result = crate::dxos::delegate_work_order(
+        &project_path,
+        body.project.as_deref(),
+        &body.supervisor_session_id,
+        body.worker_session_id.as_deref(),
+        &body.title,
+        &body.objective,
+        body.feature_id.as_deref(),
+        body.stage.as_deref(),
+        body.required_capabilities,
+        body.expected_outputs,
+    );
+    maybe_emit_dxos_session_change(&app, &project_path, &result);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/dxos/work/block — Block a work order
+pub async fn block_dxos_work(
+    State(app): State<AppState>,
+    Json(body): Json<DxosWorkBlockBody>,
+) -> Json<Value> {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let result = crate::dxos::work_order_block(
+        &project_path,
+        body.project.as_deref(),
+        &body.work_order_id,
+        &body.blocker,
+        body.requested_permission.as_deref(),
+    );
+    maybe_emit_dxos_session_change(&app, &project_path, &result);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/dxos/work/resolve — Resolve a blocked work order
+pub async fn resolve_dxos_work(
+    State(app): State<AppState>,
+    Json(body): Json<DxosWorkResolveBody>,
+) -> Json<Value> {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let result = crate::dxos::resolve_work_order(
+        &project_path,
+        body.project.as_deref(),
+        &body.work_order_id,
+        body.resolution.as_deref(),
+    );
+    maybe_emit_dxos_session_change(&app, &project_path, &result);
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
