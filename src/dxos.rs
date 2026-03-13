@@ -164,6 +164,8 @@ pub struct SessionContractRecord {
     #[serde(default)]
     pub pane: Option<u8>,
     #[serde(default)]
+    pub runtime_adapter: Option<String>,
+    #[serde(default)]
     pub tmux_target: Option<String>,
     #[serde(default)]
     pub feature_id: Option<String>,
@@ -539,6 +541,7 @@ fn session_summary(session: &SessionContractRecord) -> Value {
         "branch_name": session.branch_name,
         "browser_port": session.browser_port,
         "pane": session.pane,
+        "runtime_adapter": session.runtime_adapter,
         "tmux_target": session.tmux_target,
         "feature_id": session.feature_id,
         "stage": session.stage,
@@ -1057,6 +1060,7 @@ pub fn upsert_session_contract(
     branch_name: Option<&str>,
     browser_port: Option<u16>,
     pane: Option<u8>,
+    runtime_adapter: Option<&str>,
     tmux_target: Option<&str>,
     feature_id: Option<&str>,
     stage: Option<&str>,
@@ -1119,6 +1123,9 @@ pub fn upsert_session_contract(
             .filter(|value| !value.is_empty());
         existing.browser_port = browser_port;
         existing.pane = pane;
+        existing.runtime_adapter = runtime_adapter
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
         existing.tmux_target = tmux_target
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
@@ -1174,6 +1181,9 @@ pub fn upsert_session_contract(
                 .filter(|value| !value.is_empty()),
             browser_port,
             pane,
+            runtime_adapter: runtime_adapter
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
             tmux_target: tmux_target
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty()),
