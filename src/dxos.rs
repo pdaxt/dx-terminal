@@ -1585,12 +1585,33 @@ pub fn update_project_adoption_status(
         return json!({"error": "adoption_not_found"}).to_string();
     };
 
-    adoption.status = normalized_status;
+    adoption.status = normalized_status.clone();
     adoption.last_note = note
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
     adoption.updated_at = crate::state::now();
     state.updated_at = adoption.updated_at.clone();
+    let initial_work_order_id = adoption.initial_work_order_id.clone();
+    let adoption_note = adoption.last_note.clone();
+
+    if let Some(work_order_id) = initial_work_order_id.as_deref() {
+        if let Some(work_order) = state
+            .work_orders
+            .iter_mut()
+            .find(|item| item.id == work_order_id)
+        {
+            if matches!(normalized_status.as_str(), "completed" | "cancelled") {
+                work_order.status = normalized_status.clone();
+                if let Some(note) = adoption_note.clone() {
+                    work_order.resolution_notes.push(WorkResolutionRecord {
+                        message: note,
+                        created_at: state.updated_at.clone(),
+                    });
+                }
+                work_order.updated_at = state.updated_at.clone();
+            }
+        }
+    }
 
     match save_control_plane(project_path, &state) {
         Ok(()) => json!({
@@ -1600,6 +1621,13 @@ pub fn update_project_adoption_status(
             "project_path": project_path,
             "adoption_id": adoption_id,
             "adoption": state.adoptions.iter().find(|item| item.id == adoption_id.trim()).map(adoption_summary),
+            "work_order": initial_work_order_id.and_then(|id| {
+                state
+                    .work_orders
+                    .iter()
+                    .find(|item| item.id == id)
+                    .map(work_order_summary)
+            }),
         })
         .to_string(),
         Err(error) => json!({"error": error}).to_string(),
