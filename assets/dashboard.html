@@ -2278,6 +2278,7 @@ function renderDxosOperatorControls(project,activeStage,sessions){
   const protectedControls=controlAuth.mode==='control_token';
   const controlTokenLoaded=!!storedDxControlToken();
   const operatorIdentity=storedDxOperatorIdentity();
+  const operatorPolicy=currentDxOperatorPolicy(project);
   const launchAdapterOptions=runtimeAdapterOptions(project,'pty_native_adapter');
   const sessionAdapterOptions=runtimeAdapterOptions(project,'pty_native_adapter');
   const launchTask=featureId
@@ -2306,6 +2307,16 @@ function renderDxosOperatorControls(project,activeStage,sessions){
               <div class="action-note">${protectedControls?(controlTokenLoaded?'token loaded in browser session':'locked until token is supplied'):'no token required'}</div>
             </div>
           </div>
+          <div class="action-form-grid">
+            <div class="action-field">
+              <label>Effective role</label>
+              <div class="action-note">${operatorPolicy?escHtml((operatorPolicy.role||'operator').toString()):controlAuth.operator_policy_configured?'unknown until a registered operator identity is supplied':'open authenticated operator'}</div>
+            </div>
+            <div class="action-field">
+              <label>Project scope</label>
+              <div class="action-note">${operatorPolicy?(operatorPolicy.project_scopes||[]).map(item=>escHtml(String(item))).join(', ')||'*':controlAuth.operator_policy_configured?'policy restricted':'*'}</div>
+            </div>
+          </div>
           <div class="action-field">
             <label for="dx-operator-identity">Operator identity</label>
             <input class="action-input" id="dx-operator-identity" value="${escHtml(operatorIdentity)}" placeholder="ops-lead / reviewer / client-admin">
@@ -2315,6 +2326,7 @@ function renderDxosOperatorControls(project,activeStage,sessions){
             <button class="vdd-focus-btn" onclick="clearDxOperatorIdentity();return false;">Clear</button>
             <span class="action-note">Protected control requests send this as <code>X-DX-Actor</code> for the audit trail.</span>
           </div>
+          ${operatorPolicy?`<div class="action-note">Allowed actions: ${escHtml(((operatorPolicy.allowed_actions||[]).slice(0,6).join(', ')||'*').toString())}</div>`:controlAuth.operator_policy_configured?'<div class="action-note">The current operator identity is not registered in the DXOS operator policy.</div>':''}
           ${protectedControls?`<div class="action-field">
             <label for="dx-control-token">DX control token</label>
             <input class="action-input" id="dx-control-token" type="password" placeholder="${controlTokenLoaded?'Stored token can be replaced':'Paste control token'}">
