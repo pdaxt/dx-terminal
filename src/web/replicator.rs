@@ -233,10 +233,13 @@ async fn run_replicator(app: Arc<App>) {
                     if should_raise {
                         attention_signatures.insert(key.clone(), signature);
                         if let Some(pane_state) = pane_state {
-                            if let (Some(session_id), false) = (
-                                pane_state.dxos_session_id.filter(|value| !value.trim().is_empty()),
-                                pane_state.project_path.trim().is_empty(),
-                            ) {
+                            let session_id = pane_state
+                                .dxos_session_id
+                                .clone()
+                                .filter(|value| !value.trim().is_empty());
+                            if let (Some(session_id), false) =
+                                (session_id, pane_state.project_path.trim().is_empty())
+                            {
                                 let result = crate::dxos::raise_session_blocker(
                                     &pane_state.project_path,
                                     Some(&pane_state.project),
@@ -247,9 +250,10 @@ async fn run_replicator(app: Arc<App>) {
                                         "Resolve this through the supervising lead in DXOS or escalate to a human if no lead is attached.",
                                     ),
                                 );
-                                if let Some(event) =
-                                    crate::dxos::session_event_from_result(&pane_state.project_path, &result)
-                                {
+                                if let Some(event) = crate::dxos::session_event_from_result(
+                                    &pane_state.project_path,
+                                    &result,
+                                ) {
                                     app.state.event_bus.send(event);
                                 }
                             }
