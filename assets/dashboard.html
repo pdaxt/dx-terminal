@@ -2770,12 +2770,17 @@ function renderRecoveryGapRows(gaps){
 function renderAdoptionRows(project,adoptions,workOrders,showLaunch){
   const list=Array.isArray(adoptions)?adoptions:[];
   const workOrderList=Array.isArray(workOrders)?workOrders:[];
+  const sessionList=Array.isArray(dxosSessionCache[project])?dxosSessionCache[project]:[];
   if(!list.length){
     return '<div class="empty-note">No governed adoption workflow has been started for this project yet.</div>';
   }
   return list.slice(0,3).map(item=>{
     const tone=item.status==='active'?'shared':item.status==='planned'?'codex':'gemini';
     const workOrder=item.initial_work_order_id?workOrderList.find(entry=>String(entry.id||'')===String(item.initial_work_order_id)):null;
+    const followOnSessions=(Array.isArray(item.follow_on_session_ids)?item.follow_on_session_ids:[])
+      .map(sessionId=>sessionList.find(entry=>String(entry.id||'')===String(sessionId)))
+      .filter(Boolean)
+      .slice(0,3);
     const links=[
       item.lead_session_id?`lead ${item.lead_session_id}`:null,
       item.debate_id?`council ${item.debate_id}`:null,
@@ -2783,6 +2788,10 @@ function renderAdoptionRows(project,adoptions,workOrders,showLaunch){
       item.feature_id?`feature ${item.feature_id}`:null
     ].filter(Boolean).join(' · ');
     const workOrderMeta=workOrder?`${workOrder.title||'Recovery work package'}${workOrder.status?` · ${workOrder.status}`:''}${workOrder.stage?` · ${workOrder.stage}`:''}`:'';
+    const followOnMeta=followOnSessions.map(session=>{
+      const bits=[session.role||'worker',session.feature_id||null,session.stage?`stage ${normalizeVddPhase(session.stage)}`:null,session.status||null].filter(Boolean);
+      return bits.join(' · ');
+    }).join(' | ');
     return `<div class="exec-row">
       <div class="exec-row-top">
         <span class="exec-row-title">${escHtml((item.summary||'Project adoption').toString())}</span>
@@ -2791,29 +2800,32 @@ function renderAdoptionRows(project,adoptions,workOrders,showLaunch){
       <div class="exec-row-meta">${escHtml((item.objective||'').toString())}</div>
       ${workOrderMeta?`<div class="exec-row-meta" style="margin-top:6px">${escHtml(workOrderMeta)}</div>`:''}
       ${workOrder&&workOrder.objective?`<div class="exec-row-meta">${escHtml(String(workOrder.objective||''))}</div>`:''}
+      ${followOnMeta?`<div class="exec-row-meta" style="margin-top:6px">Seeded follow-on lanes: ${escHtml(followOnMeta)}</div>`:''}
       <div class="exec-row-meta" style="margin-top:6px">${escHtml(links||'No linked recovery artifacts yet.')}</div>
       ${showLaunch&&item.lead_session_id?`<div class="exec-row-actions" style="margin-top:8px">
-        <button class="vdd-focus-btn" onclick="return launchAdoptionLead('${escHtml(String(item.lead_session_id))}')" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Launch lead lane</button>
+        <button class="vdd-focus-btn" onclick="return launchDxosSessionContract('${escHtml(String(item.lead_session_id))}','adoption','recovery lead')" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Launch lead lane</button>
         ${item.status==='active'?`<button class="vdd-focus-btn" style="margin-left:8px" onclick="return updateDxosAdoptionStatus('${escHtml(String(item.id))}','completed','Recovery plan accepted and handed off into governed delivery.')" ${operatorActionDisabledAttrs(project,'adoption_status','adoption status update')}>Mark complete</button>
         <button class="vdd-focus-btn" style="margin-left:8px" onclick="return updateDxosAdoptionStatus('${escHtml(String(item.id))}','cancelled','Recovery workflow cancelled by operator.')" ${operatorActionDisabledAttrs(project,'adoption_status','adoption status update')}>Cancel</button>`:''}
+        ${followOnSessions.map(session=>`<button class="vdd-focus-btn" style="margin-left:8px" onclick="return launchDxosSessionContract('${escHtml(String(session.id))}','adoption','${escHtml(String(session.role||'specialist'))} lane')" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Launch ${escHtml(String(session.role||'lane'))}</button>`).join('')}
       </div>`:''}
     </div>`;
   }).join('');
 }
 
-async function launchAdoptionLead(sessionId){
+async function launchDxosSessionContract(sessionId,noticeScope,label){
   const project=activeProjectForHub();
   if(!project||!sessionId)return false;
   if(!operatorAllowsAction(project,'session_launch')){
-    setDxosPortalNotice('adoption','Operator policy blocks lane launch for this project.','red');
+    setDxosPortalNotice(noticeScope||'launch','Operator policy blocks lane launch for this project.','red');
     return false;
   }
   const session=(dxosSessionCache[project]||[]).find(item=>String(item.id||'')===String(sessionId));
   if(!session){
-    setDxosPortalNotice('adoption',`Unable to find DXOS session ${sessionId} for launch.`,'red');
+    setDxosPortalNotice(noticeScope||'launch',`Unable to find DXOS session ${sessionId} for launch.`,'red');
     return false;
   }
-  setDxosPortalNotice('adoption',`Launching recovery lead ${sessionId} through the DX broker…`,'yellow');
+  const laneLabel=(label||session.role||'lane').toString();
+  setDxosPortalNotice(noticeScope||'launch',`Launching ${laneLabel} ${sessionId} through the DX broker…`,'yellow');
   const result=await fetchJSON('/api/dxos/session/launch',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -2833,20 +2845,20 @@ async function launchAdoptionLead(sessionId){
     })
   });
   if(!result){
-    setDxosPortalNotice('adoption','Unable to reach the DXOS launch endpoint.','red');
+    setDxosPortalNotice(noticeScope||'launch','Unable to reach the DXOS launch endpoint.','red');
     return false;
   }
   if(noteDxControlAuthFailure(result)){
     return false;
   }
   if(result.error){
-    setDxosPortalNotice('adoption',`Unable to launch ${sessionId}: ${String(result.error||'Unknown runtime error')}`,'red');
+    setDxosPortalNotice(noticeScope||'launch',`Unable to launch ${sessionId}: ${String(result.error||'Unknown runtime error')}`,'red');
     await renderExecutionHub();
     return false;
   }
   setDxosPortalNotice(
-    'adoption',
-    `Recovery lead ${sessionId} launched on Pane ${result.pane||'auto'} via ${adapterLabel((result.runtime_adapter||'').toString())}.`,
+    noticeScope||'launch',
+    `${laneLabel} ${sessionId} launched on Pane ${result.pane||'auto'} via ${adapterLabel((result.runtime_adapter||'').toString())}.`,
     'green'
   );
   await renderExecutionHub();

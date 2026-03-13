@@ -25,6 +25,8 @@ When the operator launches that lead lane, DXOS now injects the assigned work pa
 
 The portal no longer hand-builds that first package. It now asks DXOS to start governed recovery, and the backend derives the initial summary, objective, feature, and stage from the same `project/brief` recovery model that powers the adoption rail.
 
+That same shared recovery planner now also supplies the first follow-on specialist suggestions. When adoption is marked complete, DXOS seeds planned specialist session contracts and work orders under the recovery lead instead of stopping at a closed recovery ticket.
+
 ## Core Promise
 
 If a company points DXOS at an in-progress project, the platform should be able to:
@@ -132,6 +134,7 @@ DXOS should recommend specialist lanes such as:
 Those suggestions should not live only in prose. They should prefill governed operator controls directly in the portal.
 
 For adoption specifically, the first suggestion is now materialized as a real DXOS work package rather than a generic “launch a lead” recommendation.
+The remaining specialist suggestions are preserved on the adoption record and become planned follow-on lanes when the recovery lead completes the adoption workflow.
 
 ## Operator Flow
 
