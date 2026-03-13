@@ -1897,6 +1897,7 @@ function renderDxosWorkOrderRows(workOrders,sessions,limit,mode){
     const requiredCapabilities=(order.required_capabilities||[]).slice(0,3);
     const expectedOutputs=(order.expected_outputs||[]).slice(0,2);
     const lastResolution=typeof order.last_resolution==='string'?order.last_resolution.trim():'';
+    const draftResolution=dxosResolutionDraft(order.id);
     const escalationTarget=(order.escalation_target||'lead').toString();
     const routeLabel=escalationTarget==='human'
       ? 'human approval'
@@ -1930,6 +1931,7 @@ function renderDxosWorkOrderRows(workOrders,sessions,limit,mode){
       ${requiredCapabilities.length?`<div class="exec-row-meta">Required capabilities: ${escHtml(requiredCapabilities.join(', '))}${(order.required_capabilities||[]).length>3?' …':''}</div>`:''}
       ${expectedOutputs.length?`<div class="exec-row-meta">Expected outputs: ${escHtml(expectedOutputs.join(' · '))}${(order.expected_outputs||[]).length>2?' …':''}</div>`:''}
       ${lastResolution?`<div class="exec-row-meta">Latest resolution: ${escHtml(truncateCopy(lastResolution,160))}</div>`:''}
+      ${order.status==='blocked'||requestedPermissions.length?`<div style="margin-top:10px"><div class="exec-row-meta" style="margin-bottom:6px">Reply back into the worker lane</div><textarea class="action-textarea" style="min-height:76px" oninput="setDxosResolutionDraft('${String(order.id)}',this.value);event.stopPropagation();" onclick="event.stopPropagation();">${escHtml(draftResolution)}</textarea></div>`:''}
     </div>`;
   }).join('');
 }
