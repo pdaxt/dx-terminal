@@ -3190,6 +3190,41 @@ mod tests {
     }
 
     #[test]
+    fn project_adoption_seeds_recovery_session_and_council() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        std::fs::create_dir_all(&project_path).unwrap();
+        let project = project_path.to_str().unwrap();
+
+        let value: Value = serde_json::from_str(&start_project_adoption(
+            project,
+            Some("demo"),
+            Some("Recover the inherited project"),
+            Some("Map the current state and create the first governed recovery plan."),
+            Some("F1.1"),
+            Some("discovery"),
+            vec!["lead".to_string(), "qa".to_string()],
+            Some("ops-lead"),
+        ))
+        .unwrap();
+
+        assert_eq!(value["action"], "adoption_started");
+        assert!(value["adoption_id"].as_str().unwrap().starts_with("AD"));
+        assert!(value["lead_session_id"].as_str().unwrap().starts_with("SX"));
+        assert!(value["debate_id"].as_str().unwrap().starts_with("DB"));
+
+        let snapshot = control_plane_snapshot(project, Some("demo"));
+        assert_eq!(snapshot["adoptions"]["total"], 1);
+        assert_eq!(snapshot["adoptions"]["active"], 1);
+        assert_eq!(snapshot["sessions"]["total"], 1);
+        assert_eq!(snapshot["debates"]["total"], 1);
+        assert_eq!(
+            snapshot["adoptions"]["recent"][0]["lead_session_id"],
+            value["lead_session_id"]
+        );
+    }
+
+    #[test]
     fn operator_policy_authorizes_scoped_actions() {
         let profiles = vec![ControlOperatorProfile {
             id: "ops-lead".to_string(),
