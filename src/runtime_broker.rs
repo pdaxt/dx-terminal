@@ -62,6 +62,16 @@ pub struct RuntimeLaunchPlan {
     pub command: String,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct ProviderAvailability {
+    pub provider: String,
+    pub label: String,
+    pub adapter: String,
+    pub available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binary: Option<String>,
+}
+
 pub fn provider_label(provider: &str) -> &'static str {
     RuntimeProvider::from_str(provider).label()
 }
@@ -72,6 +82,27 @@ pub fn provider_short(provider: &str) -> &'static str {
 
 pub fn normalize_provider_id(provider: &str) -> &'static str {
     RuntimeProvider::from_str(provider).id()
+}
+
+pub fn provider_inventory() -> Vec<ProviderAvailability> {
+    [
+        RuntimeProvider::Claude,
+        RuntimeProvider::Codex,
+        RuntimeProvider::Gemini,
+        RuntimeProvider::OpenCode,
+    ]
+    .into_iter()
+    .map(|provider| {
+        let binary = resolve_provider_binary(provider);
+        ProviderAvailability {
+            provider: provider.id().to_string(),
+            label: provider.label().to_string(),
+            adapter: "tmux_migration_adapter".to_string(),
+            available: binary.is_some(),
+            binary,
+        }
+    })
+    .collect()
 }
 
 pub fn plan_tmux_launch(
