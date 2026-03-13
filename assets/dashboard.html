@@ -2767,25 +2767,30 @@ function renderRecoveryGapRows(gaps){
   }).join('');
 }
 
-function renderAdoptionRows(project,adoptions,showLaunch){
+function renderAdoptionRows(project,adoptions,workOrders,showLaunch){
   const list=Array.isArray(adoptions)?adoptions:[];
+  const workOrderList=Array.isArray(workOrders)?workOrders:[];
   if(!list.length){
     return '<div class="empty-note">No governed adoption workflow has been started for this project yet.</div>';
   }
   return list.slice(0,3).map(item=>{
     const tone=item.status==='active'?'shared':item.status==='planned'?'codex':'gemini';
+    const workOrder=item.initial_work_order_id?workOrderList.find(entry=>String(entry.id||'')===String(item.initial_work_order_id)):null;
     const links=[
       item.lead_session_id?`lead ${item.lead_session_id}`:null,
       item.debate_id?`council ${item.debate_id}`:null,
       item.initial_work_order_id?`work ${item.initial_work_order_id}`:null,
       item.feature_id?`feature ${item.feature_id}`:null
     ].filter(Boolean).join(' · ');
+    const workOrderMeta=workOrder?`${workOrder.title||'Recovery work package'}${workOrder.status?` · ${workOrder.status}`:''}${workOrder.stage?` · ${workOrder.stage}`:''}`:'';
     return `<div class="exec-row">
       <div class="exec-row-top">
         <span class="exec-row-title">${escHtml((item.summary||'Project adoption').toString())}</span>
         <span class="exec-row-tags"><span class="doc-pill ${tone}">${escHtml((item.status||'active').toString())}</span>${item.stage?vddPhaseBadge(item.stage):''}</span>
       </div>
       <div class="exec-row-meta">${escHtml((item.objective||'').toString())}</div>
+      ${workOrderMeta?`<div class="exec-row-meta" style="margin-top:6px">${escHtml(workOrderMeta)}</div>`:''}
+      ${workOrder&&workOrder.objective?`<div class="exec-row-meta">${escHtml(String(workOrder.objective||''))}</div>`:''}
       <div class="exec-row-meta" style="margin-top:6px">${escHtml(links||'No linked recovery artifacts yet.')}</div>
       ${showLaunch&&item.lead_session_id?`<div class="exec-row-actions" style="margin-top:8px">
         <button class="vdd-focus-btn" onclick="return launchAdoptionLead('${escHtml(String(item.lead_session_id))}')" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Launch lead lane</button>
@@ -3175,7 +3180,7 @@ async function renderExecutionHub(){
             <div class="exec-row-meta">${recoveryNextAction&&recoveryNextAction.reason?escHtml(String(recoveryNextAction.reason)):'DXOS has not suggested the next lane yet.'}</div>
           </div>
           <div class="exec-list-title">Governed adoption workflow</div>
-          <div class="exec-list">${renderAdoptionRows(project,dxosAdoptions,showOperatorControls)}</div>
+          <div class="exec-list">${renderAdoptionRows(project,dxosAdoptions,delegatedWork,showOperatorControls)}</div>
           ${showOperatorControls?`<div class="exec-row-actions" style="margin-top:10px">
             <button class="design-action" onclick="return startDxosAdoption()" ${operatorActionDisabledAttrs(project,'adoption_start','project adoption')}>Start recovery council</button>
           </div>
