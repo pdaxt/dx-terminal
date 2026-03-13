@@ -158,7 +158,10 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     if let Some(session_id) = dxos_session_id.as_deref() {
         env_vars.push(("DXOS_SESSION_ID".to_string(), session_id.to_string()));
     }
-    if let Some(value) = feature_id.as_deref().filter(|value| !value.trim().is_empty()) {
+    if let Some(value) = feature_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
         env_vars.push(("DX_FEATURE_ID".to_string(), value.to_string()));
     }
     if let Some(value) = stage.as_deref().filter(|value| !value.trim().is_empty()) {
