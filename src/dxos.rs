@@ -1359,6 +1359,163 @@ pub fn session_list(project_path: &str, project_name: Option<&str>) -> String {
     .to_string()
 }
 
+pub fn start_project_adoption(
+    project_path: &str,
+    project_name: Option<&str>,
+    summary: Option<&str>,
+    objective: Option<&str>,
+    feature_id: Option<&str>,
+    stage: Option<&str>,
+    participants: Vec<String>,
+    requested_by: Option<&str>,
+) -> String {
+    let mut state = load_control_plane(project_path, project_name);
+    if let Some(existing) = state
+        .adoptions
+        .iter()
+        .find(|adoption| matches!(adoption.status.as_str(), "active" | "planned"))
+    {
+        return json!({
+            "error": "adoption_in_progress",
+            "adoption": adoption_summary(existing),
+        })
+        .to_string();
+    }
+
+    let now = crate::state::now();
+    let project = state.project.name.clone();
+    let normalized_stage = normalize_stage(stage);
+    let feature_id = feature_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let provider_policy = provider_policy_for("lead", Some(&normalized_stage));
+    let adoption_id = next_adoption_id(&state);
+    let lead_session_id = next_session_id(&state);
+    let debate_id = next_debate_id(&state);
+    let resolved_summary = summary
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| {
+            format!(
+                "Adopt {} into DXOS, reconstruct the current truth, and create the first governed recovery plan.",
+                project
+            )
+        });
+    let resolved_objective = objective
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| {
+            format!(
+                "Inventory the existing project state for {}, map active features and stages, identify missing docs and approvals, and produce the first recovery plan with evidence.",
+                project
+            )
+        });
+    let participants = if participants.is_empty() {
+        vec![
+            "recovery-lead".to_string(),
+            "design-review".to_string(),
+            "qa-review".to_string(),
+            "docs-steward".to_string(),
+        ]
+    } else {
+        participants
+            .into_iter()
+            .filter(|value| !value.trim().is_empty())
+            .collect::<Vec<_>>()
+    };
+
+    state.sessions.push(SessionContractRecord {
+        id: lead_session_id.clone(),
+        status: "planned".to_string(),
+        role: "lead".to_string(),
+        provider: Some(provider_policy.preferred_provider.clone()),
+        model: provider_policy.suggested_models.first().cloned(),
+        autonomy_level: "guarded_auto".to_string(),
+        objective: resolved_objective.clone(),
+        expected_outputs: vec![
+            "recovery_assessment".to_string(),
+            "feature_map".to_string(),
+            "stage_map".to_string(),
+            "handoff_plan".to_string(),
+        ],
+        allowed_capabilities: vec![
+            "vision".to_string(),
+            "docs".to_string(),
+            "git".to_string(),
+            "analysis".to_string(),
+        ],
+        allowed_repos: vec![project_path.to_string()],
+        allowed_paths: vec![project_path.to_string()],
+        workspace_path: Some(project_path.to_string()),
+        branch_name: None,
+        browser_port: None,
+        pane: None,
+        runtime_adapter: Some("pty_native_adapter".to_string()),
+        tmux_target: None,
+        feature_id: feature_id.clone(),
+        stage: Some(normalized_stage.clone()),
+        supervisor_session_id: None,
+        escalation_policy: Some("human".to_string()),
+        policy_violations: Vec::new(),
+        last_error: None,
+        created_at: now.clone(),
+        updated_at: now.clone(),
+    });
+
+    state.debates.push(DebateRecord {
+        id: debate_id.clone(),
+        title: format!("Project adoption council · {}", project),
+        objective: resolved_objective.clone(),
+        status: "open".to_string(),
+        feature_id: feature_id.clone(),
+        stage: Some(normalized_stage.clone()),
+        participants: participants.clone(),
+        proposals: Vec::new(),
+        contradictions: Vec::new(),
+        votes: Vec::new(),
+        decision: None,
+        created_at: now.clone(),
+        updated_at: now.clone(),
+    });
+
+    state.adoptions.push(ProjectAdoptionRecord {
+        id: adoption_id.clone(),
+        status: "active".to_string(),
+        mode: "recovery".to_string(),
+        summary: resolved_summary.clone(),
+        objective: resolved_objective.clone(),
+        feature_id: feature_id.clone(),
+        stage: normalized_stage.clone(),
+        lead_session_id: lead_session_id.clone(),
+        debate_id: debate_id.clone(),
+        requested_by: requested_by
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+        participants: participants.clone(),
+        created_at: now.clone(),
+        updated_at: now.clone(),
+    });
+
+    state.updated_at = now;
+
+    match save_control_plane(project_path, &state) {
+        Ok(()) => json!({
+            "status": "ok",
+            "action": "adoption_started",
+            "project": state.project.name,
+            "project_path": project_path,
+            "adoption_id": adoption_id,
+            "lead_session_id": lead_session_id,
+            "debate_id": debate_id,
+            "adoption": state.adoptions.iter().find(|item| item.id == adoption_id).map(adoption_summary),
+            "session": state.sessions.iter().find(|item| item.id == lead_session_id).map(session_summary),
+            "debate": state.debates.iter().find(|item| item.id == debate_id).map(debate_summary),
+        })
+        .to_string(),
+        Err(error) => json!({"error": error}).to_string(),
+    }
+}
+
 pub fn debate_start(
     project_path: &str,
     project_name: Option<&str>,
