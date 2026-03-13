@@ -153,6 +153,20 @@ pub fn control_token() -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+pub fn control_operators_json() -> Option<String> {
+    if let Ok(raw) = std::env::var("DX_CONTROL_OPERATORS") {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    let path = dx_root().join("operators.json");
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 // --- Pane resolution (uses global config) ---
 
 pub fn theme_name(pane: u8) -> &'static str {

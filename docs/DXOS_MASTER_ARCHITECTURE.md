@@ -222,5 +222,6 @@ The first architecture slice now implemented in the repo is:
 - SQLite-backed DXOS control-plane storage is now the canonical backend, the repo-local `.dxos/control-plane.json` remains only as a compatibility mirror, and the portal exposes both the store paths and the registered-project registry so operators can see which state is authoritative
 - mutating DXOS and pane-control HTTP routes can now be protected with a server-side `DX_CONTROL_TOKEN`, and the runtime contract publishes the auth mode so a hosted portal can distinguish trusted local control from token-gated operations
 - every protected portal control mutation now lands in a canonical DXOS audit log inside the shared SQLite store, and the execution hub surfaces those records so operator actions are reviewable without reading raw server logs
+- the portal can now stamp a session-scoped operator identity onto protected control requests, so the audit trail is no longer limited to a generic control token holder label
 
 That gives the platform a native place to reason, disagree, decide, supervise, and delegate inside the system itself.
