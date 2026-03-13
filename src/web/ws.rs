@@ -471,6 +471,21 @@ async fn forward_events(mut rx: broadcast::Receiver<StateEvent>, sender: WsSende
                         "status": status,
                         "action": action,
                     }),
+                    StateEvent::SessionContractChanged {
+                        project,
+                        session_id,
+                        role,
+                        status,
+                        action,
+                    } => json!({
+                        "type": "dxos_session_changed",
+                        "seq": seq,
+                        "project": project,
+                        "session_id": session_id,
+                        "role": role,
+                        "status": status,
+                        "action": action,
+                    }),
                     StateEvent::SyncStatusChanged { project, data } => json!({
                         "type": "sync_status",
                         "seq": seq,

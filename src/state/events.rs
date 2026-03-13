@@ -116,6 +116,14 @@ pub enum StateEvent {
         action: String,
     },
 
+    SessionContractChanged {
+        project: String,
+        session_id: String,
+        role: String,
+        status: String,
+        action: String,
+    },
+
     // --- Sync ---
     SyncStatusChanged {
         project: String,
