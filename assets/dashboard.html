@@ -2767,7 +2767,7 @@ function renderRecoveryGapRows(gaps){
   }).join('');
 }
 
-function renderAdoptionRows(adoptions){
+function renderAdoptionRows(project,adoptions,showLaunch){
   const list=Array.isArray(adoptions)?adoptions:[];
   if(!list.length){
     return '<div class="empty-note">No governed adoption workflow has been started for this project yet.</div>';
@@ -2786,6 +2786,9 @@ function renderAdoptionRows(adoptions){
       </div>
       <div class="exec-row-meta">${escHtml((item.objective||'').toString())}</div>
       <div class="exec-row-meta" style="margin-top:6px">${escHtml(links||'No linked recovery artifacts yet.')}</div>
+      ${showLaunch&&item.lead_session_id?`<div class="exec-row-actions" style="margin-top:8px">
+        <button class="vdd-focus-btn" onclick="return launchAdoptionLead('${escHtml(String(item.lead_session_id))}')" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Launch lead lane</button>
+      </div>`:''}
     </div>`;
   }).join('');
 }
