@@ -1287,6 +1287,19 @@ pub struct VisionQuery {
 }
 
 #[derive(Deserialize, Default)]
+pub struct DxosAdoptionStartBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub summary: Option<String>,
+    pub objective: Option<String>,
+    pub feature_id: Option<String>,
+    pub stage: Option<String>,
+    #[serde(default)]
+    pub participants: Vec<String>,
+    pub requested_by: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
 pub struct DxosDebateStartBody {
     pub project: Option<String>,
     pub path: Option<String>,
@@ -2550,6 +2563,54 @@ pub async fn get_dxos_audit(Query(q): Query<VisionQuery>) -> Json<Value> {
     let project_path = resolve_project_path(&q);
     let result = crate::dxos::audit_list(&project_path, q.project.as_deref(), 20);
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/dxos/adoption/start — Start a governed project adoption workflow
+pub async fn start_dxos_adoption(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DxosAdoptionStartBody>,
+) -> ApiJson {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        body.project.as_deref(),
+        "adoption_start",
+        body.summary
+            .as_deref()
+            .unwrap_or("project_adoption"),
+    )?;
+    let result = crate::dxos::start_project_adoption(
+        &project_path,
+        body.project.as_deref(),
+        body.summary.as_deref(),
+        body.objective.as_deref(),
+        body.feature_id.as_deref(),
+        body.stage.as_deref(),
+        body.participants,
+        body.requested_by.as_deref(),
+    );
+    maybe_emit_dxos_session_change(&app, &project_path, &result);
+    maybe_emit_debate_change(&app, &project_path, &result);
+    let value = serde_json::from_str(&result).unwrap_or(json!({"raw": result}));
+    record_control_action(
+        &app,
+        &project_path,
+        body.project.as_deref(),
+        &actor,
+        "adoption_start",
+        value
+            .get("adoption_id")
+            .and_then(Value::as_str)
+            .unwrap_or("project_adoption"),
+        &value,
+    );
+    Ok(Json(value))
 }
 
 /// POST /api/dxos/debate/start — Start a formal debate

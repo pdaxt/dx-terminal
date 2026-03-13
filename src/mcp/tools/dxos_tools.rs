@@ -13,6 +13,27 @@ pub fn debate_list(project: Option<&str>) -> String {
     dxos::debate_list(&resolve_project_path(project), None)
 }
 
+pub fn adoption_start(
+    project: Option<&str>,
+    summary: Option<&str>,
+    objective: Option<&str>,
+    feature_id: Option<&str>,
+    stage: Option<&str>,
+    participants: Vec<String>,
+    requested_by: Option<&str>,
+) -> String {
+    dxos::start_project_adoption(
+        &resolve_project_path(project),
+        None,
+        summary,
+        objective,
+        feature_id,
+        stage,
+        participants,
+        requested_by,
+    )
+}
+
 pub fn debate_start(
     project: Option<&str>,
     title: &str,
