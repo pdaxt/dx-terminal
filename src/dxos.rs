@@ -1399,6 +1399,7 @@ pub fn start_project_adoption(
     let adoption_id = next_adoption_id(&state);
     let lead_session_id = next_session_id(&state);
     let debate_id = next_debate_id(&state);
+    let work_order_id = next_work_order_id(&state);
     let resolved_summary = summary
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
@@ -1485,6 +1486,35 @@ pub fn start_project_adoption(
         updated_at: now.clone(),
     });
 
+    state.work_orders.push(WorkOrderRecord {
+        id: work_order_id.clone(),
+        supervisor_session_id: lead_session_id.clone(),
+        worker_session_id: None,
+        status: "planned".to_string(),
+        escalation_target: "lead".to_string(),
+        title: format!("Initial recovery work package · {}", project),
+        objective: resolved_objective.clone(),
+        feature_id: feature_id.clone(),
+        stage: Some(normalized_stage.clone()),
+        required_capabilities: vec![
+            "vision".to_string(),
+            "docs".to_string(),
+            "git".to_string(),
+            "analysis".to_string(),
+        ],
+        blockers: Vec::new(),
+        requested_permissions: Vec::new(),
+        expected_outputs: vec![
+            "recovery_assessment".to_string(),
+            "feature_map".to_string(),
+            "stage_map".to_string(),
+            "handoff_plan".to_string(),
+        ],
+        resolution_notes: Vec::new(),
+        created_at: now.clone(),
+        updated_at: now.clone(),
+    });
+
     state.adoptions.push(ProjectAdoptionRecord {
         id: adoption_id.clone(),
         status: "active".to_string(),
@@ -1492,6 +1522,7 @@ pub fn start_project_adoption(
         summary: resolved_summary.clone(),
         objective: resolved_objective.clone(),
         last_note: None,
+        initial_work_order_id: Some(work_order_id.clone()),
         feature_id: feature_id.clone(),
         stage: normalized_stage.clone(),
         lead_session_id: lead_session_id.clone(),
@@ -1515,9 +1546,11 @@ pub fn start_project_adoption(
             "adoption_id": adoption_id,
             "lead_session_id": lead_session_id,
             "debate_id": debate_id,
+            "work_order_id": work_order_id,
             "adoption": state.adoptions.iter().find(|item| item.id == adoption_id).map(adoption_summary),
             "session": state.sessions.iter().find(|item| item.id == lead_session_id).map(session_summary),
             "debate": state.debates.iter().find(|item| item.id == debate_id).map(debate_summary),
+            "work_order": state.work_orders.iter().find(|item| item.id == work_order_id).map(work_order_summary),
         })
         .to_string(),
         Err(error) => json!({"error": error}).to_string(),
