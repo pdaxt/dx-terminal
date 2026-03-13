@@ -1047,25 +1047,3 @@ pub async fn complete(app: &App, req: CompleteRequest) -> String {
     })
     .to_string()
 }
-
-/// Resolve "claude" to an absolute path. Checks common locations + which.
-pub fn resolve_claude_binary() -> String {
-    // Check common locations first (fastest)
-    let candidates = ["/opt/homebrew/bin/claude", "/usr/local/bin/claude"];
-    for path in &candidates {
-        if std::path::Path::new(path).exists() {
-            return path.to_string();
-        }
-    }
-    // Fall back to `which claude`
-    if let Ok(output) = std::process::Command::new("which").arg("claude").output() {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return path;
-            }
-        }
-    }
-    // Last resort — let PATH resolve it
-    "claude".to_string()
-}
