@@ -321,6 +321,41 @@ select:hover{border-color:var(--border-bright)}
   font-size:12px;color:var(--muted);line-height:1.65;
   padding:12px 13px;border-radius:14px;border:1px dashed rgba(79,143,247,.2);background:rgba(79,143,247,.05);
 }
+.action-shell{display:grid;gap:12px;margin-top:12px}
+.action-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media(max-width:960px){.action-grid{grid-template-columns:1fr}}
+.action-card{
+  display:grid;gap:10px;padding:14px;border-radius:14px;
+  border:1px solid rgba(255,255,255,.06);
+  background:linear-gradient(180deg,rgba(255,255,255,.024),rgba(255,255,255,.012));
+}
+.action-card-head{display:grid;gap:4px}
+.action-card-title{font-size:12px;font-weight:800;color:var(--text);letter-spacing:.01em}
+.action-card-copy{font-size:11px;color:var(--muted);line-height:1.55}
+.action-form{display:grid;gap:10px}
+.action-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+@media(max-width:680px){.action-form-grid{grid-template-columns:1fr}}
+.action-field{display:grid;gap:5px}
+.action-field label{font-size:10px;font-weight:800;color:var(--dim);letter-spacing:.1em;text-transform:uppercase}
+.action-input,.action-select,.action-textarea{
+  width:100%;background:rgba(7,11,19,.72);color:var(--text);
+  border:1px solid rgba(255,255,255,.08);border-radius:10px;
+  padding:9px 10px;font-size:11px;font-family:var(--sans);transition:var(--transition);
+}
+.action-input:focus,.action-select:focus,.action-textarea:focus{
+  outline:none;border-color:rgba(79,143,247,.38);box-shadow:0 0 0 2px rgba(79,143,247,.12);
+}
+.action-textarea{min-height:84px;resize:vertical;line-height:1.55}
+.action-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.action-status{
+  font-size:10px;line-height:1.45;padding:8px 10px;border-radius:10px;
+  border:1px solid rgba(79,143,247,.14);background:rgba(79,143,247,.06);color:var(--muted);
+}
+.action-status.green{border-color:rgba(47,191,113,.22);background:rgba(47,191,113,.08);color:var(--green)}
+.action-status.red{border-color:rgba(251,113,133,.22);background:rgba(251,113,133,.08);color:var(--red)}
+.action-status.blue{border-color:rgba(79,143,247,.22);background:rgba(79,143,247,.08);color:var(--blue)}
+.action-status.yellow{border-color:rgba(216,167,57,.22);background:rgba(216,167,57,.08);color:var(--yellow)}
+.action-note{font-size:10px;color:var(--dim);line-height:1.45}
 
 /* === Pane Grid === */
 .section-head{
