@@ -1600,6 +1600,7 @@ async function renderExecutionHub(){
   const delegatedWork=(dxosDelegation.recent||[]);
   const blockedWorkOrders=delegatedWork.filter(order=>order.status==='blocked');
   const permissionRequests=delegatedWork.filter(order=>(order.requested_permissions||[]).length);
+  const blockedOrApprovalWork=delegatedWork.filter(order=>order.status==='blocked'||(order.requested_permissions||[]).length);
   const dxosDebates=(dxos.debates&&dxos.debates.recent)||[];
   const dxosRegistry=dxos.registry||{};
   const leadSessions=dxosSessions.filter(session=>!session.supervisor_session_id);
@@ -1718,8 +1719,8 @@ async function renderExecutionHub(){
         <div class="exec-rail">
           <div class="exec-rail-title">Delegation and approvals</div>
           <div class="exec-rail-copy">Blocked work orders and permission requests should route to session leads before they interrupt a human.</div>
-          <div class="exec-list-title">${blockedWorkOrders.length||permissionRequests.length?'Blocked or approval-seeking work':'Recent delegated work'}</div>
-          <div class="exec-list">${renderDxosWorkOrderRows(blockedWorkOrders.length||permissionRequests.length?delegatedWork:delegatedWork,dxosSessions,6,blockedWorkOrders.length||permissionRequests.length?'blocked':'all')}</div>
+          <div class="exec-list-title">${blockedOrApprovalWork.length?'Blocked or approval-seeking work':'Recent delegated work'}</div>
+          <div class="exec-list">${renderDxosWorkOrderRows(blockedOrApprovalWork.length?blockedOrApprovalWork:delegatedWork,dxosSessions,6,blockedOrApprovalWork.length?'blocked':'all')}</div>
         </div>
       </div>
       <div class="exec-rail" style="margin-top:12px">
@@ -1780,9 +1781,9 @@ async function renderExecutionHub(){
       <div class="exec-row">
         <div class="exec-row-top">
           <span class="exec-row-title">Blocked questions and permissions</span>
-          <span class="exec-row-tags"><span class="doc-pill gemini">${Math.max(blockedWorkOrders.length,permissionRequests.length)} waiting</span></span>
+          <span class="exec-row-tags"><span class="doc-pill gemini">${blockedOrApprovalWork.length} waiting</span></span>
         </div>
-        <div class="exec-list">${renderDxosWorkOrderRows(blockedWorkOrders.length||permissionRequests.length?delegatedWork:delegatedWork,dxosSessions,4,blockedWorkOrders.length||permissionRequests.length?'blocked':'all')}</div>
+        <div class="exec-list">${renderDxosWorkOrderRows(blockedOrApprovalWork.length?blockedOrApprovalWork:delegatedWork,dxosSessions,4,blockedOrApprovalWork.length?'blocked':'all')}</div>
       </div>
     </div>`;
 
