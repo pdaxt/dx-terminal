@@ -20,6 +20,43 @@ pub struct TmuxAgent {
     pub name: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RuntimeProvider {
+    Claude,
+    Codex,
+    Gemini,
+    OpenCode,
+}
+
+impl RuntimeProvider {
+    pub fn from_str(value: &str) -> Self {
+        match value.trim().to_lowercase().as_str() {
+            "codex" | "openai" => Self::Codex,
+            "gemini" | "google" => Self::Gemini,
+            "opencode" | "open-code" => Self::OpenCode,
+            _ => Self::Claude,
+        }
+    }
+
+    pub fn id(&self) -> &'static str {
+        match self {
+            Self::Claude => "claude",
+            Self::Codex => "codex",
+            Self::Gemini => "gemini",
+            Self::OpenCode => "opencode",
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Claude => "Claude Code",
+            Self::Codex => "Codex CLI",
+            Self::Gemini => "Gemini CLI",
+            Self::OpenCode => "OpenCode",
+        }
+    }
+}
+
 /// Create a new tmux window and return its target.
 /// Window is named after the task (e.g., "factory-dev", "factory-qa").
 pub fn create_window(name: &str) -> Result<TmuxAgent> {
@@ -91,13 +128,16 @@ pub fn send_command(target: &str, cmd: &str) -> Result<()> {
 ///
 /// `env_vars` are exported before running claude (e.g. P=3, MACHINE_IP, etc.)
 /// `autonomous` controls whether --dangerously-skip-permissions is used.
-pub fn spawn_agent(
+pub fn spawn_agent_for_provider(
+    provider: &str,
     window_name: &str,
     project_path: &str,
     prompt: &str,
     env_vars: &[(String, String)],
     autonomous: bool,
+    model: Option<&str>,
 ) -> Result<TmuxAgent> {
+    let provider = RuntimeProvider::from_str(provider);
     let agent = create_window(window_name)?;
 
     // Export environment variables
@@ -116,18 +156,28 @@ pub fn spawn_agent(
     // Small delay to let cd complete
     std::thread::sleep(std::time::Duration::from_millis(200));
 
-    // Build the claude command — escape the prompt for shell
-    let claude_bin = resolve_claude_binary();
-    let escaped_prompt = prompt.replace('\'', "'\\''");
-    let perms_flag = if autonomous {
-        " --dangerously-skip-permissions"
-    } else {
-        ""
-    };
-    let cmd = format!("{}{} -p '{}'", claude_bin, perms_flag, escaped_prompt);
+    let cmd = build_provider_command(provider, prompt, autonomous, model)?;
     send_command(&agent.target, &cmd)?;
 
     Ok(agent)
+}
+
+pub fn spawn_agent(
+    window_name: &str,
+    project_path: &str,
+    prompt: &str,
+    env_vars: &[(String, String)],
+    autonomous: bool,
+) -> Result<TmuxAgent> {
+    spawn_agent_for_provider(
+        "claude",
+        window_name,
+        project_path,
+        prompt,
+        env_vars,
+        autonomous,
+        None,
+    )
 }
 
 /// Check if a tmux pane/window target exists.
@@ -609,21 +659,95 @@ fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
-/// Resolve "claude" to an absolute path.
-fn resolve_claude_binary() -> String {
-    let candidates = ["/opt/homebrew/bin/claude", "/usr/local/bin/claude"];
-    for path in &candidates {
-        if std::path::Path::new(path).exists() {
-            return path.to_string();
+fn build_provider_command(
+    provider: RuntimeProvider,
+    prompt: &str,
+    autonomous: bool,
+    model: Option<&str>,
+) -> Result<String> {
+    let binary = resolve_provider_binary(provider).ok_or_else(|| {
+        format!(
+            "{} binary not found on PATH or standard install locations",
+            provider.label()
+        )
+    })?;
+    let escaped_prompt = shell_escape(prompt);
+    let model_arg = model
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(shell_escape);
+
+    let cmd = match provider {
+        RuntimeProvider::Claude => {
+            let perms_flag = if autonomous {
+                " --dangerously-skip-permissions"
+            } else {
+                ""
+            };
+            let model_flag = model_arg
+                .as_deref()
+                .map(|value| format!(" --model {}", value))
+                .unwrap_or_default();
+            format!("{}{}{} -p {}", binary, perms_flag, model_flag, escaped_prompt)
         }
-    }
-    if let Ok(output) = Command::new("which").arg("claude").output() {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return path;
+        RuntimeProvider::Codex => {
+            let auto_flag = if autonomous { " --full-auto" } else { "" };
+            let model_flag = model_arg
+                .as_deref()
+                .map(|value| format!(" -m {}", value))
+                .unwrap_or_default();
+            format!("{}{}{} {}", binary, auto_flag, model_flag, escaped_prompt)
+        }
+        RuntimeProvider::Gemini => {
+            let auto_flag = if autonomous { " --yolo" } else { "" };
+            let model_flag = model_arg
+                .as_deref()
+                .map(|value| format!(" -m {}", value))
+                .unwrap_or_default();
+            format!(
+                "{}{}{} --prompt-interactive {}",
+                binary, auto_flag, model_flag, escaped_prompt
+            )
+        }
+        RuntimeProvider::OpenCode => {
+            let model_flag = model_arg
+                .as_deref()
+                .map(|value| format!(" -m {}", value))
+                .unwrap_or_default();
+            format!("{}{} {}", binary, model_flag, escaped_prompt)
+        }
+    };
+
+    Ok(cmd)
+}
+
+fn resolve_provider_binary(provider: RuntimeProvider) -> Option<String> {
+    let candidates: &[&str] = match provider {
+        RuntimeProvider::Claude => &["/opt/homebrew/bin/claude", "/usr/local/bin/claude", "claude"],
+        RuntimeProvider::Codex => &[
+            "/Users/pran/.nvm/versions/node/v22.22.0/bin/codex",
+            "/opt/homebrew/bin/codex",
+            "/usr/local/bin/codex",
+            "codex",
+        ],
+        RuntimeProvider::Gemini => &["/opt/homebrew/bin/gemini", "/usr/local/bin/gemini", "gemini"],
+        RuntimeProvider::OpenCode => &["/opt/homebrew/bin/opencode", "/usr/local/bin/opencode", "opencode"],
+    };
+
+    for candidate in candidates {
+        if candidate.contains('/') {
+            if std::path::Path::new(candidate).exists() {
+                return Some((*candidate).to_string());
+            }
+        } else if let Ok(output) = Command::new("which").arg(candidate).output() {
+            if output.status.success() {
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path.is_empty() {
+                    return Some(path);
+                }
             }
         }
     }
-    "claude".to_string()
+
+    None
 }
