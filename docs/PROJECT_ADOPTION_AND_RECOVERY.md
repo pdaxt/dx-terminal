@@ -23,6 +23,8 @@ Project adoption is now a governed control-plane action, not just dashboard advi
 
 When the operator launches that lead lane, DXOS now injects the assigned work package, adoption summary, and recovery council context directly into the runtime prompt and shared lane guidance. The recovery lane does not start from a blank brief anymore.
 
+The portal no longer hand-builds that first package. It now asks DXOS to start governed recovery, and the backend derives the initial summary, objective, feature, and stage from the same `project/brief` recovery model that powers the adoption rail.
+
 ## Core Promise
 
 If a company points DXOS at an in-progress project, the platform should be able to:
