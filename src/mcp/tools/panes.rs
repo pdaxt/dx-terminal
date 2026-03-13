@@ -675,6 +675,7 @@ pub async fn reassign(app: &App, req: ReassignRequest) -> String {
             pane_data.branch_name.as_deref(),
             Some(config::pane_browser_port(pane_num)),
             Some(pane_num),
+            pane_data.runtime_adapter.as_deref(),
             pane_data.tmux_target.as_deref(),
             None,
             Some("build"),
@@ -704,6 +705,7 @@ pub async fn reassign(app: &App, req: ReassignRequest) -> String {
             "project": pane_data.project,
             "role": pane_data.role,
             "task": pane_data.task,
+            "runtime_adapter": pane_data.runtime_adapter,
         }
     })
     .to_string()
@@ -721,7 +723,6 @@ fn launch_broker_json(plan: &runtime_broker::RuntimeLaunchPlan) -> serde_json::V
 
 fn launch_broker_json_from_error(window_name: &str, project_path: &str) -> serde_json::Value {
     serde_json::json!({
-        "adapter": "tmux_migration_adapter",
         "window_name": window_name,
         "project_path": project_path,
     })
