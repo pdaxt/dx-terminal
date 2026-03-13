@@ -2219,6 +2219,120 @@ pub struct DxosDebateFinalizeRequest {
     pub rationale: String,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosSessionUpsertRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+    #[schemars(description = "Existing session ID to update; omitted to create a new contract")]
+    pub session_id: Option<String>,
+    #[schemars(description = "Session role, e.g. design/frontend/qa/security")]
+    pub role: String,
+    #[schemars(description = "Provider ID, e.g. claude/openai/gemini")]
+    pub provider: Option<String>,
+    #[schemars(description = "Model ID, e.g. claude-opus-4.6")]
+    pub model: Option<String>,
+    #[schemars(description = "Autonomy level, default guarded_auto")]
+    pub autonomy_level: Option<String>,
+    #[schemars(description = "Primary objective for the session")]
+    pub objective: String,
+    #[schemars(description = "Expected outputs or artifacts")]
+    #[serde(default)]
+    pub expected_outputs: Vec<String>,
+    #[schemars(description = "Capabilities the session is allowed to use")]
+    #[serde(default)]
+    pub allowed_capabilities: Vec<String>,
+    #[schemars(description = "Repos this session can operate in")]
+    #[serde(default)]
+    pub allowed_repos: Vec<String>,
+    #[schemars(description = "Paths this session can operate in")]
+    #[serde(default)]
+    pub allowed_paths: Vec<String>,
+    #[schemars(description = "Workspace path")]
+    pub workspace_path: Option<String>,
+    #[schemars(description = "Branch name")]
+    pub branch_name: Option<String>,
+    #[schemars(description = "Owned browser port")]
+    pub browser_port: Option<u16>,
+    #[schemars(description = "Owned pane number")]
+    pub pane: Option<u8>,
+    #[schemars(description = "tmux target or runtime target")]
+    pub tmux_target: Option<String>,
+    #[schemars(description = "Linked feature ID")]
+    pub feature_id: Option<String>,
+    #[schemars(description = "Delivery stage")]
+    pub stage: Option<String>,
+    #[schemars(description = "Supervisor session ID if this is a child session")]
+    pub supervisor_session_id: Option<String>,
+    #[schemars(description = "Escalation policy text")]
+    pub escalation_policy: Option<String>,
+    #[schemars(description = "Initial status, default active")]
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosSessionListRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosSessionStatusRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+    #[schemars(description = "Session ID")]
+    pub session_id: String,
+    #[schemars(description = "New status, e.g. active/blocked/completed/idle")]
+    pub status: String,
+    #[schemars(description = "Optional status note")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosWorkDelegateRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+    #[schemars(description = "Supervisor session ID")]
+    pub supervisor_session_id: String,
+    #[schemars(description = "Optional worker session ID")]
+    pub worker_session_id: Option<String>,
+    #[schemars(description = "Work order title")]
+    pub title: String,
+    #[schemars(description = "Delegated objective")]
+    pub objective: String,
+    #[schemars(description = "Linked feature ID")]
+    pub feature_id: Option<String>,
+    #[schemars(description = "Delivery stage")]
+    pub stage: Option<String>,
+    #[schemars(description = "Required capabilities")]
+    #[serde(default)]
+    pub required_capabilities: Vec<String>,
+    #[schemars(description = "Expected outputs")]
+    #[serde(default)]
+    pub expected_outputs: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosWorkBlockRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+    #[schemars(description = "Work order ID")]
+    pub work_order_id: String,
+    #[schemars(description = "Blocking reason")]
+    pub blocker: String,
+    #[schemars(description = "Requested permission or approval")]
+    pub requested_permission: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosWorkResolveRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+    #[schemars(description = "Work order ID")]
+    pub work_order_id: String,
+    #[schemars(description = "Optional resolution summary")]
+    pub resolution: Option<String>,
+}
+
 // ── Screen Management ──
 
 #[derive(Debug, Deserialize, JsonSchema)]
