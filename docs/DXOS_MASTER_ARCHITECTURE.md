@@ -200,6 +200,8 @@ The first architecture slice now implemented in the repo is:
 - DXOS now publishes a role-and-stage provider policy matrix, so the portal can explain which runtimes are preferred or allowed before a lane is launched
 - session contracts now persist `policy_violations` and `last_error`, which gives the portal a durable way to surface blocked provider choices and failed runtime launches instead of silently dropping them
 - runtime lanes are registered in DXOS before the adapter launches, so failed launches still leave behind a supervised session record with the intended feature, stage, and supervisor context
+- provider-native launch planning now lives in a DX runtime broker instead of inside the tmux adapter, so provider binary discovery, command construction, and launch policy are separated from window creation
+- tmux is now explicitly a migration adapter that executes brokered launch plans; the DXOS runtime contract and project brief both advertise the broker and supported providers directly
 - worker sessions can now raise blockers or permission requests through DXOS session context, and the control plane routes those requests to the supervising lead first before falling back to explicit human escalation
 - runtime lanes now receive `DXOS_SESSION_ID`, `DX_FEATURE_ID`, `DX_STAGE`, and `DX_SUPERVISOR_SESSION_ID` so agents in a live lane can report blocker and approval state without reconstructing their control-plane identity
 - the server-owned runtime replicator now detects clear approval/login/challenge prompts in live pane output and converts them into DXOS blocker events once, so “waiting for human action” is lifted out of raw terminal text and into the control plane

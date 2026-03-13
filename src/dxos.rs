@@ -646,8 +646,12 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             "category_counts": categories,
         },
         "runtime_contract": {
+            "launch_broker": "dx_runtime_broker",
             "runtime_substrate": "custom_pty_target",
             "runtime_adapter": "tmux_migration_adapter",
+            "runtime_adapters": ["tmux_migration_adapter"],
+            "provider_native_launch": true,
+            "runtime_providers": ["claude", "codex", "gemini", "opencode"],
             "browser_port_base": crate::config::browser_port_base(),
             "browser_port_formula": "browser_port_base + pane",
         },
