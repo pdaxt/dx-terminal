@@ -1417,6 +1417,7 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             "browser_port_formula": "browser_port_base + pane",
             "control_endpoints": {
                 "session_launch": "/api/dxos/session/launch",
+                "provider_plugin_sync": "/api/dxos/provider-plugins/sync",
                 "pane_talk": "/api/pane/talk",
                 "pane_kill": "/api/pane/kill",
                 "pane_restart": "/api/pane/restart",

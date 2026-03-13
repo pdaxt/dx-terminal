@@ -53,6 +53,7 @@ pub fn gemini_plugin_path() -> PathBuf {
 
 pub fn normalized_provider(provider: &str) -> &'static str {
     match provider.trim().to_lowercase().as_str() {
+        "dx" | "shared" | "shared_manifest" => SHARED_SOURCE,
         "openai" | "gpt" | "chatgpt" | "codex" => CODEX_SOURCE,
         "google" | "gemini" => GEMINI_SOURCE,
         _ => CLAUDE_SOURCE,
@@ -61,6 +62,7 @@ pub fn normalized_provider(provider: &str) -> &'static str {
 
 pub fn provider_label(provider: &str) -> &'static str {
     match normalized_provider(provider) {
+        SHARED_SOURCE => "DX shared manifest",
         CODEX_SOURCE => "Codex / GPT bridge",
         GEMINI_SOURCE => "Gemini bridge",
         _ => "Claude bridge",

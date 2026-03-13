@@ -2213,6 +2213,7 @@ pub(crate) async fn build_project_brief_payload(
             "runtime_providers": ["claude", "codex", "gemini", "opencode"],
             "control_endpoints": {
                 "session_launch": "/api/dxos/session/launch",
+                "provider_plugin_sync": "/api/dxos/provider-plugins/sync",
                 "pane_talk": "/api/pane/talk",
                 "pane_kill": "/api/pane/kill",
                 "pane_restart": "/api/pane/restart",
