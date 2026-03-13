@@ -2961,4 +2961,45 @@ mod tests {
         assert_eq!(snapshot["audit"]["recent"][0]["target"], "pane:3");
         assert_eq!(snapshot["audit"]["recent"][0]["outcome"], "error");
     }
+
+    #[test]
+    fn operator_policy_authorizes_scoped_actions() {
+        let profiles = vec![ControlOperatorProfile {
+            id: "ops-lead".to_string(),
+            role: "lead".to_string(),
+            project_scopes: vec!["demo".to_string()],
+            allowed_actions: vec!["session_*".to_string(), "work_*".to_string()],
+            note: None,
+        }];
+        let decision = authorize_operator_action_with_profiles(
+            &profiles,
+            "/tmp/demo",
+            Some("demo"),
+            "ops-lead",
+            "session_launch",
+        )
+        .unwrap();
+        assert_eq!(decision["role"], "lead");
+        assert_eq!(decision["id"], "ops-lead");
+    }
+
+    #[test]
+    fn operator_policy_denies_actions_outside_role_scope() {
+        let profiles = vec![ControlOperatorProfile {
+            id: "reviewer-1".to_string(),
+            role: "reviewer".to_string(),
+            project_scopes: vec!["demo".to_string()],
+            allowed_actions: vec!["debate_*".to_string()],
+            note: None,
+        }];
+        let denied = authorize_operator_action_with_profiles(
+            &profiles,
+            "/tmp/demo",
+            Some("demo"),
+            "reviewer-1",
+            "session_launch",
+        )
+        .unwrap_err();
+        assert!(denied.contains("not allowed"));
+    }
 }
