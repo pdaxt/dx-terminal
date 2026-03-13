@@ -310,9 +310,9 @@ fn store_control_plane_in_sqlite(state: &ControlPlaneState) -> Result<(), String
             updated_at = excluded.updated_at,
             payload_json = excluded.payload_json",
         params![
-            state.project.path,
-            state.project.name,
-            state.updated_at,
+            &state.project.path,
+            &state.project.name,
+            &state.updated_at,
             payload
         ],
     )
