@@ -1343,6 +1343,41 @@ function truncateCopy(value,maxLen){
   return `${raw.slice(0,Math.max(0,maxLen-1)).trim()}…`;
 }
 
+function dxosInlineAction(label,onclick,tone){
+  const palette=tone==='green'
+    ? 'background:rgba(47,191,113,.14);border-color:rgba(47,191,113,.24);color:var(--green)'
+    : tone==='purple'
+    ? 'background:rgba(168,85,247,.14);border-color:rgba(168,85,247,.24);color:var(--purple)'
+    : 'background:rgba(79,143,247,.12);border-color:rgba(79,143,247,.22);color:var(--blue)';
+  return `<button class="vdd-focus-btn" style="${palette}" onclick="${onclick};event.stopPropagation();return false;">${escHtml(label)}</button>`;
+}
+
+function openDxosSessionPane(pane){
+  const paneNum=Number(pane);
+  if(!Number.isFinite(paneNum)||paneNum<=0)return;
+  openPanel(paneNum);
+}
+
+async function resolveDxosWorkOrder(workOrderId){
+  const project=activeProjectForHub();
+  if(!project||!workOrderId)return;
+  const result=await fetchJSON('/api/dxos/work/resolve',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      project,
+      work_order_id:workOrderId,
+      resolution:'Portal approval: cleared to continue.'
+    })
+  });
+  if(!result||result.error){
+    window.alert(`Unable to resolve work order ${workOrderId}.`);
+    return;
+  }
+  await renderExecutionHub();
+  if(activePaneNum)renderPaneContext(activePaneNum);
+}
+
 function renderDxosSessionRows(sessions,limit){
   const all=Array.isArray(sessions)?sessions:[];
   const list=typeof limit==='number'?all.slice(0,limit):all;
@@ -1367,6 +1402,7 @@ function renderDxosSessionRows(sessions,limit){
           ${providerBadge(session.provider,true)}
           ${dxosStatusPill(session.status)}
           ${session.autonomy_level?`<span class="doc-pill">${escHtml(String(session.autonomy_level).replace(/_/g,' '))}</span>`:''}
+          ${session.pane?dxosInlineAction('Open Pane',`openDxosSessionPane(${Number(session.pane)})`,'shared'):''}
         </span>
       </div>
       <div class="exec-row-meta">${escHtml(truncateCopy(session.objective,150)||'No session objective recorded yet.')}</div>
@@ -1410,6 +1446,8 @@ function renderDxosWorkOrderRows(workOrders,sessions,limit,mode){
           ${dxosStatusPill(order.status)}
           ${order.stage?vddPhaseBadge(order.stage):''}
           ${requestedPermissions.length?`<span class="doc-pill gemini">${requestedPermissions.length} approvals</span>`:''}
+          ${worker&&worker.pane?dxosInlineAction('Open Worker',`openDxosSessionPane(${Number(worker.pane)})`,'shared'):''}
+          ${order.status==='blocked'||requestedPermissions.length?dxosInlineAction(requestedPermissions.length?'Approve':'Resolve',`resolveDxosWorkOrder('${String(order.id)}')`,'green'):''}
         </span>
       </div>
       <div class="exec-row-meta">${escHtml(truncateCopy(order.objective,150)||'No work order objective recorded yet.')}</div>
