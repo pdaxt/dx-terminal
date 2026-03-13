@@ -3330,15 +3330,21 @@ mod tests {
         assert!(value["adoption_id"].as_str().unwrap().starts_with("AD"));
         assert!(value["lead_session_id"].as_str().unwrap().starts_with("SX"));
         assert!(value["debate_id"].as_str().unwrap().starts_with("DB"));
+        assert!(value["work_order_id"].as_str().unwrap().starts_with("WO"));
 
         let snapshot = control_plane_snapshot(project, Some("demo"));
         assert_eq!(snapshot["adoptions"]["total"], 1);
         assert_eq!(snapshot["adoptions"]["active"], 1);
         assert_eq!(snapshot["sessions"]["total"], 1);
         assert_eq!(snapshot["debates"]["total"], 1);
+        assert_eq!(snapshot["delegation"]["total_work_orders"], 1);
         assert_eq!(
             snapshot["adoptions"]["recent"][0]["lead_session_id"],
             value["lead_session_id"]
+        );
+        assert_eq!(
+            snapshot["adoptions"]["recent"][0]["initial_work_order_id"],
+            value["work_order_id"]
         );
     }
 
@@ -3361,6 +3367,7 @@ mod tests {
         ))
         .unwrap();
         let adoption_id = started["adoption_id"].as_str().unwrap();
+        let work_order_id = started["work_order_id"].as_str().unwrap();
         let updated: Value = serde_json::from_str(&update_project_adoption_status(
             project,
             Some("demo"),
@@ -3373,6 +3380,8 @@ mod tests {
         assert_eq!(updated["action"], "adoption_status_updated");
         assert_eq!(updated["adoption"]["status"], "completed");
         assert_eq!(updated["adoption"]["last_note"], "Recovery plan accepted.");
+        assert_eq!(updated["work_order"]["id"], work_order_id);
+        assert_eq!(updated["work_order"]["status"], "completed");
     }
 
     #[test]
