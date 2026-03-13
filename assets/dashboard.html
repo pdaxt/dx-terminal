@@ -2706,6 +2706,104 @@ function renderPriorityRows(items,mode){
   }).join('');
 }
 
+function recoveryModePill(mode){
+  const id=(mode||'structured_planning').toString();
+  const label=id==='adopt_in_progress'
+    ? 'Adoption in progress'
+    : id==='unscoped'
+    ? 'Needs structure'
+    : 'Structured planning';
+  const tone=id==='adopt_in_progress'
+    ? 'shared'
+    : id==='unscoped'
+    ? 'gemini'
+    : 'codex';
+  return `<span class="doc-pill ${tone}">${escHtml(label)}</span>`;
+}
+
+function renderRecoveryGapRows(gaps){
+  const list=Array.isArray(gaps)?gaps:[];
+  if(!list.length){
+    return '<div class="empty-note">No major adoption gaps are currently flagged.</div>';
+  }
+  return list.slice(0,5).map(gap=>{
+    const severity=(gap.severity||'medium').toString();
+    const tone=severity==='high'?'gemini':severity==='medium'?'codex':'shared';
+    return `<div class="exec-row">
+      <div class="exec-row-top">
+        <span class="exec-row-title">${escHtml(String(gap.kind||'gap').replace(/_/g,' '))}</span>
+        <span class="exec-row-tags"><span class="doc-pill ${tone}">${escHtml(severity)}</span></span>
+      </div>
+      <div class="exec-row-meta">${escHtml((gap.summary||'').toString())}</div>
+    </div>`;
+  }).join('');
+}
+
+function applyRecoverySuggestion(encoded){
+  const project=activeProjectForHub();
+  if(project&&!operatorAllowsAction(project,'session_launch')){
+    setDxosPortalNotice('launch','Operator policy blocks lane launch for this project.','red');
+    return false;
+  }
+  let suggestion=null;
+  try{
+    suggestion=JSON.parse(decodeURIComponent(encoded||''));
+  }catch{
+    setDxosPortalNotice('launch','Unable to load the selected recovery suggestion.','red');
+    return false;
+  }
+  const role=document.getElementById('dxos-launch-role');
+  const stage=document.getElementById('dxos-launch-stage');
+  const feature=document.getElementById('dxos-launch-feature');
+  const task=document.getElementById('dxos-launch-task');
+  const pane=document.getElementById('dxos-launch-pane');
+  if(!role||!stage||!feature||!task){
+    setDxosPortalNotice('launch','The launch form is not available yet.','red');
+    return false;
+  }
+  if(role&&suggestion.role)role.value=String(suggestion.role);
+  if(stage&&suggestion.stage)stage.value=normalizeVddPhase(String(suggestion.stage));
+  syncDxosLaunchProviderOptions();
+  if(feature)feature.value=(suggestion.feature_id||'').toString();
+  if(task)task.value=(suggestion.task_prompt||suggestion.reason||'').toString();
+  if(pane&&(!pane.value||pane.value===''))pane.value='auto';
+  const automation=document.getElementById('automation-brief');
+  if(automation&&typeof automation.scrollIntoView==='function'){
+    automation.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+  const label=(suggestion.feature_id||suggestion.role||'next lane').toString();
+  setDxosPortalNotice('launch',`Recovery suggestion applied for ${label}. Review the provider, substrate, and prompt, then launch the lane.`,'green');
+  return false;
+}
+
+function renderRecoverySuggestionRows(project,suggestions){
+  const list=Array.isArray(suggestions)?suggestions:[];
+  if(!list.length){
+    return '<div class="empty-note">DXOS has not generated a specialist launch suggestion for this project yet.</div>';
+  }
+  return list.slice(0,4).map(item=>{
+    const encoded=encodeURIComponent(JSON.stringify(item));
+    const priority=(item.priority||'medium').toString();
+    const priorityTone=priority==='high'?'gemini':priority==='medium'?'codex':'shared';
+    const tagParts=[
+      item.role?`<span class="doc-pill shared">${escHtml(String(item.role))}</span>`:'',
+      item.stage?vddPhaseBadge(item.stage):'',
+      `<span class="doc-pill ${priorityTone}">${escHtml(priority)}</span>`
+    ].join('');
+    const feature=item.feature_id?` · ${escHtml(String(item.feature_id))}`:'';
+    return `<div class="exec-row">
+      <div class="exec-row-top">
+        <span class="exec-row-title">${escHtml(String(item.role||'specialist'))}${feature}</span>
+        <span class="exec-row-tags">${tagParts}</span>
+      </div>
+      <div class="exec-row-meta">${escHtml((item.reason||'').toString())}</div>
+      <div class="exec-row-actions" style="margin-top:8px">
+        <button class="vdd-focus-btn" onclick="return applyRecoverySuggestion('${encoded}')" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Apply to launch form</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 async function renderExecutionHub(){
   const section=document.getElementById('execution-hub');
   const summaryEl=document.getElementById('project-brief');
@@ -2731,6 +2829,7 @@ async function renderExecutionHub(){
   if(brief.focus)storeVisionFocus(project,brief.focus);
   const docs=brief.docs||{};
   const documentation=brief.documentation||{};
+  const recovery=brief.recovery||{};
   const docHealth=documentation.health||{};
   const syncContract=documentation.sync_contract||{};
   const automation=brief.automation||{};
@@ -2798,6 +2897,10 @@ async function renderExecutionHub(){
     : blockingFeatures.length
     ? `${blockingFeatures[0].feature_id} is blocked at ${blockingFeatures[0].next_gate}`
     : 'No immediate delivery action is recorded.';
+  const recoveryMode=(recovery.mode||'structured_planning').toString();
+  const recoveryGaps=(recovery.gaps||[]).slice(0,5);
+  const recoverySuggestions=(recovery.suggested_sessions||[]).slice(0,4);
+  const recoveryNextAction=recovery.next_action||null;
 
   if(introEl){
     introEl.innerHTML=`<div class="spotlight-grid">
@@ -2860,6 +2963,27 @@ async function renderExecutionHub(){
             <div class="meta">${escHtml(meta.copy)}</div>
           </div>`;
         }).join('')}
+      </div>
+      <div class="exec-rail-grid">
+        <div class="exec-rail">
+          <div class="exec-rail-title">Recovery and adoption plan</div>
+          <div class="exec-rail-copy">This is DXOS telling the operator how to take over a half-started project safely: what is missing, what is blocking trust, and which specialist lane should start next.</div>
+          <div class="exec-row" style="margin-bottom:10px">
+            <div class="exec-row-top">
+              <span class="exec-row-title">${escHtml((recovery.summary||'Recovery assessment unavailable.').toString())}</span>
+              <span class="exec-row-tags">${recoveryModePill(recoveryMode)}</span>
+            </div>
+            <div class="exec-row-meta">${recoveryNextAction&&recoveryNextAction.reason?escHtml(String(recoveryNextAction.reason)):'DXOS has not suggested the next lane yet.'}</div>
+          </div>
+          <div class="exec-list-title">Adoption gaps</div>
+          <div class="exec-list">${renderRecoveryGapRows(recoveryGaps)}</div>
+        </div>
+        <div class="exec-rail">
+          <div class="exec-rail-title">Suggested next lanes</div>
+          <div class="exec-rail-copy">These launch suggestions pre-fill the governed operator form below, so recovery work starts from DXOS guidance instead of guesswork.</div>
+          <div class="exec-list-title">Launch recommendations</div>
+          <div class="exec-list">${renderRecoverySuggestionRows(project,recoverySuggestions)}</div>
+        </div>
       </div>
       <div class="exec-rail-grid">
         <div class="exec-rail">
