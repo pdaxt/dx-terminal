@@ -13,6 +13,16 @@ Most real projects do not begin cleanly. They arrive half-started:
 
 DXOS needs to do more than track new work. It needs to adopt unfinished work, reconstruct the truth, and drive it to a verified finish.
 
+## Current DXOS Behavior
+
+Project adoption is now a governed control-plane action, not just dashboard advice. Starting adoption seeds:
+
+- a recovery `lead` session contract
+- a formal adoption council debate
+- an initial assigned recovery work package bound to that lead
+
+When the operator launches that lead lane, DXOS now injects the assigned work package, adoption summary, and recovery council context directly into the runtime prompt and shared lane guidance. The recovery lane does not start from a blank brief anymore.
+
 ## Core Promise
 
 If a company points DXOS at an in-progress project, the platform should be able to:
@@ -118,6 +128,8 @@ DXOS should recommend specialist lanes such as:
 - `lead` when blockers need routing, sequencing, or approvals
 
 Those suggestions should not live only in prose. They should prefill governed operator controls directly in the portal.
+
+For adoption specifically, the first suggestion is now materialized as a real DXOS work package rather than a generic “launch a lead” recommendation.
 
 ## Operator Flow
 

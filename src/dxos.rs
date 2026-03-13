@@ -3477,7 +3477,10 @@ mod tests {
         let context = runtime_launch_context(project, Some("demo"), lead_session_id);
 
         assert_eq!(context["session"]["id"], started["lead_session_id"]);
-        assert_eq!(context["primary_work_order"]["id"], started["work_order_id"]);
+        assert_eq!(
+            context["primary_work_order"]["id"],
+            started["work_order_id"]
+        );
         assert_eq!(context["primary_work_order"]["status"], "assigned");
         assert_eq!(context["adoption"]["id"], started["adoption_id"]);
         assert_eq!(context["debate"]["id"], started["debate_id"]);

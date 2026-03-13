@@ -227,6 +227,7 @@ The first architecture slice now implemented in the repo is:
 - the portal now derives client, reviewer, and operator presentation modes from the same control policy, so restricted identities can stay inside a client-safe delivery view while operators retain full runtime and delegation controls
 - DXOS project adoption is now a first-class control-plane action: the portal or MCP can seed a governed recovery lead session plus a formal adoption council in one step, and the resulting adoption record is visible in the project brief and recovery rail
 - seeded adoption lead contracts can now be launched directly into a live runtime lane, so DXOS no longer forces operators to recreate a planned recovery session manually before execution starts
+- seeded adoption now also creates an assigned recovery work package, and the launch path injects that work package plus adoption/council context into the live lane prompt and shared guidance files automatically
 - protected control routes now enforce optional operator policy as well as token auth, so named operators can be limited by role, project scope, and action families before a launch, debate, or lane mutation is accepted
 
 That gives the platform a native place to reason, disagree, decide, supervise, and delegate inside the system itself.
