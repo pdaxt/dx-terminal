@@ -62,6 +62,22 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/builds/send", post(api::post_build_send))
         .route("/api/builds/rename", post(api::post_build_rename))
         .route("/api/project/brief", get(api::get_project_brief))
+        .route("/api/dxos/control-plane", get(api::get_dxos_control_plane))
+        .route("/api/dxos/debates", get(api::get_dxos_debates))
+        .route("/api/dxos/debate/start", post(api::start_dxos_debate))
+        .route(
+            "/api/dxos/debate/proposal",
+            post(api::add_dxos_debate_proposal),
+        )
+        .route(
+            "/api/dxos/debate/contradiction",
+            post(api::add_dxos_debate_contradiction),
+        )
+        .route("/api/dxos/debate/vote", post(api::vote_dxos_debate))
+        .route(
+            "/api/dxos/debate/decision",
+            post(api::finalize_dxos_debate),
+        )
         // Vision
         .route("/api/vision", get(api::get_vision))
         .route("/api/vision/summary", get(api::get_vision_summary))
