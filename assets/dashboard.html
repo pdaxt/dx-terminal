@@ -2264,6 +2264,7 @@ async function renderExecutionHub(){
   const delivery=brief.delivery||{};
   const runtimeContract=brief.runtime_contract||{};
   const dxos=brief.dxos||{};
+  dxosPolicyCache[project]=dxos.provider_policy||{};
   const dxosSessions=(dxos.sessions&&dxos.sessions.records)||[];
   const dxosSessionSummary=dxos.sessions||{};
   const dxosDelegation=dxos.delegation||{};
@@ -2457,6 +2458,8 @@ async function renderExecutionHub(){
       </div>
     </div>
     ${renderDxosOperatorControls(project,activeStage,dxosSessions)}`;
+  syncDxosLaunchProviderOptions();
+  syncDxosSessionProviderOptions();
 
   docsEl.innerHTML=`
     <div class="portal-note">This section is the trust contract for the whole program. If docs, Git, approvals, and dashboard state drift apart, the portal becomes unreliable for both clients and delivery teams.</div>
