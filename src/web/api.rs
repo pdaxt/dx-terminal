@@ -109,6 +109,11 @@ pub struct PaneKillBody {
 }
 
 #[derive(Deserialize, Default)]
+pub struct PaneRestartBody {
+    pub pane: String,
+}
+
+#[derive(Deserialize, Default)]
 pub struct GatewayListQuery {
     pub running_only: Option<bool>,
 }
@@ -228,6 +233,15 @@ pub async fn post_pane_kill(
         },
     )
     .await;
+    Json(parse_mcp(&result))
+}
+
+/// POST /api/pane/restart — Restart a live pane through the control-plane API
+pub async fn post_pane_restart(
+    State(app): State<AppState>,
+    Json(body): Json<PaneRestartBody>,
+) -> Json<Value> {
+    let result = tools::restart(&app, types::RestartRequest { pane: body.pane }).await;
     Json(parse_mcp(&result))
 }
 
