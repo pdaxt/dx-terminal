@@ -1900,6 +1900,7 @@ pub async fn get_project_brief(
             "client_review_features": client_review_features,
         },
         "runtime_contract": {
+            "auth": crate::dxos::control_auth_contract(),
             "launch_broker": {
                 "name": "dx_runtime_broker",
                 "adapters": crate::runtime_broker::adapter_inventory(),
