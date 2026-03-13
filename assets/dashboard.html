@@ -1423,6 +1423,17 @@ function providerOptions(selected){
   return providers.map(([value,label])=>`<option value="${value}" ${chosen===value?'selected':''}>${label}</option>`).join('');
 }
 
+function runtimeProviderOptions(selected){
+  const chosen=(selected||'claude').toString();
+  const providers=[
+    ['claude','Claude'],
+    ['codex','Codex'],
+    ['gemini','Gemini'],
+    ['opencode','OpenCode']
+  ];
+  return providers.map(([value,label])=>`<option value="${value}" ${chosen===value?'selected':''}>${label}</option>`).join('');
+}
+
 function sessionOptionRows(sessions,filterFn,selected,placeholder){
   const items=(Array.isArray(sessions)?sessions:[]).filter(filterFn||(()=>true));
   const head=`<option value="">${placeholder||'None'}</option>`;
@@ -1841,7 +1852,7 @@ function renderDxosOperatorControls(project,activeStage,sessions){
             </div>
             <div class="action-field">
               <label for="dxos-launch-provider">Provider</label>
-              <select class="action-select" id="dxos-launch-provider">${providerOptions('claude')}</select>
+              <select class="action-select" id="dxos-launch-provider">${runtimeProviderOptions('claude')}</select>
             </div>
             <div class="action-field">
               <label for="dxos-launch-role">Role</label>
