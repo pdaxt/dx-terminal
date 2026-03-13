@@ -2690,6 +2690,133 @@ impl DxTerminalService {
         self.emit_vision_change(&project_path, &result, None);
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
+
+    // === DXOS CONTROL PLANE / DEBATE ENGINE ===
+
+    #[tool(
+        description = "Get the DXOS control-plane contract for a project: deployment model, autonomy defaults, runtime substrate, governance mode, registry summary, and recent debates."
+    )]
+    async fn dxos_control_plane(
+        &self,
+        Parameters(req): Parameters<types::DxosControlPlaneRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::dxos_tools::control_plane(req.project.as_deref());
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "List formal debates for a project. Use this to inspect structured proposals, contradictions, votes, and final decisions."
+    )]
+    async fn dxos_debate_list(
+        &self,
+        Parameters(req): Parameters<types::DxosDebateListRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::dxos_tools::debate_list(req.project.as_deref());
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Start a formal debate for a project or feature. Use this when multiple agents/models need to reason, contradict, and decide within the system."
+    )]
+    async fn dxos_debate_start(
+        &self,
+        Parameters(req): Parameters<types::DxosDebateStartRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::dxos_tools::resolve_project_path(req.project.as_deref());
+        let result = tools::dxos_tools::debate_start(
+            req.project.as_deref(),
+            &req.title,
+            &req.objective,
+            req.stage.as_deref(),
+            req.feature_id.as_deref(),
+            req.participants,
+            req.requested_by.as_deref(),
+        );
+        self.emit_debate_change(&project_path, &result);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Add a proposal to an active debate with rationale and evidence refs. This is the primary way agents put forward competing solutions."
+    )]
+    async fn dxos_debate_proposal(
+        &self,
+        Parameters(req): Parameters<types::DxosDebateProposalRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::dxos_tools::resolve_project_path(req.project.as_deref());
+        let result = tools::dxos_tools::debate_proposal(
+            req.project.as_deref(),
+            &req.debate_id,
+            &req.author,
+            req.model.as_deref(),
+            &req.summary,
+            &req.rationale,
+            req.evidence,
+        );
+        self.emit_debate_change(&project_path, &result);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Challenge a proposal inside a debate with explicit contradictory reasoning. Use this to capture why an approach may fail or be suboptimal."
+    )]
+    async fn dxos_debate_contradiction(
+        &self,
+        Parameters(req): Parameters<types::DxosDebateContradictionRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::dxos_tools::resolve_project_path(req.project.as_deref());
+        let result = tools::dxos_tools::debate_contradiction(
+            req.project.as_deref(),
+            &req.debate_id,
+            &req.proposal_id,
+            &req.author,
+            req.model.as_deref(),
+            &req.rationale,
+        );
+        self.emit_debate_change(&project_path, &result);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Cast or update a vote on a debate proposal. One voter gets one current vote per debate."
+    )]
+    async fn dxos_debate_vote(
+        &self,
+        Parameters(req): Parameters<types::DxosDebateVoteRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::dxos_tools::resolve_project_path(req.project.as_deref());
+        let result = tools::dxos_tools::debate_vote(
+            req.project.as_deref(),
+            &req.debate_id,
+            &req.proposal_id,
+            &req.voter,
+            req.model.as_deref(),
+            &req.stance,
+            &req.rationale,
+        );
+        self.emit_debate_change(&project_path, &result);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Finalize a debate with the chosen proposal and a written synthesis. This closes the debate and records the decision as project memory."
+    )]
+    async fn dxos_debate_finalize(
+        &self,
+        Parameters(req): Parameters<types::DxosDebateFinalizeRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::dxos_tools::resolve_project_path(req.project.as_deref());
+        let result = tools::dxos_tools::debate_finalize(
+            req.project.as_deref(),
+            &req.debate_id,
+            &req.chosen_proposal_id,
+            &req.decided_by,
+            &req.summary,
+            &req.rationale,
+        );
+        self.emit_debate_change(&project_path, &result);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
 }
 
 #[tool_handler]
