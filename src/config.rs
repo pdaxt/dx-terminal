@@ -146,6 +146,13 @@ pub fn get() -> &'static RuntimeConfig {
         .expect("config::init() must be called before config::get()")
 }
 
+pub fn control_token() -> Option<String> {
+    std::env::var("DX_CONTROL_TOKEN")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 // --- Pane resolution (uses global config) ---
 
 pub fn theme_name(pane: u8) -> &'static str {
