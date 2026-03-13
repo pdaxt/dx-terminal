@@ -23,6 +23,7 @@ mod multi_agent;
 mod pty;
 mod quality;
 mod queue;
+mod runtime_broker;
 mod scanner;
 mod screen;
 mod session_stream;

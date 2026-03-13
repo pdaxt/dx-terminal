@@ -23,6 +23,7 @@ pub mod multi_agent;
 pub mod pty;
 pub mod quality;
 pub mod queue;
+pub mod runtime_broker;
 pub mod scanner;
 pub mod screen;
 pub mod session_stream;
