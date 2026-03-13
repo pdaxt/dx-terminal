@@ -221,6 +221,21 @@ pub struct WorkResolutionRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditRecord {
+    pub id: String,
+    pub project_path: String,
+    pub project_name: String,
+    pub actor: String,
+    pub action_kind: String,
+    pub target: String,
+    pub outcome: String,
+    pub summary: String,
+    #[serde(default)]
+    pub details: Value,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ControlPlaneState {
     pub version: u32,
     pub project: ProjectDescriptor,
@@ -279,6 +294,20 @@ CREATE TABLE IF NOT EXISTS dxos_control_planes (
 );
 CREATE INDEX IF NOT EXISTS idx_dxos_control_planes_updated_at
     ON dxos_control_planes(updated_at DESC);
+CREATE TABLE IF NOT EXISTS dxos_audit_log (
+    id TEXT PRIMARY KEY,
+    project_path TEXT NOT NULL,
+    project_name TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    action_kind TEXT NOT NULL,
+    target TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    details_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dxos_audit_log_project_created_at
+    ON dxos_audit_log(project_path, created_at DESC);
 "#;
 
 fn open_control_plane_db(path: &Path) -> Result<Connection, String> {
@@ -451,6 +480,140 @@ fn control_plane_registry_value_for_store_path(registry_path: &Path) -> Value {
 
 fn control_plane_registry_value_for_project_path(project_path: &str) -> Value {
     control_plane_registry_value_for_store_path(&control_plane_store_path(project_path))
+}
+
+fn next_audit_id() -> String {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    format!("AU{}", millis)
+}
+
+fn audit_summary(record: &AuditRecord) -> Value {
+    json!({
+        "id": record.id,
+        "actor": record.actor,
+        "action_kind": record.action_kind,
+        "target": record.target,
+        "outcome": record.outcome,
+        "summary": record.summary,
+        "details": record.details,
+        "created_at": record.created_at,
+    })
+}
+
+fn recent_audit_records(project_path: &str, limit: usize) -> Vec<Value> {
+    let conn = match control_plane_db(project_path) {
+        Ok(conn) => conn,
+        Err(_) => return Vec::new(),
+    };
+    let mut stmt = match conn.prepare(
+        "SELECT id, project_path, project_name, actor, action_kind, target, outcome, summary, details_json, created_at
+         FROM dxos_audit_log
+         WHERE project_path = ?1
+         ORDER BY created_at DESC
+         LIMIT ?2",
+    ) {
+        Ok(stmt) => stmt,
+        Err(_) => return Vec::new(),
+    };
+    let rows = match stmt.query_map(params![project_path, limit as i64], |row| {
+        let details_json: String = row.get(8)?;
+        Ok(AuditRecord {
+            id: row.get(0)?,
+            project_path: row.get(1)?,
+            project_name: row.get(2)?,
+            actor: row.get(3)?,
+            action_kind: row.get(4)?,
+            target: row.get(5)?,
+            outcome: row.get(6)?,
+            summary: row.get(7)?,
+            details: serde_json::from_str(&details_json).unwrap_or_else(|_| json!({})),
+            created_at: row.get(9)?,
+        })
+    }) {
+        Ok(rows) => rows,
+        Err(_) => return Vec::new(),
+    };
+    rows.filter_map(Result::ok)
+        .map(|record| audit_summary(&record))
+        .collect()
+}
+
+fn audit_record_count(project_path: &str) -> usize {
+    control_plane_db(project_path)
+        .ok()
+        .and_then(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM dxos_audit_log WHERE project_path = ?1",
+                params![project_path],
+                |row| row.get::<_, i64>(0),
+            )
+            .ok()
+        })
+        .unwrap_or(0)
+        .max(0) as usize
+}
+
+pub fn append_audit_record(
+    project_path: &str,
+    project_name: Option<&str>,
+    actor: &str,
+    action_kind: &str,
+    target: &str,
+    outcome: &str,
+    summary: &str,
+    details: Value,
+) -> Result<AuditRecord, String> {
+    if project_path.trim().is_empty() {
+        return Err("project_path required".to_string());
+    }
+    let record = AuditRecord {
+        id: next_audit_id(),
+        project_path: project_path.to_string(),
+        project_name: resolved_project_name(project_path, project_name),
+        actor: actor.trim().to_string(),
+        action_kind: action_kind.trim().to_string(),
+        target: target.trim().to_string(),
+        outcome: outcome.trim().to_string(),
+        summary: summary.trim().to_string(),
+        details,
+        created_at: crate::state::now(),
+    };
+    let conn = control_plane_db(project_path)?;
+    conn.execute(
+        "INSERT INTO dxos_audit_log(id, project_path, project_name, actor, action_kind, target, outcome, summary, details_json, created_at)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![
+            &record.id,
+            &record.project_path,
+            &record.project_name,
+            &record.actor,
+            &record.action_kind,
+            &record.target,
+            &record.outcome,
+            &record.summary,
+            serde_json::to_string(&record.details).map_err(|e| format!("serialize: {}", e))?,
+            &record.created_at,
+        ],
+    )
+    .map_err(|e| format!("insert audit: {}", e))?;
+    Ok(record)
+}
+
+pub fn audit_list(project_path: &str, project_name: Option<&str>, limit: usize) -> String {
+    json!({
+        "project": {
+            "name": resolved_project_name(project_path, project_name),
+            "path": project_path,
+        },
+        "audit": {
+            "total": audit_record_count(project_path),
+            "recent": recent_audit_records(project_path, limit),
+        }
+    })
+    .to_string()
 }
 
 pub fn control_auth_contract() -> Value {
@@ -824,6 +987,7 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
         .iter()
         .filter(|work_order| work_order.status == "blocked")
         .count();
+    let audit_recent = recent_audit_records(project_path, 8);
     let capability_registry = json!({
         "capability_source": "dx_registry",
         "mcp_count": registry.len(),
@@ -884,6 +1048,10 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             "active_work_orders": active_work_orders,
             "blocked_work_orders": blocked_work_orders,
             "recent": state.work_orders.iter().rev().take(10).map(work_order_summary).collect::<Vec<_>>(),
+        },
+        "audit": {
+            "total": audit_record_count(project_path),
+            "recent": audit_recent,
         },
         "updated_at": state.updated_at,
     })
