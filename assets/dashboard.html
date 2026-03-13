@@ -2517,6 +2517,7 @@ function renderPanes(){
     const previewLines=preview?preview.trim().split('\n').slice(-2).join('\n'):'';
     const browserPort=paneBrowserPortForRuntime(p,sp);
     const dxosSessionId=p.dxos_session_id||'';
+    const modelLabel=(p.model||'').toString();
     if(isActive)activeCount++;
     const h=p.health||p.status||'idle';
     const sc=h==='active'||isActive?'s-active':h==='done'?'s-done':h==='error'?'s-error':h==='stuck'?'s-stuck':'s-idle';
@@ -2548,6 +2549,7 @@ function renderPanes(){
         <div class="pane-task">${paneLastActivity(p.pane)||(p.task||'').slice(0,60)}</div>
         <div class="pane-meta">
           ${p.provider&&p.provider!=='unknown'?`<span class="badge b-provider provider-${p.provider}">${p.provider_short||p.provider_label||p.provider}</span>`:''}
+          ${modelLabel?`<span class="badge" style="background:rgba(168,85,247,.12);color:var(--purple)">${escHtml(modelLabel)}</span>`:''}
           ${p.role&&p.role!=='--'?`<span class="badge b-role">${p.role}</span>`:''}
           ${dxosSessionId?`<span class="badge" style="background:rgba(79,143,247,.12);color:var(--blue)">DX ${escHtml(dxosSessionId)}</span>`:''}
           <span class="badge b-lines" id="pane-lines-${p.pane}">${p.line_count||p.lines||0}L</span>
@@ -2613,6 +2615,7 @@ function openPanel(paneNum){
   const browserPort=paneBrowserPortForRuntime(p,sp);
   const browserProfile=(p&&p.browser_profile_root)||(sp&&sp.browser_profile_root)||'';
   const dxosSessionId=(p&&p.dxos_session_id)||(sp&&sp.dxos_session_id)||'';
+  const modelLabel=(p&&p.model)?String(p.model):'';
   let startedStr='--';
   if(sp&&sp.started_at){
     const d=new Date(sp.started_at);
@@ -2621,6 +2624,7 @@ function openPanel(paneNum){
   document.getElementById('panel-meta').innerHTML=`
     <div><dt>Status</dt><dd>${p?p.status:'idle'}</dd></div>
     <div><dt>Provider</dt><dd>${p&&p.provider_label?p.provider_label:'Unknown'}</dd></div>
+    <div><dt>Model</dt><dd>${modelLabel?escHtml(modelLabel):'--'}</dd></div>
     <div><dt>Role</dt><dd>${sp?sp.role_full||(p&&p.role!=='--'?p.role:'--'):'--'}</dd></div>
     <div><dt>Started</dt><dd>${startedStr}</dd></div>
     <div><dt>Branch</dt><dd>${sp&&sp.branch?sp.branch:'--'}</dd></div>
