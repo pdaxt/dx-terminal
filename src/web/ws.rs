@@ -164,6 +164,22 @@ async fn build_full_snapshot(app: &App) -> Value {
             (None, None)
         };
 
+        let pty_output = if tmux_target.is_none() {
+            let pty = app.pty_lock();
+            if pty.has_agent(pane_num) {
+                let screen = pty.screen_text(pane_num).unwrap_or_default();
+                if screen.trim().is_empty() {
+                    pty.last_output(pane_num, 80).unwrap_or_default()
+                } else {
+                    screen
+                }
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
         // Capture output
         let output = if let Some(ref target) = tmux_target {
             let t = target.clone();
@@ -171,7 +187,7 @@ async fn build_full_snapshot(app: &App) -> Value {
                 .await
                 .unwrap_or_default()
         } else {
-            String::new()
+            pty_output
         };
 
         let line_vec: Vec<&str> = output.lines().collect();
@@ -185,7 +201,8 @@ async fn build_full_snapshot(app: &App) -> Value {
             .join("\n");
 
         let theme_idx = i % themes.len();
-        let status = if tmux_target.is_some() && !output.trim().is_empty() {
+        let has_runtime_output = (tmux_target.is_some() || !output.trim().is_empty()) && !output.trim().is_empty();
+        let status = if has_runtime_output {
             if let Some(ref p) = ps {
                 p.status.as_str()
             } else {
@@ -276,6 +293,15 @@ async fn build_full_snapshot(app: &App) -> Value {
             "provider": provider,
             "provider_label": tmux::provider_label(&provider),
             "provider_short": tmux::provider_short(&provider),
+            "runtime_adapter": ps.and_then(|p| p.runtime_adapter.clone()).or_else(|| {
+                if tmux_target.is_some() {
+                    Some("tmux_migration_adapter".to_string())
+                } else if !output.trim().is_empty() {
+                    Some("pty_native_adapter".to_string())
+                } else {
+                    None
+                }
+            }),
             "output": tail,
             "line_count": line_vec.len(),
             "tmux_target": tmux_target,
@@ -658,15 +684,22 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
             if pane == 0 || message.is_empty() {
                 return json!({"error": "pane (number) and message required"});
             }
-            let target = resolve_pane_target(app, pane).await;
-            let target = match target {
-                Some(t) => t,
-                None => return json!({"error": format!("pane {} has no tmux target", pane)}),
-            };
-            match tokio::task::spawn_blocking(move || tmux::send_command(&target, &message)).await {
-                Ok(Ok(())) => json!({"status": "sent", "pane": pane}),
-                Ok(Err(e)) => json!({"error": format!("{}", e)}),
-                Err(e) => json!({"error": format!("task join error: {}", e)}),
+            let pane_data = app.state.get_pane(pane).await;
+            if let Some(target) = pane_data.tmux_target.filter(|target| tmux::pane_exists(target)) {
+                match tokio::task::spawn_blocking(move || tmux::send_command(&target, &message)).await {
+                    Ok(Ok(())) => json!({"status": "sent", "pane": pane, "runtime_adapter": "tmux_migration_adapter"}),
+                    Ok(Err(e)) => json!({"error": format!("{}", e)}),
+                    Err(e) => json!({"error": format!("task join error: {}", e)}),
+                }
+            } else {
+                let send_result = {
+                    let mut pty = app.pty_lock();
+                    pty.send_line(pane, &message)
+                };
+                match send_result {
+                    Ok(()) => json!({"status": "sent", "pane": pane, "runtime_adapter": "pty_native_adapter"}),
+                    Err(e) => json!({"error": format!("{}", e)}),
+                }
             }
         }
         "queue_add" => {
@@ -737,17 +770,21 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
             if pane == 0 {
                 return json!({"error": "pane number required"});
             }
-            let target = resolve_pane_target(app, pane).await;
-            let target = match target {
-                Some(t) => t,
-                None => {
-                    return json!({"pane": pane, "output": "", "lines": 0, "error": "no tmux target"})
-                }
-            };
-            let output = tokio::task::spawn_blocking(move || tmux::capture_output(&target))
-                .await
-                .unwrap_or_default();
-            json!({"pane": pane, "output": output, "lines": output.lines().count()})
+            let pane_data = app.state.get_pane(pane).await;
+            if let Some(target) = pane_data.tmux_target.filter(|target| tmux::pane_exists(target)) {
+                let output = tokio::task::spawn_blocking(move || tmux::capture_output(&target))
+                    .await
+                    .unwrap_or_default();
+                json!({"pane": pane, "output": output, "lines": output.lines().count(), "runtime_adapter": "tmux_migration_adapter"})
+            } else {
+                let output = {
+                    let pty = app.pty_lock();
+                    pty.screen_text(pane)
+                        .or_else(|| pty.last_output(pane, 80))
+                        .unwrap_or_default()
+                };
+                json!({"pane": pane, "output": output, "lines": output.lines().count(), "runtime_adapter": "pty_native_adapter"})
+            }
         }
         _ => json!({"error": format!("unknown command: {}", cmd_type)}),
     }
