@@ -1,5 +1,6 @@
 use axum::{
     extract::{Path, Query, State},
+    http::{HeaderMap, StatusCode},
     response::{Html, Json},
 };
 use serde::Deserialize;
@@ -17,6 +18,7 @@ use crate::mcp::{tools, types};
 use crate::queue;
 
 type AppState = Arc<App>;
+type ApiJson = Result<Json<Value>, (StatusCode, Json<Value>)>;
 
 /// Parse MCP tool JSON string result into Value, logging failures
 fn parse_mcp(result: &str) -> Value {
@@ -69,6 +71,39 @@ fn maybe_emit_dxos_session_change(app: &AppState, project_path: &str, result: &s
     if let Some(event) = crate::dxos::session_event_from_result(project_path, result) {
         app.state.event_bus.send(event);
     }
+}
+
+fn control_token_from_headers(headers: &HeaderMap) -> Option<String> {
+    if let Some(value) = headers.get("x-dx-control-token").and_then(|value| value.to_str().ok()) {
+        let token = value.trim();
+        if !token.is_empty() {
+            return Some(token.to_string());
+        }
+    }
+    headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+}
+
+fn require_control_token(headers: &HeaderMap) -> Result<(), (StatusCode, Json<Value>)> {
+    let Some(expected) = crate::config::control_token() else {
+        return Ok(());
+    };
+    let provided = control_token_from_headers(headers);
+    if provided.as_deref() == Some(expected.as_str()) {
+        return Ok(());
+    }
+    Err((
+        StatusCode::UNAUTHORIZED,
+        Json(json!({
+            "error": "DX control token required",
+            "control_auth": crate::dxos::control_auth_contract(),
+        })),
+    ))
 }
 
 /// GET / — Serve dashboard HTML

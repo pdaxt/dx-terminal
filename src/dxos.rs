@@ -453,6 +453,33 @@ fn control_plane_registry_value_for_project_path(project_path: &str) -> Value {
     control_plane_registry_value_for_store_path(&control_plane_store_path(project_path))
 }
 
+pub fn control_auth_contract() -> Value {
+    let token_configured = config::control_token().is_some();
+    json!({
+        "mode": if token_configured { "control_token" } else { "local_trusted" },
+        "configured": token_configured,
+        "required_header": "x-dx-control-token",
+        "authorization_scheme": "Bearer",
+        "required_for": [
+            "/api/dxos/session/launch",
+            "/api/dxos/session/upsert",
+            "/api/dxos/session/status",
+            "/api/dxos/session/block",
+            "/api/dxos/work/delegate",
+            "/api/dxos/work/block",
+            "/api/dxos/work/resolve",
+            "/api/dxos/debate/start",
+            "/api/dxos/debate/proposal",
+            "/api/dxos/debate/contradiction",
+            "/api/dxos/debate/vote",
+            "/api/dxos/debate/decision",
+            "/api/pane/talk",
+            "/api/pane/kill",
+            "/api/pane/restart"
+        ]
+    })
+}
+
 pub fn control_plane_registry() -> String {
     control_plane_registry_value_for_store_path(&global_control_plane_store_path()).to_string()
 }
@@ -823,6 +850,7 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
         "control_plane_registry": control_plane_registry,
         "storage": control_plane_storage_summary(project_path),
         "runtime_contract": {
+            "auth": control_auth_contract(),
             "launch_broker": {
                 "name": "dx_runtime_broker",
                 "adapters": crate::runtime_broker::adapter_inventory(),
