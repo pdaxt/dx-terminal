@@ -2315,17 +2315,7 @@ pub async fn get_vision_summary(Query(q): Query<VisionQuery>) -> Json<Value> {
 }
 
 /// GET /api/project/brief?project=NAME — Canonical project execution/documentation summary
-pub async fn get_project_brief(
-    State(app): State<AppState>,
-    Query(q): Query<VisionQuery>,
-) -> Json<Value> {
-    let project_path = resolve_project_path(&q);
-    let project = q
-        .project
-        .clone()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| project_name_from_path(&project_path));
-
+async fn build_project_brief_payload(app: &AppState, project_path: &str, project: &str) -> Value {
     let tree = crate::vision::vision_tree(&project_path);
     let tree_value = serde_json::from_str::<Value>(&tree).unwrap_or_else(|_| json!({}));
     let summary = crate::vision::vision_summary(&project_path);
@@ -2487,7 +2477,7 @@ pub async fn get_project_brief(
     );
     let dxos = crate::dxos::control_plane_snapshot(&project_path, Some(&project));
 
-    Json(json!({
+    json!({
         "project": project,
         "path": project_path,
         "mission": tree_value.get("mission").cloned().unwrap_or(json!("")),
@@ -2538,7 +2528,80 @@ pub async fn get_project_brief(
         "worktree_count": worktree_count,
         "git": git,
         "dxos": dxos,
-    }))
+    })
+}
+
+fn derive_adoption_defaults(project: &str, brief: &Value) -> Value {
+    let recovery = brief.get("recovery").cloned().unwrap_or_else(|| json!({}));
+    let focus = brief.get("focus").cloned().unwrap_or_else(|| json!({}));
+    let next_action = recovery
+        .get("next_actions")
+        .and_then(Value::as_array)
+        .and_then(|items| items.first())
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+
+    let summary = recovery
+        .get("summary")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| {
+            format!(
+                "Adopt {} into DXOS, reconstruct the current truth, and build the first governed recovery plan.",
+                project
+            )
+        });
+    let objective = next_action
+        .get("task_prompt")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+        .or_else(|| {
+            recovery
+                .get("summary")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(|value| value.to_string())
+        })
+        .unwrap_or_else(|| {
+            format!(
+                "Inventory {}, reconstruct the active features and stages, and seed the first governed recovery council.",
+                project
+            )
+        });
+
+    json!({
+        "summary": summary,
+        "objective": objective,
+        "feature_id": next_action
+            .get("feature_id")
+            .cloned()
+            .or_else(|| focus.get("feature_id").cloned())
+            .unwrap_or(Value::Null),
+        "stage": next_action
+            .get("stage")
+            .cloned()
+            .or_else(|| focus.get("stage").cloned())
+            .unwrap_or_else(|| json!("discovery")),
+    })
+}
+
+pub async fn get_project_brief(
+    State(app): State<AppState>,
+    Query(q): Query<VisionQuery>,
+) -> Json<Value> {
+    let project_path = resolve_project_path(&q);
+    let project = q
+        .project
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| project_name_from_path(&project_path));
+
+    Json(build_project_brief_payload(&app, &project_path, &project).await)
 }
 
 /// GET /api/dxos/control-plane?project=NAME — DXOS contract and governance summary
