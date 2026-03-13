@@ -2268,6 +2268,7 @@ function renderDxosOperatorControls(project,activeStage,sessions){
   const controlAuth=dxosControlAuthCache[project]||{};
   const protectedControls=controlAuth.mode==='control_token';
   const controlTokenLoaded=!!storedDxControlToken();
+  const operatorIdentity=storedDxOperatorIdentity();
   const launchAdapterOptions=runtimeAdapterOptions(project,'pty_native_adapter');
   const sessionAdapterOptions=runtimeAdapterOptions(project,'pty_native_adapter');
   const launchTask=featureId
@@ -2295,6 +2296,15 @@ function renderDxosOperatorControls(project,activeStage,sessions){
               <label>Portal state</label>
               <div class="action-note">${protectedControls?(controlTokenLoaded?'token loaded in browser session':'locked until token is supplied'):'no token required'}</div>
             </div>
+          </div>
+          <div class="action-field">
+            <label for="dx-operator-identity">Operator identity</label>
+            <input class="action-input" id="dx-operator-identity" value="${escHtml(operatorIdentity)}" placeholder="ops-lead / reviewer / client-admin">
+          </div>
+          <div class="action-actions">
+            <button class="design-action" onclick="saveDxOperatorIdentity()">Save identity</button>
+            <button class="vdd-focus-btn" onclick="clearDxOperatorIdentity();return false;">Clear</button>
+            <span class="action-note">Protected control requests send this as <code>X-DX-Actor</code> for the audit trail.</span>
           </div>
           ${protectedControls?`<div class="action-field">
             <label for="dx-control-token">DX control token</label>
@@ -2688,6 +2698,7 @@ async function renderExecutionHub(){
   const controlAuth=runtimeContract.auth||{};
   const protectedControls=controlAuth.mode==='control_token';
   const controlTokenLoaded=!!storedDxControlToken();
+  const operatorIdentity=storedDxOperatorIdentity();
   const selectedMcp=automationSelection[project]||(externalMcps[0]&&externalMcps[0].name)||'';
   const selectedCacheKey=selectedMcp?automationCacheKey(project,selectedMcp):'';
   const selectedToolInfo=selectedCacheKey?automationToolCache[selectedCacheKey]:null;
@@ -2826,7 +2837,7 @@ async function renderExecutionHub(){
       </div>
       <div class="doc-mini-card">
         <div class="label">Control auth</div>
-        <div class="meta">${protectedControls?'token protected':'local trusted'} · ${protectedControls?(controlTokenLoaded?'token loaded in portal session':'portal token required for control actions'):'no token required'}</div>
+        <div class="meta">${protectedControls?'token protected':'local trusted'} · ${protectedControls?(controlTokenLoaded?'token loaded in portal session':'portal token required for control actions'):'no token required'}${operatorIdentity?` · actor ${escHtml(operatorIdentity)}`:''}</div>
       </div>
     </div>
     <div class="exec-list">
