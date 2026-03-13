@@ -38,6 +38,8 @@ pub struct PaneState {
     #[serde(default)]
     pub role: String,
     #[serde(default)]
+    pub dxos_session_id: Option<String>,
+    #[serde(default)]
     pub task: String,
     #[serde(default)]
     pub issue_id: Option<String>,
@@ -77,6 +79,7 @@ impl Default for PaneState {
             project: "--".into(),
             project_path: String::new(),
             role: String::new(),
+            dxos_session_id: None,
             task: String::new(),
             issue_id: None,
             space: None,
