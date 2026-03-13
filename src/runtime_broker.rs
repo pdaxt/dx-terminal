@@ -1,0 +1,291 @@
+use anyhow::Result;
+use serde::Serialize;
+use std::process::Command;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RuntimeProvider {
+    Claude,
+    Codex,
+    Gemini,
+    OpenCode,
+}
+
+impl RuntimeProvider {
+    pub fn from_str(value: &str) -> Self {
+        match value.trim().to_lowercase().as_str() {
+            "codex" | "openai" => Self::Codex,
+            "gemini" | "google" => Self::Gemini,
+            "opencode" | "open-code" => Self::OpenCode,
+            _ => Self::Claude,
+        }
+    }
+
+    pub fn id(&self) -> &'static str {
+        match self {
+            Self::Claude => "claude",
+            Self::Codex => "codex",
+            Self::Gemini => "gemini",
+            Self::OpenCode => "opencode",
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Claude => "Claude Code",
+            Self::Codex => "Codex CLI",
+            Self::Gemini => "Gemini CLI",
+            Self::OpenCode => "OpenCode",
+        }
+    }
+
+    pub fn short_label(&self) -> &'static str {
+        match self {
+            Self::Claude => "Claude",
+            Self::Codex => "Codex",
+            Self::Gemini => "Gemini",
+            Self::OpenCode => "Open",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RuntimeLaunchPlan {
+    pub adapter: String,
+    pub provider: String,
+    pub provider_label: String,
+    pub binary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    pub autonomous: bool,
+    pub project_path: String,
+    pub window_name: String,
+    pub command: String,
+}
+
+pub fn provider_label(provider: &str) -> &'static str {
+    RuntimeProvider::from_str(provider).label()
+}
+
+pub fn provider_short(provider: &str) -> &'static str {
+    RuntimeProvider::from_str(provider).short_label()
+}
+
+pub fn normalize_provider_id(provider: &str) -> &'static str {
+    RuntimeProvider::from_str(provider).id()
+}
+
+pub fn plan_tmux_launch(
+    provider: &str,
+    window_name: &str,
+    project_path: &str,
+    prompt: &str,
+    autonomous: bool,
+    model: Option<&str>,
+) -> Result<RuntimeLaunchPlan> {
+    let provider = RuntimeProvider::from_str(provider);
+    let binary = resolve_provider_binary(provider).ok_or_else(|| {
+        anyhow::anyhow!(
+            "{} binary not found on PATH or standard install locations",
+            provider.label()
+        )
+    })?;
+    let normalized_model = model
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
+    let command =
+        build_provider_command_with_binary(provider, &binary, prompt, autonomous, normalized_model.as_deref());
+
+    Ok(RuntimeLaunchPlan {
+        adapter: "tmux_migration_adapter".to_string(),
+        provider: provider.id().to_string(),
+        provider_label: provider.label().to_string(),
+        binary,
+        model: normalized_model,
+        autonomous,
+        project_path: project_path.to_string(),
+        window_name: window_name.to_string(),
+        command,
+    })
+}
+
+fn build_provider_command_with_binary(
+    provider: RuntimeProvider,
+    binary: &str,
+    prompt: &str,
+    autonomous: bool,
+    model: Option<&str>,
+) -> String {
+    let escaped_prompt = shell_escape(prompt);
+    let model_arg = model
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(shell_escape);
+
+    match provider {
+        RuntimeProvider::Claude => {
+            let perms_flag = if autonomous {
+                " --dangerously-skip-permissions"
+            } else {
+                ""
+            };
+            let model_flag = model_arg
+                .as_deref()
+                .map(|value| format!(" --model {}", value))
+                .unwrap_or_default();
+            format!(
+                "{}{}{} -p {}",
+                binary, perms_flag, model_flag, escaped_prompt
+            )
+        }
+        RuntimeProvider::Codex => {
+            let auto_flag = if autonomous { " --full-auto" } else { "" };
+            let model_flag = model_arg
+                .as_deref()
+                .map(|value| format!(" -m {}", value))
+                .unwrap_or_default();
+            format!("{}{}{} {}", binary, auto_flag, model_flag, escaped_prompt)
+        }
+        RuntimeProvider::Gemini => {
+            let auto_flag = if autonomous { " --yolo" } else { "" };
+            let model_flag = model_arg
+                .as_deref()
+                .map(|value| format!(" -m {}", value))
+                .unwrap_or_default();
+            format!(
+                "{}{}{} --prompt-interactive {}",
+                binary, auto_flag, model_flag, escaped_prompt
+            )
+        }
+        RuntimeProvider::OpenCode => {
+            let model_flag = model_arg
+                .as_deref()
+                .map(|value| format!(" -m {}", value))
+                .unwrap_or_default();
+            format!("{}{} {}", binary, model_flag, escaped_prompt)
+        }
+    }
+}
+
+fn resolve_provider_binary(provider: RuntimeProvider) -> Option<String> {
+    let candidates: &[&str] = match provider {
+        RuntimeProvider::Claude => &[
+            "/opt/homebrew/bin/claude",
+            "/usr/local/bin/claude",
+            "claude",
+        ],
+        RuntimeProvider::Codex => &[
+            "/Users/pran/.nvm/versions/node/v22.22.0/bin/codex",
+            "/opt/homebrew/bin/codex",
+            "/usr/local/bin/codex",
+            "codex",
+        ],
+        RuntimeProvider::Gemini => &[
+            "/opt/homebrew/bin/gemini",
+            "/usr/local/bin/gemini",
+            "gemini",
+        ],
+        RuntimeProvider::OpenCode => &[
+            "/opt/homebrew/bin/opencode",
+            "/usr/local/bin/opencode",
+            "opencode",
+        ],
+    };
+
+    for candidate in candidates {
+        if candidate.contains('/') {
+            if std::path::Path::new(candidate).exists() {
+                return Some((*candidate).to_string());
+            }
+        } else if let Ok(output) = Command::new("which").arg(candidate).output() {
+            if output.status.success() {
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path.is_empty() {
+                    return Some(path);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn shell_escape(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_runtime_provider_names() {
+        assert_eq!(RuntimeProvider::from_str("claude"), RuntimeProvider::Claude);
+        assert_eq!(RuntimeProvider::from_str("codex"), RuntimeProvider::Codex);
+        assert_eq!(RuntimeProvider::from_str("openai"), RuntimeProvider::Codex);
+        assert_eq!(RuntimeProvider::from_str("gemini"), RuntimeProvider::Gemini);
+        assert_eq!(
+            RuntimeProvider::from_str("opencode"),
+            RuntimeProvider::OpenCode
+        );
+        assert_eq!(
+            RuntimeProvider::from_str("something-else"),
+            RuntimeProvider::Claude
+        );
+    }
+
+    #[test]
+    fn builds_claude_command_with_model_and_permissions() {
+        let plan = RuntimeLaunchPlan {
+            adapter: "tmux_migration_adapter".to_string(),
+            provider: "claude".to_string(),
+            provider_label: "Claude Code".to_string(),
+            binary: "/bin/claude".to_string(),
+            model: Some("claude-sonnet-4-6".to_string()),
+            autonomous: true,
+            project_path: "/tmp/demo".to_string(),
+            window_name: "dx-claude".to_string(),
+            command: build_provider_command_with_binary(
+                RuntimeProvider::Claude,
+                "/bin/claude",
+                "ship it",
+                true,
+                Some("claude-sonnet-4-6"),
+            ),
+        };
+        assert!(plan.command.contains("/bin/claude"));
+        assert!(plan.command.contains("--dangerously-skip-permissions"));
+        assert!(plan.command.contains("--model 'claude-sonnet-4-6'"));
+        assert!(plan.command.ends_with("-p 'ship it'"));
+    }
+
+    #[test]
+    fn builds_codex_command_with_full_auto() {
+        let cmd = build_provider_command_with_binary(
+            RuntimeProvider::Codex,
+            "/bin/codex",
+            "review this diff",
+            true,
+            Some("gpt-5.4"),
+        );
+        assert!(cmd.contains("/bin/codex"));
+        assert!(cmd.contains("--full-auto"));
+        assert!(cmd.contains("-m 'gpt-5.4'"));
+        assert!(cmd.ends_with("'review this diff'"));
+    }
+
+    #[test]
+    fn builds_gemini_interactive_command() {
+        let cmd = build_provider_command_with_binary(
+            RuntimeProvider::Gemini,
+            "/bin/gemini",
+            "design three options",
+            false,
+            Some("gemini-2.5-pro"),
+        );
+        assert!(cmd.contains("/bin/gemini"));
+        assert!(cmd.contains("--prompt-interactive 'design three options'"));
+        assert!(cmd.contains("-m 'gemini-2.5-pro'"));
+        assert!(!cmd.contains("--yolo"));
+    }
+}
