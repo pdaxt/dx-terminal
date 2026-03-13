@@ -14,11 +14,259 @@ use crate::state::types::PaneState;
 use crate::tmux;
 use crate::tracker;
 use crate::workspace;
+use serde_json::Value;
 use std::path::PathBuf;
 
 fn emit_dxos_session_change(app: &App, project_path: &str, result: &str) {
     if let Some(event) = crate::dxos::session_event_from_result(project_path, result) {
         app.state.event_bus.send(event);
+    }
+}
+
+fn push_env_if_present(env_vars: &mut Vec<(String, String)>, key: &str, value: Option<&str>) {
+    if let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) {
+        env_vars.push((key.to_string(), value.to_string()));
+    }
+}
+
+fn value_string_array(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|items| {
+            items.iter()
+                .filter_map(|item| item.as_str().map(|value| value.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn effective_task_from_dxos_context(task: &str, context: &Value) -> String {
+    if !task.trim().is_empty() {
+        return task.trim().to_string();
+    }
+    context
+        .get("session")
+        .and_then(|session| session.get("objective"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "Advance the assigned DXOS work package.".to_string())
+}
+
+fn build_dxos_runtime_context_section(context: &Value) -> Option<String> {
+    let session = context.get("session")?;
+    let session_id = session.get("id").and_then(Value::as_str).unwrap_or("");
+    if session_id.is_empty() {
+        return None;
+    }
+
+    let mut lines = vec![
+        "## DXOS Session Contract".to_string(),
+        format!(
+            "- Session: {} ({})",
+            session_id,
+            session.get("role").and_then(Value::as_str).unwrap_or("worker")
+        ),
+    ];
+
+    if let Some(status) = session.get("status").and_then(Value::as_str) {
+        lines.push(format!("- Session status: {}", status));
+    }
+    if let Some(objective) = session.get("objective").and_then(Value::as_str) {
+        if !objective.trim().is_empty() {
+            lines.push(format!("- Session objective: {}", objective.trim()));
+        }
+    }
+    if let Some(stage) = session.get("stage").and_then(Value::as_str) {
+        if !stage.trim().is_empty() {
+            lines.push(format!("- Delivery stage: {}", stage.trim()));
+        }
+    }
+    if let Some(feature_id) = session.get("feature_id").and_then(Value::as_str) {
+        if !feature_id.trim().is_empty() {
+            lines.push(format!("- Feature: {}", feature_id.trim()));
+        }
+    }
+
+    if let Some(work_order) = context.get("primary_work_order") {
+        let work_order_id = work_order.get("id").and_then(Value::as_str).unwrap_or("");
+        if !work_order_id.is_empty() {
+            lines.push(String::new());
+            lines.push("## DXOS Assigned Work Package".to_string());
+            lines.push(format!(
+                "- Work order: {} ({})",
+                work_order_id,
+                work_order
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .unwrap_or("assigned")
+            ));
+            if let Some(title) = work_order.get("title").and_then(Value::as_str) {
+                if !title.trim().is_empty() {
+                    lines.push(format!("- Title: {}", title.trim()));
+                }
+            }
+            if let Some(objective) = work_order.get("objective").and_then(Value::as_str) {
+                if !objective.trim().is_empty() {
+                    lines.push(format!("- Objective: {}", objective.trim()));
+                }
+            }
+            if let Some(stage) = work_order.get("stage").and_then(Value::as_str) {
+                if !stage.trim().is_empty() {
+                    lines.push(format!("- Work stage: {}", stage.trim()));
+                }
+            }
+            if let Some(feature_id) = work_order.get("feature_id").and_then(Value::as_str) {
+                if !feature_id.trim().is_empty() {
+                    lines.push(format!("- Work feature: {}", feature_id.trim()));
+                }
+            }
+
+            let required_capabilities =
+                value_string_array(work_order.get("required_capabilities"));
+            if !required_capabilities.is_empty() {
+                lines.push(format!(
+                    "- Required capabilities: {}",
+                    required_capabilities.join(", ")
+                ));
+            }
+
+            let expected_outputs = value_string_array(work_order.get("expected_outputs"));
+            if !expected_outputs.is_empty() {
+                lines.push("- Expected outputs:".to_string());
+                for item in expected_outputs {
+                    lines.push(format!("  - {}", item));
+                }
+            }
+
+            let blockers = value_string_array(work_order.get("blockers"));
+            if !blockers.is_empty() {
+                lines.push("- Active blockers:".to_string());
+                for blocker in blockers {
+                    lines.push(format!("  - {}", blocker));
+                }
+            }
+
+            if let Some(last_resolution) = work_order.get("last_resolution").and_then(Value::as_str)
+            {
+                if !last_resolution.trim().is_empty() {
+                    lines.push(format!("- Latest lead guidance: {}", last_resolution.trim()));
+                }
+            }
+        }
+    }
+
+    if let Some(adoption) = context.get("adoption") {
+        let adoption_id = adoption.get("id").and_then(Value::as_str).unwrap_or("");
+        if !adoption_id.is_empty() {
+            lines.push(String::new());
+            lines.push("## DXOS Adoption Context".to_string());
+            lines.push(format!(
+                "- Adoption: {} ({})",
+                adoption_id,
+                adoption
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .unwrap_or("active")
+            ));
+            if let Some(summary) = adoption.get("summary").and_then(Value::as_str) {
+                if !summary.trim().is_empty() {
+                    lines.push(format!("- Summary: {}", summary.trim()));
+                }
+            }
+            if let Some(objective) = adoption.get("objective").and_then(Value::as_str) {
+                if !objective.trim().is_empty() {
+                    lines.push(format!("- Adoption objective: {}", objective.trim()));
+                }
+            }
+        }
+    }
+
+    if let Some(debate) = context.get("debate") {
+        let debate_id = debate.get("id").and_then(Value::as_str).unwrap_or("");
+        if !debate_id.is_empty() {
+            lines.push(String::new());
+            lines.push("## DXOS Recovery Council".to_string());
+            lines.push(format!(
+                "- Debate: {} ({})",
+                debate_id,
+                debate.get("status").and_then(Value::as_str).unwrap_or("open")
+            ));
+            if let Some(title) = debate.get("title").and_then(Value::as_str) {
+                if !title.trim().is_empty() {
+                    lines.push(format!("- Council: {}", title.trim()));
+                }
+            }
+        }
+    }
+
+    lines.push(String::new());
+    lines.push("## DXOS Operating Rule".to_string());
+    lines.push(
+        "- Treat the assigned work package as the canonical governed task for this lane. Produce the expected outputs and raise blockers through DXOS instead of going silent."
+            .to_string(),
+    );
+    Some(lines.join("\n"))
+}
+
+fn merge_prompt_with_dxos_context(prompt: &str, dxos_context: Option<&str>) -> String {
+    let prompt = prompt.trim();
+    let dxos_context = dxos_context.map(str::trim).unwrap_or("");
+    match (prompt.is_empty(), dxos_context.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => prompt.to_string(),
+        (true, false) => dxos_context.to_string(),
+        (false, false) => format!("{}\n\n{}", prompt, dxos_context),
+    }
+}
+
+fn inject_dxos_runtime_env(env_vars: &mut Vec<(String, String)>, context: &Value) {
+    if let Some(work_order) = context.get("primary_work_order") {
+        push_env_if_present(
+            env_vars,
+            "DX_WORK_ORDER_ID",
+            work_order.get("id").and_then(Value::as_str),
+        );
+        push_env_if_present(
+            env_vars,
+            "DX_WORK_ORDER_TITLE",
+            work_order.get("title").and_then(Value::as_str),
+        );
+        push_env_if_present(
+            env_vars,
+            "DX_WORK_ORDER_STATUS",
+            work_order.get("status").and_then(Value::as_str),
+        );
+        let expected_outputs = value_string_array(work_order.get("expected_outputs"));
+        if !expected_outputs.is_empty() {
+            env_vars.push((
+                "DX_WORK_ORDER_EXPECTED_OUTPUTS".to_string(),
+                expected_outputs.join(","),
+            ));
+        }
+        let required_capabilities = value_string_array(work_order.get("required_capabilities"));
+        if !required_capabilities.is_empty() {
+            env_vars.push((
+                "DX_WORK_ORDER_REQUIRED_CAPABILITIES".to_string(),
+                required_capabilities.join(","),
+            ));
+        }
+    }
+
+    if let Some(adoption) = context.get("adoption") {
+        push_env_if_present(
+            env_vars,
+            "DX_ADOPTION_ID",
+            adoption.get("id").and_then(Value::as_str),
+        );
+    }
+    if let Some(debate) = context.get("debate") {
+        push_env_if_present(
+            env_vars,
+            "DX_DEBATE_ID",
+            debate.get("id").and_then(Value::as_str),
+        );
     }
 }
 
@@ -145,15 +393,6 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         }
     }
 
-    // Generate preamble and write a shared guidance bundle in the workspace for
-    // whichever provider is active there.
-    let preamble = claude::generate_preamble(pane_num, theme, &project_name, &role, &task, &prompt);
-    let _ = claude::write_preamble(pane_num, &preamble);
-    for guidance_file in ["AGENTS.md", "CLAUDE.md", "CODEX.md", "GEMINI.md"] {
-        let guidance_path = format!("{}/{}", spawn_cwd, guidance_file);
-        let _ = std::fs::write(&guidance_path, &preamble);
-    }
-
     // Register machine identity
     let machine_id = machine::register(pane_num);
 
@@ -182,11 +421,6 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         ("MACHINE_MAC".to_string(), machine_id.mac.clone()),
     ];
 
-    let task_prompt = format!(
-        "{}\n\n{}",
-        task,
-        if prompt.is_empty() { "" } else { &prompt }
-    );
     let autonomous = req.autonomous.unwrap_or(true);
 
     let initial_session_result = crate::dxos::upsert_session_contract(
@@ -288,6 +522,42 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         })
         .to_string();
     }
+
+    let dxos_launch_context = dxos_session_id
+        .as_deref()
+        .map(|session_id| crate::dxos::runtime_launch_context(&project_path, Some(&project_name), session_id))
+        .unwrap_or_else(|| serde_json::json!({}));
+    inject_dxos_runtime_env(&mut env_vars, &dxos_launch_context);
+
+    let effective_task = effective_task_from_dxos_context(&task, &dxos_launch_context);
+    let dxos_context_section = build_dxos_runtime_context_section(&dxos_launch_context);
+    let effective_prompt = merge_prompt_with_dxos_context(&prompt, dxos_context_section.as_deref());
+
+    // Generate preamble and write a shared guidance bundle in the workspace for
+    // whichever provider is active there.
+    let preamble = claude::generate_preamble(
+        pane_num,
+        theme,
+        &project_name,
+        &role,
+        &effective_task,
+        &effective_prompt,
+    );
+    let _ = claude::write_preamble(pane_num, &preamble);
+    for guidance_file in ["AGENTS.md", "CLAUDE.md", "CODEX.md", "GEMINI.md"] {
+        let guidance_path = format!("{}/{}", spawn_cwd, guidance_file);
+        let _ = std::fs::write(&guidance_path, &preamble);
+    }
+
+    let task_prompt = format!(
+        "{}\n\n{}",
+        effective_task,
+        if effective_prompt.is_empty() {
+            ""
+        } else {
+            &effective_prompt
+        }
+    );
 
     let window_name = format!(
         "dx-{}-{}-{}",
