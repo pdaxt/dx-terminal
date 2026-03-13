@@ -1557,6 +1557,18 @@ pub fn work_order_block(
     }
     work_order.updated_at = crate::state::now();
     state.updated_at = work_order.updated_at.clone();
+    let worker_session_id = work_order.worker_session_id.clone();
+
+    if let Some(worker_session_id) = worker_session_id {
+        if let Some(session) = state
+            .sessions
+            .iter_mut()
+            .find(|item| item.id == worker_session_id)
+        {
+            session.status = "blocked".to_string();
+            session.updated_at = state.updated_at.clone();
+        }
+    }
 
     match save_control_plane(project_path, &state) {
         Ok(()) => json!({
@@ -1601,6 +1613,19 @@ pub fn resolve_work_order(
     }
     work_order.updated_at = crate::state::now();
     state.updated_at = work_order.updated_at.clone();
+    let worker_session_id = work_order.worker_session_id.clone();
+
+    if let Some(worker_session_id) = worker_session_id {
+        if let Some(session) = state
+            .sessions
+            .iter_mut()
+            .find(|item| item.id == worker_session_id)
+        {
+            session.status = "active".to_string();
+            session.last_error = None;
+            session.updated_at = state.updated_at.clone();
+        }
+    }
 
     match save_control_plane(project_path, &state) {
         Ok(()) => json!({
