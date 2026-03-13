@@ -1470,6 +1470,15 @@ pub struct DxosSessionBlockBody {
     pub resolution_hint: Option<String>,
 }
 
+#[derive(Deserialize, Default)]
+pub struct DxosProviderPluginsSyncBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub source_provider: Option<String>,
+    pub target_provider: Option<String>,
+    pub dry_run: Option<bool>,
+}
+
 fn resolve_project_path(q: &VisionQuery) -> String {
     if let Some(ref p) = q.path {
         return p.clone();
@@ -2270,6 +2279,11 @@ pub async fn get_dxos_registry() -> Json<Value> {
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
+/// GET /api/dxos/provider-plugins — Provider interoperability bridge inventory
+pub async fn get_dxos_provider_plugins() -> Json<Value> {
+    Json(crate::provider_plugins::plugin_inventory())
+}
+
 /// GET /api/dxos/debates?project=NAME — Formal debate records for a project
 pub async fn get_dxos_debates(Query(q): Query<VisionQuery>) -> Json<Value> {
     let project_path = resolve_project_path(&q);
@@ -2470,6 +2484,52 @@ pub async fn start_dxos_debate(
         &actor,
         "debate_start",
         &body.title,
+        &value,
+    );
+    Ok(Json(value))
+}
+
+/// POST /api/dxos/provider-plugins/sync — Export the shared DX manifest into a provider bridge
+pub async fn sync_dxos_provider_plugins(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DxosProviderPluginsSyncBody>,
+) -> ApiJson {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let target = body
+        .target_provider
+        .clone()
+        .unwrap_or_else(|| "claude".to_string());
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        body.project.as_deref(),
+        "provider_plugin_sync",
+        &target,
+    )?;
+    let value = crate::provider_plugins::convert_provider_plugin(
+        body.source_provider.as_deref(),
+        &target,
+        body.dry_run.unwrap_or(false),
+    )
+    .map(|result| {
+        json!({
+            "provider_plugins": crate::provider_plugins::plugin_inventory(),
+            "result": result,
+        })
+    })
+    .unwrap_or_else(|error| json!({"error": error.to_string()}));
+    record_control_action(
+        &app,
+        &project_path,
+        body.project.as_deref(),
+        &actor,
+        "provider_plugin_sync",
+        &target,
         &value,
     );
     Ok(Json(value))
