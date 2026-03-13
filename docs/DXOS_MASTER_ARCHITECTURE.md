@@ -193,5 +193,7 @@ The first architecture slice now implemented in the repo is:
 - portal execution hub surfaces DXOS session contracts, delegated work, blocker queues, and recent decision records
 - runtime cards now carry `dxos_session_id`, so pane state and control-plane session state line up from first render
 - blocked work orders can be resumed directly from the portal, and mapped sessions can jump straight into their pane
+- portal-native operator controls can now launch a real runtime lane on the current adapter, register provider-neutral session contracts, delegate structured work, and start formal debates without dropping into raw terminal commands
+- DXOS debate/session events now update the execution hub surgically instead of forcing a full page refresh, so the portal can evolve into a stable control surface rather than a passive monitor
 
 That gives the platform a native place to reason, disagree, decide, supervise, and delegate inside the system itself.
