@@ -1533,7 +1533,10 @@ pub fn update_project_adoption_status(
     }
 
     let normalized_status = status.trim().to_lowercase();
-    if !matches!(normalized_status.as_str(), "planned" | "active" | "completed" | "cancelled") {
+    if !matches!(
+        normalized_status.as_str(),
+        "planned" | "active" | "completed" | "cancelled"
+    ) {
         return json!({"error": "status must be planned/active/completed/cancelled"}).to_string();
     }
 
@@ -3273,6 +3276,39 @@ mod tests {
             snapshot["adoptions"]["recent"][0]["lead_session_id"],
             value["lead_session_id"]
         );
+    }
+
+    #[test]
+    fn project_adoption_status_can_be_completed() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        std::fs::create_dir_all(&project_path).unwrap();
+        let project = project_path.to_str().unwrap();
+
+        let started: Value = serde_json::from_str(&start_project_adoption(
+            project,
+            Some("demo"),
+            None,
+            None,
+            None,
+            Some("discovery"),
+            Vec::new(),
+            Some("ops-lead"),
+        ))
+        .unwrap();
+        let adoption_id = started["adoption_id"].as_str().unwrap();
+        let updated: Value = serde_json::from_str(&update_project_adoption_status(
+            project,
+            Some("demo"),
+            adoption_id,
+            "completed",
+            Some("Recovery plan accepted."),
+        ))
+        .unwrap();
+
+        assert_eq!(updated["action"], "adoption_status_updated");
+        assert_eq!(updated["adoption"]["status"], "completed");
+        assert_eq!(updated["adoption"]["last_note"], "Recovery plan accepted.");
     }
 
     #[test]
