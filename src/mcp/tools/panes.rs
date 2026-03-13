@@ -48,7 +48,10 @@ async fn resolve_spawn_pane(app: &App, pane_ref: &str) -> Result<u8, String> {
         );
     if !auto_allocate {
         return config::resolve_pane(requested).ok_or_else(|| {
-            format!("Invalid pane: {}. Use 1-9, theme name, or 'auto'.", pane_ref)
+            format!(
+                "Invalid pane: {}. Use 1-9, theme name, or 'auto'.",
+                pane_ref
+            )
         });
     }
 

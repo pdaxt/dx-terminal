@@ -23,7 +23,9 @@ pub struct SpawnRequest {
     #[schemars(description = "Runtime adapter: pty_native_adapter or tmux_migration_adapter")]
     pub runtime_adapter: Option<String>,
     #[serde(default)]
-    #[schemars(description = "Optional client-generated request id to correlate async launch results")]
+    #[schemars(
+        description = "Optional client-generated request id to correlate async launch results"
+    )]
     pub client_request_id: Option<String>,
     #[serde(default)]
     #[schemars(description = "Optional linked feature ID for DXOS session registration")]
