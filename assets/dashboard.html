@@ -1199,6 +1199,8 @@ let activePaneNum=null;
 let automationSelection={};
 let automationToolCache={};
 let automationToolLoading={};
+let dxosPortalState={};
+let dxosPendingLaunches={};
 
 // === Theme colors per pane (fallback; overridden by API theme_color) ===
 const COLORS=['#4da6ff','#44d98c','#b07aff','#ff9f43','#ff6b9d','#f0c040','#c0c8d4','#3dd6d0','#ff5c5c'];
@@ -1378,6 +1380,78 @@ function truncateCopy(value,maxLen){
   return `${raw.slice(0,Math.max(0,maxLen-1)).trim()}…`;
 }
 
+function csvList(value){
+  return (value||'').toString().split(',').map(item=>item.trim()).filter(Boolean);
+}
+
+function currentProjectFocus(project){
+  return visionFocusCache[project]||null;
+}
+
+function firstAvailablePane(project){
+  const panes=(wsState&&wsState.panes)||[];
+  const candidates=panes.filter(p=>{
+    const status=(p.status||'').toString();
+    return !p.project||p.project==='--'||status==='idle'||status==='done'||status==='lost';
+  });
+  if(candidates.length)return candidates[0].pane;
+  const projectCandidates=panes.filter(p=>p.project===project&&p.status!=='active');
+  return projectCandidates.length?projectCandidates[0].pane:'';
+}
+
+function stageOptions(selected){
+  const normalized=normalizeVddPhase(selected||'build');
+  const stages=['planned','discovery','build','test','done'];
+  return stages.map(stage=>`<option value="${stage}" ${normalized===stage?'selected':''}>${stage}</option>`).join('');
+}
+
+function roleOptions(selected){
+  const chosen=(selected||'design').toString();
+  const roles=['lead','discovery','design','frontend','backend','qa','docs','security','review','release'];
+  return roles.map(role=>`<option value="${role}" ${chosen===role?'selected':''}>${role}</option>`).join('');
+}
+
+function providerOptions(selected){
+  const chosen=(selected||'shared').toString();
+  const providers=[
+    ['shared','DX shared'],
+    ['claude','Claude'],
+    ['codex','Codex'],
+    ['gemini','Gemini'],
+    ['opencode','OpenCode']
+  ];
+  return providers.map(([value,label])=>`<option value="${value}" ${chosen===value?'selected':''}>${label}</option>`).join('');
+}
+
+function sessionOptionRows(sessions,filterFn,selected,placeholder){
+  const items=(Array.isArray(sessions)?sessions:[]).filter(filterFn||(()=>true));
+  const head=`<option value="">${placeholder||'None'}</option>`;
+  return head+items.map(session=>{
+    const summary=[session.role,session.feature_id,session.pane?`pane ${session.pane}`:null].filter(Boolean).join(' · ');
+    return `<option value="${escHtml(String(session.id))}" ${selected===session.id?'selected':''}>${escHtml(`${session.id} · ${summary}`)}</option>`;
+  }).join('');
+}
+
+function paneOptionRows(project,selected){
+  const panes=(wsState&&wsState.panes)||[];
+  const preferred=panes.filter(p=>!p.project||p.project==='--'||['idle','done','lost'].includes((p.status||'').toString()));
+  const list=(preferred.length?preferred:panes).slice().sort((a,b)=>(a.pane||0)-(b.pane||0));
+  return list.map(p=>{
+    const label=[`Pane ${p.pane}`,p.project&&p.project!=='--'?p.project:'available',(p.status||'idle')].join(' · ');
+    return `<option value="${p.pane}" ${String(selected)===String(p.pane)?'selected':''}>${escHtml(label)}</option>`;
+  }).join('');
+}
+
+function setDxosPortalNotice(key,message,tone){
+  dxosPortalState[key]={message:message||'',tone:tone||'blue'};
+}
+
+function renderDxosPortalNotice(key){
+  const entry=dxosPortalState[key];
+  if(!entry||!entry.message)return '';
+  return `<div class="action-status ${escHtml(entry.tone||'blue')}">${escHtml(entry.message)}</div>`;
+}
+
 function dxosInlineAction(label,onclick,tone){
   const palette=tone==='green'
     ? 'background:rgba(47,191,113,.14);border-color:rgba(47,191,113,.24);color:var(--green)'
@@ -1409,8 +1483,212 @@ async function resolveDxosWorkOrder(workOrderId){
     window.alert(`Unable to resolve work order ${workOrderId}.`);
     return;
   }
+  setDxosPortalNotice('work',`Work order ${workOrderId} cleared to continue.`,'green');
   await renderExecutionHub();
   if(activePaneNum)renderPaneContext(activePaneNum);
+}
+
+async function launchDxosLane(){
+  const project=activeProjectForHub();
+  const pane=document.getElementById('dxos-launch-pane');
+  const role=document.getElementById('dxos-launch-role');
+  const task=document.getElementById('dxos-launch-task');
+  const feature=document.getElementById('dxos-launch-feature');
+  const stage=document.getElementById('dxos-launch-stage');
+  const supervisor=document.getElementById('dxos-launch-supervisor');
+  if(!project||!pane||!role||!task)return;
+  const paneValue=(pane.value||'').toString().trim();
+  const taskValue=(task.value||'').trim();
+  if(!paneValue||!taskValue){
+    setDxosPortalNotice('launch','Choose a pane and describe the work before launching a lane.','red');
+    await renderExecutionHub();
+    return;
+  }
+  if(!ws||ws.readyState!==1){
+    setDxosPortalNotice('launch','WebSocket is not connected, so a runtime lane cannot be launched right now.','red');
+    await renderExecutionHub();
+    return;
+  }
+  dxosPendingLaunches[String(paneValue)]={
+    project,
+    role:role.value||'design',
+    task:taskValue,
+    featureId:feature&&feature.value?feature.value.trim():'',
+    stage:stage&&stage.value?stage.value.trim():'',
+    supervisorSessionId:supervisor&&supervisor.value?supervisor.value.trim():'',
+    expectedOutputs:['task_result','runtime_handoff'],
+    allowedCapabilities:[]
+  };
+  setDxosPortalNotice('launch',`Launching pane ${paneValue} through the current runtime adapter…`,'yellow');
+  await renderExecutionHub();
+  wsSend({cmd:'spawn',pane:String(paneValue),project,role:role.value||'design',task:taskValue});
+  setTimeout(()=>refresh(),1200);
+}
+
+async function finalizePendingDxosLaunch(result){
+  const paneKey=String(result&&result.pane||'');
+  const pending=dxosPendingLaunches[paneKey];
+  if(!pending)return;
+  delete dxosPendingLaunches[paneKey];
+  if(!result||result.error){
+    setDxosPortalNotice('launch',`Lane launch failed on pane ${paneKey}.`,`red`);
+    await renderExecutionHub();
+    return;
+  }
+  if(result.dxos_session_id){
+    const contract=await fetchJSON('/api/dxos/session/upsert',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        project:pending.project,
+        session_id:result.dxos_session_id,
+        role:pending.role,
+        provider:'claude',
+        autonomy_level:'guarded_auto',
+        objective:pending.task,
+        expected_outputs:pending.expectedOutputs,
+        allowed_capabilities:pending.allowedCapabilities,
+        allowed_repos:result.project_path?[result.project_path]:[],
+        allowed_paths:result.workspace?[result.workspace]:result.project_path?[result.project_path]:[],
+        workspace_path:result.workspace||null,
+        branch_name:result.branch||null,
+        browser_port:result.browser_port||null,
+        pane:result.pane||null,
+        tmux_target:result.tmux_target||null,
+        feature_id:pending.featureId||null,
+        stage:pending.stage||null,
+        supervisor_session_id:pending.supervisorSessionId||null,
+        escalation_policy:'lead_then_human',
+        status:'active'
+      })
+    });
+    if(contract&&contract.error){
+      setDxosPortalNotice('launch',`Lane launched on pane ${paneKey}, but DXOS enrichment failed for ${result.dxos_session_id}.`,'red');
+    }else{
+      setDxosPortalNotice('launch',`Lane ${paneKey} launched and linked to ${result.dxos_session_id}.`,'green');
+    }
+  }else{
+    setDxosPortalNotice('launch',`Lane ${paneKey} launched, but no DXOS session id was returned by the adapter.`,'yellow');
+  }
+  await renderExecutionHub();
+}
+
+async function registerDxosSessionContract(){
+  const project=activeProjectForHub();
+  const role=document.getElementById('dxos-session-role');
+  const provider=document.getElementById('dxos-session-provider');
+  const model=document.getElementById('dxos-session-model');
+  const objective=document.getElementById('dxos-session-objective');
+  const feature=document.getElementById('dxos-session-feature');
+  const stage=document.getElementById('dxos-session-stage');
+  const supervisor=document.getElementById('dxos-session-supervisor');
+  const capabilities=document.getElementById('dxos-session-capabilities');
+  const outputs=document.getElementById('dxos-session-outputs');
+  if(!project||!role||!objective)return;
+  const objectiveValue=(objective.value||'').trim();
+  if(!objectiveValue){
+    setDxosPortalNotice('session','Describe the objective before registering a DXOS session contract.','red');
+    await renderExecutionHub();
+    return;
+  }
+  const result=await fetchJSON('/api/dxos/session/upsert',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      project,
+      role:role.value||'lead',
+      provider:provider&&provider.value?provider.value:null,
+      model:model&&model.value?model.value.trim():null,
+      autonomy_level:'guarded_auto',
+      objective:objectiveValue,
+      expected_outputs:csvList(outputs&&outputs.value),
+      allowed_capabilities:csvList(capabilities&&capabilities.value),
+      feature_id:feature&&feature.value?feature.value.trim():null,
+      stage:stage&&stage.value?stage.value.trim():null,
+      supervisor_session_id:supervisor&&supervisor.value?supervisor.value.trim():null,
+      escalation_policy:'lead_then_human',
+      status:'planned'
+    })
+  });
+  if(!result||result.error){
+    setDxosPortalNotice('session','Unable to register the DXOS session contract.','red');
+  }else{
+    setDxosPortalNotice('session',`Registered session ${result.session_id||''} for ${role.value||'lead'} work.`,'green');
+  }
+  await renderExecutionHub();
+}
+
+async function delegateDxosWork(){
+  const project=activeProjectForHub();
+  const supervisor=document.getElementById('dxos-work-supervisor');
+  const worker=document.getElementById('dxos-work-worker');
+  const title=document.getElementById('dxos-work-title');
+  const objective=document.getElementById('dxos-work-objective');
+  const feature=document.getElementById('dxos-work-feature');
+  const stage=document.getElementById('dxos-work-stage');
+  const capabilities=document.getElementById('dxos-work-capabilities');
+  const outputs=document.getElementById('dxos-work-outputs');
+  if(!project||!supervisor||!title||!objective)return;
+  if(!supervisor.value||!(title.value||'').trim()||!(objective.value||'').trim()){
+    setDxosPortalNotice('work','Choose a lead and define the delegated work before submitting it.','red');
+    await renderExecutionHub();
+    return;
+  }
+  const result=await fetchJSON('/api/dxos/work/delegate',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      project,
+      supervisor_session_id:supervisor.value,
+      worker_session_id:worker&&worker.value?worker.value:null,
+      title:title.value.trim(),
+      objective:objective.value.trim(),
+      feature_id:feature&&feature.value?feature.value.trim():null,
+      stage:stage&&stage.value?stage.value.trim():null,
+      required_capabilities:csvList(capabilities&&capabilities.value),
+      expected_outputs:csvList(outputs&&outputs.value)
+    })
+  });
+  if(!result||result.error){
+    setDxosPortalNotice('work','Unable to create the delegated work order.','red');
+  }else{
+    setDxosPortalNotice('work',`Delegated work order ${result.work_order_id||''} is now queued through DXOS.`,'green');
+  }
+  await renderExecutionHub();
+}
+
+async function startDxosDebateFromPortal(){
+  const project=activeProjectForHub();
+  const title=document.getElementById('dxos-debate-title');
+  const objective=document.getElementById('dxos-debate-objective');
+  const feature=document.getElementById('dxos-debate-feature');
+  const stage=document.getElementById('dxos-debate-stage');
+  const participants=document.getElementById('dxos-debate-participants');
+  if(!project||!title||!objective)return;
+  if(!(title.value||'').trim()||!(objective.value||'').trim()){
+    setDxosPortalNotice('debate','Give the council a title and objective before starting a debate.','red');
+    await renderExecutionHub();
+    return;
+  }
+  const result=await fetchJSON('/api/dxos/debate/start',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      project,
+      title:title.value.trim(),
+      objective:objective.value.trim(),
+      stage:stage&&stage.value?stage.value.trim():null,
+      feature_id:feature&&feature.value?feature.value.trim():null,
+      participants:csvList(participants&&participants.value),
+      requested_by:'portal-operator'
+    })
+  });
+  if(!result||result.error){
+    setDxosPortalNotice('debate','Unable to start the formal debate.','red');
+  }else{
+    setDxosPortalNotice('debate',`Debate ${result.debate_id||''} started and is ready for proposals.`,'green');
+  }
+  await renderExecutionHub();
 }
 
 function renderDxosSessionRows(sessions,limit){
