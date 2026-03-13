@@ -22,6 +22,23 @@ fn emit_dxos_session_change(app: &App, project_path: &str, result: &str) {
     }
 }
 
+fn spawn_pty_planned_agent(
+    app: &App,
+    pane_num: u8,
+    plan: &runtime_broker::RuntimeLaunchPlan,
+    env_vars: &[(String, String)],
+) -> anyhow::Result<Option<String>> {
+    let mut pty = app.pty_lock();
+    pty.spawn(
+        pane_num,
+        "/bin/zsh",
+        &["-lc", &plan.command],
+        &plan.project_path,
+        env_vars.to_vec(),
+    )?;
+    Ok(None)
+}
+
 /// Execute os_spawn logic — allocates a DX runtime lane through the broker
 pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     let pane_num = match config::resolve_pane(&req.pane) {
@@ -494,6 +511,7 @@ pub async fn kill(app: &App, req: KillRequest) -> String {
     pane_state.project = "--".into();
     pane_state.project_path = String::new();
     pane_state.role = "--".into();
+    pane_state.runtime_adapter = None;
     pane_state.dxos_session_id = None;
     pane_state.started_at = None;
     pane_state.acu_spent = 0.0;
@@ -566,6 +584,7 @@ pub async fn restart(app: &App, req: RestartRequest) -> String {
             role: Some(pane_data.role),
             provider: pane_data.provider,
             model: pane_data.model,
+            runtime_adapter: pane_data.runtime_adapter,
             feature_id: None,
             stage: None,
             supervisor_session_id: None,
