@@ -201,7 +201,8 @@ async fn build_full_snapshot(app: &App) -> Value {
             .join("\n");
 
         let theme_idx = i % themes.len();
-        let has_runtime_output = (tmux_target.is_some() || !output.trim().is_empty()) && !output.trim().is_empty();
+        let has_runtime_output =
+            (tmux_target.is_some() || !output.trim().is_empty()) && !output.trim().is_empty();
         let status = if has_runtime_output {
             if let Some(ref p) = ps {
                 p.status.as_str()
@@ -685,9 +686,16 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
                 return json!({"error": "pane (number) and message required"});
             }
             let pane_data = app.state.get_pane(pane).await;
-            if let Some(target) = pane_data.tmux_target.filter(|target| tmux::pane_exists(target)) {
-                match tokio::task::spawn_blocking(move || tmux::send_command(&target, &message)).await {
-                    Ok(Ok(())) => json!({"status": "sent", "pane": pane, "runtime_adapter": "tmux_migration_adapter"}),
+            if let Some(target) = pane_data
+                .tmux_target
+                .filter(|target| tmux::pane_exists(target))
+            {
+                match tokio::task::spawn_blocking(move || tmux::send_command(&target, &message))
+                    .await
+                {
+                    Ok(Ok(())) => {
+                        json!({"status": "sent", "pane": pane, "runtime_adapter": "tmux_migration_adapter"})
+                    }
                     Ok(Err(e)) => json!({"error": format!("{}", e)}),
                     Err(e) => json!({"error": format!("task join error: {}", e)}),
                 }
@@ -697,7 +705,9 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
                     pty.send_line(pane, &message)
                 };
                 match send_result {
-                    Ok(()) => json!({"status": "sent", "pane": pane, "runtime_adapter": "pty_native_adapter"}),
+                    Ok(()) => {
+                        json!({"status": "sent", "pane": pane, "runtime_adapter": "pty_native_adapter"})
+                    }
                     Err(e) => json!({"error": format!("{}", e)}),
                 }
             }
@@ -771,7 +781,10 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
                 return json!({"error": "pane number required"});
             }
             let pane_data = app.state.get_pane(pane).await;
-            if let Some(target) = pane_data.tmux_target.filter(|target| tmux::pane_exists(target)) {
+            if let Some(target) = pane_data
+                .tmux_target
+                .filter(|target| tmux::pane_exists(target))
+            {
                 let output = tokio::task::spawn_blocking(move || tmux::capture_output(&target))
                     .await
                     .unwrap_or_default();
