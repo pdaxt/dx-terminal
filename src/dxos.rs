@@ -369,6 +369,17 @@ fn default_state(project_path: &str, project_name: Option<&str>) -> ControlPlane
 }
 
 pub fn load_control_plane(project_path: &str, project_name: Option<&str>) -> ControlPlaneState {
+    if let Some(mut state) = load_control_plane_from_store(project_path) {
+        if state.project.name.trim().is_empty() {
+            state.project.name = resolved_project_name(project_path, project_name);
+        }
+        if state.project.path.trim().is_empty() {
+            state.project.path = project_path.to_string();
+        }
+        let _ = save_control_plane_mirror(project_path, &state);
+        return state;
+    }
+
     let path = control_plane_file(project_path);
     if path.exists() {
         if let Ok(contents) = std::fs::read_to_string(&path) {
@@ -379,6 +390,7 @@ pub fn load_control_plane(project_path: &str, project_name: Option<&str>) -> Con
                 if state.project.path.trim().is_empty() {
                     state.project.path = project_path.to_string();
                 }
+                let _ = store_control_plane_in_sqlite(&state);
                 return state;
             }
         }
@@ -387,10 +399,40 @@ pub fn load_control_plane(project_path: &str, project_name: Option<&str>) -> Con
 }
 
 fn save_control_plane(project_path: &str, state: &ControlPlaneState) -> Result<(), String> {
-    let dir = control_plane_dir(project_path);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir: {}", e))?;
-    let json = serde_json::to_string_pretty(state).map_err(|e| format!("serialize: {}", e))?;
-    std::fs::write(control_plane_file(project_path), json).map_err(|e| format!("write: {}", e))
+    store_control_plane_in_sqlite(state)?;
+    save_control_plane_mirror(project_path, state)
+}
+
+pub fn control_plane_registry() -> String {
+    let conn = match control_plane_db() {
+        Ok(conn) => conn,
+        Err(error) => return json!({"error": error}).to_string(),
+    };
+    let mut stmt = match conn.prepare(
+        "SELECT project_path, project_name, updated_at
+         FROM dxos_control_planes
+         ORDER BY updated_at DESC, project_name ASC",
+    ) {
+        Ok(stmt) => stmt,
+        Err(error) => return json!({"error": format!("prepare: {}", error)}).to_string(),
+    };
+    let rows = match stmt.query_map([], |row| {
+        Ok(json!({
+            "path": row.get::<_, String>(0)?,
+            "name": row.get::<_, String>(1)?,
+            "updated_at": row.get::<_, String>(2)?,
+        }))
+    }) {
+        Ok(rows) => rows,
+        Err(error) => return json!({"error": format!("query: {}", error)}).to_string(),
+    };
+    let projects = rows.filter_map(Result::ok).collect::<Vec<_>>();
+    json!({
+        "backend": "sqlite_with_repo_mirror",
+        "database_path": control_plane_store_path().to_string_lossy().to_string(),
+        "projects": projects,
+    })
+    .to_string()
 }
 
 fn next_debate_id(state: &ControlPlaneState) -> String {
@@ -748,6 +790,7 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             "mcp_count": registry.len(),
             "category_counts": categories,
         },
+        "storage": control_plane_storage_summary(project_path),
         "runtime_contract": {
             "launch_broker": {
                 "name": "dx_runtime_broker",
