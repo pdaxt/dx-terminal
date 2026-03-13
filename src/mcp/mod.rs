@@ -2823,6 +2823,128 @@ impl DxTerminalService {
         self.emit_debate_change(&project_path, &result);
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
+
+    #[tool(
+        description = "Create or update a DXOS session contract. Use this for provider-neutral runtime roles, scoped capabilities, supervisor relationships, and browser/worktree ownership."
+    )]
+    async fn dxos_session_upsert(
+        &self,
+        Parameters(req): Parameters<types::DxosSessionUpsertRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::dxos_tools::resolve_project_path(req.project.as_deref());
+        let result = tools::dxos_tools::session_upsert(
+            req.project.as_deref(),
+            req.session_id.as_deref(),
+            &req.role,
+            req.provider.as_deref(),
+            req.model.as_deref(),
+            req.autonomy_level.as_deref(),
+            &req.objective,
+            req.expected_outputs,
+            req.allowed_capabilities,
+            req.allowed_repos,
+            req.allowed_paths,
+            req.workspace_path.as_deref(),
+            req.branch_name.as_deref(),
+            req.browser_port,
+            req.pane,
+            req.tmux_target.as_deref(),
+            req.feature_id.as_deref(),
+            req.stage.as_deref(),
+            req.supervisor_session_id.as_deref(),
+            req.escalation_policy.as_deref(),
+            req.status.as_deref(),
+        );
+        self.emit_dxos_session_change(&project_path, &result);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "List DXOS session contracts and delegated work orders for a project."
+    )]
+    async fn dxos_session_list(
+        &self,
+        Parameters(req): Parameters<types::DxosSessionListRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::dxos_tools::session_list(req.project.as_deref());
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Update the status of a DXOS session contract, e.g. active, blocked, completed, or idle."
+    )]
+    async fn dxos_session_status(
+        &self,
+        Parameters(req): Parameters<types::DxosSessionStatusRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::dxos_tools::resolve_project_path(req.project.as_deref());
+        let result = tools::dxos_tools::session_status(
+            req.project.as_deref(),
+            &req.session_id,
+            &req.status,
+            req.note.as_deref(),
+        );
+        self.emit_dxos_session_change(&project_path, &result);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Delegate a structured work order from a supervisor session to a worker session or leave it planned for assignment."
+    )]
+    async fn dxos_work_delegate(
+        &self,
+        Parameters(req): Parameters<types::DxosWorkDelegateRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::dxos_tools::resolve_project_path(req.project.as_deref());
+        let result = tools::dxos_tools::work_delegate(
+            req.project.as_deref(),
+            &req.supervisor_session_id,
+            req.worker_session_id.as_deref(),
+            &req.title,
+            &req.objective,
+            req.feature_id.as_deref(),
+            req.stage.as_deref(),
+            req.required_capabilities,
+            req.expected_outputs,
+        );
+        self.emit_dxos_session_change(&project_path, &result);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Block a delegated work order with a reason and optional permission request."
+    )]
+    async fn dxos_work_block(
+        &self,
+        Parameters(req): Parameters<types::DxosWorkBlockRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::dxos_tools::resolve_project_path(req.project.as_deref());
+        let result = tools::dxos_tools::work_block(
+            req.project.as_deref(),
+            &req.work_order_id,
+            &req.blocker,
+            req.requested_permission.as_deref(),
+        );
+        self.emit_dxos_session_change(&project_path, &result);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Resolve a blocked work order after guidance or permissions were provided."
+    )]
+    async fn dxos_work_resolve(
+        &self,
+        Parameters(req): Parameters<types::DxosWorkResolveRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::dxos_tools::resolve_project_path(req.project.as_deref());
+        let result = tools::dxos_tools::work_resolve(
+            req.project.as_deref(),
+            &req.work_order_id,
+            req.resolution.as_deref(),
+        );
+        self.emit_dxos_session_change(&project_path, &result);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
 }
 
 #[tool_handler]
