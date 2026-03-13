@@ -97,10 +97,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         ("DX_PROJECT".to_string(), project_name.clone()),
         ("DX_ROLE".to_string(), role.clone()),
         ("DX_PROVIDER".to_string(), provider.clone()),
-        (
-            "DX_MODEL".to_string(),
-            model.clone().unwrap_or_default(),
-        ),
+        ("DX_MODEL".to_string(), model.clone().unwrap_or_default()),
         ("DX_BROWSER_PORT".to_string(), browser_port.to_string()),
         ("PLAYWRIGHT_PORT".to_string(), browser_port.to_string()),
         (
@@ -151,8 +148,8 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         Some("lead_then_human"),
         Some("launching"),
     );
-    let initial_session_value: serde_json::Value = serde_json::from_str(&initial_session_result)
-        .unwrap_or_else(|_| serde_json::json!({}));
+    let initial_session_value: serde_json::Value =
+        serde_json::from_str(&initial_session_result).unwrap_or_else(|_| serde_json::json!({}));
     emit_dxos_session_change(app, &project_path, &initial_session_result);
     let dxos_session_id = initial_session_value
         .get("session_id")
@@ -182,12 +179,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
             .get("error")
             .and_then(|value| value.as_str())
             .map(|value| value.to_string())
-            .unwrap_or_else(|| {
-                initial_policy_violations
-                    .join(" ")
-                    .trim()
-                    .to_string()
-            });
+            .unwrap_or_else(|| initial_policy_violations.join(" ").trim().to_string());
         return serde_json::json!({
             "error": if error_message.is_empty() {
                 "DXOS provider policy blocked the launch".to_string()
@@ -511,6 +503,9 @@ pub async fn restart(app: &App, req: RestartRequest) -> String {
             role: Some(pane_data.role),
             provider: pane_data.provider,
             model: pane_data.model,
+            feature_id: None,
+            stage: None,
+            supervisor_session_id: None,
             task: Some(pane_data.task),
             prompt: None,
             autonomous: None,
@@ -702,6 +697,9 @@ pub async fn assign(app: &App, req: AssignRequest) -> String {
             role: Some(role.clone()),
             provider: None,
             model: None,
+            feature_id: None,
+            stage: None,
+            supervisor_session_id: None,
             task: Some(task),
             prompt: Some(prompt),
             autonomous: None,
@@ -753,6 +751,9 @@ pub async fn assign_adhoc(app: &App, req: AssignAdhocRequest) -> String {
             role: req.role.or(Some("developer".into())),
             provider: None,
             model: None,
+            feature_id: None,
+            stage: None,
+            supervisor_session_id: None,
             task: Some(req.task),
             prompt: None,
             autonomous: None,

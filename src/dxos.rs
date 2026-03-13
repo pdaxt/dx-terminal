@@ -1043,13 +1043,8 @@ pub fn upsert_session_contract(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| next_session_id(&state));
-    let (normalized_provider, provider_policy, mut policy_violations) = validate_provider_selection(
-        role,
-        stage,
-        provider,
-        pane,
-        tmux_target,
-    );
+    let (normalized_provider, provider_policy, mut policy_violations) =
+        validate_provider_selection(role, stage, provider, pane, tmux_target);
     let desired_status = status.unwrap_or("active").trim().to_string();
     let computed_status = if policy_violations.is_empty() {
         desired_status.clone()

@@ -641,8 +641,14 @@ mod provider_tests {
         assert_eq!(RuntimeProvider::from_str("codex"), RuntimeProvider::Codex);
         assert_eq!(RuntimeProvider::from_str("openai"), RuntimeProvider::Codex);
         assert_eq!(RuntimeProvider::from_str("gemini"), RuntimeProvider::Gemini);
-        assert_eq!(RuntimeProvider::from_str("opencode"), RuntimeProvider::OpenCode);
-        assert_eq!(RuntimeProvider::from_str("something-else"), RuntimeProvider::Claude);
+        assert_eq!(
+            RuntimeProvider::from_str("opencode"),
+            RuntimeProvider::OpenCode
+        );
+        assert_eq!(
+            RuntimeProvider::from_str("something-else"),
+            RuntimeProvider::Claude
+        );
     }
 
     #[test]
@@ -727,11 +733,7 @@ fn build_provider_command(
         )
     })?;
     Ok(build_provider_command_with_binary(
-        provider,
-        &binary,
-        prompt,
-        autonomous,
-        model,
+        provider, &binary, prompt, autonomous, model,
     ))
 }
 
@@ -759,7 +761,10 @@ fn build_provider_command_with_binary(
                 .as_deref()
                 .map(|value| format!(" --model {}", value))
                 .unwrap_or_default();
-            format!("{}{}{} -p {}", binary, perms_flag, model_flag, escaped_prompt)
+            format!(
+                "{}{}{} -p {}",
+                binary, perms_flag, model_flag, escaped_prompt
+            )
         }
         RuntimeProvider::Codex => {
             let auto_flag = if autonomous { " --full-auto" } else { "" };
@@ -792,15 +797,27 @@ fn build_provider_command_with_binary(
 
 fn resolve_provider_binary(provider: RuntimeProvider) -> Option<String> {
     let candidates: &[&str] = match provider {
-        RuntimeProvider::Claude => &["/opt/homebrew/bin/claude", "/usr/local/bin/claude", "claude"],
+        RuntimeProvider::Claude => &[
+            "/opt/homebrew/bin/claude",
+            "/usr/local/bin/claude",
+            "claude",
+        ],
         RuntimeProvider::Codex => &[
             "/Users/pran/.nvm/versions/node/v22.22.0/bin/codex",
             "/opt/homebrew/bin/codex",
             "/usr/local/bin/codex",
             "codex",
         ],
-        RuntimeProvider::Gemini => &["/opt/homebrew/bin/gemini", "/usr/local/bin/gemini", "gemini"],
-        RuntimeProvider::OpenCode => &["/opt/homebrew/bin/opencode", "/usr/local/bin/opencode", "opencode"],
+        RuntimeProvider::Gemini => &[
+            "/opt/homebrew/bin/gemini",
+            "/usr/local/bin/gemini",
+            "gemini",
+        ],
+        RuntimeProvider::OpenCode => &[
+            "/opt/homebrew/bin/opencode",
+            "/usr/local/bin/opencode",
+            "opencode",
+        ],
     };
 
     for candidate in candidates {
