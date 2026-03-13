@@ -1896,6 +1896,12 @@ pub async fn get_dxos_control_plane(Query(q): Query<VisionQuery>) -> Json<Value>
     Json(crate::dxos::control_plane_snapshot(&project_path, project))
 }
 
+/// GET /api/dxos/registry — Shared DXOS control-plane registry
+pub async fn get_dxos_registry() -> Json<Value> {
+    let result = crate::dxos::control_plane_registry();
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
 /// GET /api/dxos/debates?project=NAME — Formal debate records for a project
 pub async fn get_dxos_debates(Query(q): Query<VisionQuery>) -> Json<Value> {
     let project_path = resolve_project_path(&q);
