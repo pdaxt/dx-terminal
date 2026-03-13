@@ -3605,7 +3605,7 @@ async function renderExecutionHub(){
         </div>`).join(''):'<div class="empty-note">No control-plane mutations have been logged for this project yet.</div>'}</div>
       </div>
     </div>
-    ${showOperatorControls?renderDxosOperatorControls(project,activeStage,dxosSessions):`<div class="action-shell"><div class="portal-note">${portalMode==='reviewer'?'This identity is in reviewer mode. Approval, debate, and evidence surfaces stay visible, while launch and pane controls remain hidden.':'This identity is in client mode. DXOS execution controls are intentionally hidden here; use a registered operator identity for lane launch, pane control, and work delegation.'}</div></div>`}`;
+    ${showOperatorControls?renderDxosOperatorControls(project,activeStage,dxosSessions,dxosAdoptions):`<div class="action-shell"><div class="portal-note">${portalMode==='reviewer'?'This identity is in reviewer mode. Approval, debate, and evidence surfaces stay visible, while launch and pane controls remain hidden.':'This identity is in client mode. DXOS execution controls are intentionally hidden here; use a registered operator identity for lane launch, pane control, and work delegation.'}</div></div>`}`;
   runtimeEl.innerHTML=runtimePanelHtml;
   if(showOperatorControls){
     syncDxosLaunchProviderOptions();
