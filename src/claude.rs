@@ -132,6 +132,7 @@ pub fn generate_preamble(
             "## Coordination\n\
              - Use multi_agent MCP to register and coordinate with other agents\n\
              - Lock files before editing shared code\n\
+             - If DXOS_SESSION_ID is present and you are blocked by permission, login, CAPTCHA, or human approval, call dxos_session_raise_blocker with worker_session_id=$DXOS_SESSION_ID instead of waiting silently\n\
              - When done: summarize what you accomplished\n"
                 .to_string()
         } else {
@@ -286,6 +287,7 @@ mod tests {
         let result = generate_preamble(1, "CYAN", "proj", "developer", "Build it", "");
         assert!(result.contains("## Coordination"));
         assert!(result.contains("Lock files before editing"));
+        assert!(result.contains("dxos_session_raise_blocker"));
     }
 
     #[test]
