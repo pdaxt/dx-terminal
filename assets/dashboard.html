@@ -2790,6 +2790,58 @@ function renderAdoptionRows(adoptions){
   }).join('');
 }
 
+async function launchAdoptionLead(sessionId){
+  const project=activeProjectForHub();
+  if(!project||!sessionId)return false;
+  if(!operatorAllowsAction(project,'session_launch')){
+    setDxosPortalNotice('adoption','Operator policy blocks lane launch for this project.','red');
+    return false;
+  }
+  const session=(dxosSessionCache[project]||[]).find(item=>String(item.id||'')===String(sessionId));
+  if(!session){
+    setDxosPortalNotice('adoption',`Unable to find DXOS session ${sessionId} for launch.`,'red');
+    return false;
+  }
+  setDxosPortalNotice('adoption',`Launching recovery lead ${sessionId} through the DX broker…`,'yellow');
+  const result=await fetchJSON('/api/dxos/session/launch',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      project,
+      pane:'auto',
+      session_id: session.id,
+      role: session.role,
+      provider: session.provider,
+      model: session.model,
+      runtime_adapter: session.runtime_adapter||'pty_native_adapter',
+      feature_id: session.feature_id,
+      stage: session.stage,
+      supervisor_session_id: session.supervisor_session_id,
+      task: session.objective||`Continue ${session.role||'lead'} work`,
+      autonomous: session.autonomy_level!=='manual'
+    })
+  });
+  if(!result){
+    setDxosPortalNotice('adoption','Unable to reach the DXOS launch endpoint.','red');
+    return false;
+  }
+  if(noteDxControlAuthFailure(result)){
+    return false;
+  }
+  if(result.error){
+    setDxosPortalNotice('adoption',`Unable to launch ${sessionId}: ${String(result.error||'Unknown runtime error')}`,'red');
+    await renderExecutionHub();
+    return false;
+  }
+  setDxosPortalNotice(
+    'adoption',
+    `Recovery lead ${sessionId} launched on Pane ${result.pane||'auto'} via ${adapterLabel((result.runtime_adapter||'').toString())}.`,
+    'green'
+  );
+  await renderExecutionHub();
+  return false;
+}
+
 function applyRecoverySuggestion(encoded){
   const project=activeProjectForHub();
   if(project&&!operatorAllowsAction(project,'session_launch')){
@@ -2961,6 +3013,7 @@ async function renderExecutionHub(){
   dxosRuntimeBrokerCache[project]=((dxos.runtime_contract&&dxos.runtime_contract.launch_broker)||runtimeContract.launch_broker||{});
   dxosControlAuthCache[project]=(runtimeContract.auth||{});
   const dxosSessions=(dxos.sessions&&dxos.sessions.records)||[];
+  dxosSessionCache[project]=dxosSessions;
   const dxosSessionSummary=dxos.sessions||{};
   const dxosDelegation=dxos.delegation||{};
   const dxosAudit=(dxos.audit&&dxos.audit.recent)||[];
