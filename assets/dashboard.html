@@ -1633,6 +1633,9 @@ async function launchDxosLane(){
     role:role.value||'design',
     provider:providerName,
     model:model&&model.value?model.value.trim():undefined,
+    feature_id:feature&&feature.value?feature.value.trim():undefined,
+    stage:stage&&stage.value?stage.value.trim():undefined,
+    supervisor_session_id:supervisor&&supervisor.value?supervisor.value.trim():undefined,
     task:taskValue
   });
   setTimeout(()=>refresh(),1200);

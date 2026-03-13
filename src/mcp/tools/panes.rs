@@ -36,6 +36,9 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     let role = req.role.unwrap_or_else(|| "developer".into());
     let provider = req.provider.unwrap_or_else(|| "claude".into());
     let model = req.model.clone();
+    let feature_id = req.feature_id.clone();
+    let stage = req.stage.clone();
+    let supervisor_session_id = req.supervisor_session_id.clone();
     let task = req.task.unwrap_or_default();
     let prompt = req.prompt.unwrap_or_default();
     let theme = config::theme_name(pane_num);
@@ -142,9 +145,9 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         Some(browser_port),
         Some(pane_num),
         None,
-        None,
-        Some("build"),
-        None,
+        feature_id.as_deref(),
+        stage.as_deref(),
+        supervisor_session_id.as_deref(),
         Some("lead_then_human"),
         Some("launching"),
     );
@@ -296,9 +299,9 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         Some(browser_port),
         Some(pane_num),
         tmux_target.as_deref(),
-        None,
-        Some("build"),
-        None,
+        feature_id.as_deref(),
+        stage.as_deref(),
+        supervisor_session_id.as_deref(),
         Some("lead_then_human"),
         Some("active"),
     );
