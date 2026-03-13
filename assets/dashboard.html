@@ -1594,7 +1594,10 @@ function renderProviderPolicyNote(rule,selected,contractMode,project){
   const binaryCopy=selectedAvailability&&selectedAvailability.available&&selectedAvailability.binary
     ? ` ${providerLabel(selectedId)} binary: ${selectedAvailability.binary}.`
     : '';
-  return `Prefer ${preferred}. Allowed: ${allowed}.${sharedCopy}${models?` Suggested models: ${models}.`:''}${availabilityCopy} ${rule.rationale||''}${warning}${availabilityWarning}${binaryCopy}`.trim();
+  const supportedAdaptersCopy=selectedAvailability&&Array.isArray(selectedAvailability.supported_adapters)&&selectedAvailability.supported_adapters.length
+    ? ` Supported substrates: ${selectedAvailability.supported_adapters.map(adapterLabel).join(', ')}.`
+    : '';
+  return `Prefer ${preferred}. Allowed: ${allowed}.${sharedCopy}${models?` Suggested models: ${models}.`:''}${availabilityCopy}${supportedAdaptersCopy} ${rule.rationale||''}${warning}${availabilityWarning}${binaryCopy}`.trim();
 }
 
 function syncDxosLaunchProviderOptions(){
@@ -2604,6 +2607,7 @@ async function renderExecutionHub(){
           const workspace=runtime.workspace_path||'';
           const meta=[
             runtime.role&&runtime.role!=='--'?runtime.role:null,
+            runtime.runtime_adapter?`adapter ${adapterLabel(runtime.runtime_adapter)}`:null,
             branch?`branch ${branch}`:null,
             workspace?`worktree ${shortPathLabel(workspace)}`:'shared tree',
             runtime.browser_port?`browser ${runtime.browser_port}`:null
@@ -2803,6 +2807,7 @@ function renderPanes(){
     const browserPort=paneBrowserPortForRuntime(p,sp);
     const dxosSessionId=p.dxos_session_id||'';
     const modelLabel=(p.model||'').toString();
+    const runtimeAdapter=(p.runtime_adapter||(sp&&sp.runtime_adapter)||'').toString();
     if(isActive)activeCount++;
     const h=p.health||p.status||'idle';
     const sc=h==='active'||isActive?'s-active':h==='done'?'s-done':h==='error'?'s-error':h==='stuck'?'s-stuck':'s-idle';
@@ -2834,6 +2839,7 @@ function renderPanes(){
         <div class="pane-task">${paneLastActivity(p.pane)||(p.task||'').slice(0,60)}</div>
         <div class="pane-meta">
           ${p.provider&&p.provider!=='unknown'?`<span class="badge b-provider provider-${p.provider}">${p.provider_short||p.provider_label||p.provider}</span>`:''}
+          ${runtimeAdapter?`<span class="badge" style="background:rgba(79,143,247,.12);color:var(--blue)">${escHtml(adapterLabel(runtimeAdapter))}</span>`:''}
           ${modelLabel?`<span class="badge" style="background:rgba(168,85,247,.12);color:var(--purple)">${escHtml(modelLabel)}</span>`:''}
           ${p.role&&p.role!=='--'?`<span class="badge b-role">${p.role}</span>`:''}
           ${dxosSessionId?`<span class="badge" style="background:rgba(79,143,247,.12);color:var(--blue)">DX ${escHtml(dxosSessionId)}</span>`:''}
@@ -2901,6 +2907,8 @@ function openPanel(paneNum){
   const browserProfile=(p&&p.browser_profile_root)||(sp&&sp.browser_profile_root)||'';
   const dxosSessionId=(p&&p.dxos_session_id)||(sp&&sp.dxos_session_id)||'';
   const modelLabel=(p&&p.model)?String(p.model):'';
+  const runtimeAdapter=(p&&p.runtime_adapter)||(sp&&sp.runtime_adapter)||'';
+  const runtimeTarget=(p&&p.tmux_target)?p.tmux_target:(runtimeAdapter?'native PTY':'--');
   let startedStr='--';
   if(sp&&sp.started_at){
     const d=new Date(sp.started_at);
@@ -2909,6 +2917,7 @@ function openPanel(paneNum){
   document.getElementById('panel-meta').innerHTML=`
     <div><dt>Status</dt><dd>${p?p.status:'idle'}</dd></div>
     <div><dt>Provider</dt><dd>${p&&p.provider_label?p.provider_label:'Unknown'}</dd></div>
+    <div><dt>Adapter</dt><dd>${runtimeAdapter?escHtml(adapterLabel(runtimeAdapter)):'--'}</dd></div>
     <div><dt>Model</dt><dd>${modelLabel?escHtml(modelLabel):'--'}</dd></div>
     <div><dt>Role</dt><dd>${sp?sp.role_full||(p&&p.role!=='--'?p.role:'--'):'--'}</dd></div>
     <div><dt>Started</dt><dd>${startedStr}</dd></div>
@@ -2918,7 +2927,7 @@ function openPanel(paneNum){
     <div><dt>Space</dt><dd>${sp&&sp.space?sp.space:'--'}</dd></div>
     <div><dt>Issue</dt><dd>${sp&&sp.issue_id?sp.issue_id:'--'}</dd></div>
     <div><dt>DXOS Session</dt><dd>${dxosSessionId?escHtml(String(dxosSessionId)):'--'}</dd></div>
-    <div><dt>Target</dt><dd style="font-family:var(--mono);font-size:9px">${p&&p.tmux_target?p.tmux_target:'--'}</dd></div>
+    <div><dt>Target</dt><dd style="font-family:var(--mono);font-size:9px">${escHtml(runtimeTarget)}</dd></div>
     <div><dt>Browser</dt><dd>${browserPort?`Port ${browserPort}`:'--'}</dd></div>
     <div><dt>Command</dt><dd style="font-family:var(--mono);font-size:9px">${p&&p.command?p.command:'--'}</dd></div>
     <div><dt>Profile</dt><dd style="font-family:var(--mono);font-size:9px">${escHtml(paneBrowserProfileLabel(browserProfile))}</dd></div>
@@ -3029,6 +3038,7 @@ async function renderPaneContext(paneNum){
     const runtime=ctx.runtime;
     const provider=runtime.provider||{};
     const runtimeMeta=[
+      runtime.runtime_adapter?`adapter ${adapterLabel(runtime.runtime_adapter)}`:null,
       runtime.branch_name?`branch ${runtime.branch_name}`:null,
       runtime.workspace_path?'isolated worktree':'shared tree',
       runtime.browser_port?`browser ${runtime.browser_port}`:null,
