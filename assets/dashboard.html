@@ -1822,6 +1822,11 @@ function renderDxosSessionRows(sessions,limit){
     ].filter(Boolean).join(' · ');
     const capabilities=(session.allowed_capabilities||[]).slice(0,3);
     const outputs=(session.expected_outputs||[]).slice(0,2);
+    const policy=session.provider_policy||null;
+    const policyViolations=(session.policy_violations||[]).slice(0,2);
+    const policyCopy=policy
+      ? `Provider policy: prefer ${providerLabel(policy.preferred_provider)} · allow ${(policy.allowed_providers||[]).map(providerLabel).join(', ')}`
+      : '';
     return `<div class="exec-row">
       <div class="exec-row-top">
         <span class="exec-row-title">${escHtml((session.id||'session').toString())} · ${escHtml((session.role||'worker').toString())}</span>
@@ -1835,8 +1840,11 @@ function renderDxosSessionRows(sessions,limit){
       <div class="exec-row-meta">${escHtml(truncateCopy(session.objective,150)||'No session objective recorded yet.')}</div>
       ${scope?`<div class="exec-row-meta">${escHtml(scope)}</div>`:''}
       ${supervisor?`<div class="exec-row-meta">Reports to ${escHtml(String(supervisor.id))} · ${escHtml(String(supervisor.role||'lead'))}</div>`:''}
+      ${policyCopy?`<div class="exec-row-meta">${escHtml(policyCopy)}</div>`:''}
       ${capabilities.length?`<div class="exec-row-meta">Capabilities: ${escHtml(capabilities.join(', '))}${(session.allowed_capabilities||[]).length>3?' …':''}</div>`:''}
       ${outputs.length?`<div class="exec-row-meta">Outputs: ${escHtml(outputs.join(' · '))}${(session.expected_outputs||[]).length>2?' …':''}</div>`:''}
+      ${session.last_error?`<div class="exec-row-meta" style="color:var(--red)">Launch issue: ${escHtml(String(session.last_error))}</div>`:''}
+      ${policyViolations.length?`<div class="exec-row-meta" style="color:var(--red)">Policy: ${escHtml(policyViolations.join(' · '))}${(session.policy_violations||[]).length>2?' …':''}</div>`:''}
     </div>`;
   }).join('');
 }
