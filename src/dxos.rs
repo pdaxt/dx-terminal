@@ -635,7 +635,6 @@ pub fn debate_event_from_result(project_path: &str, result: &str) -> Option<Stat
         .get("project")
         .and_then(Value::as_str)
         .map(|value| value.to_string())
-        .unwrap_or_else(|| project_name(project_path, None));
         .unwrap_or_else(|| resolved_project_name(project_path, None));
     Some(StateEvent::DebateChanged {
         project,
