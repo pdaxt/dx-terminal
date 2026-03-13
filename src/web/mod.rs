@@ -22,6 +22,8 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/pane/{id}", get(api::get_pane))
         .route("/api/pane/{id}/output", get(api::get_pane_output))
         .route("/api/pane/{id}/context", get(api::get_pane_context))
+        .route("/api/pane/talk", post(api::post_pane_talk))
+        .route("/api/pane/kill", post(api::post_pane_kill))
         .route("/api/health", get(api::get_health))
         .route("/api/logs", get(api::get_logs))
         // Backward-compatible hub_mcp endpoints

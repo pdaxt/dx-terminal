@@ -175,6 +175,59 @@ pub async fn get_pane(State(app): State<AppState>, Path(pane_ref): Path<String>)
     Json(data)
 }
 
+/// POST /api/pane/talk — Send input into a live pane over the active substrate
+pub async fn post_pane_talk(
+    State(app): State<AppState>,
+    Json(body): Json<PaneTalkBody>,
+) -> Json<Value> {
+    if body.pane == 0 || body.message.trim().is_empty() {
+        return Json(json!({"error": "pane and message required"}));
+    }
+    let pane_data = app.state.get_pane(body.pane).await;
+    if let Some(target) = pane_data.tmux_target.filter(|target| crate::tmux::pane_exists(target)) {
+        match tokio::task::spawn_blocking(move || crate::tmux::send_command(&target, &body.message))
+            .await
+        {
+            Ok(Ok(())) => Json(json!({
+                "status": "sent",
+                "pane": body.pane,
+                "runtime_adapter": "tmux_migration_adapter",
+            })),
+            Ok(Err(error)) => Json(json!({"error": format!("{}", error)})),
+            Err(error) => Json(json!({"error": format!("task join error: {}", error)})),
+        }
+    } else {
+        let send_result = {
+            let mut pty = app.pty_lock();
+            pty.send_line(body.pane, &body.message)
+        };
+        match send_result {
+            Ok(()) => Json(json!({
+                "status": "sent",
+                "pane": body.pane,
+                "runtime_adapter": "pty_native_adapter",
+            })),
+            Err(error) => Json(json!({"error": format!("{}", error)})),
+        }
+    }
+}
+
+/// POST /api/pane/kill — Stop a live pane through the control-plane API
+pub async fn post_pane_kill(
+    State(app): State<AppState>,
+    Json(body): Json<PaneKillBody>,
+) -> Json<Value> {
+    let result = tools::kill(
+        &app,
+        types::KillRequest {
+            pane: body.pane,
+            reason: body.reason,
+        },
+    )
+    .await;
+    Json(parse_mcp(&result))
+}
+
 /// GET /api/pane/:id/output — PTY output (via tools::watch)
 pub async fn get_pane_output(
     State(app): State<AppState>,
