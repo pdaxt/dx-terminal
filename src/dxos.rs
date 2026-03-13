@@ -646,7 +646,11 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             "category_counts": categories,
         },
         "runtime_contract": {
-            "launch_broker": "dx_runtime_broker",
+            "launch_broker": {
+                "name": "dx_runtime_broker",
+                "adapters": ["tmux_migration_adapter"],
+                "providers": crate::runtime_broker::provider_inventory(),
+            },
             "runtime_substrate": "custom_pty_target",
             "runtime_adapter": "tmux_migration_adapter",
             "runtime_adapters": ["tmux_migration_adapter"],

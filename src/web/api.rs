@@ -1758,7 +1758,11 @@ pub async fn get_project_brief(
             "client_review_features": client_review_features,
         },
         "runtime_contract": {
-            "launch_broker": "dx_runtime_broker",
+            "launch_broker": {
+                "name": "dx_runtime_broker",
+                "adapters": ["tmux_migration_adapter"],
+                "providers": crate::runtime_broker::provider_inventory(),
+            },
             "browser_port_base": crate::config::browser_port_base(),
             "browser_port_formula": "browser_port_base + pane",
             "browser_profile_root_template": "~/.playwright-profiles/pane-N",
