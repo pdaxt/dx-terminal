@@ -2520,6 +2520,7 @@ async function renderExecutionHub(){
   const humanEscalations=blockedOrApprovalWork.filter(order=>(order.escalation_target||'lead')==='human');
   const dxosDebates=(dxos.debates&&dxos.debates.recent)||[];
   const dxosRegistry=dxos.registry||{};
+  const dxosStorage=dxos.storage||{};
   const leadSessions=dxosSessions.filter(session=>!session.supervisor_session_id);
   const workerSessions=dxosSessions.filter(session=>session.supervisor_session_id);
   const phaseCounts=delivery.phase_counts||{};
@@ -2592,7 +2593,7 @@ async function renderExecutionHub(){
       <div class="exec-kpis">
         <div class="exec-kpi"><div class="label">Approvals Waiting</div><div class="value">${clientReviewFeatures.length}</div><div class="meta">${clientReviewFeatures.length?'client decisions are blocking progress':'no client decision is waiting'}</div></div>
         <div class="exec-kpi"><div class="label">Work Lanes</div><div class="value">${brief.runtime_count||0}</div><div class="meta">${brief.worktree_count||0} isolated worktrees</div></div>
-        <div class="exec-kpi"><div class="label">DXOS Sessions</div><div class="value">${dxosSessionSummary.active||0}</div><div class="meta">${leadSessions.length} lead · ${workerSessions.length} worker</div></div>
+        <div class="exec-kpi"><div class="label">DXOS Sessions</div><div class="value">${dxosSessionSummary.active||0}</div><div class="meta">${leadSessions.length} lead · ${workerSessions.length} worker · ${(dxosStorage.registered_projects||0)} project records</div></div>
         <div class="exec-kpi"><div class="label">Blocked Handoffs</div><div class="value">${blockedWorkOrders.length}</div><div class="meta">${leadInboxWork.length} routed to leads · ${humanEscalations.length} escalated to humans</div></div>
         <div class="exec-kpi"><div class="label">Handbook Docs</div><div class="value">${docs.vision_doc_count||0}</div><div class="meta">${docs.guidance_doc_count||0} guidance docs</div></div>
         <div class="exec-kpi"><div class="label">Release Confidence</div><div class="value">${escHtml(confidence.label)}</div><div class="meta">${escHtml(confidence.copy)}</div></div>
