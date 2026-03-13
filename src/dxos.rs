@@ -674,6 +674,7 @@ fn default_allowed_actions_for_role(role: &str) -> Vec<String> {
             "session_*".to_string(),
             "work_*".to_string(),
             "debate_*".to_string(),
+            "provider_plugin_*".to_string(),
             "pane_talk".to_string(),
             "pane_restart".to_string(),
         ],
@@ -688,6 +689,7 @@ fn default_allowed_actions_for_role(role: &str) -> Vec<String> {
             "session_*".to_string(),
             "work_*".to_string(),
             "debate_*".to_string(),
+            "provider_plugin_*".to_string(),
             "pane_*".to_string(),
         ],
         "observer" => Vec::new(),
@@ -696,6 +698,7 @@ fn default_allowed_actions_for_role(role: &str) -> Vec<String> {
             "session_*".to_string(),
             "work_*".to_string(),
             "debate_*".to_string(),
+            "provider_plugin_*".to_string(),
             "pane_talk".to_string(),
         ],
     }
@@ -1395,6 +1398,7 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
         },
         "registry": capability_registry.clone(),
         "capability_registry": capability_registry,
+        "provider_plugins": crate::provider_plugins::plugin_inventory(),
         "control_plane_registry": control_plane_registry,
         "storage": control_plane_storage_summary(project_path),
         "runtime_contract": {
