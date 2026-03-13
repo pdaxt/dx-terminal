@@ -223,6 +223,7 @@ The first architecture slice now implemented in the repo is:
 - mutating DXOS and pane-control HTTP routes can now be protected with a server-side `DX_CONTROL_TOKEN`, and the runtime contract publishes the auth mode so a hosted portal can distinguish trusted local control from token-gated operations
 - every protected portal control mutation now lands in a canonical DXOS audit log inside the shared SQLite store, and the execution hub surfaces those records so operator actions are reviewable without reading raw server logs
 - the portal can now stamp a session-scoped operator identity onto protected control requests, so the audit trail is no longer limited to a generic control token holder label
+- the project brief now carries a recovery/adoption assessment, so DXOS can explain what is missing on a half-started project and prefill the next governed specialist lane directly from the portal
 - protected control routes now enforce optional operator policy as well as token auth, so named operators can be limited by role, project scope, and action families before a launch, debate, or lane mutation is accepted
 
 That gives the platform a native place to reason, disagree, decide, supervise, and delegate inside the system itself.

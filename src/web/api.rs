@@ -2010,10 +2010,7 @@ fn recovery_assessment(
         .first()
         .cloned()
         .unwrap_or_else(|| json!({}));
-    let primary_ready = ready_features
-        .first()
-        .cloned()
-        .unwrap_or_else(|| json!({}));
+    let primary_ready = ready_features.first().cloned().unwrap_or_else(|| json!({}));
     let primary_missing_acceptance = missing_acceptance
         .first()
         .cloned()
@@ -2448,7 +2445,8 @@ pub async fn get_project_brief(
         })
         .unwrap_or_else(|| json!(null));
 
-    let documentation_health = documentation_health(&guidance_docs, &docs, &runtimes, &feature_records);
+    let documentation_health =
+        documentation_health(&guidance_docs, &docs, &runtimes, &feature_records);
     let documentation = json!({
         "health": documentation_health.clone(),
         "sync_contract": documentation_sync_contract(&project),
