@@ -2933,15 +2933,8 @@ async function startDxosAdoption(){
     setDxosPortalNotice('adoption','Operator policy blocks project adoption for this project.','red');
     return false;
   }
-  const recovery=(dxosRecoveryCache&&dxosRecoveryCache[project])||{};
-  const nextAction=recovery.next_action||{};
-  const focus=currentProjectFocus(project)||{};
   const payload={
     project,
-    summary: recovery.summary||`Adopt ${project} into DXOS and build the first governed recovery plan.`,
-    objective: nextAction.task_prompt||recovery.summary||`Inventory ${project}, reconstruct the active features and stages, and seed the first governed recovery council.`,
-    feature_id: nextAction.feature_id||focus.feature_id||null,
-    stage: nextAction.stage||focus.stage||'discovery',
     requested_by: storedDxOperatorIdentity()||null,
     participants: [storedDxOperatorIdentity()||'portal-operator','design-review','qa-review','docs-steward'].filter(Boolean)
   };
