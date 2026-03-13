@@ -8,6 +8,7 @@ use crate::claude;
 use crate::config;
 use crate::machine;
 use crate::queue;
+use crate::runtime_broker;
 use crate::state;
 use crate::state::types::PaneState;
 use crate::tmux;
@@ -21,7 +22,7 @@ fn emit_dxos_session_change(app: &App, project_path: &str, result: &str) {
     }
 }
 
-/// Execute os_spawn logic — allocates PTY and spawns Claude agent
+/// Execute os_spawn logic — allocates a DX runtime lane through the broker
 pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     let pane_num = match config::resolve_pane(&req.pane) {
         Some(n) => n,
@@ -34,7 +35,10 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     };
 
     let role = req.role.unwrap_or_else(|| "developer".into());
-    let provider = req.provider.unwrap_or_else(|| "claude".into());
+    let provider = runtime_broker::normalize_provider_id(
+        req.provider.as_deref().unwrap_or("claude"),
+    )
+    .to_string();
     let model = req.model.clone();
     let feature_id = req.feature_id.clone();
     let stage = req.stage.clone();
@@ -218,25 +222,54 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         .to_string();
     }
 
-    // Spawn via tmux — creates a visible window the user can attach to
     let window_name = format!(
         "dx-{}-{}-{}",
         provider,
         pane_num,
         config::theme_name(pane_num).to_lowercase()
     );
-    let tmux_result = tmux::spawn_agent_for_provider(
+    let launch_plan = match runtime_broker::plan_tmux_launch(
         &provider,
         &window_name,
         &spawn_cwd,
         &task_prompt,
-        &env_vars,
         autonomous,
         model.as_deref(),
-    );
+    ) {
+        Ok(plan) => plan,
+        Err(error) => {
+            if let Some(session_id) = dxos_session_id.as_deref() {
+                let failure_result = crate::dxos::record_session_launch_failure(
+                    &project_path,
+                    Some(&project_name),
+                    session_id,
+                    &format!("Runtime broker failed: {}", error),
+                );
+                emit_dxos_session_change(app, &project_path, &failure_result);
+            }
+            return serde_json::json!({
+                "error": format!("Runtime broker failed: {}", error),
+                "pane": pane_num,
+                "provider": provider,
+                "model": model,
+                "dxos_session_id": dxos_session_id,
+                "project": project_name,
+                "project_path": project_path,
+                "workspace": ws_path,
+                "branch": ws_branch,
+                "browser_port": browser_port,
+                "runtime_broker": launch_broker_json_from_error(&window_name, &spawn_cwd),
+            })
+            .to_string();
+        }
+    };
+    let tmux_result = tmux::spawn_planned_agent(&launch_plan, &env_vars);
 
     let (tmux_status, tmux_target) = match &tmux_result {
-        Ok(agent) => ("tmux_spawned".to_string(), Some(agent.target.clone())),
+        Ok(agent) => (
+            format!("{}_spawned", launch_plan.adapter),
+            Some(agent.target.clone()),
+        ),
         Err(e) => (format!("tmux_error: {}", e), None),
     };
 
@@ -261,6 +294,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
             "workspace": ws_path,
             "branch": ws_branch,
             "browser_port": browser_port,
+            "runtime_broker": launch_broker_json(&launch_plan),
         })
         .to_string();
     }
@@ -375,6 +409,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         "browser_artifacts_root": browser_artifacts_root,
         "tmux": tmux_status,
         "tmux_target": tmux_target,
+        "runtime_broker": launch_broker_json(&launch_plan),
         "dxos_session_id": session_value.get("session_id").cloned().unwrap_or(serde_json::Value::Null),
         "machine_ip": machine_id.ip,
         "machine_hostname": machine_id.hostname,
@@ -595,8 +630,8 @@ pub async fn reassign(app: &App, req: ReassignRequest) -> String {
             Some(&pane_data.project),
             Some(&session_id),
             &pane_data.role,
-            Some("claude"),
-            None,
+            pane_data.provider.as_deref(),
+            pane_data.model.as_deref(),
             Some("guarded_auto"),
             &pane_data.task,
             vec!["task_result".to_string(), "runtime_handoff".to_string()],
@@ -643,6 +678,24 @@ pub async fn reassign(app: &App, req: ReassignRequest) -> String {
         }
     })
     .to_string()
+}
+
+fn launch_broker_json(plan: &runtime_broker::RuntimeLaunchPlan) -> serde_json::Value {
+    serde_json::json!({
+        "adapter": plan.adapter,
+        "provider": plan.provider,
+        "provider_label": plan.provider_label,
+        "binary": plan.binary,
+        "model": plan.model,
+    })
+}
+
+fn launch_broker_json_from_error(window_name: &str, project_path: &str) -> serde_json::Value {
+    serde_json::json!({
+        "adapter": "tmux_migration_adapter",
+        "window_name": window_name,
+        "project_path": project_path,
+    })
 }
 
 /// Execute os_assign logic
