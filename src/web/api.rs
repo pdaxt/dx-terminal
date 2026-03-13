@@ -2304,18 +2304,29 @@ pub async fn start_dxos_adoption(
         .clone()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| project_name_from_path(&project_path));
+    let mut derived_recovery = None;
     let derived_defaults = if body.summary.is_none()
         || body.objective.is_none()
         || body.feature_id.is_none()
         || body.stage.is_none()
     {
-        Some(derive_adoption_defaults(
-            &project,
-            &build_project_brief_payload(&app, &project_path, &project).await,
-        ))
+        let brief = build_project_brief_payload(&app, &project_path, &project).await;
+        let recovery = brief
+            .get("recovery")
+            .cloned()
+            .and_then(|value| {
+                serde_json::from_value::<crate::recovery_planning::RecoveryPlan>(value).ok()
+            })
+            .unwrap_or_default();
+        derived_recovery = Some(recovery.clone());
+        Some(derive_adoption_defaults(&project, &brief))
     } else {
         None
     };
+    let follow_on_suggestions = derived_recovery
+        .as_ref()
+        .map(crate::recovery_planning::follow_on_suggestions)
+        .unwrap_or_default();
     let actor = require_control_access(
         &app,
         &headers,
@@ -2332,7 +2343,7 @@ pub async fn start_dxos_adoption(
             })
             .unwrap_or("project_adoption"),
     )?;
-    let result = crate::dxos::start_project_adoption(
+    let result = crate::dxos::start_project_adoption_with_plan(
         &project_path,
         Some(&project),
         body.summary.as_deref().or_else(|| {
@@ -2361,6 +2372,7 @@ pub async fn start_dxos_adoption(
         }),
         body.participants,
         body.requested_by.as_deref(),
+        follow_on_suggestions,
     );
     maybe_emit_dxos_session_change(&app, &project_path, &result);
     maybe_emit_debate_change(&app, &project_path, &result);

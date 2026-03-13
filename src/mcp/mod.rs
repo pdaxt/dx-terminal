@@ -2739,24 +2739,38 @@ impl DxTerminalService {
                     .map(|value| value.to_string_lossy().to_string())
                     .unwrap_or_else(|| "project".to_string())
             });
+        let mut derived_recovery = None;
         let derived_defaults = if req.summary.is_none()
             || req.objective.is_none()
             || req.feature_id.is_none()
             || req.stage.is_none()
         {
+            let brief = crate::web::api::build_project_brief_payload(
+                &self.app,
+                &project_path,
+                &project_name,
+            )
+            .await;
+            let recovery = brief
+                .get("recovery")
+                .cloned()
+                .and_then(|value| {
+                    serde_json::from_value::<crate::recovery_planning::RecoveryPlan>(value).ok()
+                })
+                .unwrap_or_default();
+            derived_recovery = Some(recovery.clone());
             Some(crate::web::api::derive_adoption_defaults(
                 &project_name,
-                &crate::web::api::build_project_brief_payload(
-                    &self.app,
-                    &project_path,
-                    &project_name,
-                )
-                .await,
+                &brief,
             ))
         } else {
             None
         };
-        let result = crate::dxos::start_project_adoption(
+        let follow_on_suggestions = derived_recovery
+            .as_ref()
+            .map(crate::recovery_planning::follow_on_suggestions)
+            .unwrap_or_default();
+        let result = crate::dxos::start_project_adoption_with_plan(
             &project_path,
             Some(&project_name),
             req.summary.as_deref().or_else(|| {
@@ -2785,6 +2799,7 @@ impl DxTerminalService {
             }),
             req.participants,
             req.requested_by.as_deref(),
+            follow_on_suggestions,
         );
         self.emit_dxos_session_change(&project_path, &result);
         self.emit_debate_change(&project_path, &result);
