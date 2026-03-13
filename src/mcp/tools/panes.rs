@@ -38,6 +38,8 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     let provider =
         runtime_broker::normalize_provider_id(req.provider.as_deref().unwrap_or("claude"))
             .to_string();
+    let runtime_adapter =
+        runtime_broker::normalize_adapter_id(req.runtime_adapter.as_deref()).to_string();
     let model = req.model.clone();
     let feature_id = req.feature_id.clone();
     let stage = req.stage.clone();
@@ -101,6 +103,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         ("DX_ROLE".to_string(), role.clone()),
         ("DX_PROVIDER".to_string(), provider.clone()),
         ("DX_MODEL".to_string(), model.clone().unwrap_or_default()),
+        ("DX_RUNTIME_ADAPTER".to_string(), runtime_adapter.clone()),
         ("DX_BROWSER_PORT".to_string(), browser_port.to_string()),
         ("PLAYWRIGHT_PORT".to_string(), browser_port.to_string()),
         (
@@ -144,6 +147,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         ws_branch.as_deref(),
         Some(browser_port),
         Some(pane_num),
+        Some(&runtime_adapter),
         None,
         feature_id.as_deref(),
         stage.as_deref(),
@@ -209,6 +213,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
             },
             "pane": pane_num,
             "provider": provider,
+            "runtime_adapter": runtime_adapter,
             "model": model,
             "dxos_session_id": dxos_session_id,
             "policy_violations": initial_policy_violations,
@@ -227,7 +232,8 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         pane_num,
         config::theme_name(pane_num).to_lowercase()
     );
-    let launch_plan = match runtime_broker::plan_tmux_launch(
+    let launch_plan = match runtime_broker::plan_launch(
+        Some(&runtime_adapter),
         &provider,
         &window_name,
         &spawn_cwd,
@@ -250,6 +256,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
                 "error": format!("Runtime broker failed: {}", error),
                 "pane": pane_num,
                 "provider": provider,
+                "runtime_adapter": runtime_adapter,
                 "model": model,
                 "dxos_session_id": dxos_session_id,
                 "project": project_name,
@@ -262,17 +269,17 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
             .to_string();
         }
     };
-    let tmux_result = tmux::spawn_planned_agent(&launch_plan, &env_vars);
-
-    let (tmux_status, tmux_target) = match &tmux_result {
-        Ok(agent) => (
-            format!("{}_spawned", launch_plan.adapter),
-            Some(agent.target.clone()),
-        ),
-        Err(e) => (format!("tmux_error: {}", e), None),
+    let launch_result = match launch_plan.adapter.as_str() {
+        "pty_native_adapter" => spawn_pty_planned_agent(app, pane_num, &launch_plan, &env_vars),
+        _ => tmux::spawn_planned_agent(&launch_plan, &env_vars).map(|agent| Some(agent.target)),
     };
 
-    if let Err(error) = tmux_result {
+    let (launch_status, tmux_target) = match &launch_result {
+        Ok(target) => (format!("{}_spawned", launch_plan.adapter), target.clone()),
+        Err(e) => (format!("launch_error: {}", e), None),
+    };
+
+    if let Err(error) = launch_result {
         if let Some(session_id) = dxos_session_id.as_deref() {
             let failure_result = crate::dxos::record_session_launch_failure(
                 &project_path,
@@ -283,9 +290,10 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
             emit_dxos_session_change(app, &project_path, &failure_result);
         }
         return serde_json::json!({
-            "error": format!("Tmux spawn failed: {}", tmux_status),
+            "error": format!("Runtime launch failed: {}", launch_status),
             "pane": pane_num,
             "provider": provider,
+            "runtime_adapter": runtime_adapter,
             "model": model,
             "dxos_session_id": dxos_session_id,
             "project": project_name,
@@ -305,6 +313,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         role: role.clone(),
         provider: Some(provider.clone()),
         model: model.clone(),
+        runtime_adapter: Some(runtime_adapter.clone()),
         dxos_session_id: dxos_session_id.clone(),
         task: task.clone(),
         issue_id: None,
@@ -341,6 +350,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         ws_branch.as_deref(),
         Some(browser_port),
         Some(pane_num),
+        Some(&runtime_adapter),
         tmux_target.as_deref(),
         feature_id.as_deref(),
         stage.as_deref(),
@@ -398,6 +408,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         "project": project_name,
         "role": role,
         "provider": provider,
+        "runtime_adapter": runtime_adapter,
         "model": model,
         "task": task,
         "project_path": project_path,
@@ -406,7 +417,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         "browser_port": browser_port,
         "browser_profile_root": browser_profile_root,
         "browser_artifacts_root": browser_artifacts_root,
-        "tmux": tmux_status,
+        "launch": launch_status,
         "tmux_target": tmux_target,
         "runtime_broker": launch_broker_json(&launch_plan),
         "dxos_session_id": session_value.get("session_id").cloned().unwrap_or(serde_json::Value::Null),
