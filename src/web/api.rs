@@ -2691,6 +2691,7 @@ fn load_wiki_doc(project_path: &str, relative_path: &str, category: &str) -> Opt
 fn collect_featured_wiki_docs(project_path: &str) -> Vec<WikiDocEntry> {
     let candidates = [
         ("README.md", "overview"),
+        ("docs/DXOS_MASTER_ARCHITECTURE.md", "architecture"),
         ("docs/NON_TECH_GUIDE.md", "guide"),
         ("docs/CLIENT_ONBOARDING_BLUEPRINT.md", "client"),
         ("docs/CLIENT_PORTAL_PLAYBOOK.md", "client"),
