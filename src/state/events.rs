@@ -107,6 +107,15 @@ pub enum StateEvent {
         readiness: Option<Value>,
     },
 
+    // --- Debate / governance ---
+    DebateChanged {
+        project: String,
+        debate_id: String,
+        title: String,
+        status: String,
+        action: String,
+    },
+
     // --- Sync ---
     SyncStatusChanged {
         project: String,

@@ -456,6 +456,21 @@ async fn forward_events(mut rx: broadcast::Receiver<StateEvent>, sender: WsSende
                         "state": state,
                         "readiness": readiness,
                     }),
+                    StateEvent::DebateChanged {
+                        project,
+                        debate_id,
+                        title,
+                        status,
+                        action,
+                    } => json!({
+                        "type": "debate_changed",
+                        "seq": seq,
+                        "project": project,
+                        "debate_id": debate_id,
+                        "title": title,
+                        "status": status,
+                        "action": action,
+                    }),
                     StateEvent::SyncStatusChanged { project, data } => json!({
                         "type": "sync_status",
                         "seq": seq,

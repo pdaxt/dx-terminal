@@ -9,6 +9,7 @@ mod collab;
 mod config;
 mod dashboard;
 mod design_tokens;
+mod dxos;
 mod engine;
 mod external_mcp;
 mod factory;
