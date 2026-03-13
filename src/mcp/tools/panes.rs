@@ -39,19 +39,52 @@ fn spawn_pty_planned_agent(
     Ok(None)
 }
 
+async fn resolve_spawn_pane(app: &App, pane_ref: &str) -> Result<u8, String> {
+    let requested = pane_ref.trim();
+    let auto_allocate = requested.is_empty()
+        || matches!(
+            requested.to_ascii_lowercase().as_str(),
+            "auto" | "next" | "any" | "free"
+        );
+    if !auto_allocate {
+        return config::resolve_pane(requested).ok_or_else(|| {
+            format!("Invalid pane: {}. Use 1-9, theme name, or 'auto'.", pane_ref)
+        });
+    }
+
+    let snapshot = app.state.get_state_snapshot().await;
+    let reserved = queue::load_auto_config().reserved_panes;
+    let pty = app.pty_lock();
+    for pane_num in 1..=config::pane_count() {
+        if reserved.contains(&pane_num) {
+            continue;
+        }
+        let occupied_by_state = snapshot
+            .panes
+            .get(&pane_num.to_string())
+            .map(|pane| !matches!(pane.status.as_str(), "idle" | "done" | "lost"))
+            .unwrap_or(false);
+        let occupied_by_pty = pty.is_running(pane_num);
+        if !occupied_by_state && !occupied_by_pty {
+            return Ok(pane_num);
+        }
+    }
+
+    Err(format!(
+        "No free pane is available right now. {} panes are configured and all non-reserved lanes are occupied.",
+        config::pane_count()
+    ))
+}
+
 /// Execute os_spawn logic — allocates a DX runtime lane through the broker
 pub async fn spawn(app: &App, req: SpawnRequest) -> String {
-    let pane_num = match config::resolve_pane(&req.pane) {
-        Some(n) => n,
-        None => {
-            return json_err(&format!(
-                "Invalid pane: {}. Use 1-9 or theme name.",
-                req.pane
-            ))
-        }
+    let pane_num = match resolve_spawn_pane(app, &req.pane).await {
+        Ok(n) => n,
+        Err(error) => return json_err(&error),
     };
 
     let role = req.role.unwrap_or_else(|| "developer".into());
+    let client_request_id = req.client_request_id.clone();
     let provider =
         runtime_broker::normalize_provider_id(req.provider.as_deref().unwrap_or("claude"))
             .to_string();
@@ -308,6 +341,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         }
         return serde_json::json!({
             "error": format!("Runtime launch failed: {}", launch_status),
+            "client_request_id": client_request_id,
             "pane": pane_num,
             "provider": provider,
             "runtime_adapter": runtime_adapter,
@@ -420,6 +454,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
 
     serde_json::json!({
         "status": "spawned",
+        "client_request_id": client_request_id,
         "pane": pane_num,
         "theme": theme,
         "project": project_name,
