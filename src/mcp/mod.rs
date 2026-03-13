@@ -2859,9 +2859,7 @@ impl DxTerminalService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
-    #[tool(
-        description = "List DXOS session contracts and delegated work orders for a project."
-    )]
+    #[tool(description = "List DXOS session contracts and delegated work orders for a project.")]
     async fn dxos_session_list(
         &self,
         Parameters(req): Parameters<types::DxosSessionListRequest>,

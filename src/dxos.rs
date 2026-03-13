@@ -829,7 +829,8 @@ pub fn upsert_session_contract(
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| next_session_id(&state));
 
-    let action = if let Some(existing) = state.sessions.iter_mut().find(|item| item.id == chosen_id) {
+    let action = if let Some(existing) = state.sessions.iter_mut().find(|item| item.id == chosen_id)
+    {
         existing.status = status.unwrap_or("active").trim().to_string();
         existing.role = role.trim().to_string();
         existing.provider = provider
@@ -977,7 +978,11 @@ pub fn update_session_status(
 
     session.status = status.trim().to_string();
     if let Some(note) = note.filter(|value| !value.trim().is_empty()) {
-        session.objective = format!("{}\n\nStatus note: {}", session.objective.trim(), note.trim());
+        session.objective = format!(
+            "{}\n\nStatus note: {}",
+            session.objective.trim(),
+            note.trim()
+        );
     }
     session.updated_at = crate::state::now();
     state.updated_at = session.updated_at.clone();
@@ -1009,7 +1014,9 @@ pub fn delegate_work_order(
     required_capabilities: Vec<String>,
     expected_outputs: Vec<String>,
 ) -> String {
-    if supervisor_session_id.trim().is_empty() || title.trim().is_empty() || objective.trim().is_empty()
+    if supervisor_session_id.trim().is_empty()
+        || title.trim().is_empty()
+        || objective.trim().is_empty()
     {
         return json!({
             "error": "supervisor_session_id, title, and objective required"
@@ -1026,7 +1033,11 @@ pub fn delegate_work_order(
         return json!({"error": "supervisor_session_not_found"}).to_string();
     }
     if let Some(worker) = worker_session_id.filter(|value| !value.trim().is_empty()) {
-        if !state.sessions.iter().any(|session| session.id == worker.trim()) {
+        if !state
+            .sessions
+            .iter()
+            .any(|session| session.id == worker.trim())
+        {
             return json!({"error": "worker_session_not_found"}).to_string();
         }
     }
@@ -1102,7 +1113,11 @@ pub fn work_order_block(
     };
 
     work_order.status = "blocked".to_string();
-    if !work_order.blockers.iter().any(|item| item == blocker.trim()) {
+    if !work_order
+        .blockers
+        .iter()
+        .any(|item| item == blocker.trim())
+    {
         work_order.blockers.push(blocker.trim().to_string());
     }
     if let Some(permission) = requested_permission.filter(|value| !value.trim().is_empty()) {
@@ -1156,7 +1171,9 @@ pub fn resolve_work_order(
     work_order.blockers.clear();
     work_order.requested_permissions.clear();
     if let Some(resolution) = resolution.filter(|value| !value.trim().is_empty()) {
-        work_order.expected_outputs.push(format!("Resolution: {}", resolution.trim()));
+        work_order
+            .expected_outputs
+            .push(format!("Resolution: {}", resolution.trim()));
     }
     work_order.updated_at = crate::state::now();
     state.updated_at = work_order.updated_at.clone();

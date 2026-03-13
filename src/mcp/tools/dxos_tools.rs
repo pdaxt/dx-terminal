@@ -174,7 +174,13 @@ pub fn session_status(
     status: &str,
     note: Option<&str>,
 ) -> String {
-    dxos::update_session_status(&resolve_project_path(project), None, session_id, status, note)
+    dxos::update_session_status(
+        &resolve_project_path(project),
+        None,
+        session_id,
+        status,
+        note,
+    )
 }
 
 pub fn work_delegate(
@@ -217,7 +223,11 @@ pub fn work_block(
     )
 }
 
-pub fn work_resolve(project: Option<&str>, work_order_id: &str, resolution: Option<&str>) -> String {
+pub fn work_resolve(
+    project: Option<&str>,
+    work_order_id: &str,
+    resolution: Option<&str>,
+) -> String {
     dxos::resolve_work_order(
         &resolve_project_path(project),
         None,
