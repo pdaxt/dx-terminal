@@ -1683,6 +1683,133 @@ pub async fn get_project_brief(
     }))
 }
 
+/// GET /api/dxos/control-plane?project=NAME — DXOS contract and governance summary
+pub async fn get_dxos_control_plane(Query(q): Query<VisionQuery>) -> Json<Value> {
+    let project_path = resolve_project_path(&q);
+    let project = q.project.as_deref();
+    Json(crate::dxos::control_plane_snapshot(&project_path, project))
+}
+
+/// GET /api/dxos/debates?project=NAME — Formal debate records for a project
+pub async fn get_dxos_debates(Query(q): Query<VisionQuery>) -> Json<Value> {
+    let project_path = resolve_project_path(&q);
+    let result = crate::dxos::debate_list(&project_path, q.project.as_deref());
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/dxos/debate/start — Start a formal debate
+pub async fn start_dxos_debate(
+    State(app): State<AppState>,
+    Json(body): Json<DxosDebateStartBody>,
+) -> Json<Value> {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let result = crate::dxos::debate_start(
+        &project_path,
+        body.project.as_deref(),
+        &body.title,
+        &body.objective,
+        body.stage.as_deref(),
+        body.feature_id.as_deref(),
+        body.participants,
+        body.requested_by.as_deref(),
+    );
+    maybe_emit_debate_change(&app, &project_path, &result);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/dxos/debate/proposal — Add a proposal to a debate
+pub async fn add_dxos_debate_proposal(
+    State(app): State<AppState>,
+    Json(body): Json<DxosDebateProposalBody>,
+) -> Json<Value> {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let result = crate::dxos::debate_add_proposal(
+        &project_path,
+        body.project.as_deref(),
+        &body.debate_id,
+        &body.author,
+        body.model.as_deref(),
+        &body.summary,
+        &body.rationale,
+        body.evidence,
+    );
+    maybe_emit_debate_change(&app, &project_path, &result);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/dxos/debate/contradiction — Add a contradiction to a proposal
+pub async fn add_dxos_debate_contradiction(
+    State(app): State<AppState>,
+    Json(body): Json<DxosDebateContradictionBody>,
+) -> Json<Value> {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let result = crate::dxos::debate_add_contradiction(
+        &project_path,
+        body.project.as_deref(),
+        &body.debate_id,
+        &body.proposal_id,
+        &body.author,
+        body.model.as_deref(),
+        &body.rationale,
+    );
+    maybe_emit_debate_change(&app, &project_path, &result);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/dxos/debate/vote — Cast or update a vote
+pub async fn vote_dxos_debate(
+    State(app): State<AppState>,
+    Json(body): Json<DxosDebateVoteBody>,
+) -> Json<Value> {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let result = crate::dxos::debate_cast_vote(
+        &project_path,
+        body.project.as_deref(),
+        &body.debate_id,
+        &body.proposal_id,
+        &body.voter,
+        body.model.as_deref(),
+        &body.stance,
+        &body.rationale,
+    );
+    maybe_emit_debate_change(&app, &project_path, &result);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/dxos/debate/decision — Finalize a debate decision
+pub async fn finalize_dxos_debate(
+    State(app): State<AppState>,
+    Json(body): Json<DxosDebateDecisionBody>,
+) -> Json<Value> {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let result = crate::dxos::debate_finalize(
+        &project_path,
+        body.project.as_deref(),
+        &body.debate_id,
+        &body.chosen_proposal_id,
+        &body.decided_by,
+        &body.summary,
+        &body.rationale,
+    );
+    maybe_emit_debate_change(&app, &project_path, &result);
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
 /// GET /api/vision/diff?project=NAME — Recent vision changes
 pub async fn get_vision_diff(Query(q): Query<VisionQuery>) -> Json<Value> {
     let path = resolve_project_path(&q);
