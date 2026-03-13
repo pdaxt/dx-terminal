@@ -1705,6 +1705,22 @@ async function killPaneViaApi(pane,reason){
   return true;
 }
 
+async function restartPaneViaApi(pane){
+  const paneNum=Number(pane);
+  if(!Number.isFinite(paneNum)||paneNum<=0)return false;
+  const result=await fetchJSON('/api/pane/restart',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({pane:String(paneNum)})
+  });
+  if(!result||result.error)return false;
+  refresh();
+  if(activePaneNum===paneNum){
+    setTimeout(()=>openPanel(paneNum),250);
+  }
+  return true;
+}
+
 async function refreshPaneOutput(pane){
   const paneNum=Number(pane);
   if(!Number.isFinite(paneNum)||paneNum<=0)return false;
@@ -2989,6 +3005,7 @@ function openPanel(paneNum){
 
   document.getElementById('panel-actions').innerHTML=`
     <button class="btn btn-red" onclick="killPaneViaApi(${paneNum},'web dashboard')">Kill</button>
+    <button class="btn" style="background:rgba(168,85,247,.16);color:var(--purple)" onclick="restartPaneViaApi(${paneNum})">Restart</button>
     <button class="btn btn-blue" onclick="refreshPaneOutput(${paneNum})">Refresh</button>
     <button class="btn btn-green" onclick="copyActiveTab()" id="copy-tab-btn">Copy</button>
     <button class="btn" style="background:rgba(176,122,255,.15);color:var(--purple)" onclick="copySelection()">Copy Selection</button>`;
@@ -3736,6 +3753,7 @@ function wsSend(cmd){if(ws&&ws.readyState===1)ws.send(JSON.stringify(cmd))}
 const COMMANDS=[
   {name:'Spawn agent',key:'s',action:async()=>{const project=prompt('Project path:');if(project){const role=prompt('Role (developer/qa/devops):','developer')||'developer';await fetchJSON('/api/dxos/session/launch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project,pane:'auto',role,task:`Advance the next high-value task for ${project}.`,client_request_id:nextDxosClientRequestId()})});refresh();}}},
   {name:'Kill agent',key:'k',action:()=>{if(activePaneNum)killPaneViaApi(activePaneNum,'palette')}},
+  {name:'Restart agent',key:'shift+r',action:()=>{if(activePaneNum)restartPaneViaApi(activePaneNum)}},
   {name:'Refresh all',key:'r',action:()=>refresh()},
   {name:'Toggle queue form',key:'q',action:()=>toggleAdd()},
   {name:'Close panel',key:'Esc',action:()=>closePanel()},
