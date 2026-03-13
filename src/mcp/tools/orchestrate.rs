@@ -101,6 +101,7 @@ pub async fn orchestrate(app: &App, req: OrchestrateRequest) -> String {
                 SpawnRequest {
                     pane: pane.to_string(),
                     project: project.name.clone(),
+                    session_id: None,
                     role: Some(planned_task.role.clone()),
                     provider: None,
                     model: None,

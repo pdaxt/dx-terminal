@@ -629,6 +629,7 @@ pub async fn restart(app: &App, req: RestartRequest) -> String {
             } else {
                 pane_data.project_path
             },
+            session_id: None,
             role: Some(pane_data.role),
             provider: pane_data.provider,
             model: pane_data.model,
@@ -844,6 +845,7 @@ pub async fn assign(app: &App, req: AssignRequest) -> String {
         SpawnRequest {
             pane: pane_num.to_string(),
             project: project_path,
+            session_id: None,
             role: Some(role.clone()),
             provider: None,
             model: None,
@@ -900,6 +902,7 @@ pub async fn assign_adhoc(app: &App, req: AssignAdhocRequest) -> String {
         SpawnRequest {
             pane: pane_num.to_string(),
             project,
+            session_id: None,
             role: req.role.or(Some("developer".into())),
             provider: None,
             model: None,
