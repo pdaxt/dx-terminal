@@ -1705,6 +1705,23 @@ async function killPaneViaApi(pane,reason){
   return true;
 }
 
+async function refreshPaneOutput(pane){
+  const paneNum=Number(pane);
+  if(!Number.isFinite(paneNum)||paneNum<=0)return false;
+  const result=await fetchJSON(`/api/pane/${paneNum}/output?lines=200`);
+  const output=(result&&((typeof result.output==='string'&&result.output)||(typeof result.screen==='string'&&result.screen)))||'';
+  if(!output)return false;
+  paneOutputs[paneNum]=output;
+  if(activePaneNum===paneNum){
+    const term=document.getElementById('panel-terminal');
+    if(term){
+      term.textContent=output;
+      term.scrollTop=term.scrollHeight;
+    }
+  }
+  return true;
+}
+
 async function resolveDxosWorkOrder(workOrderId){
   const project=activeProjectForHub();
   if(!project||!workOrderId)return;
@@ -2972,7 +2989,7 @@ function openPanel(paneNum){
 
   document.getElementById('panel-actions').innerHTML=`
     <button class="btn btn-red" onclick="killPaneViaApi(${paneNum},'web dashboard')">Kill</button>
-    <button class="btn btn-blue" onclick="wsSend({cmd:'capture',pane:${paneNum}})">Refresh</button>
+    <button class="btn btn-blue" onclick="refreshPaneOutput(${paneNum})">Refresh</button>
     <button class="btn btn-green" onclick="copyActiveTab()" id="copy-tab-btn">Copy</button>
     <button class="btn" style="background:rgba(176,122,255,.15);color:var(--purple)" onclick="copySelection()">Copy Selection</button>`;
 
@@ -2997,7 +3014,7 @@ function openPanel(paneNum){
   // Focus the talk input
   setTimeout(()=>{const inp=document.getElementById('talk-input');if(inp)inp.focus()},100);
 
-  wsSend({cmd:'capture',pane:paneNum});
+  void refreshPaneOutput(paneNum);
   renderPanes(); // Update selection highlight
 }
 
