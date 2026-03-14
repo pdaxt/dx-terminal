@@ -2907,7 +2907,12 @@ function renderDxosOperatorControls(project,activeStage,sessions,adoptions,sched
   const supervisorBaseUrl=String(supervisorContract&&supervisorContract.base_url||'').trim();
   const supervisorIdentity=String(supervisorContract&&supervisorContract.identity||'').trim();
   const schedulerSupportsRunId=scheduler&&scheduler.supports_run_id===true;
-  const projectIdentity=((((projectBriefCache[project]||{}).dxos)||{}).project)||{};
+  const dxosSnapshot=(((projectBriefCache[project]||{}).dxos)||{});
+  const projectIdentity=(dxosSnapshot.project)||{};
+  const currentPortfolio=(dxosSnapshot.portfolio)||{};
+  const currentCompanyRecord=(currentPortfolio.company)||{};
+  const currentProgramRecord=(currentPortfolio.program)||{};
+  const currentWorkspaceRecord=(currentPortfolio.workspace)||{};
   return `<div class="action-shell">
     <div class="portal-note">The operator console below is the first real portal-native control surface for DXOS. Launching a lane uses the DX runtime broker, with the native PTY path as the default substrate and tmux kept only as the migration path.</div>
     <div class="action-grid">
@@ -2979,6 +2984,64 @@ function renderDxosOperatorControls(project,activeStage,sessions,adoptions,sched
             <button class="design-action" onclick="return saveDxosProjectIdentity('${escHtml(project)}')" ${operatorActionDisabledAttrs(project,'project_identity','project identity update')}>Save project identity</button>
             <span class="action-note">These labels lift a repo into company, program, and workspace context for the shared DXOS registry.</span>
           </div>
+          ${(projectIdentity.company||projectIdentity.program||projectIdentity.workspace)?`<div class="action-field" style="margin-top:14px">
+            <label>Portfolio records</label>
+            <div class="action-note">DXOS now persists company, program, and workspace objects separately from the repo tag. Update their status, owner, and summary here.</div>
+          </div>`:'<div class="action-note" style="margin-top:12px">Set the project identity first if you want DXOS to maintain first-class company, program, and workspace records for this repo.</div>'}
+          ${projectIdentity.company?`<div class="action-form-grid" style="margin-top:10px">
+            <div class="action-field">
+              <label for="dx-company-status">Company status</label>
+              <input class="action-input" id="dx-company-status" value="${escHtml(String(currentCompanyRecord.status||'active'))}" placeholder="active / planning / paused">
+            </div>
+            <div class="action-field">
+              <label for="dx-company-owner">Company owner</label>
+              <input class="action-input" id="dx-company-owner" value="${escHtml(String(currentCompanyRecord.owner||''))}" placeholder="portfolio lead">
+            </div>
+          </div>
+          <div class="action-field">
+            <label for="dx-company-summary">Company summary</label>
+            <input class="action-input" id="dx-company-summary" value="${escHtml(String(currentCompanyRecord.summary||''))}" placeholder="What this company is for and how DXOS should frame it">
+          </div>
+          <div class="action-actions">
+            <button class="vdd-focus-btn" onclick="return saveDxosCompanyRecord('${escHtml(project)}')" ${operatorActionDisabledAttrs(project,'company_record','company record update')}>Save company record</button>
+            <span class="action-note">Company record: ${escHtml(String(projectIdentity.company||''))}</span>
+          </div>`:''}
+          ${projectIdentity.program?`<div class="action-form-grid" style="margin-top:10px">
+            <div class="action-field">
+              <label for="dx-program-status">Program status</label>
+              <input class="action-input" id="dx-program-status" value="${escHtml(String(currentProgramRecord.status||'active'))}" placeholder="active / planning / paused">
+            </div>
+            <div class="action-field">
+              <label for="dx-program-owner">Program owner</label>
+              <input class="action-input" id="dx-program-owner" value="${escHtml(String(currentProgramRecord.owner||''))}" placeholder="program lead">
+            </div>
+          </div>
+          <div class="action-field">
+            <label for="dx-program-summary">Program summary</label>
+            <input class="action-input" id="dx-program-summary" value="${escHtml(String(currentProgramRecord.summary||''))}" placeholder="What this program delivers across its projects">
+          </div>
+          <div class="action-actions">
+            <button class="vdd-focus-btn" onclick="return saveDxosProgramRecord('${escHtml(project)}')" ${operatorActionDisabledAttrs(project,'program_record','program record update')}>Save program record</button>
+            <span class="action-note">Program record: ${escHtml(String(projectIdentity.program||''))}</span>
+          </div>`:''}
+          ${projectIdentity.workspace?`<div class="action-form-grid" style="margin-top:10px">
+            <div class="action-field">
+              <label for="dx-workspace-status">Workspace status</label>
+              <input class="action-input" id="dx-workspace-status" value="${escHtml(String(currentWorkspaceRecord.status||'active'))}" placeholder="active / planning / paused">
+            </div>
+            <div class="action-field">
+              <label for="dx-workspace-owner">Workspace owner</label>
+              <input class="action-input" id="dx-workspace-owner" value="${escHtml(String(currentWorkspaceRecord.owner||''))}" placeholder="workspace lead">
+            </div>
+          </div>
+          <div class="action-field">
+            <label for="dx-workspace-summary">Workspace summary</label>
+            <input class="action-input" id="dx-workspace-summary" value="${escHtml(String(currentWorkspaceRecord.summary||''))}" placeholder="What this workspace isolates or owns">
+          </div>
+          <div class="action-actions">
+            <button class="vdd-focus-btn" onclick="return saveDxosWorkspaceRecord('${escHtml(project)}')" ${operatorActionDisabledAttrs(project,'workspace_record','workspace record update')}>Save workspace record</button>
+            <span class="action-note">Workspace record: ${escHtml(String(projectIdentity.workspace||''))}</span>
+          </div>`:''}
           ${operatorPolicy?`<div class="action-note">Allowed actions: ${escHtml(((operatorPolicy.allowed_actions||[]).slice(0,6).join(', ')||'*').toString())}</div>
           <div class="action-note">Scopes: projects ${escHtml(((operatorPolicy.project_scopes||[]).join(', ')||'*').toString())} · companies ${escHtml(((operatorPolicy.company_scopes||[]).join(', ')||'*').toString())} · programs ${escHtml(((operatorPolicy.program_scopes||[]).join(', ')||'*').toString())} · workspaces ${escHtml(((operatorPolicy.workspace_scopes||[]).join(', ')||'*').toString())}</div>`:controlAuth.operator_policy_configured?'<div class="action-note">The current operator identity is not registered for this project or its portfolio scopes in the DXOS operator policy.</div>':''}
           ${protectedControls?`<div class="action-field">
