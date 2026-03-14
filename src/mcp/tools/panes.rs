@@ -219,17 +219,6 @@ fn build_dxos_runtime_context_section(context: &Value) -> Option<String> {
     Some(lines.join("\n"))
 }
 
-fn merge_prompt_with_dxos_context(prompt: &str, dxos_context: Option<&str>) -> String {
-    let prompt = prompt.trim();
-    let dxos_context = dxos_context.map(str::trim).unwrap_or("");
-    match (prompt.is_empty(), dxos_context.is_empty()) {
-        (true, true) => String::new(),
-        (false, true) => prompt.to_string(),
-        (true, false) => dxos_context.to_string(),
-        (false, false) => format!("{}\n\n{}", prompt, dxos_context),
-    }
-}
-
 fn merge_prompt_sections(prompt: &str, sections: &[Option<&str>]) -> String {
     let mut parts = Vec::new();
     let prompt = prompt.trim();
@@ -462,6 +451,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
             .to_string();
         }
     }
+    let automation_doc_path = format!("{}/DX_AUTOMATION.md", spawn_cwd);
 
     // Register machine identity
     let machine_id = machine::register(pane_num);
@@ -513,6 +503,10 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         (
             "DX_AUTOMATION_BRIDGE_USER_ASSETS".to_string(),
             automation_user_assets.to_string(),
+        ),
+        (
+            "DX_AUTOMATION_GUIDE_PATH".to_string(),
+            automation_doc_path.clone(),
         ),
     ];
     if let Some(path) = provider_bridge_path.as_deref() {
@@ -647,6 +641,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
             "workspace": ws_path,
             "branch": ws_branch,
             "browser_port": browser_port,
+            "automation_doc_path": serde_json::Value::Null,
             "provider_bridge": provider_bridge_sync,
             "automation_bridge": automation_bridge_sync,
         })
@@ -663,7 +658,15 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
 
     let effective_task = effective_task_from_dxos_context(&task, &dxos_launch_context);
     let dxos_context_section = build_dxos_runtime_context_section(&dxos_launch_context);
-    let effective_prompt = merge_prompt_with_dxos_context(&prompt, dxos_context_section.as_deref());
+    let automation_context_section =
+        crate::provider_asset_plugins::runtime_guidance_markdown(Some(&project_path), &provider, 8);
+    let effective_prompt = merge_prompt_sections(
+        &prompt,
+        &[
+            dxos_context_section.as_deref(),
+            Some(automation_context_section.as_str()),
+        ],
+    );
 
     // Generate preamble and write a shared guidance bundle in the workspace for
     // whichever provider is active there.
@@ -676,6 +679,10 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         &effective_prompt,
     );
     let _ = claude::write_preamble(pane_num, &preamble);
+    let _ = std::fs::write(
+        &automation_doc_path,
+        format!("{}\n", automation_context_section.trim()),
+    );
     for guidance_file in ["AGENTS.md", "CLAUDE.md", "CODEX.md", "GEMINI.md"] {
         let guidance_path = format!("{}/{}", spawn_cwd, guidance_file);
         let _ = std::fs::write(&guidance_path, &preamble);
@@ -729,6 +736,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
                 "workspace": ws_path,
                 "branch": ws_branch,
                 "browser_port": browser_port,
+                "automation_doc_path": automation_doc_path,
                 "provider_bridge": provider_bridge_sync,
                 "automation_bridge": automation_bridge_sync,
                 "runtime_broker": launch_broker_json_from_error(&window_name, &spawn_cwd),
@@ -769,6 +777,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
             "workspace": ws_path,
             "branch": ws_branch,
             "browser_port": browser_port,
+            "automation_doc_path": automation_doc_path,
             "provider_bridge": provider_bridge_sync,
             "automation_bridge": automation_bridge_sync,
             "runtime_broker": launch_broker_json(&launch_plan),
@@ -886,6 +895,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         "workspace": ws_path,
         "branch": ws_branch,
         "browser_port": browser_port,
+        "automation_doc_path": automation_doc_path,
         "browser_profile_root": browser_profile_root,
         "browser_artifacts_root": browser_artifacts_root,
         "launch": launch_status,

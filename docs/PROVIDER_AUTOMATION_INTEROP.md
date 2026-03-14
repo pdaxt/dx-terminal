@@ -74,8 +74,15 @@ Each runtime receives:
 - `DX_AUTOMATION_BRIDGE_USER_PATH`
 - `DX_AUTOMATION_BRIDGE_PROJECT_ASSETS`
 - `DX_AUTOMATION_BRIDGE_USER_ASSETS`
+- `DX_AUTOMATION_GUIDE_PATH`
 
 That makes workflow interoperability part of runtime startup instead of a separate operator chore.
+
+DX also writes a workspace guide:
+
+- `DX_AUTOMATION.md`
+
+That file gives the launched lane a concise summary of the shared commands, skills, and manifest paths for its provider bridge.
 
 ## Portal and MCP Surface
 

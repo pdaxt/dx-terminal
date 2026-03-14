@@ -80,7 +80,11 @@ pub fn runtime_guidance(project_root: Option<&str>, provider: &str, max_items: u
     )
 }
 
-pub fn runtime_guidance_markdown(project_root: Option<&str>, provider: &str, max_items: usize) -> String {
+pub fn runtime_guidance_markdown(
+    project_root: Option<&str>,
+    provider: &str,
+    max_items: usize,
+) -> String {
     let guidance = runtime_guidance(project_root, provider, max_items);
     let mut lines = vec![
         "## DX Automation Workflows".to_string(),
@@ -113,12 +117,12 @@ pub fn runtime_guidance_markdown(project_root: Option<&str>, provider: &str, max
         "Project command packs",
         guidance.get("project_commands"),
     );
+    append_catalog_section(&mut lines, "Project skills", guidance.get("project_skills"));
     append_catalog_section(
         &mut lines,
-        "Project skills",
-        guidance.get("project_skills"),
+        "User command packs",
+        guidance.get("user_commands"),
     );
-    append_catalog_section(&mut lines, "User command packs", guidance.get("user_commands"));
     append_catalog_section(&mut lines, "User skills", guidance.get("user_skills"));
     lines.push(
         "- Use the DX-managed provider-local assets above before inventing a new workflow from scratch. If a needed workflow is missing, document the gap explicitly."
@@ -660,7 +664,8 @@ fn collect_names_for_scope_kind(
     kind: &str,
     max_items: usize,
 ) -> Vec<String> {
-    items.iter()
+    items
+        .iter()
         .filter(|(asset, _)| asset.scope == scope && asset.kind == kind)
         .map(|(asset, _)| asset.name.clone())
         .take(max_items.max(1))
