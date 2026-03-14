@@ -3783,6 +3783,7 @@ pub fn claim_session_launch(
     project_name: Option<&str>,
     session_id: &str,
     actor: Option<&str>,
+    claim_id: Option<&str>,
 ) -> String {
     if session_id.trim().is_empty() {
         return json!({"error": "session_id required"}).to_string();
@@ -3801,7 +3802,29 @@ pub fn claim_session_launch(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "dxos_scheduler".to_string());
+    let claim_id = claim_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
     let reclaiming = session.status == "launching" && launch_claim_is_stale(session);
+    if !reclaiming
+        && session.status == "launching"
+        && session.launch_claimed_by.as_deref() == Some(claimed_by.as_str())
+        && claim_id.is_some()
+        && session.launch_claim_id == claim_id
+    {
+        return json!({
+            "status": "ok",
+            "action": "session_launch_claim_existing",
+            "project": state.project.name,
+            "project_path": project_path,
+            "session_id": session_id.trim(),
+            "claimed_by": claimed_by,
+            "claim_id": claim_id,
+            "session": state.sessions.iter().find(|item| item.id == session_id.trim()).map(session_summary),
+        })
+        .to_string();
+    }
     if session.status != "planned" && !reclaiming {
         return json!({
             "error": "session_not_launchable",
@@ -3809,6 +3832,7 @@ pub fn claim_session_launch(
             "status": session.status,
             "launch_claimed_by": session.launch_claimed_by,
             "launch_claimed_at": session.launch_claimed_at,
+            "launch_claim_id": session.launch_claim_id,
         })
         .to_string();
     }
@@ -3825,7 +3849,7 @@ pub fn claim_session_launch(
     let now = crate::state::now();
     session.status = "launching".to_string();
     session.last_error = None;
-    set_session_launch_claim(session, &claimed_by, &now);
+    set_session_launch_claim(session, &claimed_by, claim_id.as_deref(), &now);
     session.updated_at = now;
     state.updated_at = session.updated_at.clone();
 
@@ -3837,6 +3861,7 @@ pub fn claim_session_launch(
             "project_path": project_path,
             "session_id": session_id.trim(),
             "claimed_by": claimed_by,
+            "claim_id": claim_id,
             "session": state.sessions.iter().find(|item| item.id == session_id.trim()).map(session_summary),
         })
         .to_string(),
