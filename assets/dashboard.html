@@ -3683,6 +3683,12 @@ async function renderExecutionHub(){
   const dxosProjectRegistry=dxos.control_plane_registry||{};
   const dxosRegisteredProjects=(dxosProjectRegistry.projects||[]);
   const dxosStorage=dxos.storage||{};
+  const dxosProjectIdentity=dxos.project||{};
+  const projectIdentityBits=[
+    dxosProjectIdentity.company?`company ${dxosProjectIdentity.company}`:null,
+    dxosProjectIdentity.program?`program ${dxosProjectIdentity.program}`:null,
+    dxosProjectIdentity.workspace?`workspace ${dxosProjectIdentity.workspace}`:null
+  ].filter(Boolean);
   const dxosAdoptions=(dxos.adoptions&&dxos.adoptions.recent)||[];
   const leadSessions=dxosSessions.filter(session=>!session.supervisor_session_id);
   const workerSessions=dxosSessions.filter(session=>session.supervisor_session_id);
@@ -3757,6 +3763,7 @@ async function renderExecutionHub(){
       <div class="exec-title">
         <div>
           <div class="exec-project">${escHtml(brief.project||project)}</div>
+          ${projectIdentityBits.length?`<div class="meta" style="margin-top:6px">${projectIdentityBits.map(item=>escHtml(String(item))).join(' · ')}</div>`:''}
           <div class="exec-mission">${escHtml((brief.mission||'No project mission yet').toString())}</div>
         </div>
         <a class="exec-link" href="${escHtml(brief.wiki_url||'/wiki')}" target="_blank">Open Handbook</a>
@@ -4031,6 +4038,7 @@ async function renderExecutionHub(){
           <div class="doc-line-main">
             <div class="doc-line-title">${escHtml((item.name||shortPathLabel(item.path)||'Unnamed project').toString())}</div>
             <div class="doc-line-path">${escHtml((item.path||'').toString())}</div>
+            ${(item.company||item.program||item.workspace)?`<div class="meta">${[item.company?`company ${item.company}`:null,item.program?`program ${item.program}`:null,item.workspace?`workspace ${item.workspace}`:null].filter(Boolean).map(entry=>escHtml(String(entry))).join(' · ')}</div>`:''}
           </div>
           <div class="exec-row-tags"><span class="doc-pill shared">${escHtml((item.updated_at||'').toString())}</span></div>
         </div>`).join(''):'<div class="empty-note">No shared DXOS project registry records were found yet.</div>'}</div>
