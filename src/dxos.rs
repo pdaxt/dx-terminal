@@ -2033,9 +2033,56 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
         "category_counts": categories,
     });
     let control_plane_registry = control_plane_registry_value_for_project_path(project_path);
+    let current_company = state.project.company.as_deref().and_then(|company| {
+        control_plane_registry
+            .get("companies")
+            .and_then(Value::as_array)
+            .and_then(|items| {
+                items.iter().find(|entry| {
+                    entry.get("name").and_then(Value::as_str).map(str::trim)
+                        == Some(company.trim())
+                })
+            })
+            .cloned()
+    });
+    let current_program = state.project.program.as_deref().and_then(|program| {
+        control_plane_registry
+            .get("programs")
+            .and_then(Value::as_array)
+            .and_then(|items| {
+                items.iter().find(|entry| {
+                    entry.get("name").and_then(Value::as_str).map(str::trim)
+                        == Some(program.trim())
+                })
+            })
+            .cloned()
+    });
+    let current_workspace = state.project.workspace.as_deref().and_then(|workspace| {
+        control_plane_registry
+            .get("workspaces")
+            .and_then(Value::as_array)
+            .and_then(|items| {
+                items.iter().find(|entry| {
+                    entry.get("name").and_then(Value::as_str).map(str::trim)
+                        == Some(workspace.trim())
+                })
+            })
+            .cloned()
+    });
 
     json!({
         "project": state.project,
+        "portfolio": {
+            "counts": {
+                "projects": control_plane_registry.get("project_count").cloned().unwrap_or_else(|| json!(0)),
+                "companies": control_plane_registry.get("company_count").cloned().unwrap_or_else(|| json!(0)),
+                "programs": control_plane_registry.get("program_count").cloned().unwrap_or_else(|| json!(0)),
+                "workspaces": control_plane_registry.get("workspace_count").cloned().unwrap_or_else(|| json!(0)),
+            },
+            "company": current_company,
+            "program": current_program,
+            "workspace": current_workspace,
+        },
         "defaults": state.defaults,
         "provider_policy": {
             "runtime_providers": ["claude", "codex", "gemini", "opencode"],
