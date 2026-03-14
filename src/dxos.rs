@@ -584,7 +584,7 @@ fn control_plane_registry_value_for_store_path(registry_path: &Path) -> Value {
         Err(error) => return json!({"error": error}),
     };
     let mut stmt = match conn.prepare(
-        "SELECT project_path, project_name, updated_at
+        "SELECT project_path, project_name, updated_at, payload_json
          FROM dxos_control_planes
          ORDER BY updated_at DESC, project_name ASC",
     ) {
@@ -592,10 +592,15 @@ fn control_plane_registry_value_for_store_path(registry_path: &Path) -> Value {
         Err(error) => return json!({"error": format!("prepare: {}", error)}),
     };
     let rows = match stmt.query_map([], |row| {
+        let payload_json: String = row.get(3)?;
+        let payload = serde_json::from_str::<Value>(&payload_json).unwrap_or_else(|_| json!({}));
         Ok(json!({
             "path": row.get::<_, String>(0)?,
             "name": row.get::<_, String>(1)?,
             "updated_at": row.get::<_, String>(2)?,
+            "company": payload.get("project").and_then(|value| value.get("company")).cloned().unwrap_or(Value::Null),
+            "program": payload.get("project").and_then(|value| value.get("program")).cloned().unwrap_or(Value::Null),
+            "workspace": payload.get("project").and_then(|value| value.get("workspace")).cloned().unwrap_or(Value::Null),
         }))
     }) {
         Ok(rows) => rows,
@@ -997,6 +1002,38 @@ pub fn control_plane_registry() -> String {
 #[cfg(test)]
 fn control_plane_registry_for_project(project_path: &str) -> String {
     control_plane_registry_value_for_project_path(project_path).to_string()
+}
+
+pub fn upsert_project_identity(
+    project_path: &str,
+    project_name: Option<&str>,
+    company: Option<&str>,
+    program: Option<&str>,
+    workspace: Option<&str>,
+) -> String {
+    let mut state = load_control_plane(project_path, project_name);
+    state.project.company = company
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
+    state.project.program = program
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
+    state.project.workspace = workspace
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
+    state.updated_at = crate::state::now();
+    match save_control_plane(project_path, &state) {
+        Ok(()) => json!({
+            "status": "ok",
+            "action": "project_identity_updated",
+            "project": state.project,
+        })
+        .to_string(),
+        Err(error) => json!({"error": error}).to_string(),
+    }
 }
 
 fn next_debate_id(state: &ControlPlaneState) -> String {
