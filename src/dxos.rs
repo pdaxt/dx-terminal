@@ -936,6 +936,15 @@ fn parse_control_operator_registry_value(raw: &str) -> Vec<ControlOperatorProfil
             if operator.project_scopes.is_empty() {
                 operator.project_scopes.push("*".to_string());
             }
+            if operator.company_scopes.is_empty() {
+                operator.company_scopes.push("*".to_string());
+            }
+            if operator.program_scopes.is_empty() {
+                operator.program_scopes.push("*".to_string());
+            }
+            if operator.workspace_scopes.is_empty() {
+                operator.workspace_scopes.push("*".to_string());
+            }
             if operator.allowed_actions.is_empty() {
                 operator.allowed_actions = default_allowed_actions_for_role(&operator.role);
             }
@@ -973,6 +982,19 @@ fn project_scope_matches(pattern: &str, project_path: &str, project_name: Option
                 || authorization_pattern_matches(pattern, "--")))
 }
 
+fn metadata_scope_matches(scopes: &[String], value: Option<&str>) -> bool {
+    if scopes.is_empty() {
+        return true;
+    }
+    let normalized = value
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .unwrap_or("--");
+    scopes
+        .iter()
+        .any(|scope| authorization_pattern_matches(scope, normalized))
+}
+
 fn authorize_operator_action_with_profiles(
     profiles: &[ControlOperatorProfile],
     project_path: &str,
@@ -986,6 +1008,9 @@ fn authorize_operator_action_with_profiles(
             "id": actor,
             "role": "operator",
             "project_scopes": ["*"],
+            "company_scopes": ["*"],
+            "program_scopes": ["*"],
+            "workspace_scopes": ["*"],
             "allowed_actions": ["*"],
         }));
     }
@@ -995,6 +1020,7 @@ fn authorize_operator_action_with_profiles(
             actor
         ));
     };
+    let project = load_control_plane(project_path, project_name).project;
     if !operator
         .project_scopes
         .iter()
@@ -1004,6 +1030,36 @@ fn authorize_operator_action_with_profiles(
             "Operator '{}' cannot control project '{}'.",
             actor,
             resolved_project_name(project_path, project_name)
+        ));
+    }
+    if !metadata_scope_matches(
+        &operator.company_scopes,
+        project.company.as_deref(),
+    ) {
+        return Err(format!(
+            "Operator '{}' cannot control company '{}'.",
+            actor,
+            project.company.as_deref().unwrap_or("--")
+        ));
+    }
+    if !metadata_scope_matches(
+        &operator.program_scopes,
+        project.program.as_deref(),
+    ) {
+        return Err(format!(
+            "Operator '{}' cannot control program '{}'.",
+            actor,
+            project.program.as_deref().unwrap_or("--")
+        ));
+    }
+    if !metadata_scope_matches(
+        &operator.workspace_scopes,
+        project.workspace.as_deref(),
+    ) {
+        return Err(format!(
+            "Operator '{}' cannot control workspace '{}'.",
+            actor,
+            project.workspace.as_deref().unwrap_or("--")
         ));
     }
     if !operator
@@ -1021,6 +1077,9 @@ fn authorize_operator_action_with_profiles(
         "id": operator.id,
         "role": operator.role,
         "project_scopes": operator.project_scopes,
+        "company_scopes": operator.company_scopes,
+        "program_scopes": operator.program_scopes,
+        "workspace_scopes": operator.workspace_scopes,
         "allowed_actions": operator.allowed_actions,
         "note": operator.note,
     }))
@@ -1050,6 +1109,9 @@ pub fn control_operator_registry() -> Value {
             "id": operator.id,
             "role": operator.role,
             "project_scopes": operator.project_scopes,
+            "company_scopes": operator.company_scopes,
+            "program_scopes": operator.program_scopes,
+            "workspace_scopes": operator.workspace_scopes,
             "allowed_actions": operator.allowed_actions,
             "note": operator.note,
         })).collect::<Vec<_>>(),
