@@ -133,6 +133,7 @@ pub fn generate_preamble(
              - Use multi_agent MCP to register and coordinate with other agents\n\
              - Lock files before editing shared code\n\
              - If DXOS_SESSION_ID is present and you are blocked by permission, login, CAPTCHA, or human approval, call dxos_session_raise_blocker with worker_session_id=$DXOS_SESSION_ID instead of waiting silently\n\
+             - If DX_WORKFLOW_RUN_ID is present, use dxos_workflow_step to mark workflow steps in_progress/completed/blocked as you work\n\
              - When done: summarize what you accomplished\n"
                 .to_string()
         } else {

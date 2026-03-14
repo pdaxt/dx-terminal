@@ -218,6 +218,9 @@ The first architecture slice now implemented in the repo is:
 - runtime lane launch now auto-syncs the selected provider bridge and injects its path into the lane environment, so interoperability is part of execution instead of a separate operator chore
 - DX now applies the same bridge model to skills and command packs: the shared automation catalog can be exported into Claude, Codex/GPT, or Gemini local layouts without overwriting user-owned assets
 - lane launch now auto-syncs those automation bridges too, so reusable workflows travel with the runtime instead of staying trapped in one provider’s directory tree
+- DX now emits a structured shared workflow catalog from those bridged skills and command packs, so provider-local assets also exist as DX-owned workflow objects with IDs, sections, and step lists
+- DXOS can now instantiate those catalog entries as governed workflow runs, creating linked session and work-order contracts and tracking step status natively inside the control plane
+- workflow runs publish their own live change events, appear in the project brief and operator portal, and can be queued from the web surface instead of being treated as passive documentation
 - worker sessions can now raise blockers or permission requests through DXOS session context, and the control plane routes those requests to the supervising lead first before falling back to explicit human escalation
 - runtime lanes now receive `DXOS_SESSION_ID`, `DX_FEATURE_ID`, `DX_STAGE`, and `DX_SUPERVISOR_SESSION_ID` so agents in a live lane can report blocker and approval state without reconstructing their control-plane identity
 - the server-owned runtime replicator now detects clear approval/login/challenge prompts in live pane output and converts them into DXOS blocker events once, so “waiting for human action” is lifted out of raw terminal text and into the control plane

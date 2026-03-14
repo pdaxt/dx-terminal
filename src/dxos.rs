@@ -2093,6 +2093,31 @@ pub fn runtime_launch_context(
             .cmp(&right_rank)
             .then_with(|| right.updated_at.cmp(&left.updated_at))
     });
+    let mut workflow_runs = state
+        .workflow_runs
+        .iter()
+        .filter(|run| {
+            run.session_id.as_deref() == Some(trimmed_session_id)
+                && !matches!(run.status.as_str(), "completed" | "cancelled")
+        })
+        .collect::<Vec<_>>();
+    workflow_runs.sort_by(|left, right| {
+        let left_rank = match left.status.as_str() {
+            "blocked" => 0,
+            "active" => 1,
+            "planned" => 2,
+            _ => 3,
+        };
+        let right_rank = match right.status.as_str() {
+            "blocked" => 0,
+            "active" => 1,
+            "planned" => 2,
+            _ => 3,
+        };
+        left_rank
+            .cmp(&right_rank)
+            .then_with(|| right.updated_at.cmp(&left.updated_at))
+    });
 
     let adoption = state.adoptions.iter().find(|adoption| {
         adoption.lead_session_id == trimmed_session_id
@@ -2110,6 +2135,8 @@ pub fn runtime_launch_context(
         "session": session_summary(session),
         "primary_work_order": work_orders.first().map(|work_order| work_order_summary(work_order)),
         "work_orders": work_orders.iter().map(|work_order| work_order_summary(work_order)).collect::<Vec<_>>(),
+        "primary_workflow_run": workflow_runs.first().map(|run| workflow_run_summary(run)),
+        "workflow_runs": workflow_runs.iter().map(|run| workflow_run_summary(run)).collect::<Vec<_>>(),
         "adoption": adoption.map(adoption_summary),
         "debate": debate.map(debate_summary),
     })

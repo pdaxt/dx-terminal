@@ -166,6 +166,68 @@ fn build_dxos_runtime_context_section(context: &Value) -> Option<String> {
         }
     }
 
+    if let Some(workflow_run) = context.get("primary_workflow_run") {
+        let workflow_run_id = workflow_run.get("id").and_then(Value::as_str).unwrap_or("");
+        if !workflow_run_id.is_empty() {
+            lines.push(String::new());
+            lines.push("## DXOS Workflow Run".to_string());
+            lines.push(format!(
+                "- Workflow run: {} ({})",
+                workflow_run_id,
+                workflow_run
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .unwrap_or("planned")
+            ));
+            if let Some(name) = workflow_run.get("name").and_then(Value::as_str) {
+                if !name.trim().is_empty() {
+                    lines.push(format!("- Workflow: {}", name.trim()));
+                }
+            }
+            if let Some(summary) = workflow_run.get("summary").and_then(Value::as_str) {
+                if !summary.trim().is_empty() {
+                    lines.push(format!("- Workflow objective: {}", summary.trim()));
+                }
+            }
+            let steps = workflow_run
+                .get("steps")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            if !steps.is_empty() {
+                lines.push("- Workflow steps:".to_string());
+                for step in steps.iter().take(6) {
+                    let title = step.get("title").and_then(Value::as_str).unwrap_or("");
+                    let status = step
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .unwrap_or("planned");
+                    if !title.trim().is_empty() {
+                        lines.push(format!("  - [{}] {}", status, title.trim()));
+                    }
+                }
+                if let Some(next_step) = steps.iter().find(|step| {
+                    !matches!(
+                        step.get("status")
+                            .and_then(Value::as_str)
+                            .unwrap_or("planned"),
+                        "completed" | "skipped"
+                    )
+                }) {
+                    let step_id = next_step.get("id").and_then(Value::as_str).unwrap_or("");
+                    let title = next_step.get("title").and_then(Value::as_str).unwrap_or("");
+                    if !step_id.is_empty() && !title.trim().is_empty() {
+                        lines.push(format!(
+                            "- Next workflow step: {} {}",
+                            step_id,
+                            title.trim()
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
     if let Some(adoption) = context.get("adoption") {
         let adoption_id = adoption.get("id").and_then(Value::as_str).unwrap_or("");
         if !adoption_id.is_empty() {
@@ -219,6 +281,12 @@ fn build_dxos_runtime_context_section(context: &Value) -> Option<String> {
         "- Treat the assigned work package as the canonical governed task for this lane. Produce the expected outputs and raise blockers through DXOS instead of going silent."
             .to_string(),
     );
+    if context.get("primary_workflow_run").is_some() {
+        lines.push(
+            "- When you start, block, or finish a workflow step, call dxos_workflow_step so the portal, session contract, and work order stay synchronized."
+                .to_string(),
+        );
+    }
     Some(lines.join("\n"))
 }
 
@@ -357,6 +425,62 @@ fn inject_dxos_runtime_env(env_vars: &mut Vec<(String, String)>, context: &Value
             "DX_DEBATE_ID",
             debate.get("id").and_then(Value::as_str),
         );
+    }
+    if let Some(workflow_run) = context.get("primary_workflow_run") {
+        push_env_if_present(
+            env_vars,
+            "DX_WORKFLOW_RUN_ID",
+            workflow_run.get("id").and_then(Value::as_str),
+        );
+        push_env_if_present(
+            env_vars,
+            "DX_WORKFLOW_ID",
+            workflow_run.get("workflow_id").and_then(Value::as_str),
+        );
+        push_env_if_present(
+            env_vars,
+            "DX_WORKFLOW_STATUS",
+            workflow_run.get("status").and_then(Value::as_str),
+        );
+        let workflow_steps = workflow_run
+            .get("steps")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.get("title").and_then(Value::as_str))
+                    .map(|value| value.to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if !workflow_steps.is_empty() {
+            env_vars.push(("DX_WORKFLOW_STEPS".to_string(), workflow_steps.join(",")));
+        }
+        if let Some(next_step) = workflow_run
+            .get("steps")
+            .and_then(Value::as_array)
+            .and_then(|items| {
+                items.iter().find(|item| {
+                    !matches!(
+                        item.get("status")
+                            .and_then(Value::as_str)
+                            .unwrap_or("planned"),
+                        "completed" | "skipped"
+                    )
+                })
+            })
+        {
+            push_env_if_present(
+                env_vars,
+                "DX_WORKFLOW_NEXT_STEP_ID",
+                next_step.get("id").and_then(Value::as_str),
+            );
+            push_env_if_present(
+                env_vars,
+                "DX_WORKFLOW_NEXT_STEP_TITLE",
+                next_step.get("title").and_then(Value::as_str),
+            );
+        }
     }
 }
 

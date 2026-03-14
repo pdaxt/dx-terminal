@@ -127,6 +127,32 @@ Each workflow record includes:
 
 This is the first DX-native workflow layer above raw markdown assets. The runtime can now consume shared workflow objects consistently even when the underlying provider directories differ.
 
+## DX Workflow Runner
+
+DX now uses those structured workflow objects as executable control-plane inputs.
+
+Starting a workflow run from a catalog entry now creates:
+
+- a `workflow_run` record inside DXOS
+- a linked session contract if no worker session was supplied
+- a linked work order so the workflow enters the same blocker, approval, and delegation model as the rest of DXOS
+
+Workflow runs track native step state:
+
+- `planned`
+- `in_progress`
+- `completed`
+- `blocked`
+- `skipped`
+
+The web portal and MCP layer can now:
+
+- list the shared workflow catalog
+- start a workflow run from a catalog ID
+- update individual workflow steps
+
+That moves DX from workflow file interoperability into governed workflow execution.
+
 ## Portal and MCP Surface
 
 DX exposes this bridge through:
@@ -134,8 +160,14 @@ DX exposes this bridge through:
 - dashboard automation section
 - `GET /api/dxos/automation-bridges`
 - `POST /api/dxos/automation-bridges/sync`
+- `GET /api/dxos/workflows`
+- `POST /api/dxos/workflow/start`
+- `POST /api/dxos/workflow/step`
 - `dxos_automation_bridges`
 - `dxos_automation_bridge_sync`
+- `dxos_workflow_runs`
+- `dxos_workflow_start`
+- `dxos_workflow_step`
 
 ## Flow
 

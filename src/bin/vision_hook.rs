@@ -75,6 +75,17 @@ struct StopState {
     project: Option<String>,
     instruction: Option<String>,
     message_fingerprint: Option<u64>,
+    attempts: u32,
+}
+
+const DEFAULT_STOP_AUTO_CONTINUE_LIMIT: u32 = 8;
+
+fn stop_auto_continue_limit() -> u32 {
+    std::env::var("DX_STOP_HOOK_MAX_AUTO_CONTINUES")
+        .ok()
+        .and_then(|value| value.trim().parse::<u32>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_STOP_AUTO_CONTINUE_LIMIT)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1557,21 +1568,56 @@ fn handle_stop(_event: &Value) -> Option<Value> {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
             let prior = load_stop_state();
-            let repeated = stop_hook_active
+            let repeated_same_stop = stop_hook_active
                 && prior.project.as_deref() == Some(project.as_str())
                 && prior.instruction.as_deref() == Some(instruction.as_str())
                 && prior.message_fingerprint == Some(fingerprint);
+            let attempt_limit = stop_auto_continue_limit();
+            let attempts = if repeated_same_stop {
+                prior.attempts.saturating_add(1)
+            } else {
+                1
+            };
 
-            if !repeated {
+            if repeated_same_stop && attempts > attempt_limit {
+                clear_stop_state();
+                return Some(json!({
+                    "decision": "approve",
+                    "reason": format!(
+                        "VDD auto-continue paused after {} repeated stop-hook attempts on the same message. Resume only after raising a specific blocker, permission request, or narrower next step.",
+                        attempt_limit
+                    )
+                }));
+            }
+
+            let reason = if repeated_same_stop {
+                format!(
+                    "{} You stopped again without visible progress. Resume immediately on the next concrete action. Do not stop just to wait for continuation. If you are truly blocked, raise one specific permission/blocker request.",
+                    instruction
+                )
+            } else {
+                instruction.clone()
+            };
+
+            if !repeated_same_stop || attempts <= attempt_limit {
                 save_stop_state(&StopState {
                     project: Some(project.clone()),
                     instruction: Some(instruction.clone()),
                     message_fingerprint: Some(fingerprint),
+                    attempts,
                 });
                 return Some(json!({
                     "decision": "block",
-                    "reason": instruction,
-                    "systemMessage": "VDD auto-continue: next high-value task detected; keep going."
+                    "reason": reason,
+                    "systemMessage": if repeated_same_stop {
+                        format!(
+                            "VDD auto-continue: repeated stop detected; resume work ({}/{}) before asking for help.",
+                            attempts,
+                            attempt_limit
+                        )
+                    } else {
+                        "VDD auto-continue: next high-value task detected; keep going.".to_string()
+                    }
                 }));
             }
         }
@@ -1694,6 +1740,8 @@ fn main() {
 mod tests {
     use super::*;
 
+    static STOP_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_classify_command_detects_build_test_lint_commit() {
         assert_eq!(classify_command("cargo test -q"), CommandKind::Test);
@@ -1756,9 +1804,7 @@ mod tests {
 
     #[test]
     fn test_handle_stop_blocks_when_obvious_next_step_exists() {
-        static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = STOP_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path();
         let vision_dir = project.join(".vision");
@@ -1819,6 +1865,142 @@ mod tests {
             .as_str()
             .unwrap_or("")
             .contains("Add runtime heartbeat"));
+    }
+
+    #[test]
+    fn test_handle_stop_repeats_auto_continue_on_same_message() {
+        let _guard = STOP_TEST_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path();
+        let vision_dir = project.join(".vision");
+        fs::create_dir_all(&vision_dir).unwrap();
+        fs::write(
+            vision_dir.join("vision.json"),
+            serde_json::to_string_pretty(&json!({
+                "features": [{
+                    "id": "F1.1",
+                    "title": "IPC lifecycle",
+                    "phase": "build",
+                    "tasks": [{"title": "Add runtime heartbeat", "status": "pending"}],
+                    "questions": [],
+                    "readiness": {"blockers": {"test": [], "done": []}}
+                }]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let original_session = fs::read_to_string(SESSION_FILE).ok();
+        let original_stop = fs::read_to_string(STOP_STATE_FILE).ok();
+        save_session(&SessionEdits {
+            files: vec!["src/ipc.rs".into()],
+            commits: vec![],
+            project: Some(project.to_string_lossy().into()),
+            has_vision: true,
+            current_goal_id: None,
+            current_feature_id: None,
+        });
+
+        let first = handle_stop(&json!({
+            "hook_event": "Stop",
+            "last_assistant_message": "stopping here",
+            "stop_hook_active": false
+        }))
+        .unwrap();
+        let second = handle_stop(&json!({
+            "hook_event": "Stop",
+            "last_assistant_message": "stopping here",
+            "stop_hook_active": true
+        }))
+        .unwrap();
+
+        match original_session {
+            Some(contents) => fs::write(SESSION_FILE, contents).unwrap(),
+            None => {
+                let _ = fs::remove_file(SESSION_FILE);
+            }
+        }
+        match original_stop {
+            Some(contents) => fs::write(STOP_STATE_FILE, contents).unwrap(),
+            None => {
+                let _ = fs::remove_file(STOP_STATE_FILE);
+            }
+        }
+
+        assert_eq!(first["decision"], "block");
+        assert_eq!(second["decision"], "block");
+        assert!(second["reason"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Do not stop just to wait for continuation"));
+        assert_eq!(
+            second["systemMessage"].as_str().unwrap_or(""),
+            "VDD auto-continue: repeated stop detected; resume work (2/8) before asking for help."
+        );
+    }
+
+    #[test]
+    fn test_handle_stop_pauses_after_retry_budget() {
+        let _guard = STOP_TEST_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path();
+        let vision_dir = project.join(".vision");
+        fs::create_dir_all(&vision_dir).unwrap();
+        fs::write(
+            vision_dir.join("vision.json"),
+            serde_json::to_string_pretty(&json!({
+                "features": [{
+                    "id": "F1.1",
+                    "title": "IPC lifecycle",
+                    "phase": "build",
+                    "tasks": [{"title": "Add runtime heartbeat", "status": "pending"}],
+                    "questions": [],
+                    "readiness": {"blockers": {"test": [], "done": []}}
+                }]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let original_session = fs::read_to_string(SESSION_FILE).ok();
+        let original_stop = fs::read_to_string(STOP_STATE_FILE).ok();
+        save_session(&SessionEdits {
+            files: vec!["src/ipc.rs".into()],
+            commits: vec![],
+            project: Some(project.to_string_lossy().into()),
+            has_vision: true,
+            current_goal_id: None,
+            current_feature_id: None,
+        });
+
+        let mut result = None;
+        for attempt in 0..=DEFAULT_STOP_AUTO_CONTINUE_LIMIT {
+            result = handle_stop(&json!({
+                "hook_event": "Stop",
+                "last_assistant_message": "stopping here",
+                "stop_hook_active": attempt > 0
+            }));
+        }
+        let result = result.unwrap();
+
+        match original_session {
+            Some(contents) => fs::write(SESSION_FILE, contents).unwrap(),
+            None => {
+                let _ = fs::remove_file(SESSION_FILE);
+            }
+        }
+        match original_stop {
+            Some(contents) => fs::write(STOP_STATE_FILE, contents).unwrap(),
+            None => {
+                let _ = fs::remove_file(STOP_STATE_FILE);
+            }
+        }
+
+        assert_eq!(result["decision"], "approve");
+        assert!(result["reason"]
+            .as_str()
+            .unwrap_or("")
+            .contains("auto-continue paused"));
     }
 
     #[test]
