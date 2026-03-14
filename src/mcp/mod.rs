@@ -2728,6 +2728,17 @@ impl DxTerminalService {
     }
 
     #[tool(
+        description = "Execute one DXOS scheduling tick for a project. Use this to make the control plane claim and launch the next ready lane immediately instead of waiting for the local autorun poller."
+    )]
+    async fn dxos_scheduler_run(
+        &self,
+        Parameters(req): Parameters<types::DxosSchedulerRunRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::dxos_tools::scheduler_run(self.app.as_ref(), req.project.as_deref()).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
         description = "Inspect the DX provider-plugin bridge inventory. Use this to see how Claude native MCPs, Codex/GPT bridge files, and Gemini bridge files are being translated through the shared DX manifest."
     )]
     async fn dxos_provider_plugins(

@@ -1249,7 +1249,7 @@ function rememberDxOperatorIdentity(value){
 function requiresDxControlAuth(url,options){
   const method=String((options&&options.method)||'GET').toUpperCase();
   if(method==='GET')return false;
-  return /^\/api\/(dxos\/(debate|session|work|provider-plugins)|pane\/(talk|kill|restart))/.test(String(url||''));
+  return /^\/api\/(dxos\/(adoption|automation-bridges|debate|provider-plugins|scheduler|session|work|workflow)|pane\/(talk|kill|restart))/.test(String(url||''));
 }
 function withDxControlHeaders(url,options){
   const request={...(options||{})};
@@ -2634,6 +2634,9 @@ function renderDxosOperatorControls(project,activeStage,sessions,adoptions,sched
         </div>
         <div class="action-form">
           <div class="action-note">The launch form below auto-seeds from the first scheduler-ready lane until you make a manual edit.</div>
+          <div class="exec-row-actions" style="margin:10px 0 12px">
+            <button class="design-action" onclick="return runDxosSchedulerNow()" ${operatorActionDisabledAttrs(project,'scheduler_run','scheduler tick')}>Run scheduler now</button>
+          </div>
           <div class="exec-list">${renderDxosSchedulerLaunchRows(project,scheduler,sessions,adoptions)}</div>
         </div>
       </div>
@@ -3350,6 +3353,49 @@ async function launchDxosSessionContract(sessionId,noticeScope,label){
   return false;
 }
 
+async function runDxosSchedulerNow(){
+  const project=activeProjectForHub();
+  if(!project)return false;
+  if(!operatorAllowsAction(project,'scheduler_run')){
+    setDxosPortalNotice('launch','Operator policy blocks manual scheduler runs for this project.','red');
+    return false;
+  }
+  setDxosPortalNotice('launch','Running one DXOS scheduler tick…','yellow');
+  const result=await fetchJSON('/api/dxos/scheduler/run',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({project})
+  });
+  if(!result){
+    setDxosPortalNotice('launch','Unable to reach the DXOS scheduler endpoint.','red');
+    return false;
+  }
+  if(noteDxControlAuthFailure(result)){
+    return false;
+  }
+  if(result.error){
+    setDxosPortalNotice('launch',String(result.error||'DXOS scheduler tick failed.'),'red');
+    await renderExecutionHub();
+    return false;
+  }
+  const launchResult=result.result||{};
+  if(launchResult.action==='launch_attempted'){
+    if(launchResult.launch&&launchResult.launch.error){
+      setDxosPortalNotice('launch',`Scheduler claimed ${String(launchResult.session_id||'the next lane')} but launch failed: ${String(launchResult.launch.error||'Unknown runtime error')}`,'red');
+    }else{
+      const paneLabel=launchResult.launch&&launchResult.launch.pane?`pane ${launchResult.launch.pane}`:'the next available lane';
+      setDxosPortalNotice('launch',`Scheduler launched ${String(launchResult.session_id||'the next queued lane')} on ${paneLabel}.`,'green');
+    }
+  }else if(launchResult.action==='claim_skipped'){
+    const message=launchResult.claim&&launchResult.claim.error?String(launchResult.claim.error):'The queued lane could not be claimed.';
+    setDxosPortalNotice('launch',`Scheduler skipped the next lane: ${message}.`,'yellow');
+  }else{
+    setDxosPortalNotice('launch','Scheduler found no ready lanes to launch.','yellow');
+  }
+  await renderExecutionHub();
+  return false;
+}
+
 async function updateDxosAdoptionStatus(adoptionId,status,note){
   const project=activeProjectForHub();
   if(!project||!adoptionId)return false;
@@ -4022,7 +4068,7 @@ async function renderExecutionHub(){
         ${missingFeatureDocs.map(item=>`<div class="exec-row-meta">${escHtml((item.feature_id||'').toString())} needs discovery docs before ${escHtml((item.phase||'delivery').toString())} is trustworthy.</div>`).join('')}
         ${missingAcceptance.map(item=>`<div class="exec-row-meta">${escHtml((item.feature_id||'').toString())} is in ${escHtml((item.phase||'build').toString())} without acceptance coverage.</div>`).join('')}
       </div>`:''}
-      <div class="sync-note">Remote website sync should mirror <code>${escHtml((syncContract.snapshot||'').toString())}</code> and the live event stream (${(syncContract.events||[]).slice(0,4).map(e=>escHtml(String(e))).join(', ')}${(syncContract.events||[]).length>4?', …':''}). Mutating controls now ride the same HTTP contract: launch via <code>${escHtml((((runtimeContract.control_endpoints||{}).session_launch)||'/api/dxos/session/launch').toString())}</code>, supervise via <code>${escHtml((((runtimeContract.control_endpoints||{}).pane_talk)||'/api/pane/talk').toString())}</code>, recover via <code>${escHtml((((runtimeContract.control_endpoints||{}).pane_restart)||'/api/pane/restart').toString())}</code> and <code>${escHtml((((runtimeContract.control_endpoints||{}).pane_kill)||'/api/pane/kill').toString())}</code>, and stream updates over <code>${escHtml((((runtimeContract.control_endpoints||{}).event_stream)||'/api/events').toString())}</code> or <code>${escHtml((((runtimeContract.control_endpoints||{}).websocket)||'/ws').toString())}</code>. Pane browser automation also follows a stable contract: pane N owns browser port ${escHtml(String(runtimeContract.browser_port_base||46000))}+N, so local runtimes and hosted views do not have to negotiate ad-hoc ports.</div>
+      <div class="sync-note">Remote website sync should mirror <code>${escHtml((syncContract.snapshot||'').toString())}</code> and the live event stream (${(syncContract.events||[]).slice(0,4).map(e=>escHtml(String(e))).join(', ')}${(syncContract.events||[]).length>4?', …':''}). Mutating controls now ride the same HTTP contract: run the scheduler via <code>${escHtml((((runtimeContract.control_endpoints||{}).scheduler_run)||'/api/dxos/scheduler/run').toString())}</code>, launch via <code>${escHtml((((runtimeContract.control_endpoints||{}).session_launch)||'/api/dxos/session/launch').toString())}</code>, supervise via <code>${escHtml((((runtimeContract.control_endpoints||{}).pane_talk)||'/api/pane/talk').toString())}</code>, recover via <code>${escHtml((((runtimeContract.control_endpoints||{}).pane_restart)||'/api/pane/restart').toString())}</code> and <code>${escHtml((((runtimeContract.control_endpoints||{}).pane_kill)||'/api/pane/kill').toString())}</code>, and stream updates over <code>${escHtml((((runtimeContract.control_endpoints||{}).event_stream)||'/api/events').toString())}</code> or <code>${escHtml((((runtimeContract.control_endpoints||{}).websocket)||'/ws').toString())}</code>. Pane browser automation also follows a stable contract: pane N owns browser port ${escHtml(String(runtimeContract.browser_port_base||46000))}+N, so local runtimes and hosted views do not have to negotiate ad-hoc ports.</div>
     </div>`;
 
   automationEl.innerHTML=`
