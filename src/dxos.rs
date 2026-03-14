@@ -578,40 +578,139 @@ fn save_control_plane(project_path: &str, state: &ControlPlaneState) -> Result<(
     save_control_plane_mirror(project_path, state)
 }
 
+fn registry_projects_for_store_path(registry_path: &Path) -> Result<Vec<Value>, String> {
+    let conn = open_control_plane_db(registry_path)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT project_path, project_name, updated_at, payload_json
+             FROM dxos_control_planes
+             ORDER BY updated_at DESC, project_name ASC",
+        )
+        .map_err(|error| format!("prepare: {}", error))?;
+    let rows = stmt
+        .query_map([], |row| {
+            let payload_json: String = row.get(3)?;
+            let payload =
+                serde_json::from_str::<Value>(&payload_json).unwrap_or_else(|_| json!({}));
+            Ok(json!({
+                "path": row.get::<_, String>(0)?,
+                "name": row.get::<_, String>(1)?,
+                "updated_at": row.get::<_, String>(2)?,
+                "company": payload.get("project").and_then(|value| value.get("company")).cloned().unwrap_or(Value::Null),
+                "program": payload.get("project").and_then(|value| value.get("program")).cloned().unwrap_or(Value::Null),
+                "workspace": payload.get("project").and_then(|value| value.get("workspace")).cloned().unwrap_or(Value::Null),
+            }))
+        })
+        .map_err(|error| format!("query: {}", error))?;
+    Ok(rows.filter_map(Result::ok).collect::<Vec<_>>())
+}
+
+fn portfolio_groups(projects: &[Value], field: &str) -> Vec<Value> {
+    let mut grouped: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    for project in projects {
+        let Some(name) = project
+            .get(field)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        grouped
+            .entry(name.to_string())
+            .or_default()
+            .push(project.clone());
+    }
+
+    let mut items = grouped
+        .into_iter()
+        .map(|(name, grouped_projects)| {
+            let mut companies = grouped_projects
+                .iter()
+                .filter_map(|project| project.get("company").and_then(Value::as_str))
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>();
+            companies.sort();
+            companies.dedup();
+
+            let mut programs = grouped_projects
+                .iter()
+                .filter_map(|project| project.get("program").and_then(Value::as_str))
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>();
+            programs.sort();
+            programs.dedup();
+
+            let mut workspaces = grouped_projects
+                .iter()
+                .filter_map(|project| project.get("workspace").and_then(Value::as_str))
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>();
+            workspaces.sort();
+            workspaces.dedup();
+
+            json!({
+                "name": name,
+                "project_count": grouped_projects.len(),
+                "companies": companies,
+                "programs": programs,
+                "workspaces": workspaces,
+                "projects": grouped_projects,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    items.sort_by(|left, right| {
+        right
+            .get("project_count")
+            .and_then(Value::as_u64)
+            .cmp(&left.get("project_count").and_then(Value::as_u64))
+            .then_with(|| {
+                left.get("name")
+                    .and_then(Value::as_str)
+                    .cmp(&right.get("name").and_then(Value::as_str))
+            })
+    });
+    items
+}
+
+fn portfolio_registry_summary(projects: &[Value]) -> Value {
+    let companies = portfolio_groups(projects, "company");
+    let programs = portfolio_groups(projects, "program");
+    let workspaces = portfolio_groups(projects, "workspace");
+    json!({
+        "company_count": companies.len(),
+        "program_count": programs.len(),
+        "workspace_count": workspaces.len(),
+        "companies": companies,
+        "programs": programs,
+        "workspaces": workspaces,
+    })
+}
+
 fn control_plane_registry_value_for_store_path(registry_path: &Path) -> Value {
-    let conn = match open_control_plane_db(&registry_path) {
-        Ok(conn) => conn,
+    let projects = match registry_projects_for_store_path(registry_path) {
+        Ok(projects) => projects,
         Err(error) => return json!({"error": error}),
     };
-    let mut stmt = match conn.prepare(
-        "SELECT project_path, project_name, updated_at, payload_json
-         FROM dxos_control_planes
-         ORDER BY updated_at DESC, project_name ASC",
-    ) {
-        Ok(stmt) => stmt,
-        Err(error) => return json!({"error": format!("prepare: {}", error)}),
-    };
-    let rows = match stmt.query_map([], |row| {
-        let payload_json: String = row.get(3)?;
-        let payload = serde_json::from_str::<Value>(&payload_json).unwrap_or_else(|_| json!({}));
-        Ok(json!({
-            "path": row.get::<_, String>(0)?,
-            "name": row.get::<_, String>(1)?,
-            "updated_at": row.get::<_, String>(2)?,
-            "company": payload.get("project").and_then(|value| value.get("company")).cloned().unwrap_or(Value::Null),
-            "program": payload.get("project").and_then(|value| value.get("program")).cloned().unwrap_or(Value::Null),
-            "workspace": payload.get("project").and_then(|value| value.get("workspace")).cloned().unwrap_or(Value::Null),
-        }))
-    }) {
-        Ok(rows) => rows,
-        Err(error) => return json!({"error": format!("query: {}", error)}),
-    };
-    let projects = rows.filter_map(Result::ok).collect::<Vec<_>>();
+    let portfolio = portfolio_registry_summary(&projects);
     json!({
         "backend": "sqlite_with_repo_mirror",
         "database_path": registry_path.to_string_lossy().to_string(),
         "project_count": projects.len(),
         "projects": projects,
+        "company_count": portfolio.get("company_count").cloned().unwrap_or_else(|| json!(0)),
+        "program_count": portfolio.get("program_count").cloned().unwrap_or_else(|| json!(0)),
+        "workspace_count": portfolio.get("workspace_count").cloned().unwrap_or_else(|| json!(0)),
+        "companies": portfolio.get("companies").cloned().unwrap_or_else(|| json!([])),
+        "programs": portfolio.get("programs").cloned().unwrap_or_else(|| json!([])),
+        "workspaces": portfolio.get("workspaces").cloned().unwrap_or_else(|| json!([])),
     })
 }
 
