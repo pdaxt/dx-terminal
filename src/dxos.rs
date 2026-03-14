@@ -6151,6 +6151,88 @@ mod tests {
     }
 
     #[test]
+    fn project_identity_seeds_first_class_portfolio_records() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        std::fs::create_dir_all(&project_path).unwrap();
+        let project = project_path.to_str().unwrap();
+
+        let _ = upsert_project_identity(
+            project,
+            Some("demo"),
+            Some("DX Ventures"),
+            Some("Agentic Delivery"),
+            Some("core-platform"),
+        );
+
+        let registry: Value =
+            serde_json::from_str(&control_plane_registry_for_project(project)).unwrap();
+        assert_eq!(registry["companies"][0]["name"], "DX Ventures");
+        assert_eq!(registry["companies"][0]["status"], "active");
+        assert_eq!(registry["programs"][0]["company"], "DX Ventures");
+        assert_eq!(registry["programs"][0]["status"], "active");
+        assert_eq!(registry["workspaces"][0]["program"], "Agentic Delivery");
+        assert_eq!(registry["workspaces"][0]["status"], "active");
+    }
+
+    #[test]
+    fn portfolio_record_metadata_merges_into_registry_and_snapshot() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        std::fs::create_dir_all(&project_path).unwrap();
+        let project = project_path.to_str().unwrap();
+
+        let _ = upsert_project_identity(
+            project,
+            Some("demo"),
+            Some("DX Ventures"),
+            Some("Agentic Delivery"),
+            Some("core-platform"),
+        );
+        let _ = upsert_company_record(
+            project,
+            Some("demo"),
+            Some("DX Ventures"),
+            Some("AI-led company portfolio"),
+            Some("active"),
+            Some("ops-lead"),
+        );
+        let _ = upsert_program_record(
+            project,
+            Some("demo"),
+            Some("DX Ventures"),
+            Some("Agentic Delivery"),
+            Some("Delivery OS rollout"),
+            Some("planning"),
+            Some("program-lead"),
+        );
+        let _ = upsert_workspace_record(
+            project,
+            Some("demo"),
+            Some("DX Ventures"),
+            Some("Agentic Delivery"),
+            Some("core-platform"),
+            Some("Runtime and control plane"),
+            Some("active"),
+            Some("workspace-lead"),
+        );
+
+        let registry: Value =
+            serde_json::from_str(&control_plane_registry_for_project(project)).unwrap();
+        assert_eq!(registry["companies"][0]["owner"], "ops-lead");
+        assert_eq!(registry["programs"][0]["summary"], "Delivery OS rollout");
+        assert_eq!(registry["workspaces"][0]["owner"], "workspace-lead");
+
+        let snapshot = control_plane_snapshot(project, Some("demo"));
+        assert_eq!(snapshot["portfolio"]["company"]["summary"], "AI-led company portfolio");
+        assert_eq!(snapshot["portfolio"]["program"]["status"], "planning");
+        assert_eq!(
+            snapshot["portfolio"]["workspace"]["summary"],
+            "Runtime and control plane"
+        );
+    }
+
+    #[test]
     fn legacy_repo_json_is_imported_into_sqlite_store() {
         let tmp = tempdir().unwrap();
         let project_path = tmp.path().join("demo");
