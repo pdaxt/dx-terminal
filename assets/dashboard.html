@@ -3733,8 +3733,12 @@ async function renderExecutionHub(){
   const workflowCatalog=(workflowData&&workflowData.catalog&&workflowData.catalog.workflows)||[];
   const workflowRuns=(workflowData&&workflowData.workflow_runs)||[];
   const dxosCapabilityRegistry=dxos.capability_registry||dxos.registry||{};
+  const dxosPortfolio=dxos.portfolio||{};
   const dxosProjectRegistry=dxos.control_plane_registry||{};
   const dxosRegisteredProjects=(dxosProjectRegistry.projects||[]);
+  const dxosCompanies=(dxosProjectRegistry.companies||[]);
+  const dxosPrograms=(dxosProjectRegistry.programs||[]);
+  const dxosWorkspaces=(dxosProjectRegistry.workspaces||[]);
   const dxosStorage=dxos.storage||{};
   const dxosProjectIdentity=dxos.project||{};
   const projectIdentityBits=[
@@ -3830,13 +3834,14 @@ async function renderExecutionHub(){
       <div class="exec-kpis">
         <div class="exec-kpi"><div class="label">Approvals Waiting</div><div class="value">${clientReviewFeatures.length}</div><div class="meta">${clientReviewFeatures.length?'client decisions are blocking progress':'no client decision is waiting'}</div></div>
         <div class="exec-kpi"><div class="label">Work Lanes</div><div class="value">${brief.runtime_count||0}</div><div class="meta">${brief.worktree_count||0} isolated worktrees</div></div>
-        <div class="exec-kpi"><div class="label">DXOS Sessions</div><div class="value">${dxosSessionSummary.active||0}</div><div class="meta">${leadSessions.length} lead · ${workerSessions.length} worker · ${(dxosStorage.registered_projects||0)} project records</div></div>
+        <div class="exec-kpi"><div class="label">DXOS Sessions</div><div class="value">${dxosSessionSummary.active||0}</div><div class="meta">${leadSessions.length} lead · ${workerSessions.length} worker · ${(dxosPortfolio.counts&&dxosPortfolio.counts.projects)||dxosStorage.registered_projects||0} project records</div></div>
         <div class="exec-kpi"><div class="label">Blocked Handoffs</div><div class="value">${blockedWorkOrders.length}</div><div class="meta">${leadInboxWork.length} routed to leads · ${humanEscalations.length} escalated to humans</div></div>
         <div class="exec-kpi"><div class="label">Launch Queue</div><div class="value">${dxosLaunchQueue.length}</div><div class="meta">${dxosLaunchQueue.filter(item=>item.ready!==false).length} ready · ${dxosLaunchQueue.filter(item=>item.ready===false).length} policy gated</div></div>
         <div class="exec-kpi"><div class="label">Handbook Docs</div><div class="value">${docs.vision_doc_count||0}</div><div class="meta">${docs.guidance_doc_count||0} guidance docs</div></div>
         <div class="exec-kpi"><div class="label">Release Confidence</div><div class="value">${escHtml(confidence.label)}</div><div class="meta">${escHtml(confidence.copy)}</div></div>
         <div class="exec-kpi"><div class="label">Decision Records</div><div class="value">${(dxos.debates&&dxos.debates.total)||0}</div><div class="meta">${(dxos.debates&&dxos.debates.decided)||0} finalized with rationale</div></div>
         <div class="exec-kpi"><div class="label">Workflow Runs</div><div class="value">${workflowRuns.length}</div><div class="meta">${workflowRuns.filter(run=>String(run.status||'')==='blocked').length} blocked · ${workflowCatalog.length} shared workflow${workflowCatalog.length===1?'':'s'} available</div></div>
+        <div class="exec-kpi"><div class="label">Portfolio</div><div class="value">${(dxosPortfolio.counts&&dxosPortfolio.counts.companies)||0}</div><div class="meta">${(dxosPortfolio.counts&&dxosPortfolio.counts.programs)||0} programs · ${(dxosPortfolio.counts&&dxosPortfolio.counts.workspaces)||0} workspaces</div></div>
         <div class="exec-kpi"><div class="label">Control Audit</div><div class="value">${(dxos.audit&&dxos.audit.total)||0}</div><div class="meta">${dxosAudit.length?`latest: ${escHtml(String(dxosAudit[0].action_kind||'action')).replace(/_/g,' ')}`:'no control actions logged yet'}</div></div>
         <div class="exec-kpi"><div class="label">Git State</div><div class="value">${git&&git.branch?escHtml(git.branch):'--'}</div><div class="meta">${escHtml(gitState)}</div></div>
         <div class="exec-kpi"><div class="label">Portal View</div><div class="value">${escHtml(portalModeInfo.label)}</div><div class="meta">${escHtml(portalModeInfo.copy)}</div></div>
