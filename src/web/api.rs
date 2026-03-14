@@ -2270,6 +2270,12 @@ pub(crate) async fn build_project_brief_payload(
                 "autorun_enabled": crate::config::scheduler_autorun_enabled(),
                 "interval_secs": crate::config::scheduler_interval_secs(),
             },
+            "supervisor": {
+                "contract_client": "in_process_router",
+                "autorun_enabled": crate::config::http_supervisor_autorun_enabled(),
+                "interval_secs": crate::config::http_supervisor_interval_secs(),
+                "event_driven": true,
+            },
             "control_endpoints": {
                 "scheduler_run": "/api/dxos/scheduler/run",
                 "session_launch": "/api/dxos/session/launch",
