@@ -14,6 +14,12 @@ static AUDIT_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 pub struct ProjectDescriptor {
     pub name: String,
     pub path: String,
+    #[serde(default)]
+    pub company: Option<String>,
+    #[serde(default)]
+    pub program: Option<String>,
+    #[serde(default)]
+    pub workspace: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -522,6 +528,9 @@ fn default_state(project_path: &str, project_name: Option<&str>) -> ControlPlane
         project: ProjectDescriptor {
             name: resolved_project_name(project_path, project_name),
             path: project_path.to_string(),
+            company: None,
+            program: None,
+            workspace: None,
         },
         defaults: ControlPlaneDefaults::default(),
         adoptions: Vec::new(),
