@@ -1502,6 +1502,39 @@ pub struct DxosProjectIdentityBody {
 }
 
 #[derive(Deserialize, Default)]
+pub struct DxosCompanyRecordBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub name: Option<String>,
+    pub summary: Option<String>,
+    pub status: Option<String>,
+    pub owner: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct DxosProgramRecordBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub company: Option<String>,
+    pub name: Option<String>,
+    pub summary: Option<String>,
+    pub status: Option<String>,
+    pub owner: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct DxosWorkspaceRecordBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub company: Option<String>,
+    pub program: Option<String>,
+    pub name: Option<String>,
+    pub summary: Option<String>,
+    pub status: Option<String>,
+    pub owner: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
 pub struct DxosProviderPluginsSyncBody {
     pub project: Option<String>,
     pub path: Option<String>,
