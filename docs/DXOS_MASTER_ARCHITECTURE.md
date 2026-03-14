@@ -246,6 +246,7 @@ The first architecture slice now implemented in the repo is:
 - DXOS now also has a contract-driven supervisor loop that can run either against the local router boundary or a configured remote base URL, and the remote path now consumes the published event stream as well as the scheduler endpoints instead of degrading to poll-only orchestration
 - supervisors now have an explicit identity (`DX_HTTP_SUPERVISOR_ID` / `DX_ORCHESTRATOR_ID`), and scheduler ticks support caller-supplied `run_id` idempotency keys so remote retries can safely replay the same scheduling decision instead of double-claiming work
 - session launch claims now carry a TTL-backed lease plus the owning `claim_id`, so an external supervisor crash does not strand queued work in `launching` forever; stale claims are reclaimed explicitly, repeated retries from the same supervisor run are idempotent, and lease ownership is preserved in the session record/audit trail
+- scheduler observability is now first-class too: the control-plane snapshot exposes recent scheduler ticks and active launch leases so the portal can explain which supervisor is currently claiming work and which tick most recently changed queue state
 - protected control routes now enforce optional operator policy as well as token auth, so named operators can be limited by role, project scope, and action families before a launch, debate, or lane mutation is accepted
 
 That gives the platform a native place to reason, disagree, decide, supervise, and delegate inside the system itself.
