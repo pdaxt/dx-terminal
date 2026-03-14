@@ -1525,12 +1525,18 @@ pub fn upsert_project_identity(
         .map(|value| value.to_string());
     state.updated_at = crate::state::now();
     match save_control_plane(project_path, &state) {
-        Ok(()) => json!({
+        Ok(()) => {
+            let _ = ensure_portfolio_records_for_project(project_path, &state.project);
+            json!({
             "status": "ok",
             "action": "project_identity_updated",
             "project": state.project,
+            "portfolio": {
+                "registry": control_plane_registry_value_for_project_path(project_path),
+            },
         })
-        .to_string(),
+        .to_string()
+        }
         Err(error) => json!({"error": error}).to_string(),
     }
 }
