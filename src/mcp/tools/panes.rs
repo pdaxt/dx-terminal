@@ -230,6 +230,20 @@ fn merge_prompt_with_dxos_context(prompt: &str, dxos_context: Option<&str>) -> S
     }
 }
 
+fn merge_prompt_sections(prompt: &str, sections: &[Option<&str>]) -> String {
+    let mut parts = Vec::new();
+    let prompt = prompt.trim();
+    if !prompt.is_empty() {
+        parts.push(prompt.to_string());
+    }
+    for section in sections {
+        if let Some(value) = section.map(str::trim).filter(|value| !value.is_empty()) {
+            parts.push(value.to_string());
+        }
+    }
+    parts.join("\n\n")
+}
+
 fn inject_dxos_runtime_env(env_vars: &mut Vec<(String, String)>, context: &Value) {
     if let Some(work_order) = context.get("primary_work_order") {
         push_env_if_present(
