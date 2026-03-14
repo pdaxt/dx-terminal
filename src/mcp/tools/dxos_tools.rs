@@ -13,6 +13,10 @@ pub fn provider_plugins() -> String {
     crate::provider_plugins::plugin_inventory().to_string()
 }
 
+pub fn automation_bridges(project: Option<&str>) -> String {
+    crate::provider_asset_plugins::plugin_inventory(project).to_string()
+}
+
 pub fn provider_plugin_sync(
     source_provider: Option<&str>,
     target_provider: &str,
@@ -21,6 +25,22 @@ pub fn provider_plugin_sync(
     crate::provider_plugins::convert_provider_plugin(source_provider, target_provider, dry_run)
         .map(|value| value.to_string())
         .unwrap_or_else(|error| serde_json::json!({"error": error.to_string()}).to_string())
+}
+
+pub fn automation_bridge_sync(
+    project: Option<&str>,
+    source_provider: Option<&str>,
+    target_provider: &str,
+    dry_run: bool,
+) -> String {
+    crate::provider_asset_plugins::convert_provider_asset_plugin(
+        project,
+        source_provider,
+        target_provider,
+        dry_run,
+    )
+    .map(|value| value.to_string())
+    .unwrap_or_else(|error| serde_json::json!({"error": error.to_string()}).to_string())
 }
 
 pub fn debate_list(project: Option<&str>) -> String {
