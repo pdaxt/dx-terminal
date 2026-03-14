@@ -4379,6 +4379,7 @@ async function renderExecutionHub(){
           <div class="doc-line-main">
             <div class="doc-line-title">${escHtml((item.name||'Unnamed company').toString())}</div>
             <div class="doc-line-path">${escHtml(`${item.project_count||0} projects · ${((item.programs||[]).length||0)} programs · ${((item.workspaces||[]).length||0)} workspaces`)}</div>
+            ${(item.status||item.owner||item.summary)?`<div class="meta">${[item.status?`status ${item.status}`:null,item.owner?`owner ${item.owner}`:null,item.summary?truncateCopy(String(item.summary),90):null].filter(Boolean).map(entry=>escHtml(String(entry))).join(' · ')}</div>`:''}
           </div>
         </div>`).join(''):'<div class="empty-note">No company-level portfolio records are tagged yet.</div>'}</div>
         <div class="exec-list-title">Programs in this DXOS store</div>
@@ -4386,8 +4387,17 @@ async function renderExecutionHub(){
           <div class="doc-line-main">
             <div class="doc-line-title">${escHtml((item.name||'Unnamed program').toString())}</div>
             <div class="doc-line-path">${escHtml(`${item.project_count||0} projects · ${((item.companies||[]).join(', '))||'unassigned company'}`)}</div>
+            ${(item.status||item.owner||item.summary)?`<div class="meta">${[item.status?`status ${item.status}`:null,item.owner?`owner ${item.owner}`:null,item.summary?truncateCopy(String(item.summary),90):null].filter(Boolean).map(entry=>escHtml(String(entry))).join(' · ')}</div>`:''}
           </div>
         </div>`).join(''):'<div class="empty-note">No program-level portfolio records are tagged yet.</div>'}</div>
+        <div class="exec-list-title">Workspaces in this DXOS store</div>
+        <div class="exec-list">${dxosWorkspaces.length?dxosWorkspaces.slice(0,4).map(item=>`<div class="doc-line">
+          <div class="doc-line-main">
+            <div class="doc-line-title">${escHtml((item.name||'Unnamed workspace').toString())}</div>
+            <div class="doc-line-path">${escHtml(`${item.project_count||0} projects · ${(item.program||'unassigned program').toString()} · ${(item.company||'unassigned company').toString()}`)}</div>
+            ${(item.status||item.owner||item.summary)?`<div class="meta">${[item.status?`status ${item.status}`:null,item.owner?`owner ${item.owner}`:null,item.summary?truncateCopy(String(item.summary),90):null].filter(Boolean).map(entry=>escHtml(String(entry))).join(' · ')}</div>`:''}
+          </div>
+        </div>`).join(''):'<div class="empty-note">No workspace-level portfolio records are tagged yet.</div>'}</div>
         <div class="exec-list-title">Registered projects in this DXOS store</div>
         <div class="exec-list">${dxosRegisteredProjects.length?dxosRegisteredProjects.slice(0,5).map(item=>`<div class="doc-line">
           <div class="doc-line-main">
