@@ -65,6 +65,12 @@ impl DxTerminalService {
         }
     }
 
+    fn emit_workflow_change(&self, project_path: &str, result: &str) {
+        if let Some(event) = crate::dxos::workflow_run_event_from_result(project_path, result) {
+            self.app.state.event_bus.send(event);
+        }
+    }
+
     // === AGENT LIFECYCLE ===
 
     #[tool(
@@ -2733,6 +2739,17 @@ impl DxTerminalService {
     }
 
     #[tool(
+        description = "List the shared DX workflow catalog and the workflow runs already instantiated for a project."
+    )]
+    async fn dxos_workflow_runs(
+        &self,
+        Parameters(req): Parameters<types::DxosWorkflowListRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::dxos_tools::workflow_runs(req.project.as_deref());
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
         description = "Convert the shared DX MCP manifest into a provider bridge. This is the interoperability path that turns Claude-native MCP registrations into Codex/GPT or Gemini bridge configs, and vice versa through the DX catalog."
     )]
     async fn dxos_provider_plugin_sync(
@@ -2760,6 +2777,51 @@ impl DxTerminalService {
             &req.target_provider,
             req.dry_run.unwrap_or(false),
         );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Instantiate a structured DX workflow run from the shared workflow catalog. This creates a governed workflow run plus linked session/work-order contracts inside DXOS."
+    )]
+    async fn dxos_workflow_start(
+        &self,
+        Parameters(req): Parameters<types::DxosWorkflowStartRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::dxos_tools::resolve_project_path(req.project.as_deref());
+        let result = tools::dxos_tools::workflow_start(
+            req.project.as_deref(),
+            &req.workflow_id,
+            req.requested_by.as_deref(),
+            req.supervisor_session_id.as_deref(),
+            req.worker_session_id.as_deref(),
+            req.feature_id.as_deref(),
+            req.stage.as_deref(),
+            req.role.as_deref(),
+            req.provider.as_deref(),
+            req.model.as_deref(),
+        );
+        self.emit_dxos_session_change(&project_path, &result);
+        self.emit_workflow_change(&project_path, &result);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Update the status of one step inside a DX workflow run. This advances the governed workflow runner and keeps linked work/session state aligned."
+    )]
+    async fn dxos_workflow_step(
+        &self,
+        Parameters(req): Parameters<types::DxosWorkflowStepRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let project_path = tools::dxos_tools::resolve_project_path(req.project.as_deref());
+        let result = tools::dxos_tools::workflow_step(
+            req.project.as_deref(),
+            &req.workflow_run_id,
+            &req.step_id,
+            &req.status,
+            req.note.as_deref(),
+        );
+        self.emit_dxos_session_change(&project_path, &result);
+        self.emit_workflow_change(&project_path, &result);
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 

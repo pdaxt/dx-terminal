@@ -124,6 +124,14 @@ pub enum StateEvent {
         action: String,
     },
 
+    WorkflowRunChanged {
+        project: String,
+        workflow_run_id: String,
+        workflow_id: String,
+        status: String,
+        action: String,
+    },
+
     AuditLogged {
         project: String,
         action_id: String,

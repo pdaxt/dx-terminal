@@ -4423,4 +4423,73 @@ mod tests {
         .unwrap_err();
         assert!(denied.contains("not allowed"));
     }
+
+    #[test]
+    fn workflow_run_start_and_step_updates_roundtrip() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        let project = project_path.to_str().unwrap();
+        std::fs::create_dir_all(project_path.join(".claude").join("commands")).unwrap();
+        std::fs::write(
+            project_path.join(".claude").join("commands").join("design-review.md"),
+            "# Design Review\n- Capture the goal\n- Compare options\n- Publish the decision",
+        )
+        .unwrap();
+
+        let started = start_workflow_run(
+            project,
+            Some("demo"),
+            "project:command:design-review",
+            Some("operator"),
+            None,
+            None,
+            Some("F1.1"),
+            Some("design"),
+            Some("design"),
+            Some("claude"),
+            Some("claude-opus-4.6"),
+        );
+        let started_value: Value = serde_json::from_str(&started).unwrap();
+        assert_eq!(started_value["action"], "workflow_run_started");
+        let workflow_run_id = started_value["workflow_run_id"].as_str().unwrap();
+        let step_id = started_value["workflow_run"]["steps"][0]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(started_value["session_id"].as_str().unwrap().starts_with("SX"));
+        assert!(started_value["work_order_id"].as_str().unwrap().starts_with("WO"));
+
+        let progressed = update_workflow_run_step(
+            project,
+            Some("demo"),
+            workflow_run_id,
+            &step_id,
+            "in_progress",
+            Some("Collecting references now."),
+        );
+        let progressed_value: Value = serde_json::from_str(&progressed).unwrap();
+        assert_eq!(progressed_value["workflow_run"]["status"], "active");
+        assert_eq!(progressed_value["session"]["status"], "active");
+        assert_eq!(progressed_value["work_order"]["status"], "assigned");
+
+        for step in started_value["workflow_run"]["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+        {
+            let _ = update_workflow_run_step(
+                project,
+                Some("demo"),
+                workflow_run_id,
+                step["id"].as_str().unwrap(),
+                "completed",
+                None,
+            );
+        }
+
+        let listed = workflow_run_list(project, Some("demo"));
+        let listed_value: Value = serde_json::from_str(&listed).unwrap();
+        assert_eq!(listed_value["workflow_runs"][0]["status"], "completed");
+        assert_eq!(listed_value["workflow_runs"][0]["completed_steps"], 3);
+    }
 }

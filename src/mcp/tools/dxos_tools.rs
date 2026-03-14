@@ -17,6 +17,10 @@ pub fn automation_bridges(project: Option<&str>) -> String {
     crate::provider_asset_plugins::plugin_inventory(project).to_string()
 }
 
+pub fn workflow_runs(project: Option<&str>) -> String {
+    dxos::workflow_run_list(&resolve_project_path(project), None)
+}
+
 pub fn provider_plugin_sync(
     source_provider: Option<&str>,
     target_provider: &str,
@@ -41,6 +45,51 @@ pub fn automation_bridge_sync(
     )
     .map(|value| value.to_string())
     .unwrap_or_else(|error| serde_json::json!({"error": error.to_string()}).to_string())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn workflow_start(
+    project: Option<&str>,
+    workflow_id: &str,
+    requested_by: Option<&str>,
+    supervisor_session_id: Option<&str>,
+    worker_session_id: Option<&str>,
+    feature_id: Option<&str>,
+    stage: Option<&str>,
+    role: Option<&str>,
+    provider: Option<&str>,
+    model: Option<&str>,
+) -> String {
+    dxos::start_workflow_run(
+        &resolve_project_path(project),
+        None,
+        workflow_id,
+        requested_by,
+        supervisor_session_id,
+        worker_session_id,
+        feature_id,
+        stage,
+        role,
+        provider,
+        model,
+    )
+}
+
+pub fn workflow_step(
+    project: Option<&str>,
+    workflow_run_id: &str,
+    step_id: &str,
+    status: &str,
+    note: Option<&str>,
+) -> String {
+    dxos::update_workflow_run_step(
+        &resolve_project_path(project),
+        None,
+        workflow_run_id,
+        step_id,
+        status,
+        note,
+    )
 }
 
 pub fn debate_list(project: Option<&str>) -> String {

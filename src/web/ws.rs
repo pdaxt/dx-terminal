@@ -517,6 +517,21 @@ async fn forward_events(mut rx: broadcast::Receiver<StateEvent>, sender: WsSende
                         "status": status,
                         "action": action,
                     }),
+                    StateEvent::WorkflowRunChanged {
+                        project,
+                        workflow_run_id,
+                        workflow_id,
+                        status,
+                        action,
+                    } => json!({
+                        "type": "workflow_run_changed",
+                        "seq": seq,
+                        "project": project,
+                        "workflow_run_id": workflow_run_id,
+                        "workflow_id": workflow_id,
+                        "status": status,
+                        "action": action,
+                    }),
                     StateEvent::AuditLogged {
                         project,
                         action_id,

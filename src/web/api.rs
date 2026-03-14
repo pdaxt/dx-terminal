@@ -73,6 +73,12 @@ fn maybe_emit_dxos_session_change(app: &AppState, project_path: &str, result: &s
     }
 }
 
+fn maybe_emit_workflow_change(app: &AppState, project_path: &str, result: &str) {
+    if let Some(event) = crate::dxos::workflow_run_event_from_result(project_path, result) {
+        app.state.event_bus.send(event);
+    }
+}
+
 fn control_token_from_headers(headers: &HeaderMap) -> Option<String> {
     if let Some(value) = headers
         .get("x-dx-control-token")
@@ -1486,6 +1492,31 @@ pub struct DxosAutomationBridgesSyncBody {
     pub source_provider: Option<String>,
     pub target_provider: Option<String>,
     pub dry_run: Option<bool>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct DxosWorkflowStartBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub workflow_id: String,
+    pub requested_by: Option<String>,
+    pub supervisor_session_id: Option<String>,
+    pub worker_session_id: Option<String>,
+    pub feature_id: Option<String>,
+    pub stage: Option<String>,
+    pub role: Option<String>,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct DxosWorkflowStepBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub workflow_run_id: String,
+    pub step_id: String,
+    pub status: String,
+    pub note: Option<String>,
 }
 
 fn resolve_project_path(q: &VisionQuery) -> String {

@@ -2193,6 +2193,50 @@ pub struct DxosAutomationBridgeSyncRequest {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosWorkflowListRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosWorkflowStartRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+    #[schemars(description = "Workflow catalog ID, e.g. project:command:design-review")]
+    pub workflow_id: String,
+    #[schemars(description = "Actor requesting the workflow run")]
+    pub requested_by: Option<String>,
+    #[schemars(description = "Optional supervising lead session ID")]
+    pub supervisor_session_id: Option<String>,
+    #[schemars(description = "Optional worker session ID to bind instead of creating a planned runner session")]
+    pub worker_session_id: Option<String>,
+    #[schemars(description = "Optional linked feature ID")]
+    pub feature_id: Option<String>,
+    #[schemars(description = "Delivery stage for the workflow run")]
+    pub stage: Option<String>,
+    #[schemars(description = "Session role if DXOS needs to create a runner contract")]
+    pub role: Option<String>,
+    #[schemars(description = "Preferred provider if DXOS needs to create a runner contract")]
+    pub provider: Option<String>,
+    #[schemars(description = "Preferred model if DXOS needs to create a runner contract")]
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosWorkflowStepRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+    #[schemars(description = "Workflow run ID")]
+    pub workflow_run_id: String,
+    #[schemars(description = "Workflow step ID, e.g. STEP01")]
+    pub step_id: String,
+    #[schemars(description = "New step status: planned/in_progress/completed/blocked/skipped")]
+    pub status: String,
+    #[schemars(description = "Optional note or evidence summary for the step update")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct DxosDebateListRequest {
     #[schemars(description = "Project path (default: current directory)")]
     pub project: Option<String>,
