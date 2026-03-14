@@ -1841,6 +1841,57 @@ function renderDxosSchedulerLaunchRows(project,scheduler,sessions,adoptions){
   }).join('');
 }
 
+function renderDxosSchedulerRunRows(scheduler){
+  const runs=Array.isArray(scheduler&&scheduler.recent_runs)?scheduler.recent_runs:[];
+  if(!runs.length){
+    return '<div class="empty-note">No scheduler ticks have been recorded for this project yet.</div>';
+  }
+  return runs.slice(0,6).map(run=>{
+    const outcome=String(run.outcome||'ok').toLowerCase();
+    const tone=outcome==='error'?'claude':outcome==='blocked'?'gemini':'shared';
+    const action=String(run.action||'scheduler tick');
+    const meta=[
+      run.actor?`actor ${String(run.actor)}`:null,
+      run.session_id?`session ${String(run.session_id)}`:null,
+      run.updated_at?String(run.updated_at):null
+    ].filter(Boolean).join(' · ');
+    return `<div class="exec-row">
+      <div class="exec-row-top">
+        <span class="exec-row-title">${escHtml(action)}</span>
+        <span class="exec-row-tags"><span class="doc-pill ${tone}">${escHtml(outcome)}</span></span>
+      </div>
+      <div class="exec-row-meta">${escHtml(meta||'DXOS recorded a scheduler tick.')}</div>
+      ${run.run_id?`<div class="exec-row-meta"><code>${escHtml(String(run.run_id))}</code></div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function renderDxosActiveClaimRows(scheduler){
+  const claims=Array.isArray(scheduler&&scheduler.active_claims)?scheduler.active_claims:[];
+  if(!claims.length){
+    return '<div class="empty-note">No launch leases are active right now.</div>';
+  }
+  return claims.slice(0,6).map(claim=>{
+    const meta=[
+      claim.role?String(claim.role):null,
+      claim.feature_id?String(claim.feature_id):null,
+      claim.stage?`stage ${normalizeVddPhase(claim.stage)}`:null
+    ].filter(Boolean).join(' · ');
+    return `<div class="exec-row">
+      <div class="exec-row-top">
+        <span class="exec-row-title">${escHtml(String(claim.session_id||'launching session'))}</span>
+        <span class="exec-row-tags">
+          ${claim.stage?vddPhaseBadge(claim.stage):''}
+          <span class="doc-pill codex">${escHtml(String(claim.claimed_by||'scheduler'))}</span>
+        </span>
+      </div>
+      ${meta?`<div class="exec-row-meta">${escHtml(meta)}</div>`:''}
+      ${claim.claim_id?`<div class="exec-row-meta"><code>${escHtml(String(claim.claim_id))}</code></div>`:''}
+      ${claim.claimed_at?`<div class="exec-row-meta">${escHtml(String(claim.claimed_at))}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
 function persistDxosLaunchDraft(){
   const project=activeProjectForHub();
   if(!project)return;
