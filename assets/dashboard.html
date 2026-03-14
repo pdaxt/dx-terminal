@@ -1249,7 +1249,7 @@ function rememberDxOperatorIdentity(value){
 function requiresDxControlAuth(url,options){
   const method=String((options&&options.method)||'GET').toUpperCase();
   if(method==='GET')return false;
-  return /^\/api\/(dxos\/(adoption|automation-bridges|debate|provider-plugins|scheduler|session|work|workflow)|pane\/(talk|kill|restart))/.test(String(url||''));
+  return /^\/api\/(dxos\/(adoption|automation-bridges|debate|project|provider-plugins|scheduler|session|work|workflow)|pane\/(talk|kill|restart))/.test(String(url||''));
 }
 function withDxControlHeaders(url,options){
   const request={...(options||{})};
@@ -2068,7 +2068,6 @@ async function saveDxosProjectIdentity(project){
   setDxosPortalNotice('auth','Saving DXOS project identity…','yellow');
   const result=await fetchJSON('/api/dxos/project/identity',{
     method:'POST',
-    headers:buildProtectedHeaders('/api/dxos/project/identity'),
     body:JSON.stringify({
       project,
       company:company||null,
