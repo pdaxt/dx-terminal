@@ -54,8 +54,8 @@ impl ContractClient {
             .await?;
         let status = response.status();
         let bytes = to_bytes(response.into_body(), usize::MAX).await?;
-        let mut value =
-            serde_json::from_slice::<Value>(&bytes).unwrap_or_else(|_| json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+        let mut value = serde_json::from_slice::<Value>(&bytes)
+            .unwrap_or_else(|_| json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
         if !status.is_success() {
             if let Some(object) = value.as_object_mut() {
                 object.insert("_http_status".to_string(), json!(status.as_u16()));
@@ -81,11 +81,7 @@ impl ContractClient {
         .await
     }
 
-    async fn scheduler_run(
-        &self,
-        project_name: &str,
-        project_path: &str,
-    ) -> anyhow::Result<Value> {
+    async fn scheduler_run(&self, project_name: &str, project_path: &str) -> anyhow::Result<Value> {
         self.request_json(
             Method::POST,
             "/api/dxos/scheduler/run",
@@ -112,7 +108,11 @@ impl Supervisor {
         }
     }
 
-    async fn tick_project_if_ready(&self, project_name: &str, project_path: &str) -> anyhow::Result<Value> {
+    async fn tick_project_if_ready(
+        &self,
+        project_name: &str,
+        project_path: &str,
+    ) -> anyhow::Result<Value> {
         let scheduler = self
             .client
             .scheduler_snapshot(project_name, project_path)
@@ -136,7 +136,11 @@ impl Supervisor {
         self.client.scheduler_run(project_name, project_path).await
     }
 
-    async fn tick_project_with_cooldown(&self, project_name: &str, project_path: &str) -> Option<Value> {
+    async fn tick_project_with_cooldown(
+        &self,
+        project_name: &str,
+        project_path: &str,
+    ) -> Option<Value> {
         let now = tokio::time::Instant::now();
         {
             let mut last = self.last_tick.lock().await;
@@ -181,25 +185,28 @@ fn registered_projects() -> Vec<(String, String)> {
         .get("projects")
         .and_then(Value::as_array)
         .map(|items| {
-            items.iter().filter_map(|item| {
-                let path = item.get("path").and_then(Value::as_str)?.trim().to_string();
-                if path.is_empty() {
-                    return None;
-                }
-                let name = item
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .unwrap_or_else(|| {
-                        std::path::Path::new(&path)
-                            .file_name()
-                            .and_then(|value| value.to_str())
-                            .unwrap_or("project")
-                    })
-                    .to_string();
-                Some((name, path))
-            }).collect::<Vec<_>>()
+            items
+                .iter()
+                .filter_map(|item| {
+                    let path = item.get("path").and_then(Value::as_str)?.trim().to_string();
+                    if path.is_empty() {
+                        return None;
+                    }
+                    let name = item
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .unwrap_or_else(|| {
+                            std::path::Path::new(&path)
+                                .file_name()
+                                .and_then(|value| value.to_str())
+                                .unwrap_or("project")
+                        })
+                        .to_string();
+                    Some((name, path))
+                })
+                .collect::<Vec<_>>()
         })
         .unwrap_or_default()
 }
