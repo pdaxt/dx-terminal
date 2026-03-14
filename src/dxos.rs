@@ -4,7 +4,7 @@ use crate::state::events::StateEvent;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -20,6 +20,51 @@ pub struct ProjectDescriptor {
     pub program: Option<String>,
     #[serde(default)]
     pub workspace: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompanyRecord {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub summary: Option<String>,
+    pub status: String,
+    #[serde(default)]
+    pub owner: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProgramRecord {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub company: Option<String>,
+    #[serde(default)]
+    pub summary: Option<String>,
+    pub status: String,
+    #[serde(default)]
+    pub owner: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceRecord {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub company: Option<String>,
+    #[serde(default)]
+    pub program: Option<String>,
+    #[serde(default)]
+    pub summary: Option<String>,
+    pub status: String,
+    #[serde(default)]
+    pub owner: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
