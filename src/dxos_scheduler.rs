@@ -3,6 +3,7 @@ use crate::mcp::tools::panes;
 use crate::mcp::types::SpawnRequest;
 use serde_json::{json, Value};
 use std::sync::Arc;
+use uuid::Uuid;
 
 #[derive(Clone, Debug)]
 struct LaunchCandidate {
@@ -136,29 +137,85 @@ async fn launch_claimed_candidate(app: &App, candidate: &LaunchCandidate) -> Val
     serde_json::from_str(&raw).unwrap_or_else(|_| json!({ "raw": raw }))
 }
 
-pub async fn drive_once_for_project(app: &App, project_name: &str, project_path: &str) -> Value {
-    let Some(candidate) = next_launch_candidate(project_name, project_path) else {
+fn scheduler_run_id(actor: &str, project_name: &str, run_id: Option<&str>) -> String {
+    run_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| format!("{}:{}:{}", actor.trim(), project_name, Uuid::new_v4()))
+}
+
+fn finalize_scheduler_run(
+    project_name: &str,
+    project_path: &str,
+    actor: &str,
+    run_id: &str,
+    result: Value,
+) -> Value {
+    crate::dxos::remember_scheduler_run_result(
+        project_path,
+        Some(project_name),
+        actor,
+        run_id,
+        result,
+    )
+}
+
+pub async fn drive_once_for_project(
+    app: &App,
+    project_name: &str,
+    project_path: &str,
+    actor: Option<&str>,
+    run_id: Option<&str>,
+) -> Value {
+    let actor = actor
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("dxos_scheduler");
+    let run_id = scheduler_run_id(actor, project_name, run_id);
+    if let Some(existing) =
+        crate::dxos::scheduler_run_replay(project_path, Some(project_name), &run_id)
+    {
         return json!({
             "project": project_name,
             "project_path": project_path,
-            "action": "no_ready_launch",
+            "actor": actor,
+            "run_id": run_id,
+            "action": "scheduler_run_replayed",
+            "outcome": existing.get("outcome").cloned().unwrap_or_else(|| json!("ok")),
+            "result": existing,
         });
+    }
+
+    let Some(candidate) = next_launch_candidate(project_name, project_path) else {
+        return finalize_scheduler_run(project_name, project_path, actor, &run_id, json!({
+            "project": project_name,
+            "project_path": project_path,
+            "actor": actor,
+            "run_id": run_id,
+            "action": "no_ready_launch",
+            "outcome": "ok",
+        }));
     };
 
     let claim = crate::dxos::claim_session_launch(
         project_path,
         Some(project_name),
         &candidate.session_id,
-        Some("dxos_scheduler"),
+        Some(actor),
+        Some(&run_id),
     );
     let claim_value = serde_json::from_str::<Value>(&claim).unwrap_or_else(|_| json!({}));
     if claim_value.get("error").is_some() {
-        return json!({
+        return finalize_scheduler_run(project_name, project_path, actor, &run_id, json!({
             "project": project_name,
             "project_path": project_path,
+            "actor": actor,
+            "run_id": run_id,
             "action": "claim_skipped",
+            "outcome": "blocked",
             "claim": claim_value,
-        });
+        }));
     }
 
     let launched = launch_claimed_candidate(app, &candidate).await;
@@ -181,25 +238,29 @@ pub async fn drive_once_for_project(app: &App, project_name: &str, project_path:
     let _ = crate::dxos::append_audit_record(
         project_path,
         Some(project_name),
-        "dxos_scheduler",
+        actor,
         "scheduler_launch",
         &candidate.session_id,
         outcome,
         &summary,
         json!({
+            "run_id": run_id,
             "claim": claim_value,
             "launch": launched,
         }),
     );
 
-    json!({
+    finalize_scheduler_run(project_name, project_path, actor, &run_id, json!({
         "project": project_name,
         "project_path": project_path,
+        "actor": actor,
+        "run_id": run_id,
         "action": "launch_attempted",
+        "outcome": outcome,
         "session_id": candidate.session_id,
         "claim": claim_value,
         "launch": launched,
-    })
+    }))
 }
 
 pub async fn drive_once(app: &App) -> Value {
@@ -207,7 +268,7 @@ pub async fn drive_once(app: &App) -> Value {
     let mut skipped = Vec::new();
 
     for (project_name, project_path) in registered_projects() {
-        let result = drive_once_for_project(app, &project_name, &project_path).await;
+        let result = drive_once_for_project(app, &project_name, &project_path, None, None).await;
         match result.get("action").and_then(Value::as_str) {
             Some("launch_attempted") => launched.push(result),
             _ => skipped.push(result),
@@ -256,7 +317,8 @@ pub fn kick_project(app: Arc<App>, project_name: String, project_path: String) {
         return;
     }
     tokio::spawn(async move {
-        let result = drive_once_for_project(app.as_ref(), &project_name, &project_path).await;
+        let result =
+            drive_once_for_project(app.as_ref(), &project_name, &project_path, None, None).await;
         if result.get("action").and_then(Value::as_str) == Some("launch_attempted") {
             tracing::info!(
                 "DXOS scheduler kick launched queued lane for {}",
