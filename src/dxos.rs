@@ -1032,30 +1032,21 @@ fn authorize_operator_action_with_profiles(
             resolved_project_name(project_path, project_name)
         ));
     }
-    if !metadata_scope_matches(
-        &operator.company_scopes,
-        project.company.as_deref(),
-    ) {
+    if !metadata_scope_matches(&operator.company_scopes, project.company.as_deref()) {
         return Err(format!(
             "Operator '{}' cannot control company '{}'.",
             actor,
             project.company.as_deref().unwrap_or("--")
         ));
     }
-    if !metadata_scope_matches(
-        &operator.program_scopes,
-        project.program.as_deref(),
-    ) {
+    if !metadata_scope_matches(&operator.program_scopes, project.program.as_deref()) {
         return Err(format!(
             "Operator '{}' cannot control program '{}'.",
             actor,
             project.program.as_deref().unwrap_or("--")
         ));
     }
-    if !metadata_scope_matches(
-        &operator.workspace_scopes,
-        project.workspace.as_deref(),
-    ) {
+    if !metadata_scope_matches(&operator.workspace_scopes, project.workspace.as_deref()) {
         return Err(format!(
             "Operator '{}' cannot control workspace '{}'.",
             actor,
