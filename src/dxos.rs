@@ -1595,6 +1595,422 @@ pub fn session_list(project_path: &str, project_name: Option<&str>) -> String {
     .to_string()
 }
 
+fn workflow_step_status(status: &str) -> Option<&'static str> {
+    match status.trim().to_lowercase().as_str() {
+        "planned" => Some("planned"),
+        "in_progress" | "active" => Some("in_progress"),
+        "completed" | "done" => Some("completed"),
+        "blocked" => Some("blocked"),
+        "skipped" => Some("skipped"),
+        _ => None,
+    }
+}
+
+fn recompute_workflow_run_status(steps: &[WorkflowStepRecord]) -> &'static str {
+    if steps.iter().any(|step| step.status == "blocked") {
+        return "blocked";
+    }
+    if !steps.is_empty()
+        && steps
+            .iter()
+            .all(|step| matches!(step.status.as_str(), "completed" | "skipped"))
+    {
+        return "completed";
+    }
+    if steps
+        .iter()
+        .any(|step| matches!(step.status.as_str(), "in_progress" | "completed" | "skipped"))
+    {
+        return "active";
+    }
+    "planned"
+}
+
+pub fn workflow_run_list(project_path: &str, project_name: Option<&str>) -> String {
+    let state = load_control_plane(project_path, project_name);
+    json!({
+        "project": state.project,
+        "catalog": crate::provider_asset_plugins::shared_workflow_catalog(Some(project_path), None),
+        "workflow_runs": state.workflow_runs.iter().map(workflow_run_summary).collect::<Vec<_>>(),
+    })
+    .to_string()
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn start_workflow_run(
+    project_path: &str,
+    project_name: Option<&str>,
+    workflow_id: &str,
+    requested_by: Option<&str>,
+    supervisor_session_id: Option<&str>,
+    worker_session_id: Option<&str>,
+    feature_id: Option<&str>,
+    stage: Option<&str>,
+    role: Option<&str>,
+    provider: Option<&str>,
+    model: Option<&str>,
+) -> String {
+    if workflow_id.trim().is_empty() {
+        return json!({"error": "workflow_id required"}).to_string();
+    }
+
+    let Some(workflow) =
+        crate::provider_asset_plugins::shared_workflow_definition(Some(project_path), None, workflow_id)
+    else {
+        return json!({
+            "error": "workflow_not_found",
+            "workflow_id": workflow_id.trim(),
+        })
+        .to_string();
+    };
+
+    let mut state = load_control_plane(project_path, project_name);
+    let workflow_name = workflow
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or(workflow_id)
+        .trim()
+        .to_string();
+    let workflow_kind = workflow
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or("workflow")
+        .trim()
+        .to_string();
+    let workflow_scope = workflow
+        .get("scope")
+        .and_then(Value::as_str)
+        .unwrap_or("project")
+        .trim()
+        .to_string();
+    let workflow_summary_text = workflow
+        .get("summary")
+        .and_then(Value::as_str)
+        .unwrap_or("Execute the selected DX workflow.")
+        .trim()
+        .to_string();
+    let workflow_sources = workflow
+        .get("sources")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|value| value.as_str().map(|value| value.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let workflow_sections = workflow
+        .get("sections")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|value| value.as_str().map(|value| value.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let step_titles = workflow
+        .get("steps")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|value| value.as_str().map(|value| value.trim().to_string()))
+                .filter(|value| !value.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    let normalized_stage = normalize_stage(stage);
+    let requested_feature = feature_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let mut chosen_worker_session_id = worker_session_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    if let Some(worker_id) = chosen_worker_session_id.as_deref() {
+        if !state.sessions.iter().any(|session| session.id == worker_id) {
+            return json!({"error": "worker_session_not_found"}).to_string();
+        }
+    }
+
+    let explicit_supervisor = supervisor_session_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if let Some(supervisor_id) = explicit_supervisor.as_deref() {
+        if !state.sessions.iter().any(|session| session.id == supervisor_id) {
+            return json!({"error": "supervisor_session_not_found"}).to_string();
+        }
+    }
+
+    let now = crate::state::now();
+    let mut created_session_id = None;
+    if chosen_worker_session_id.is_none() {
+        let session_id = next_session_id(&state);
+        let chosen_role = normalize_role(role.unwrap_or("workflow_runner"));
+        let (normalized_provider, _provider_policy, policy_violations) =
+            validate_provider_selection(&chosen_role, Some(&normalized_stage), provider, None, None);
+        let session_status = if policy_violations.is_empty() {
+            "planned".to_string()
+        } else {
+            "blocked".to_string()
+        };
+        state.sessions.push(SessionContractRecord {
+            id: session_id.clone(),
+            status: session_status,
+            role: chosen_role,
+            provider: normalized_provider,
+            model: model
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            autonomy_level: "guarded_auto".to_string(),
+            objective: format!("Execute workflow {}. {}", workflow_name, workflow_summary_text),
+            expected_outputs: vec![
+                "workflow_completion".to_string(),
+                "workflow_evidence".to_string(),
+                "workflow_handoff".to_string(),
+            ],
+            allowed_capabilities: vec![
+                "automation_bridge".to_string(),
+                "dx_workflow_runner".to_string(),
+                format!("workflow:{}", workflow_name.to_lowercase().replace(' ', "_")),
+            ],
+            allowed_repos: vec![state.project.path.clone()],
+            allowed_paths: vec![state.project.path.clone()],
+            workspace_path: Some(state.project.path.clone()),
+            branch_name: None,
+            browser_port: None,
+            pane: None,
+            runtime_adapter: None,
+            tmux_target: None,
+            feature_id: requested_feature.clone(),
+            stage: Some(normalized_stage.clone()),
+            supervisor_session_id: explicit_supervisor.clone(),
+            escalation_policy: Some("lead_first_workflow_runner".to_string()),
+            policy_violations,
+            last_error: None,
+            created_at: now.clone(),
+            updated_at: now.clone(),
+        });
+        chosen_worker_session_id = Some(session_id.clone());
+        created_session_id = Some(session_id);
+    }
+
+    let worker_id = chosen_worker_session_id.clone().unwrap_or_default();
+    let inferred_supervisor = explicit_supervisor.or_else(|| {
+        state
+            .sessions
+            .iter()
+            .find(|session| session.id == worker_id)
+            .and_then(|session| session.supervisor_session_id.clone())
+            .filter(|value| !value.trim().is_empty())
+    });
+    let chosen_supervisor_id = inferred_supervisor.unwrap_or_else(|| worker_id.clone());
+    if !state
+        .sessions
+        .iter()
+        .any(|session| session.id == chosen_supervisor_id)
+    {
+        return json!({"error": "supervisor_session_not_found"}).to_string();
+    }
+
+    let work_order_id = next_work_order_id(&state);
+    let expected_outputs = if step_titles.is_empty() {
+        vec!["workflow_completion".to_string()]
+    } else {
+        step_titles
+            .iter()
+            .take(6)
+            .map(|step| format!("step: {}", step))
+            .collect::<Vec<_>>()
+    };
+    state.work_orders.push(WorkOrderRecord {
+        id: work_order_id.clone(),
+        supervisor_session_id: chosen_supervisor_id.clone(),
+        worker_session_id: Some(worker_id.clone()),
+        status: "assigned".to_string(),
+        escalation_target: "lead".to_string(),
+        title: format!("Execute workflow {}", workflow_name),
+        objective: format!(
+            "Run workflow {} and complete its governed steps inside DXOS.",
+            workflow_name
+        ),
+        feature_id: requested_feature.clone(),
+        stage: Some(normalized_stage.clone()),
+        required_capabilities: vec![
+            "dx_workflow_runner".to_string(),
+            "automation_bridge".to_string(),
+        ],
+        blockers: Vec::new(),
+        requested_permissions: Vec::new(),
+        expected_outputs,
+        resolution_notes: Vec::new(),
+        created_at: now.clone(),
+        updated_at: now.clone(),
+    });
+
+    let workflow_run_id = next_workflow_run_id(&state);
+    state.workflow_runs.push(WorkflowRunRecord {
+        id: workflow_run_id.clone(),
+        workflow_id: workflow_id.trim().to_string(),
+        name: workflow_name.clone(),
+        kind: workflow_kind,
+        scope: workflow_scope,
+        summary: workflow_summary_text,
+        status: "planned".to_string(),
+        source_provider: workflow
+            .get("canonical_provider")
+            .and_then(Value::as_str)
+            .map(|value| value.to_string()),
+        feature_id: requested_feature,
+        stage: Some(normalized_stage),
+        requested_by: requested_by
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+        session_id: Some(worker_id.clone()),
+        work_order_id: Some(work_order_id.clone()),
+        supervisor_session_id: Some(chosen_supervisor_id),
+        sources: workflow_sources,
+        source_path: workflow
+            .get("source_path")
+            .and_then(Value::as_str)
+            .map(|value| value.to_string()),
+        sections: workflow_sections,
+        steps: step_titles
+            .iter()
+            .enumerate()
+            .map(|(index, title)| WorkflowStepRecord {
+                id: format!("STEP{:02}", index + 1),
+                title: title.clone(),
+                status: "planned".to_string(),
+                note: None,
+                updated_at: now.clone(),
+            })
+            .collect(),
+        created_at: now.clone(),
+        updated_at: now.clone(),
+    });
+    state.updated_at = now;
+
+    match save_control_plane(project_path, &state) {
+        Ok(()) => json!({
+            "status": "ok",
+            "action": "workflow_run_started",
+            "project": state.project.name,
+            "project_path": project_path,
+            "workflow_run_id": workflow_run_id,
+            "session_id": created_session_id.or_else(|| Some(worker_id.clone())),
+            "work_order_id": work_order_id,
+            "workflow": workflow,
+            "workflow_run": state.workflow_runs.iter().find(|item| item.id == workflow_run_id).map(workflow_run_summary),
+            "session": state.sessions.iter().find(|item| item.id == worker_id).map(session_summary),
+            "work_order": state.work_orders.iter().find(|item| item.id == work_order_id).map(work_order_summary),
+        })
+        .to_string(),
+        Err(error) => json!({"error": error}).to_string(),
+    }
+}
+
+pub fn update_workflow_run_step(
+    project_path: &str,
+    project_name: Option<&str>,
+    workflow_run_id: &str,
+    step_id: &str,
+    status: &str,
+    note: Option<&str>,
+) -> String {
+    if workflow_run_id.trim().is_empty() || step_id.trim().is_empty() {
+        return json!({"error": "workflow_run_id and step_id required"}).to_string();
+    }
+    let Some(normalized_step_status) = workflow_step_status(status) else {
+        return json!({"error": "invalid_step_status"}).to_string();
+    };
+
+    let mut state = load_control_plane(project_path, project_name);
+    let now = crate::state::now();
+    let Some(run_index) = state
+        .workflow_runs
+        .iter()
+        .position(|item| item.id == workflow_run_id.trim())
+    else {
+        return json!({"error": "workflow_run_not_found"}).to_string();
+    };
+
+    let session_id = state.workflow_runs[run_index].session_id.clone();
+    let work_order_id = state.workflow_runs[run_index].work_order_id.clone();
+    let step_found = {
+        let run = &mut state.workflow_runs[run_index];
+        let Some(step) = run.steps.iter_mut().find(|item| item.id == step_id.trim()) else {
+            return json!({"error": "workflow_step_not_found"}).to_string();
+        };
+        step.status = normalized_step_status.to_string();
+        step.note = note
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        step.updated_at = now.clone();
+        run.status = recompute_workflow_run_status(&run.steps).to_string();
+        run.updated_at = now.clone();
+        true
+    };
+    if !step_found {
+        return json!({"error": "workflow_step_not_found"}).to_string();
+    }
+
+    let run_status = state.workflow_runs[run_index].status.clone();
+    if let Some(work_order_id) = work_order_id.as_deref() {
+        if let Some(work_order) = state
+            .work_orders
+            .iter_mut()
+            .find(|item| item.id == work_order_id)
+        {
+            work_order.status = match run_status.as_str() {
+                "blocked" => "blocked".to_string(),
+                "completed" => "completed".to_string(),
+                "active" => "assigned".to_string(),
+                _ => "assigned".to_string(),
+            };
+            if let Some(message) = note.filter(|value| !value.trim().is_empty()) {
+                work_order.resolution_notes.push(WorkResolutionRecord {
+                    message: format!("{} [{}]: {}", step_id.trim(), normalized_step_status, message.trim()),
+                    created_at: now.clone(),
+                });
+            }
+            work_order.updated_at = now.clone();
+        }
+    }
+    if let Some(session_id) = session_id.as_deref() {
+        if let Some(session) = state.sessions.iter_mut().find(|item| item.id == session_id) {
+            session.status = match run_status.as_str() {
+                "blocked" => "blocked".to_string(),
+                "completed" => "completed".to_string(),
+                "active" => "active".to_string(),
+                _ => "planned".to_string(),
+            };
+            if session.status != "blocked" {
+                session.last_error = None;
+            }
+            session.updated_at = now.clone();
+        }
+    }
+    state.updated_at = now;
+
+    match save_control_plane(project_path, &state) {
+        Ok(()) => json!({
+            "status": "ok",
+            "action": "workflow_run_step_updated",
+            "project": state.project.name,
+            "project_path": project_path,
+            "workflow_run_id": workflow_run_id.trim(),
+            "workflow_run": state.workflow_runs.iter().find(|item| item.id == workflow_run_id.trim()).map(workflow_run_summary),
+            "session": session_id.as_deref().and_then(|id| state.sessions.iter().find(|item| item.id == id).map(session_summary)),
+            "work_order": work_order_id.as_deref().and_then(|id| state.work_orders.iter().find(|item| item.id == id).map(work_order_summary)),
+        })
+        .to_string(),
+        Err(error) => json!({"error": error}).to_string(),
+    }
+}
+
 pub fn runtime_launch_context(
     project_path: &str,
     project_name: Option<&str>,
@@ -3179,6 +3595,42 @@ pub fn session_event_from_result(project_path: &str, result: &str) -> Option<Sta
             .get("action")
             .and_then(Value::as_str)
             .unwrap_or("work_order_updated")
+            .to_string(),
+    })
+}
+
+pub fn workflow_run_event_from_result(project_path: &str, result: &str) -> Option<StateEvent> {
+    let value = serde_json::from_str::<Value>(result).ok()?;
+    if value.get("error").is_some() {
+        return None;
+    }
+    let workflow_run = value.get("workflow_run")?;
+    let project = value
+        .get("project")
+        .and_then(Value::as_str)
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| resolved_project_name(project_path, None));
+    Some(StateEvent::WorkflowRunChanged {
+        project,
+        workflow_run_id: value
+            .get("workflow_run_id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        workflow_id: workflow_run
+            .get("workflow_id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        status: workflow_run
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        action: value
+            .get("action")
+            .and_then(Value::as_str)
+            .unwrap_or("workflow_run_updated")
             .to_string(),
     })
 }
