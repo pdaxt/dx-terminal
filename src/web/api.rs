@@ -2326,6 +2326,9 @@ pub(crate) async fn build_project_brief_payload(
             },
             "control_endpoints": {
                 "project_identity": "/api/dxos/project/identity",
+                "company_record": "/api/dxos/company",
+                "program_record": "/api/dxos/program",
+                "workspace_record": "/api/dxos/workspace",
                 "scheduler_run": "/api/dxos/scheduler/run",
                 "session_launch": "/api/dxos/session/launch",
                 "provider_plugin_sync": "/api/dxos/provider-plugins/sync",
@@ -2430,6 +2433,141 @@ pub async fn update_dxos_project_identity(
         &actor,
         "project_identity",
         &project,
+        &value,
+    );
+    Ok(Json(value))
+}
+
+/// POST /api/dxos/company — Create or update a first-class DXOS company record
+pub async fn update_dxos_company_record(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DxosCompanyRecordBody>,
+) -> ApiJson {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let project = body
+        .project
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| project_name_from_path(&project_path));
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        Some(&project),
+        "company_record",
+        body.name.as_deref().unwrap_or(&project),
+    )?;
+    let raw = crate::dxos::upsert_company_record(
+        &project_path,
+        Some(&project),
+        body.name.as_deref(),
+        body.summary.as_deref(),
+        body.status.as_deref(),
+        body.owner.as_deref(),
+    );
+    let value = serde_json::from_str::<Value>(&raw).unwrap_or_else(|_| json!({"raw": raw}));
+    record_control_action(
+        &app,
+        &project_path,
+        Some(&project),
+        &actor,
+        "company_record",
+        body.name.as_deref().unwrap_or(&project),
+        &value,
+    );
+    Ok(Json(value))
+}
+
+/// POST /api/dxos/program — Create or update a first-class DXOS program record
+pub async fn update_dxos_program_record(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DxosProgramRecordBody>,
+) -> ApiJson {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let project = body
+        .project
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| project_name_from_path(&project_path));
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        Some(&project),
+        "program_record",
+        body.name.as_deref().unwrap_or(&project),
+    )?;
+    let raw = crate::dxos::upsert_program_record(
+        &project_path,
+        Some(&project),
+        body.company.as_deref(),
+        body.name.as_deref(),
+        body.summary.as_deref(),
+        body.status.as_deref(),
+        body.owner.as_deref(),
+    );
+    let value = serde_json::from_str::<Value>(&raw).unwrap_or_else(|_| json!({"raw": raw}));
+    record_control_action(
+        &app,
+        &project_path,
+        Some(&project),
+        &actor,
+        "program_record",
+        body.name.as_deref().unwrap_or(&project),
+        &value,
+    );
+    Ok(Json(value))
+}
+
+/// POST /api/dxos/workspace — Create or update a first-class DXOS workspace record
+pub async fn update_dxos_workspace_record(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DxosWorkspaceRecordBody>,
+) -> ApiJson {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let project = body
+        .project
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| project_name_from_path(&project_path));
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        Some(&project),
+        "workspace_record",
+        body.name.as_deref().unwrap_or(&project),
+    )?;
+    let raw = crate::dxos::upsert_workspace_record(
+        &project_path,
+        Some(&project),
+        body.company.as_deref(),
+        body.program.as_deref(),
+        body.name.as_deref(),
+        body.summary.as_deref(),
+        body.status.as_deref(),
+        body.owner.as_deref(),
+    );
+    let value = serde_json::from_str::<Value>(&raw).unwrap_or_else(|_| json!({"raw": raw}));
+    record_control_action(
+        &app,
+        &project_path,
+        Some(&project),
+        &actor,
+        "workspace_record",
+        body.name.as_deref().unwrap_or(&project),
         &value,
     );
     Ok(Json(value))
