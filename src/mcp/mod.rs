@@ -2722,6 +2722,17 @@ impl DxTerminalService {
     }
 
     #[tool(
+        description = "Inspect the DX automation bridge inventory for skills and command packs. Use this to see what reusable provider-local workflows can be translated across Claude, Codex/GPT, and Gemini from the shared DX asset catalog."
+    )]
+    async fn dxos_automation_bridges(
+        &self,
+        Parameters(req): Parameters<types::DxosAutomationBridgesRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::dxos_tools::automation_bridges(req.project.as_deref());
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
         description = "Convert the shared DX MCP manifest into a provider bridge. This is the interoperability path that turns Claude-native MCP registrations into Codex/GPT or Gemini bridge configs, and vice versa through the DX catalog."
     )]
     async fn dxos_provider_plugin_sync(
@@ -2729,6 +2740,22 @@ impl DxTerminalService {
         Parameters(req): Parameters<types::DxosProviderPluginSyncRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let result = tools::dxos_tools::provider_plugin_sync(
+            req.source_provider.as_deref(),
+            &req.target_provider,
+            req.dry_run.unwrap_or(false),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Convert the shared DX skills and command-pack inventory into provider-local bridge files. This exports DX-managed commands and skills into Claude, Codex/GPT, or Gemini directories without overwriting user-owned assets."
+    )]
+    async fn dxos_automation_bridge_sync(
+        &self,
+        Parameters(req): Parameters<types::DxosAutomationBridgeSyncRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::dxos_tools::automation_bridge_sync(
+            req.project.as_deref(),
             req.source_provider.as_deref(),
             &req.target_provider,
             req.dry_run.unwrap_or(false),
