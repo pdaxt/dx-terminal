@@ -2748,6 +2748,60 @@ impl DxTerminalService {
     }
 
     #[tool(
+        description = "Create or update a first-class DXOS company record. Use this to attach summary, status, and owner metadata to a company in the shared portfolio registry."
+    )]
+    async fn dxos_company_record(
+        &self,
+        Parameters(req): Parameters<types::DxosCompanyRecordRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::dxos_tools::company_record(
+            req.project.as_deref(),
+            req.name.as_deref(),
+            req.summary.as_deref(),
+            req.status.as_deref(),
+            req.owner.as_deref(),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Create or update a first-class DXOS program record. Use this to attach company-aware summary, status, and owner metadata to a program in the shared portfolio registry."
+    )]
+    async fn dxos_program_record(
+        &self,
+        Parameters(req): Parameters<types::DxosProgramRecordRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::dxos_tools::program_record(
+            req.project.as_deref(),
+            req.company.as_deref(),
+            req.name.as_deref(),
+            req.summary.as_deref(),
+            req.status.as_deref(),
+            req.owner.as_deref(),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Create or update a first-class DXOS workspace record. Use this to attach company/program-aware summary, status, and owner metadata to a workspace in the shared portfolio registry."
+    )]
+    async fn dxos_workspace_record(
+        &self,
+        Parameters(req): Parameters<types::DxosWorkspaceRecordRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::dxos_tools::workspace_record(
+            req.project.as_deref(),
+            req.company.as_deref(),
+            req.program.as_deref(),
+            req.name.as_deref(),
+            req.summary.as_deref(),
+            req.status.as_deref(),
+            req.owner.as_deref(),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
         description = "Get the derived DXOS execution scheduler for a project: launch queue, attention queue, and the next launch recommendation that later orchestrators should consume."
     )]
     async fn dxos_scheduler(
