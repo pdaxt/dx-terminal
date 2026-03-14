@@ -72,7 +72,10 @@ pub fn build_router(app: Arc<App>) -> Router {
         )
         .route("/api/dxos/company", post(api::update_dxos_company_record))
         .route("/api/dxos/program", post(api::update_dxos_program_record))
-        .route("/api/dxos/workspace", post(api::update_dxos_workspace_record))
+        .route(
+            "/api/dxos/workspace",
+            post(api::update_dxos_workspace_record),
+        )
         .route("/api/dxos/registry", get(api::get_dxos_registry))
         .route(
             "/api/dxos/provider-plugins",

@@ -2169,7 +2169,9 @@ pub struct DxosProjectIdentityRequest {
 pub struct DxosCompanyRecordRequest {
     #[schemars(description = "Project path (default: current directory)")]
     pub project: Option<String>,
-    #[schemars(description = "Optional company name; defaults to the current project's company identity")]
+    #[schemars(
+        description = "Optional company name; defaults to the current project's company identity"
+    )]
     pub name: Option<String>,
     #[schemars(description = "Company summary for operators and portfolio views")]
     pub summary: Option<String>,
@@ -2183,9 +2185,13 @@ pub struct DxosCompanyRecordRequest {
 pub struct DxosProgramRecordRequest {
     #[schemars(description = "Project path (default: current directory)")]
     pub project: Option<String>,
-    #[schemars(description = "Optional company name; defaults to the current project's company identity")]
+    #[schemars(
+        description = "Optional company name; defaults to the current project's company identity"
+    )]
     pub company: Option<String>,
-    #[schemars(description = "Optional program name; defaults to the current project's program identity")]
+    #[schemars(
+        description = "Optional program name; defaults to the current project's program identity"
+    )]
     pub name: Option<String>,
     #[schemars(description = "Program summary for portfolio and operator views")]
     pub summary: Option<String>,
@@ -2199,11 +2205,17 @@ pub struct DxosProgramRecordRequest {
 pub struct DxosWorkspaceRecordRequest {
     #[schemars(description = "Project path (default: current directory)")]
     pub project: Option<String>,
-    #[schemars(description = "Optional company name; defaults to the current project's company identity")]
+    #[schemars(
+        description = "Optional company name; defaults to the current project's company identity"
+    )]
     pub company: Option<String>,
-    #[schemars(description = "Optional program name; defaults to the current project's program identity")]
+    #[schemars(
+        description = "Optional program name; defaults to the current project's program identity"
+    )]
     pub program: Option<String>,
-    #[schemars(description = "Optional workspace name; defaults to the current project's workspace identity")]
+    #[schemars(
+        description = "Optional workspace name; defaults to the current project's workspace identity"
+    )]
     pub name: Option<String>,
     #[schemars(description = "Workspace summary for portfolio and operator views")]
     pub summary: Option<String>,
