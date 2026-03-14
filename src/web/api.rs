@@ -3995,6 +3995,7 @@ fn collect_featured_wiki_docs(project_path: &str) -> Vec<WikiDocEntry> {
         ("docs/ARCHITECTURE_BLUEPRINT.md", "architecture"),
         ("docs/HOSTED_SYNC_MODEL.md", "sync"),
         ("docs/PROVIDER_PLUGIN_INTEROP.md", "interop"),
+        ("docs/PROVIDER_AUTOMATION_INTEROP.md", "interop"),
         ("docs/HISTORY_OF_DX_TERMINAL.md", "history"),
     ];
 

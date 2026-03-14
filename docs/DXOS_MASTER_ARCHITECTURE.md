@@ -216,6 +216,8 @@ The first architecture slice now implemented in the repo is:
 - DX now owns a provider-plugin bridge layer, so native Claude MCP registrations and DX-managed Codex/GPT and Gemini bridge files all merge into one shared manifest and can be exported back out as provider-specific plugin configs
 - the portal, MCP surface, and API now expose provider bridge inventory and sync operations, which makes “Claude MCP -> GPT/Gemini bridge” a first-class system capability instead of a manual copy step
 - runtime lane launch now auto-syncs the selected provider bridge and injects its path into the lane environment, so interoperability is part of execution instead of a separate operator chore
+- DX now applies the same bridge model to skills and command packs: the shared automation catalog can be exported into Claude, Codex/GPT, or Gemini local layouts without overwriting user-owned assets
+- lane launch now auto-syncs those automation bridges too, so reusable workflows travel with the runtime instead of staying trapped in one provider’s directory tree
 - worker sessions can now raise blockers or permission requests through DXOS session context, and the control plane routes those requests to the supervising lead first before falling back to explicit human escalation
 - runtime lanes now receive `DXOS_SESSION_ID`, `DX_FEATURE_ID`, `DX_STAGE`, and `DX_SUPERVISOR_SESSION_ID` so agents in a live lane can report blocker and approval state without reconstructing their control-plane identity
 - the server-owned runtime replicator now detects clear approval/login/challenge prompts in live pane output and converts them into DXOS blocker events once, so “waiting for human action” is lifted out of raw terminal text and into the control plane
