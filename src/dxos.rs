@@ -1637,6 +1637,165 @@ fn recompute_workflow_run_status(steps: &[WorkflowStepRecord]) -> &'static str {
     "planned"
 }
 
+#[derive(Clone, Copy)]
+enum WorkflowRuntimeSignal {
+    Activate,
+    Block,
+    Complete,
+}
+
+struct WorkflowAutoUpdate {
+    workflow_run_id: String,
+    action: &'static str,
+}
+
+fn workflow_runtime_rank(status: &str) -> u8 {
+    match status {
+        "blocked" => 0,
+        "active" => 1,
+        "planned" => 2,
+        _ => 3,
+    }
+}
+
+fn find_linked_workflow_run_index(
+    state: &ControlPlaneState,
+    session_id: Option<&str>,
+    work_order_id: Option<&str>,
+) -> Option<usize> {
+    let mut matches = state
+        .workflow_runs
+        .iter()
+        .enumerate()
+        .filter(|(_, run)| {
+            !matches!(run.status.as_str(), "completed" | "cancelled")
+                && (session_id
+                    .map(|value| run.session_id.as_deref() == Some(value))
+                    .unwrap_or(false)
+                    || work_order_id
+                        .map(|value| run.work_order_id.as_deref() == Some(value))
+                        .unwrap_or(false))
+        })
+        .collect::<Vec<_>>();
+    matches.sort_by(|left, right| {
+        let left_rank = workflow_runtime_rank(left.1.status.as_str());
+        let right_rank = workflow_runtime_rank(right.1.status.as_str());
+        left_rank
+            .cmp(&right_rank)
+            .then_with(|| right.1.updated_at.cmp(&left.1.updated_at))
+    });
+    matches.first().map(|(index, _)| *index)
+}
+
+fn reconcile_linked_workflow_run(
+    state: &mut ControlPlaneState,
+    session_id: Option<&str>,
+    work_order_id: Option<&str>,
+    signal: WorkflowRuntimeSignal,
+    note: Option<&str>,
+    now: &str,
+) -> Option<WorkflowAutoUpdate> {
+    let run_index = find_linked_workflow_run_index(state, session_id, work_order_id)?;
+    let note = note
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
+    let run = &mut state.workflow_runs[run_index];
+    let mut changed = false;
+    let action = match signal {
+        WorkflowRuntimeSignal::Activate => {
+            if let Some(step) = run.steps.iter_mut().find(|step| step.status == "blocked") {
+                if step.status != "in_progress" {
+                    step.status = "in_progress".to_string();
+                    changed = true;
+                }
+                if note.is_some() && step.note != note {
+                    step.note = note.clone();
+                    changed = true;
+                }
+                step.updated_at = now.to_string();
+                Some("workflow_run_auto_resumed")
+            } else if run.steps.iter().any(|step| step.status == "in_progress") {
+                None
+            } else if let Some(step) = run.steps.iter_mut().find(|step| step.status == "planned") {
+                step.status = "in_progress".to_string();
+                if note.is_some() && step.note != note {
+                    step.note = note.clone();
+                }
+                step.updated_at = now.to_string();
+                changed = true;
+                Some("workflow_run_auto_activated")
+            } else if run.steps.is_empty() && run.status != "active" {
+                changed = true;
+                Some("workflow_run_auto_activated")
+            } else {
+                None
+            }
+        }
+        WorkflowRuntimeSignal::Block => {
+            if let Some(step) = run
+                .steps
+                .iter_mut()
+                .find(|step| matches!(step.status.as_str(), "in_progress" | "planned" | "blocked"))
+            {
+                if step.status != "blocked" {
+                    step.status = "blocked".to_string();
+                    changed = true;
+                }
+                if note.is_some() && step.note != note {
+                    step.note = note.clone();
+                    changed = true;
+                }
+                step.updated_at = now.to_string();
+                Some("workflow_run_auto_blocked")
+            } else if run.steps.is_empty() && run.status != "blocked" {
+                changed = true;
+                Some("workflow_run_auto_blocked")
+            } else {
+                None
+            }
+        }
+        WorkflowRuntimeSignal::Complete => {
+            for step in run
+                .steps
+                .iter_mut()
+                .filter(|step| !matches!(step.status.as_str(), "completed" | "skipped"))
+            {
+                step.status = "completed".to_string();
+                if note.is_some() {
+                    step.note = note.clone();
+                }
+                step.updated_at = now.to_string();
+                changed = true;
+            }
+            if run.steps.is_empty() && run.status != "completed" {
+                changed = true;
+            }
+            if changed {
+                Some("workflow_run_auto_completed")
+            } else {
+                None
+            }
+        }
+    }?;
+
+    if !changed {
+        return None;
+    }
+
+    run.status = match signal {
+        WorkflowRuntimeSignal::Complete if run.steps.is_empty() => "completed".to_string(),
+        WorkflowRuntimeSignal::Activate if run.steps.is_empty() => "active".to_string(),
+        WorkflowRuntimeSignal::Block if run.steps.is_empty() => "blocked".to_string(),
+        _ => recompute_workflow_run_status(&run.steps).to_string(),
+    };
+    run.updated_at = now.to_string();
+    Some(WorkflowAutoUpdate {
+        workflow_run_id: run.id.clone(),
+        action,
+    })
+}
+
 pub fn workflow_run_list(project_path: &str, project_name: Option<&str>) -> String {
     let state = load_control_plane(project_path, project_name);
     json!({
@@ -1920,6 +2079,21 @@ pub fn start_workflow_run(
         created_at: now.clone(),
         updated_at: now.clone(),
     });
+    let workflow_auto_update = state
+        .sessions
+        .iter()
+        .find(|session| session.id == worker_id)
+        .filter(|session| session.status == "active")
+        .and_then(|_| {
+            reconcile_linked_workflow_run(
+                &mut state,
+                Some(worker_id.as_str()),
+                Some(work_order_id.as_str()),
+                WorkflowRuntimeSignal::Activate,
+                Some("Auto-started from linked active session."),
+                &now,
+            )
+        });
     state.updated_at = now;
 
     match save_control_plane(project_path, &state) {
@@ -1932,7 +2106,12 @@ pub fn start_workflow_run(
             "session_id": created_session_id.or_else(|| Some(worker_id.clone())),
             "work_order_id": work_order_id,
             "workflow": workflow,
-            "workflow_run": state.workflow_runs.iter().find(|item| item.id == workflow_run_id).map(workflow_run_summary),
+            "workflow_action": workflow_auto_update.as_ref().map(|update| update.action).unwrap_or("workflow_run_started"),
+            "workflow_run": workflow_auto_update
+                .as_ref()
+                .and_then(|update| state.workflow_runs.iter().find(|item| item.id == update.workflow_run_id))
+                .or_else(|| state.workflow_runs.iter().find(|item| item.id == workflow_run_id))
+                .map(workflow_run_summary),
             "session": state.sessions.iter().find(|item| item.id == worker_id).map(session_summary),
             "work_order": state.work_orders.iter().find(|item| item.id == work_order_id).map(work_order_summary),
         })
@@ -3057,6 +3236,33 @@ pub fn upsert_session_contract(
         "session_registered"
     };
 
+    let workflow_auto_update = match computed_status.as_str() {
+        "active" => reconcile_linked_workflow_run(
+            &mut state,
+            Some(chosen_id.as_str()),
+            None,
+            WorkflowRuntimeSignal::Activate,
+            Some("Auto-advanced from session activation."),
+            &now,
+        ),
+        "blocked" | "failed" => reconcile_linked_workflow_run(
+            &mut state,
+            Some(chosen_id.as_str()),
+            None,
+            WorkflowRuntimeSignal::Block,
+            Some("Auto-blocked from session state."),
+            &now,
+        ),
+        "completed" => reconcile_linked_workflow_run(
+            &mut state,
+            Some(chosen_id.as_str()),
+            None,
+            WorkflowRuntimeSignal::Complete,
+            Some("Auto-completed from session completion."),
+            &now,
+        ),
+        _ => None,
+    };
     state.updated_at = now;
 
     match save_control_plane(project_path, &state) {
@@ -3068,6 +3274,11 @@ pub fn upsert_session_contract(
             "session_id": chosen_id,
             "provider_policy": provider_policy,
             "session": state.sessions.iter().find(|item| item.id == chosen_id).map(session_summary),
+            "workflow_action": workflow_auto_update.as_ref().map(|update| update.action),
+            "workflow_run": workflow_auto_update
+                .as_ref()
+                .and_then(|update| state.workflow_runs.iter().find(|item| item.id == update.workflow_run_id))
+                .map(workflow_run_summary),
         })
         .to_string(),
         Err(error) => json!({"error": error}).to_string(),
@@ -3107,6 +3318,33 @@ pub fn update_session_status(
     }
     session.updated_at = crate::state::now();
     state.updated_at = session.updated_at.clone();
+    let workflow_auto_update = match status.trim() {
+        "active" => reconcile_linked_workflow_run(
+            &mut state,
+            Some(session_id.trim()),
+            None,
+            WorkflowRuntimeSignal::Activate,
+            note,
+            &state.updated_at.clone(),
+        ),
+        "blocked" | "failed" => reconcile_linked_workflow_run(
+            &mut state,
+            Some(session_id.trim()),
+            None,
+            WorkflowRuntimeSignal::Block,
+            note,
+            &state.updated_at.clone(),
+        ),
+        "completed" => reconcile_linked_workflow_run(
+            &mut state,
+            Some(session_id.trim()),
+            None,
+            WorkflowRuntimeSignal::Complete,
+            note,
+            &state.updated_at.clone(),
+        ),
+        _ => None,
+    };
 
     match save_control_plane(project_path, &state) {
         Ok(()) => json!({
@@ -3116,6 +3354,11 @@ pub fn update_session_status(
             "project_path": project_path,
             "session_id": session_id,
             "session": state.sessions.iter().find(|item| item.id == session_id.trim()).map(session_summary),
+            "workflow_action": workflow_auto_update.as_ref().map(|update| update.action),
+            "workflow_run": workflow_auto_update
+                .as_ref()
+                .and_then(|update| state.workflow_runs.iter().find(|item| item.id == update.workflow_run_id))
+                .map(workflow_run_summary),
         })
         .to_string(),
         Err(error) => json!({"error": error}).to_string(),
@@ -3145,6 +3388,14 @@ pub fn record_session_launch_failure(
     session.last_error = Some(error.trim().to_string());
     session.updated_at = crate::state::now();
     state.updated_at = session.updated_at.clone();
+    let workflow_auto_update = reconcile_linked_workflow_run(
+        &mut state,
+        Some(session_id.trim()),
+        None,
+        WorkflowRuntimeSignal::Block,
+        Some(error.trim()),
+        &state.updated_at.clone(),
+    );
 
     match save_control_plane(project_path, &state) {
         Ok(()) => json!({
@@ -3154,6 +3405,11 @@ pub fn record_session_launch_failure(
             "project_path": project_path,
             "session_id": session_id,
             "session": state.sessions.iter().find(|item| item.id == session_id.trim()).map(session_summary),
+            "workflow_action": workflow_auto_update.as_ref().map(|update| update.action),
+            "workflow_run": workflow_auto_update
+                .as_ref()
+                .and_then(|update| state.workflow_runs.iter().find(|item| item.id == update.workflow_run_id))
+                .map(workflow_run_summary),
         })
         .to_string(),
         Err(error) => json!({"error": error}).to_string(),
@@ -3377,6 +3633,14 @@ pub fn raise_session_blocker(
     session.status = "blocked".to_string();
     session.updated_at = now.clone();
     state.updated_at = now.clone();
+    let workflow_auto_update = reconcile_linked_workflow_run(
+        &mut state,
+        Some(worker_session_id.trim()),
+        Some(work_order_id.as_str()),
+        WorkflowRuntimeSignal::Block,
+        Some(blocker.trim()),
+        &now,
+    );
 
     match save_control_plane(project_path, &state) {
         Ok(()) => json!({
@@ -3390,6 +3654,11 @@ pub fn raise_session_blocker(
             "routed_to": if broker_session_id == worker_session_id.trim() { "human".to_string() } else { broker_session_id.clone() },
             "session": state.sessions.iter().find(|item| item.id == worker_session_id.trim()).map(session_summary),
             "work_order": state.work_orders.iter().find(|item| item.id == work_order_id).map(work_order_summary),
+            "workflow_action": workflow_auto_update.as_ref().map(|update| update.action),
+            "workflow_run": workflow_auto_update
+                .as_ref()
+                .and_then(|update| state.workflow_runs.iter().find(|item| item.id == update.workflow_run_id))
+                .map(workflow_run_summary),
         })
         .to_string(),
         Err(error) => json!({"error": error}).to_string(),
@@ -3449,6 +3718,14 @@ pub fn work_order_block(
             session.updated_at = state.updated_at.clone();
         }
     }
+    let workflow_auto_update = reconcile_linked_workflow_run(
+        &mut state,
+        worker_session_id.as_deref(),
+        Some(work_order_id.trim()),
+        WorkflowRuntimeSignal::Block,
+        Some(blocker.trim()),
+        &state.updated_at.clone(),
+    );
 
     match save_control_plane(project_path, &state) {
         Ok(()) => json!({
@@ -3458,6 +3735,11 @@ pub fn work_order_block(
             "project_path": project_path,
             "work_order_id": work_order_id,
             "work_order": state.work_orders.iter().find(|item| item.id == work_order_id.trim()).map(work_order_summary),
+            "workflow_action": workflow_auto_update.as_ref().map(|update| update.action),
+            "workflow_run": workflow_auto_update
+                .as_ref()
+                .and_then(|update| state.workflow_runs.iter().find(|item| item.id == update.workflow_run_id))
+                .map(workflow_run_summary),
         })
         .to_string(),
         Err(error) => json!({"error": error}).to_string(),
@@ -3507,6 +3789,14 @@ pub fn resolve_work_order(
             session.updated_at = state.updated_at.clone();
         }
     }
+    let workflow_auto_update = reconcile_linked_workflow_run(
+        &mut state,
+        worker_session_id.as_deref(),
+        Some(work_order_id.trim()),
+        WorkflowRuntimeSignal::Activate,
+        resolution,
+        &state.updated_at.clone(),
+    );
 
     match save_control_plane(project_path, &state) {
         Ok(()) => json!({
@@ -3516,6 +3806,11 @@ pub fn resolve_work_order(
             "project_path": project_path,
             "work_order_id": work_order_id,
             "work_order": state.work_orders.iter().find(|item| item.id == work_order_id.trim()).map(work_order_summary),
+            "workflow_action": workflow_auto_update.as_ref().map(|update| update.action),
+            "workflow_run": workflow_auto_update
+                .as_ref()
+                .and_then(|update| state.workflow_runs.iter().find(|item| item.id == update.workflow_run_id))
+                .map(workflow_run_summary),
         })
         .to_string(),
         Err(error) => json!({"error": error}).to_string(),
@@ -3545,6 +3840,14 @@ pub fn record_session_delivery_failure(
     session.last_error = Some(error.trim().to_string());
     session.updated_at = crate::state::now();
     state.updated_at = session.updated_at.clone();
+    let workflow_auto_update = reconcile_linked_workflow_run(
+        &mut state,
+        Some(session_id.trim()),
+        None,
+        WorkflowRuntimeSignal::Block,
+        Some(error.trim()),
+        &state.updated_at.clone(),
+    );
 
     match save_control_plane(project_path, &state) {
         Ok(()) => json!({
@@ -3554,6 +3857,11 @@ pub fn record_session_delivery_failure(
             "project_path": project_path,
             "session_id": session_id,
             "session": state.sessions.iter().find(|item| item.id == session_id.trim()).map(session_summary),
+            "workflow_action": workflow_auto_update.as_ref().map(|update| update.action),
+            "workflow_run": workflow_auto_update
+                .as_ref()
+                .and_then(|update| state.workflow_runs.iter().find(|item| item.id == update.workflow_run_id))
+                .map(workflow_run_summary),
         })
         .to_string(),
         Err(error) => json!({"error": error}).to_string(),
@@ -3689,8 +3997,9 @@ pub fn workflow_run_event_from_result(project_path: &str, result: &str) -> Optio
             .unwrap_or("")
             .to_string(),
         action: value
-            .get("action")
+            .get("workflow_action")
             .and_then(Value::as_str)
+            .or_else(|| value.get("action").and_then(Value::as_str))
             .unwrap_or("workflow_run_updated")
             .to_string(),
     })
