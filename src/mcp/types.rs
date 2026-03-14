@@ -2154,6 +2154,18 @@ pub struct DxosControlPlaneRequest {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosProjectIdentityRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+    #[schemars(description = "Optional company label for this project")]
+    pub company: Option<String>,
+    #[schemars(description = "Optional program label for this project")]
+    pub program: Option<String>,
+    #[schemars(description = "Optional workspace label for this project")]
+    pub workspace: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct DxosSchedulerRequest {
     #[schemars(description = "Project path (default: current directory)")]
     pub project: Option<String>,
