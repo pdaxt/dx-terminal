@@ -1215,7 +1215,10 @@ let dxosRuntimeBrokerCache={};
 let dxosControlAuthCache={};
 let dxosRecoveryCache={};
 let dxosSessionCache={};
+let dxosPortfolioRegistry={projects:[],companies:[],programs:[],workspaces:[]};
 let dxosPortfolioProjects=[];
+let currentCompanyFilter='all';
+let currentProgramFilter='all';
 const DX_CONTROL_TOKEN_KEY='dx_control_token';
 const DX_OPERATOR_IDENTITY_KEY='dx_operator_identity';
 
@@ -1301,7 +1304,51 @@ function allKnownProjectSpaces(workspaces){
   const merged=[...fromRuntime,...dxosPortfolioProjects]
     .map(item=>String(item||'').trim())
     .filter(Boolean);
-  return [...new Set(merged)].sort((a,b)=>a.localeCompare(b));
+  return [...new Set(merged)]
+    .filter(projectMatchesPortfolioFilters)
+    .sort((a,b)=>a.localeCompare(b));
+}
+
+function portfolioProgramKey(company,program){
+  const c=String(company||'_').trim().toLowerCase()||'_';
+  const p=String(program||'_').trim().toLowerCase()||'_';
+  return `${c}::${p}`;
+}
+
+function portfolioProjectRecord(project){
+  const target=String(project||'').trim();
+  if(!target)return null;
+  const projects=Array.isArray(dxosPortfolioRegistry.projects)?dxosPortfolioRegistry.projects:[];
+  return projects.find(item=>String(item&&item.name||'').trim()===target)||null;
+}
+
+function projectMatchesPortfolioFilters(project){
+  const record=portfolioProjectRecord(project);
+  if(!record)return currentCompanyFilter==='all'&&currentProgramFilter==='all';
+  if(currentCompanyFilter!=='all'&&String(record.company||'').trim()!==currentCompanyFilter)return false;
+  if(currentProgramFilter!=='all'&&portfolioProgramKey(record.company,record.program)!==currentProgramFilter)return false;
+  return true;
+}
+
+function updatePortfolioFilters(){
+  const companySel=document.getElementById('portfolio-company-select');
+  const programSel=document.getElementById('portfolio-program-select');
+  if(!companySel||!programSel)return;
+  const companies=Array.isArray(dxosPortfolioRegistry.companies)?dxosPortfolioRegistry.companies:[];
+  const programs=(Array.isArray(dxosPortfolioRegistry.programs)?dxosPortfolioRegistry.programs:[])
+    .filter(item=>currentCompanyFilter==='all'||String(item.company||'').trim()===currentCompanyFilter);
+  const companyOptions=['<option value="all">All companies</option>',...companies.map(item=>`<option value="${escHtml(String(item.name||''))}">${escHtml(String(item.name||'Unnamed company'))}</option>`)];
+  companySel.innerHTML=companyOptions.join('');
+  if(!companies.some(item=>String(item.name||'').trim()===currentCompanyFilter))currentCompanyFilter='all';
+  companySel.value=currentCompanyFilter;
+  const programOptions=['<option value="all">All programs</option>',...programs.map(item=>{
+    const key=String(item.id||portfolioProgramKey(item.company,item.name));
+    const label=item.company?`${item.name} · ${item.company}`:item.name||'Unnamed program';
+    return `<option value="${escHtml(key)}">${escHtml(String(label))}</option>`;
+  })];
+  programSel.innerHTML=programOptions.join('');
+  if(!programs.some(item=>String(item.id||portfolioProgramKey(item.company,item.name))===currentProgramFilter))currentProgramFilter='all';
+  programSel.value=currentProgramFilter;
 }
 
 function updateWorkspaces(workspaces){
@@ -1321,19 +1368,56 @@ async function loadSpaces(){
   // Initial load from API, will be overridden by WS workspaces
   const sel=document.getElementById('space-select');
   sel.innerHTML='<option value="all">All Projects</option>';
+  updatePortfolioFilters();
   currentSpace='all';
 }
 
-function syncPortfolioProjects(projects){
-  dxosPortfolioProjects=(Array.isArray(projects)?projects:[])
-    .map(item=>String(item||'').trim())
+function syncPortfolioRegistry(registry){
+  dxosPortfolioRegistry={
+    projects:Array.isArray(registry&&registry.projects)?registry.projects:[],
+    companies:Array.isArray(registry&&registry.companies)?registry.companies:[],
+    programs:Array.isArray(registry&&registry.programs)?registry.programs:[],
+    workspaces:Array.isArray(registry&&registry.workspaces)?registry.workspaces:[],
+  };
+  dxosPortfolioProjects=dxosPortfolioRegistry.projects
+    .map(item=>String(item&&item.name||'').trim())
     .filter(Boolean);
+  updatePortfolioFilters();
   updateWorkspaces((wsState&&wsState.workspaces)||[]);
+}
+
+async function applyPortfolioFilters(){
+  currentCompanyFilter=document.getElementById('portfolio-company-select')?.value||'all';
+  updatePortfolioFilters();
+  currentProgramFilter=document.getElementById('portfolio-program-select')?.value||'all';
+  updateWorkspaces((wsState&&wsState.workspaces)||[]);
+  const sel=document.getElementById('space-select');
+  const available=sel?[...sel.options].map(option=>option.value):[];
+  if(currentSpace&&currentSpace!=='all'&&!available.includes(currentSpace)){
+    const fallback=available.find(value=>value!=='all')||'all';
+    currentSpace=fallback;
+    if(sel)sel.value=fallback;
+    if(fallback!=='all')selectedVisionProject=fallback;
+  }
+  if((!currentSpace||currentSpace==='all')&&available.some(value=>value!=='all')){
+    const fallback=available.find(value=>value!=='all')||'all';
+    currentSpace=fallback;
+    if(sel)sel.value=fallback;
+    if(fallback!=='all')selectedVisionProject=fallback;
+  }
+  await refresh();
+  return false;
 }
 
 async function switchExecutionProject(project){
   const target=String(project||'').trim();
   if(!target)return false;
+  const record=portfolioProjectRecord(target);
+  if(record){
+    currentCompanyFilter=String(record.company||'').trim()||'all';
+    currentProgramFilter=record.program?portfolioProgramKey(record.company,record.program):'all';
+    updatePortfolioFilters();
+  }
   currentSpace=target;
   selectedVisionProject=target;
   const sel=document.getElementById('space-select');
