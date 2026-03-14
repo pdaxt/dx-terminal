@@ -2448,10 +2448,11 @@ fn build_dxos_portfolio_brief_payload(query: &DxosPortfolioBriefQuery) -> Value 
             .get("name")
             .and_then(Value::as_str)
             .filter(|value| !value.trim().is_empty())
+            .map(|value| value.to_string())
             .unwrap_or_else(|| project_name_from_path(path));
-        let state = crate::dxos::load_control_plane(path, Some(name));
+        let state = crate::dxos::load_control_plane(path, Some(&name));
         let scheduler =
-            serde_json::from_str::<Value>(&crate::dxos::scheduler_snapshot(path, Some(name)))
+            serde_json::from_str::<Value>(&crate::dxos::scheduler_snapshot(path, Some(&name)))
                 .unwrap_or_else(|_| json!({}));
         let launch_queue = scheduler
             .get("scheduler")
