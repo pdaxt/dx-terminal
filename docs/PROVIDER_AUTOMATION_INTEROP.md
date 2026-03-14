@@ -55,6 +55,7 @@ Each target provider gets generated assets in its normal local layout:
 DX also writes an inventory manifest:
 
 - `.<provider>/dx-automation-plugin.json`
+- `.<provider>/dx-workflow-catalog.json`
 
 This happens at both scopes:
 
@@ -75,14 +76,56 @@ Each runtime receives:
 - `DX_AUTOMATION_BRIDGE_PROJECT_ASSETS`
 - `DX_AUTOMATION_BRIDGE_USER_ASSETS`
 - `DX_AUTOMATION_GUIDE_PATH`
+- `DX_WORKFLOW_CATALOG_PROJECT_PATH`
+- `DX_WORKFLOW_CATALOG_USER_PATH`
 
 That makes workflow interoperability part of runtime startup instead of a separate operator chore.
 
 DX also writes a workspace guide:
 
 - `DX_AUTOMATION.md`
+- `DX_GUIDANCE.md`
+- `DX_<PROVIDER>_GUIDANCE.md`
 
 That file gives the launched lane a concise summary of the shared commands, skills, and manifest paths for its provider bridge.
+
+When DX mirrors guidance into `AGENTS.md`, `CLAUDE.md`, `CODEX.md`, or `GEMINI.md`, it only updates DX-managed files. User-owned guidance is preserved.
+
+## Runtime Bootstrap
+
+DX now pushes this contract into runtime command construction too.
+
+Each provider adapter prepends a DX bootstrap section to the launched prompt that tells the runtime to treat these as canonical:
+
+- `DX_SHARED_GUIDANCE_PATH`
+- `DX_PROVIDER_GUIDANCE_PATH`
+- `DX_AUTOMATION_GUIDE_PATH`
+- `DX_PROVIDER_BRIDGE_PATH`
+- `DX_AUTOMATION_BRIDGE_PROJECT_PATH`
+- `DX_AUTOMATION_BRIDGE_USER_PATH`
+
+That means provider behavior is no longer relying only on whatever happened to be in a preamble file. The launch plan itself now carries the DX automation contract.
+
+## Structured Workflow Objects
+
+DX now derives a simple workflow catalog from bridged commands and skills.
+
+Each workflow record includes:
+
+- `id`
+- `name`
+- `kind`
+- `scope`
+- `summary`
+- `canonical_provider`
+- `sources`
+- `source_path`
+- `target_path`
+- `export_status`
+- `sections`
+- `steps`
+
+This is the first DX-native workflow layer above raw markdown assets. The runtime can now consume shared workflow objects consistently even when the underlying provider directories differ.
 
 ## Portal and MCP Surface
 

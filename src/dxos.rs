@@ -255,6 +255,51 @@ pub struct WorkResolutionRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowStepRecord {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    #[serde(default)]
+    pub note: Option<String>,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowRunRecord {
+    pub id: String,
+    pub workflow_id: String,
+    pub name: String,
+    pub kind: String,
+    pub scope: String,
+    pub summary: String,
+    pub status: String,
+    #[serde(default)]
+    pub source_provider: Option<String>,
+    #[serde(default)]
+    pub feature_id: Option<String>,
+    #[serde(default)]
+    pub stage: Option<String>,
+    #[serde(default)]
+    pub requested_by: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub work_order_id: Option<String>,
+    #[serde(default)]
+    pub supervisor_session_id: Option<String>,
+    #[serde(default)]
+    pub sources: Vec<String>,
+    #[serde(default)]
+    pub source_path: Option<String>,
+    #[serde(default)]
+    pub sections: Vec<String>,
+    #[serde(default)]
+    pub steps: Vec<WorkflowStepRecord>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditRecord {
     pub id: String,
     pub project_path: String,
@@ -294,6 +339,8 @@ pub struct ControlPlaneState {
     pub sessions: Vec<SessionContractRecord>,
     #[serde(default)]
     pub work_orders: Vec<WorkOrderRecord>,
+    #[serde(default)]
+    pub workflow_runs: Vec<WorkflowRunRecord>,
     pub updated_at: String,
 }
 
@@ -456,6 +503,7 @@ fn default_state(project_path: &str, project_name: Option<&str>) -> ControlPlane
         debates: Vec::new(),
         sessions: Vec::new(),
         work_orders: Vec::new(),
+        workflow_runs: Vec::new(),
         updated_at: crate::state::now(),
     }
 }
@@ -927,6 +975,10 @@ fn next_work_order_id(state: &ControlPlaneState) -> String {
     format!("WO{:04}", state.work_orders.len() + 1)
 }
 
+fn next_workflow_run_id(state: &ControlPlaneState) -> String {
+    format!("WF{:04}", state.workflow_runs.len() + 1)
+}
+
 fn default_escalation_target() -> String {
     "lead".to_string()
 }
@@ -1315,6 +1367,55 @@ fn work_order_summary(work_order: &WorkOrderRecord) -> Value {
     })
 }
 
+fn workflow_step_summary(step: &WorkflowStepRecord) -> Value {
+    json!({
+        "id": step.id,
+        "title": step.title,
+        "status": step.status,
+        "note": step.note,
+        "updated_at": step.updated_at,
+    })
+}
+
+fn workflow_run_summary(run: &WorkflowRunRecord) -> Value {
+    let total_steps = run.steps.len();
+    let completed_steps = run
+        .steps
+        .iter()
+        .filter(|step| matches!(step.status.as_str(), "completed" | "skipped"))
+        .count();
+    let blocked_steps = run
+        .steps
+        .iter()
+        .filter(|step| step.status == "blocked")
+        .count();
+    json!({
+        "id": run.id,
+        "workflow_id": run.workflow_id,
+        "name": run.name,
+        "kind": run.kind,
+        "scope": run.scope,
+        "summary": run.summary,
+        "status": run.status,
+        "source_provider": run.source_provider,
+        "feature_id": run.feature_id,
+        "stage": run.stage,
+        "requested_by": run.requested_by,
+        "session_id": run.session_id,
+        "work_order_id": run.work_order_id,
+        "supervisor_session_id": run.supervisor_session_id,
+        "sources": run.sources,
+        "source_path": run.source_path,
+        "sections": run.sections,
+        "step_count": total_steps,
+        "completed_steps": completed_steps,
+        "blocked_steps": blocked_steps,
+        "steps": run.steps.iter().map(workflow_step_summary).collect::<Vec<_>>(),
+        "created_at": run.created_at,
+        "updated_at": run.updated_at,
+    })
+}
+
 pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) -> Value {
     let state = load_control_plane(project_path, project_name);
     let registry = crate::mcp_registry::load_registry();
@@ -1371,6 +1472,16 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
         .work_orders
         .iter()
         .filter(|work_order| work_order.status == "blocked")
+        .count();
+    let active_workflow_runs = state
+        .workflow_runs
+        .iter()
+        .filter(|run| matches!(run.status.as_str(), "planned" | "active" | "blocked"))
+        .count();
+    let blocked_workflow_runs = state
+        .workflow_runs
+        .iter()
+        .filter(|run| run.status == "blocked")
         .count();
     let audit_recent = recent_audit_records(project_path, 8);
     let capability_registry = json!({
@@ -1443,6 +1554,12 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             "blocked_work_orders": blocked_work_orders,
             "recent": state.work_orders.iter().rev().take(10).map(work_order_summary).collect::<Vec<_>>(),
         },
+        "workflow_runner": {
+            "total_runs": state.workflow_runs.len(),
+            "active_runs": active_workflow_runs,
+            "blocked_runs": blocked_workflow_runs,
+            "recent": state.workflow_runs.iter().rev().take(10).map(workflow_run_summary).collect::<Vec<_>>(),
+        },
         "audit": {
             "total": audit_record_count(project_path),
             "recent": audit_recent,
@@ -1473,6 +1590,7 @@ pub fn session_list(project_path: &str, project_name: Option<&str>) -> String {
         },
         "sessions": state.sessions.iter().map(session_summary).collect::<Vec<_>>(),
         "work_orders": state.work_orders.iter().map(work_order_summary).collect::<Vec<_>>(),
+        "workflow_runs": state.workflow_runs.iter().map(workflow_run_summary).collect::<Vec<_>>(),
     })
     .to_string()
 }
