@@ -71,6 +71,10 @@ pub fn build_router(app: Arc<App>) -> Router {
             "/api/dxos/provider-plugins",
             get(api::get_dxos_provider_plugins),
         )
+        .route(
+            "/api/dxos/automation-bridges",
+            get(api::get_dxos_automation_bridges),
+        )
         .route("/api/dxos/debates", get(api::get_dxos_debates))
         .route("/api/dxos/sessions", get(api::get_dxos_sessions))
         .route("/api/dxos/audit", get(api::get_dxos_audit))
@@ -106,6 +110,10 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route(
             "/api/dxos/provider-plugins/sync",
             post(api::sync_dxos_provider_plugins),
+        )
+        .route(
+            "/api/dxos/automation-bridges/sync",
+            post(api::sync_dxos_automation_bridges),
         )
         // Vision
         .route("/api/vision", get(api::get_vision))
