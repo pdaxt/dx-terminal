@@ -837,6 +837,231 @@ fn control_plane_registry_value_for_project_path(project_path: &str) -> Value {
     control_plane_registry_value_for_store_path(&control_plane_store_path(project_path))
 }
 
+fn query_company_records_for_store_path(registry_path: &Path) -> Result<Vec<CompanyRecord>, String> {
+    let conn = open_control_plane_db(registry_path)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT payload_json FROM dxos_companies
+             ORDER BY updated_at DESC, company_name ASC",
+        )
+        .map_err(|error| format!("prepare: {}", error))?;
+    let rows = stmt
+        .query_map([], |row| {
+            let payload_json: String = row.get(0)?;
+            Ok(serde_json::from_str::<CompanyRecord>(&payload_json).ok())
+        })
+        .map_err(|error| format!("query: {}", error))?;
+    Ok(rows.filter_map(Result::ok).flatten().collect())
+}
+
+fn query_program_records_for_store_path(registry_path: &Path) -> Result<Vec<ProgramRecord>, String> {
+    let conn = open_control_plane_db(registry_path)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT payload_json FROM dxos_programs
+             ORDER BY updated_at DESC, program_name ASC",
+        )
+        .map_err(|error| format!("prepare: {}", error))?;
+    let rows = stmt
+        .query_map([], |row| {
+            let payload_json: String = row.get(0)?;
+            Ok(serde_json::from_str::<ProgramRecord>(&payload_json).ok())
+        })
+        .map_err(|error| format!("query: {}", error))?;
+    Ok(rows.filter_map(Result::ok).flatten().collect())
+}
+
+fn query_workspace_records_for_store_path(
+    registry_path: &Path,
+) -> Result<Vec<WorkspaceRecord>, String> {
+    let conn = open_control_plane_db(registry_path)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT payload_json FROM dxos_workspaces
+             ORDER BY updated_at DESC, workspace_name ASC",
+        )
+        .map_err(|error| format!("prepare: {}", error))?;
+    let rows = stmt
+        .query_map([], |row| {
+            let payload_json: String = row.get(0)?;
+            Ok(serde_json::from_str::<WorkspaceRecord>(&payload_json).ok())
+        })
+        .map_err(|error| format!("query: {}", error))?;
+    Ok(rows.filter_map(Result::ok).flatten().collect())
+}
+
+fn store_company_record(project_path: &str, record: &CompanyRecord) -> Result<(), String> {
+    let conn = control_plane_db(project_path)?;
+    let payload = serde_json::to_string_pretty(record).map_err(|e| format!("serialize: {}", e))?;
+    conn.execute(
+        "INSERT INTO dxos_companies(company_id, company_name, updated_at, payload_json)
+         VALUES(?1, ?2, ?3, ?4)
+         ON CONFLICT(company_id) DO UPDATE SET
+            company_name = excluded.company_name,
+            updated_at = excluded.updated_at,
+            payload_json = excluded.payload_json",
+        params![record.id, record.name, record.updated_at, payload],
+    )
+    .map_err(|e| format!("upsert: {}", e))?;
+    Ok(())
+}
+
+fn store_program_record(project_path: &str, record: &ProgramRecord) -> Result<(), String> {
+    let conn = control_plane_db(project_path)?;
+    let payload = serde_json::to_string_pretty(record).map_err(|e| format!("serialize: {}", e))?;
+    conn.execute(
+        "INSERT INTO dxos_programs(program_id, program_name, company_name, updated_at, payload_json)
+         VALUES(?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(program_id) DO UPDATE SET
+            program_name = excluded.program_name,
+            company_name = excluded.company_name,
+            updated_at = excluded.updated_at,
+            payload_json = excluded.payload_json",
+        params![record.id, record.name, record.company, record.updated_at, payload],
+    )
+    .map_err(|e| format!("upsert: {}", e))?;
+    Ok(())
+}
+
+fn store_workspace_record(project_path: &str, record: &WorkspaceRecord) -> Result<(), String> {
+    let conn = control_plane_db(project_path)?;
+    let payload = serde_json::to_string_pretty(record).map_err(|e| format!("serialize: {}", e))?;
+    conn.execute(
+        "INSERT INTO dxos_workspaces(workspace_id, workspace_name, company_name, program_name, updated_at, payload_json)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(workspace_id) DO UPDATE SET
+            workspace_name = excluded.workspace_name,
+            company_name = excluded.company_name,
+            program_name = excluded.program_name,
+            updated_at = excluded.updated_at,
+            payload_json = excluded.payload_json",
+        params![
+            record.id,
+            record.name,
+            record.company,
+            record.program,
+            record.updated_at,
+            payload
+        ],
+    )
+    .map_err(|e| format!("upsert: {}", e))?;
+    Ok(())
+}
+
+fn company_record_for_store_path(registry_path: &Path, name: &str) -> Option<CompanyRecord> {
+    let id = company_record_id(name);
+    query_company_records_for_store_path(registry_path)
+        .ok()?
+        .into_iter()
+        .find(|record| record.id == id)
+}
+
+fn program_record_for_store_path(
+    registry_path: &Path,
+    company: Option<&str>,
+    name: &str,
+) -> Option<ProgramRecord> {
+    let id = program_record_id(company, name);
+    query_program_records_for_store_path(registry_path)
+        .ok()?
+        .into_iter()
+        .find(|record| record.id == id)
+}
+
+fn workspace_record_for_store_path(
+    registry_path: &Path,
+    company: Option<&str>,
+    program: Option<&str>,
+    name: &str,
+) -> Option<WorkspaceRecord> {
+    let id = workspace_record_id(company, program, name);
+    query_workspace_records_for_store_path(registry_path)
+        .ok()?
+        .into_iter()
+        .find(|record| record.id == id)
+}
+
+fn ensure_portfolio_records_for_project(
+    project_path: &str,
+    project: &ProjectDescriptor,
+) -> Result<(), String> {
+    let registry_path = control_plane_store_path(project_path);
+    if let Some(company) = project.company.as_deref().map(str::trim).filter(|value| !value.is_empty())
+    {
+        if company_record_for_store_path(&registry_path, company).is_none() {
+            let now = crate::state::now();
+            store_company_record(
+                project_path,
+                &CompanyRecord {
+                    id: company_record_id(company),
+                    name: company.to_string(),
+                    summary: None,
+                    status: "active".to_string(),
+                    owner: None,
+                    created_at: now.clone(),
+                    updated_at: now,
+                },
+            )?;
+        }
+    }
+    if let Some(program) = project.program.as_deref().map(str::trim).filter(|value| !value.is_empty())
+    {
+        if program_record_for_store_path(&registry_path, project.company.as_deref(), program).is_none()
+        {
+            let now = crate::state::now();
+            store_program_record(
+                project_path,
+                &ProgramRecord {
+                    id: program_record_id(project.company.as_deref(), program),
+                    name: program.to_string(),
+                    company: clean_optional_label(project.company.as_deref()),
+                    summary: None,
+                    status: "active".to_string(),
+                    owner: None,
+                    created_at: now.clone(),
+                    updated_at: now,
+                },
+            )?;
+        }
+    }
+    if let Some(workspace) = project
+        .workspace
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if workspace_record_for_store_path(
+            &registry_path,
+            project.company.as_deref(),
+            project.program.as_deref(),
+            workspace,
+        )
+        .is_none()
+        {
+            let now = crate::state::now();
+            store_workspace_record(
+                project_path,
+                &WorkspaceRecord {
+                    id: workspace_record_id(
+                        project.company.as_deref(),
+                        project.program.as_deref(),
+                        workspace,
+                    ),
+                    name: workspace.to_string(),
+                    company: clean_optional_label(project.company.as_deref()),
+                    program: clean_optional_label(project.program.as_deref()),
+                    summary: None,
+                    status: "active".to_string(),
+                    owner: None,
+                    created_at: now.clone(),
+                    updated_at: now,
+                },
+            )?;
+        }
+    }
+    Ok(())
+}
+
 fn next_audit_id() -> String {
     let millis = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
