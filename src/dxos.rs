@@ -350,6 +350,12 @@ pub struct ControlOperatorProfile {
     #[serde(default)]
     pub project_scopes: Vec<String>,
     #[serde(default)]
+    pub company_scopes: Vec<String>,
+    #[serde(default)]
+    pub program_scopes: Vec<String>,
+    #[serde(default)]
+    pub workspace_scopes: Vec<String>,
+    #[serde(default)]
     pub allowed_actions: Vec<String>,
     #[serde(default)]
     pub note: Option<String>,
