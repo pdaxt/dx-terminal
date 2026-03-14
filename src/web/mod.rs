@@ -77,6 +77,7 @@ pub fn build_router(app: Arc<App>) -> Router {
         )
         .route("/api/dxos/debates", get(api::get_dxos_debates))
         .route("/api/dxos/sessions", get(api::get_dxos_sessions))
+        .route("/api/dxos/workflows", get(api::get_dxos_workflows))
         .route("/api/dxos/audit", get(api::get_dxos_audit))
         .route("/api/dxos/adoption/start", post(api::start_dxos_adoption))
         .route(
@@ -96,6 +97,8 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/dxos/debate/decision", post(api::finalize_dxos_debate))
         .route("/api/dxos/session/launch", post(api::launch_dxos_session))
         .route("/api/dxos/session/upsert", post(api::upsert_dxos_session))
+        .route("/api/dxos/workflow/start", post(api::start_dxos_workflow))
+        .route("/api/dxos/workflow/step", post(api::update_dxos_workflow_step))
         .route(
             "/api/dxos/session/status",
             post(api::update_dxos_session_status),
