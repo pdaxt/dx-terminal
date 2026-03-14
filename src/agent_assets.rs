@@ -213,8 +213,11 @@ fn collect_skill_assets(dir: &Path, provider: &str, scope: &str) -> Vec<Value> {
         .filter_map(Result::ok)
     {
         let path = entry.path();
-        if !path.is_file() || path.file_name().and_then(|value| value.to_str()) != Some("SKILL.md")
-        {
+        let file_name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default();
+        if !path.is_file() || !file_name.eq_ignore_ascii_case("SKILL.md") {
             continue;
         }
 
