@@ -2915,6 +2915,40 @@ async function syncProviderBridge(target){
   return false;
 }
 
+async function syncAutomationBridge(target){
+  const project=activeProjectForHub();
+  if(!project||!target)return false;
+  if(currentDxOperatorPolicy(project)&&!operatorActionAllowed(project,'automation_bridge_sync')){
+    setDxosPortalNotice('automation','Operator policy blocks automation bridge sync for this project.','red');
+    return false;
+  }
+  const source=(providerBridgeSourceSelection[project]||'dx').toString();
+  setDxosPortalNotice('automation',`Exporting ${source==='dx'?'DX shared automation catalog':source} into the ${target} automation bridge…`,'yellow');
+  const result=await fetchJSON('/api/dxos/automation-bridges/sync',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      project,
+      source_provider:source==='dx'?null:source,
+      target_provider:target,
+      dry_run:false
+    })
+  });
+  if(!result){
+    setDxosPortalNotice('automation','Unable to reach the automation bridge sync endpoint.','red');
+    return false;
+  }
+  if(result.error){
+    setDxosPortalNotice('automation',String(result.error||'Automation bridge sync failed.'),'red');
+    return false;
+  }
+  const projectAssets=result.result&&result.result.project&&result.result.project.assets!=null?result.result.project.assets:'0';
+  const userAssets=result.result&&result.result.user&&result.result.user.assets!=null?result.result.user.assets:'0';
+  setDxosPortalNotice('automation',`Automation bridge synced: ${source} -> ${target} (${projectAssets} project assets, ${userAssets} user assets).`,'green');
+  await renderExecutionHub();
+  return false;
+}
+
 function renderProviderPluginRows(project,providerPlugins){
   const providers=Array.isArray(providerPlugins&&providerPlugins.providers)?providerPlugins.providers:[];
   if(!providers.length){
@@ -2938,6 +2972,33 @@ function renderProviderPluginRows(project,providerPlugins){
       <div class="exec-row-meta">${item.imported_servers||0} imported into DX · ${item.available_servers||0} available in the shared manifest</div>
       <div class="exec-row-actions" style="margin-top:8px">
         <button class="vdd-focus-btn" onclick="return syncProviderBridge('${escHtml(provider)}')" ${operatorActionDisabledAttrs(project,'provider_plugin_sync','provider bridge sync')}>Sync bridge</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderAutomationBridgeRows(project,automationBridges){
+  const providers=Array.isArray(automationBridges&&automationBridges.providers)?automationBridges.providers:[];
+  if(!providers.length){
+    return '<div class="automation-note">No provider automation bridges are registered yet.</div>';
+  }
+  return providers.map(item=>{
+    const provider=String(item.provider||'claude');
+    return `<div class="exec-row">
+      <div class="exec-row-top">
+        <span class="exec-row-title">${escHtml(String(item.label||provider))}</span>
+        <span class="exec-row-tags">
+          ${providerBadge({id:provider,label:item.label||provider,short:provider},true)}
+          <span class="doc-pill shared">DX automation bridge</span>
+          <span class="doc-pill">${escHtml(String(item.format||'json').toUpperCase())}</span>
+        </span>
+      </div>
+      <div class="exec-row-meta">Project manifest: ${escHtml(String(item.project_path||''))}</div>
+      <div class="exec-row-meta">User manifest: ${escHtml(String(item.user_path||''))}</div>
+      <div class="exec-row-meta">${item.available_project_commands||0} project commands · ${item.available_project_skills||0} project skills · ${item.available_user_commands||0} user commands · ${item.available_user_skills||0} user skills</div>
+      <div class="exec-row-meta">${item.project_exported_assets||0} project assets exported · ${item.user_exported_assets||0} user assets exported</div>
+      <div class="exec-row-actions" style="margin-top:8px">
+        <button class="vdd-focus-btn" onclick="return syncAutomationBridge('${escHtml(provider)}')" ${operatorActionDisabledAttrs(project,'automation_bridge_sync','automation bridge sync')}>Sync automation</button>
       </div>
     </div>`;
   }).join('');
