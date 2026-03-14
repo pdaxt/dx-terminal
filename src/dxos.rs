@@ -1734,6 +1734,68 @@ fn scheduler_attention_queue(state: &ControlPlaneState) -> Vec<Value> {
     items
 }
 
+fn scheduler_active_claims(state: &ControlPlaneState) -> Vec<Value> {
+    let mut items = state
+        .sessions
+        .iter()
+        .filter(|session| {
+            session.status == "launching"
+                && session
+                    .launch_claimed_by
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .is_some()
+        })
+        .map(|session| {
+            json!({
+                "session_id": session.id,
+                "role": session.role,
+                "feature_id": session.feature_id,
+                "stage": session.stage,
+                "claimed_by": session.launch_claimed_by,
+                "claim_id": session.launch_claim_id,
+                "claimed_at": session.launch_claimed_at,
+                "updated_at": session.updated_at,
+            })
+        })
+        .collect::<Vec<_>>();
+    items.sort_by(|left, right| {
+        right
+            .get("claimed_at")
+            .and_then(Value::as_str)
+            .cmp(&left.get("claimed_at").and_then(Value::as_str))
+    });
+    items
+}
+
+fn scheduler_recent_runs(state: &ControlPlaneState) -> Vec<Value> {
+    let mut items = state
+        .scheduler_runs
+        .iter()
+        .rev()
+        .take(8)
+        .map(|run| {
+            json!({
+                "run_id": run.id,
+                "actor": run.actor,
+                "outcome": run.outcome,
+                "action": run.result.get("action").cloned().unwrap_or_else(|| json!(null)),
+                "session_id": run.result.get("session_id").cloned().unwrap_or_else(|| json!(null)),
+                "created_at": run.created_at,
+                "updated_at": run.updated_at,
+            })
+        })
+        .collect::<Vec<_>>();
+    items.sort_by(|left, right| {
+        right
+            .get("updated_at")
+            .and_then(Value::as_str)
+            .cmp(&left.get("updated_at").and_then(Value::as_str))
+    });
+    items
+}
+
 fn scheduler_summary(state: &ControlPlaneState) -> Value {
     let launch_queue = scheduler_launch_queue(state);
     let attention_queue = scheduler_attention_queue(state);
@@ -1744,6 +1806,8 @@ fn scheduler_summary(state: &ControlPlaneState) -> Value {
         "launch_queue": launch_queue,
         "attention_queue": attention_queue,
         "next_launch": next_launch,
+        "active_claims": scheduler_active_claims(state),
+        "recent_runs": scheduler_recent_runs(state),
     })
 }
 
