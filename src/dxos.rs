@@ -2363,6 +2363,7 @@ pub fn start_workflow_run(
             last_error: None,
             launch_claimed_by: None,
             launch_claimed_at: None,
+            launch_claim_id: None,
             created_at: now.clone(),
             updated_at: now.clone(),
         });
@@ -2848,6 +2849,7 @@ pub fn start_project_adoption_with_plan(
         last_error: None,
         launch_claimed_by: None,
         launch_claimed_at: None,
+        launch_claim_id: None,
         created_at: now.clone(),
         updated_at: now.clone(),
     });
@@ -3062,6 +3064,7 @@ pub fn update_project_adoption_status(
                 last_error: None,
                 launch_claimed_by: None,
                 launch_claimed_at: None,
+                launch_claim_id: None,
                 created_at: updated_at.clone(),
                 updated_at: updated_at.clone(),
             });
@@ -3636,6 +3639,7 @@ pub fn upsert_session_contract(
             last_error: None,
             launch_claimed_by: None,
             launch_claimed_at: None,
+            launch_claim_id: None,
             created_at: now.clone(),
             updated_at: now.clone(),
         });
