@@ -5904,6 +5904,9 @@ mod tests {
             id: "ops-lead".to_string(),
             role: "lead".to_string(),
             project_scopes: vec!["demo".to_string()],
+            company_scopes: vec!["*".to_string()],
+            program_scopes: vec!["*".to_string()],
+            workspace_scopes: vec!["*".to_string()],
             allowed_actions: vec!["session_*".to_string(), "work_*".to_string()],
             note: None,
         }];
@@ -5925,6 +5928,9 @@ mod tests {
             id: "reviewer-1".to_string(),
             role: "reviewer".to_string(),
             project_scopes: vec!["demo".to_string()],
+            company_scopes: vec!["*".to_string()],
+            program_scopes: vec!["*".to_string()],
+            workspace_scopes: vec!["*".to_string()],
             allowed_actions: vec!["debate_*".to_string()],
             note: None,
         }];
@@ -5937,6 +5943,61 @@ mod tests {
         )
         .unwrap_err();
         assert!(denied.contains("not allowed"));
+    }
+
+    #[test]
+    fn operator_policy_can_scope_by_company_and_program() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        std::fs::create_dir_all(&project_path).unwrap();
+        let project = project_path.to_str().unwrap();
+        let _ = upsert_project_identity(
+            project,
+            Some("demo"),
+            Some("DX Ventures"),
+            Some("Agentic Delivery"),
+            Some("core-platform"),
+        );
+
+        let profiles = vec![ControlOperatorProfile {
+            id: "ops-lead".to_string(),
+            role: "lead".to_string(),
+            project_scopes: vec!["*".to_string()],
+            company_scopes: vec!["DX Ventures".to_string()],
+            program_scopes: vec!["Agentic Delivery".to_string()],
+            workspace_scopes: vec!["core-*".to_string()],
+            allowed_actions: vec!["session_*".to_string()],
+            note: None,
+        }];
+        let decision = authorize_operator_action_with_profiles(
+            &profiles,
+            project,
+            Some("demo"),
+            "ops-lead",
+            "session_launch",
+        )
+        .unwrap();
+        assert_eq!(decision["company_scopes"][0], "DX Ventures");
+
+        let denied_profiles = vec![ControlOperatorProfile {
+            id: "ops-lead".to_string(),
+            role: "lead".to_string(),
+            project_scopes: vec!["*".to_string()],
+            company_scopes: vec!["Another Co".to_string()],
+            program_scopes: vec!["*".to_string()],
+            workspace_scopes: vec!["*".to_string()],
+            allowed_actions: vec!["session_*".to_string()],
+            note: None,
+        }];
+        let denied = authorize_operator_action_with_profiles(
+            &denied_profiles,
+            project,
+            Some("demo"),
+            "ops-lead",
+            "session_launch",
+        )
+        .unwrap_err();
+        assert!(denied.contains("cannot control company"));
     }
 
     #[test]
