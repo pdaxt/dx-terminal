@@ -471,6 +471,33 @@ CREATE TABLE IF NOT EXISTS dxos_control_planes (
 );
 CREATE INDEX IF NOT EXISTS idx_dxos_control_planes_updated_at
     ON dxos_control_planes(updated_at DESC);
+CREATE TABLE IF NOT EXISTS dxos_companies (
+    company_id TEXT PRIMARY KEY,
+    company_name TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    payload_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dxos_companies_updated_at
+    ON dxos_companies(updated_at DESC, company_name ASC);
+CREATE TABLE IF NOT EXISTS dxos_programs (
+    program_id TEXT PRIMARY KEY,
+    program_name TEXT NOT NULL,
+    company_name TEXT,
+    updated_at TEXT NOT NULL,
+    payload_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dxos_programs_updated_at
+    ON dxos_programs(updated_at DESC, program_name ASC);
+CREATE TABLE IF NOT EXISTS dxos_workspaces (
+    workspace_id TEXT PRIMARY KEY,
+    workspace_name TEXT NOT NULL,
+    company_name TEXT,
+    program_name TEXT,
+    updated_at TEXT NOT NULL,
+    payload_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dxos_workspaces_updated_at
+    ON dxos_workspaces(updated_at DESC, workspace_name ASC);
 CREATE TABLE IF NOT EXISTS dxos_audit_log (
     id TEXT PRIMARY KEY,
     project_path TEXT NOT NULL,
@@ -571,6 +598,47 @@ fn control_plane_storage_summary(project_path: &str) -> Value {
         "mirror_path": control_plane_file(project_path).to_string_lossy().to_string(),
         "registered_projects": control_plane_store_project_count(project_path),
     })
+}
+
+fn clean_optional_label(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(|item| item.to_string())
+}
+
+fn normalized_scope_key(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
+}
+
+fn company_record_id(name: &str) -> String {
+    normalized_scope_key(name)
+}
+
+fn program_record_id(company: Option<&str>, name: &str) -> String {
+    format!(
+        "{}::{}",
+        company
+            .map(normalized_scope_key)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "_".to_string()),
+        normalized_scope_key(name)
+    )
+}
+
+fn workspace_record_id(company: Option<&str>, program: Option<&str>, name: &str) -> String {
+    format!(
+        "{}::{}::{}",
+        company
+            .map(normalized_scope_key)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "_".to_string()),
+        program
+            .map(normalized_scope_key)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "_".to_string()),
+        normalized_scope_key(name)
+    )
 }
 
 fn default_state(project_path: &str, project_name: Option<&str>) -> ControlPlaneState {
