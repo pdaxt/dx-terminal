@@ -397,6 +397,36 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         .get("exported_servers")
         .and_then(|value| value.as_u64())
         .unwrap_or(0);
+    let automation_bridge_sync = crate::provider_asset_plugins::convert_provider_asset_plugin(
+        Some(&project_path),
+        None,
+        &provider,
+        false,
+    )
+    .unwrap_or_else(|error| {
+        serde_json::json!({
+            "error": error.to_string(),
+            "target": provider,
+        })
+    });
+    let automation_project_manifest_path = automation_bridge_sync
+        .get("project_manifest_path")
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
+    let automation_user_manifest_path = automation_bridge_sync
+        .get("user_manifest_path")
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
+    let automation_project_assets = automation_bridge_sync
+        .get("project")
+        .and_then(|value| value.get("assets"))
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let automation_user_assets = automation_bridge_sync
+        .get("user")
+        .and_then(|value| value.get("assets"))
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
 
     // Validate CWD exists — fall back to project_path to avoid posix_spawn ENOENT
     if !std::path::Path::new(&spawn_cwd).exists() {
@@ -455,13 +485,47 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
             "DX_PROVIDER_BRIDGE_EXPORTED_SERVERS".to_string(),
             provider_bridge_exported.to_string(),
         ),
+        (
+            "DX_AUTOMATION_BRIDGE_PROVIDER".to_string(),
+            provider.clone(),
+        ),
+        (
+            "DX_AUTOMATION_BRIDGE_SOURCE".to_string(),
+            "dx_shared_automation_manifest".to_string(),
+        ),
+        (
+            "DX_AUTOMATION_BRIDGE_PROJECT_ASSETS".to_string(),
+            automation_project_assets.to_string(),
+        ),
+        (
+            "DX_AUTOMATION_BRIDGE_USER_ASSETS".to_string(),
+            automation_user_assets.to_string(),
+        ),
     ];
     if let Some(path) = provider_bridge_path.as_deref() {
         env_vars.push(("DX_PROVIDER_BRIDGE_PATH".to_string(), path.to_string()));
     }
+    if let Some(path) = automation_project_manifest_path.as_deref() {
+        env_vars.push((
+            "DX_AUTOMATION_BRIDGE_PROJECT_PATH".to_string(),
+            path.to_string(),
+        ));
+    }
+    if let Some(path) = automation_user_manifest_path.as_deref() {
+        env_vars.push((
+            "DX_AUTOMATION_BRIDGE_USER_PATH".to_string(),
+            path.to_string(),
+        ));
+    }
     if let Some(error) = provider_bridge_sync.get("error").and_then(|value| value.as_str()) {
         env_vars.push((
             "DX_PROVIDER_BRIDGE_SYNC_ERROR".to_string(),
+            error.to_string(),
+        ));
+    }
+    if let Some(error) = automation_bridge_sync.get("error").and_then(|value| value.as_str()) {
+        env_vars.push((
+            "DX_AUTOMATION_BRIDGE_SYNC_ERROR".to_string(),
             error.to_string(),
         ));
     }
