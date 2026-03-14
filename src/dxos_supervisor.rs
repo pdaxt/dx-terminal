@@ -26,7 +26,9 @@ struct ContractClient {
 
 #[derive(Clone)]
 enum ContractTransport {
-    Local { app: Arc<App> },
+    Local {
+        app: Arc<App>,
+    },
     Remote {
         base_url: String,
         client: Client<HttpConnector, Full<Bytes>>,
@@ -49,6 +51,15 @@ impl ContractClient {
         matches!(self.transport, ContractTransport::Remote { .. })
     }
 
+    fn remote_target(&self) -> Option<(String, Client<HttpConnector, Full<Bytes>>)> {
+        match &self.transport {
+            ContractTransport::Remote { base_url, client } => {
+                Some((base_url.clone(), client.clone()))
+            }
+            ContractTransport::Local { .. } => None,
+        }
+    }
+
     async fn request_json(
         &self,
         method: Method,
@@ -57,7 +68,8 @@ impl ContractClient {
     ) -> anyhow::Result<Value> {
         match &self.transport {
             ContractTransport::Local { app } => {
-                self.request_json_local(app, method, path_and_query, body).await
+                self.request_json_local(app, method, path_and_query, body)
+                    .await
             }
             ContractTransport::Remote { base_url, client } => {
                 self.request_json_remote(client, base_url, method, path_and_query, body)
@@ -321,6 +333,103 @@ fn event_project(event: &StateEvent) -> Option<String> {
     }
 }
 
+fn event_project_from_value(payload: &Value) -> Option<String> {
+    payload
+        .get("event")
+        .and_then(|event| event.get("project"))
+        .and_then(Value::as_str)
+        .map(|value| value.to_string())
+}
+
+async fn stream_remote_events(supervisor: Supervisor) {
+    let Some((base_url, client)) = supervisor.client.remote_target() else {
+        return;
+    };
+
+    loop {
+        let mut builder = Request::builder()
+            .method(Method::GET)
+            .uri(format!("{}/api/events", base_url.trim_end_matches('/')))
+            .header(header::ACCEPT, "text/event-stream")
+            .header("x-dx-actor", SUPERVISOR_ACTOR);
+        if let Some(token) = crate::config::control_token() {
+            builder = builder
+                .header("x-dx-control-token", &token)
+                .header(header::AUTHORIZATION, format!("Bearer {}", token));
+        }
+        let request = match builder.body(Full::new(Bytes::new())) {
+            Ok(request) => request,
+            Err(error) => {
+                tracing::warn!("DXOS supervisor SSE request build failed: {}", error);
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                continue;
+            }
+        };
+
+        let response = match client.request(request).await {
+            Ok(response) => response,
+            Err(error) => {
+                tracing::warn!("DXOS supervisor SSE connect failed: {}", error);
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                continue;
+            }
+        };
+
+        if !response.status().is_success() {
+            tracing::warn!(
+                "DXOS supervisor SSE returned HTTP {}",
+                response.status().as_u16()
+            );
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            continue;
+        }
+
+        let mut body = response.into_body();
+        let mut buffer = String::new();
+        while let Some(frame) = body.frame().await {
+            let Ok(frame) = frame else {
+                break;
+            };
+            let Some(bytes) = frame.data_ref() else {
+                continue;
+            };
+            buffer.push_str(&String::from_utf8_lossy(bytes));
+
+            while let Some(separator) = buffer.find("\n\n") {
+                let chunk = buffer[..separator].to_string();
+                buffer = buffer[separator + 2..].to_string();
+                let data = chunk
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("data: "))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if data.is_empty() {
+                    continue;
+                }
+                let Ok(payload) = serde_json::from_str::<Value>(&data) else {
+                    continue;
+                };
+                let Some(project_name) = event_project_from_value(&payload) else {
+                    continue;
+                };
+                let project_path = match supervisor.client.registered_projects().await {
+                    Ok(projects) => projects
+                        .into_iter()
+                        .find(|(name, _)| name == &project_name)
+                        .map(|(_, path)| path)
+                        .unwrap_or_else(|| project_name.clone()),
+                    Err(_) => project_name.clone(),
+                };
+                let _ = supervisor
+                    .tick_project_with_cooldown(&project_name, &project_path)
+                    .await;
+            }
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+}
+
 pub fn start(app: Arc<App>) {
     if !crate::config::http_supervisor_autorun_enabled() {
         tracing::info!(
@@ -330,8 +439,11 @@ pub fn start(app: Arc<App>) {
     }
 
     let interval_secs = crate::config::http_supervisor_interval_secs();
+    let target = crate::config::http_supervisor_base_url()
+        .unwrap_or_else(|| "in-process router".to_string());
     tracing::info!(
-        "DXOS HTTP supervisor enabled — sweeping every {}s through the public control contract",
+        "DXOS HTTP supervisor enabled — target: {}, sweep: {}s through the public control contract",
+        target,
         interval_secs
     );
 
@@ -366,7 +478,12 @@ pub fn start(app: Arc<App>) {
         }
     });
 
-    if !supervisor.client.is_remote() {
+    if supervisor.client.is_remote() {
+        let remote = supervisor.clone();
+        tokio::spawn(async move {
+            stream_remote_events(remote).await;
+        });
+    } else {
         let evented = supervisor.clone();
         tokio::spawn(async move {
             let mut rx = app.state.event_bus.subscribe();

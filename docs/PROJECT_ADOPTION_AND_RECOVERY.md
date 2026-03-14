@@ -33,6 +33,8 @@ That queue is no longer only an adoption-side convenience. DXOS now derives a sc
 
 The scheduler is now controllable two ways: a local autorun loop can watch the queue continuously, and operators or future hosted orchestrators can force one scheduling tick through the dedicated `scheduler_run` control endpoint/tool. When autorun is enabled, adoption start/completion and other queue-producing DXOS mutations now kick the scheduler immediately instead of waiting for the next poll window.
 
+DXOS also now supports a contract-driven supervisor target. In the local runtime it can consume the router boundary directly with event-driven kicks; with `DX_HTTP_SUPERVISOR_BASE_URL` set it can instead supervise a remote DXOS instance over the published HTTP contract and its live event stream. Launch claims are lease-based, so a dead orchestrator can be replaced and stale `launching` sessions reclaimed instead of remaining stuck indefinitely.
+
 ## Core Promise
 
 If a company points DXOS at an in-progress project, the platform should be able to:

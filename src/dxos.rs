@@ -1768,6 +1768,18 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             "runtime_providers": ["claude", "codex", "gemini", "opencode"],
             "browser_port_base": crate::config::browser_port_base(),
             "browser_port_formula": "browser_port_base + pane",
+            "scheduler": {
+                "autorun_enabled": crate::config::scheduler_autorun_enabled(),
+                "interval_secs": crate::config::scheduler_interval_secs(),
+                "claim_ttl_secs": crate::config::session_launch_claim_ttl_secs(),
+            },
+            "supervisor": {
+                "contract_client": if crate::config::http_supervisor_base_url().is_some() { "remote_http" } else { "in_process_router" },
+                "autorun_enabled": crate::config::http_supervisor_autorun_enabled(),
+                "interval_secs": crate::config::http_supervisor_interval_secs(),
+                "event_driven": true,
+                "base_url": crate::config::http_supervisor_base_url(),
+            },
             "control_endpoints": {
                 "scheduler_run": "/api/dxos/scheduler/run",
                 "session_launch": "/api/dxos/session/launch",
@@ -2705,14 +2717,14 @@ pub fn start_project_adoption_with_plan(
         feature_id: feature_id.clone(),
         stage: Some(normalized_stage.clone()),
         supervisor_session_id: None,
-            escalation_policy: Some("human".to_string()),
-            policy_violations: Vec::new(),
-            last_error: None,
-            launch_claimed_by: None,
-            launch_claimed_at: None,
-            created_at: now.clone(),
-            updated_at: now.clone(),
-        });
+        escalation_policy: Some("human".to_string()),
+        policy_violations: Vec::new(),
+        last_error: None,
+        launch_claimed_by: None,
+        launch_claimed_at: None,
+        created_at: now.clone(),
+        updated_at: now.clone(),
+    });
 
     state.debates.push(DebateRecord {
         id: debate_id.clone(),
@@ -5084,6 +5096,127 @@ mod tests {
             sessions["scheduler"]["launch_queue"][1]["priority"],
             "medium"
         );
+    }
+
+    #[test]
+    fn stale_launch_claim_can_be_reclaimed() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        std::fs::create_dir_all(&project_path).unwrap();
+        let project = project_path.to_str().unwrap();
+
+        let session: Value = serde_json::from_str(&upsert_session_contract(
+            project,
+            Some("demo"),
+            None,
+            "design",
+            Some("claude"),
+            Some("claude-opus-4.6"),
+            Some("guarded_auto"),
+            "Prepare the first concept",
+            vec!["mockups".to_string()],
+            vec!["docs".to_string()],
+            vec![project.to_string()],
+            vec![project.to_string()],
+            Some(project),
+            None,
+            None,
+            None,
+            Some("pty_native_adapter"),
+            None,
+            Some("F1.1"),
+            Some("design"),
+            None,
+            Some("lead_then_human"),
+            Some("planned"),
+        ))
+        .unwrap();
+        let session_id = session["session_id"].as_str().unwrap();
+
+        let initial_claim: Value = serde_json::from_str(&claim_session_launch(
+            project,
+            Some("demo"),
+            session_id,
+            Some("scheduler-a"),
+        ))
+        .unwrap();
+        assert_eq!(initial_claim["action"], "session_launch_claimed");
+
+        let mut state = load_control_plane(project, Some("demo"));
+        let stale_at = (chrono::Local::now()
+            - chrono::Duration::seconds(crate::config::session_launch_claim_ttl_secs() as i64 + 5))
+        .format("%Y-%m-%dT%H:%M:%S")
+        .to_string();
+        let session = state
+            .sessions
+            .iter_mut()
+            .find(|item| item.id == session_id)
+            .unwrap();
+        session.status = "launching".to_string();
+        session.launch_claimed_by = Some("scheduler-a".to_string());
+        session.launch_claimed_at = Some(stale_at);
+        session.updated_at = crate::state::now();
+        save_control_plane(project, &state).unwrap();
+
+        let reclaimed: Value = serde_json::from_str(&claim_session_launch(
+            project,
+            Some("demo"),
+            session_id,
+            Some("scheduler-b"),
+        ))
+        .unwrap();
+        assert_eq!(reclaimed["action"], "session_launch_reclaimed");
+        assert_eq!(reclaimed["claimed_by"], "scheduler-b");
+        assert_eq!(reclaimed["session"]["status"], "launching");
+        assert_eq!(reclaimed["session"]["launch_claimed_by"], "scheduler-b");
+    }
+
+    #[test]
+    fn fresh_launch_claim_is_not_reclaimed() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        std::fs::create_dir_all(&project_path).unwrap();
+        let project = project_path.to_str().unwrap();
+
+        let session: Value = serde_json::from_str(&upsert_session_contract(
+            project,
+            Some("demo"),
+            None,
+            "frontend",
+            Some("codex"),
+            Some("gpt-5.4"),
+            Some("guarded_auto"),
+            "Build the main surface",
+            vec!["ui".to_string()],
+            vec!["playwright".to_string()],
+            vec![project.to_string()],
+            vec![project.to_string()],
+            Some(project),
+            None,
+            None,
+            None,
+            Some("pty_native_adapter"),
+            None,
+            Some("F2.1"),
+            Some("build"),
+            None,
+            Some("lead_then_human"),
+            Some("planned"),
+        ))
+        .unwrap();
+        let session_id = session["session_id"].as_str().unwrap();
+
+        let _ = claim_session_launch(project, Some("demo"), session_id, Some("scheduler-a"));
+        let blocked: Value = serde_json::from_str(&claim_session_launch(
+            project,
+            Some("demo"),
+            session_id,
+            Some("scheduler-b"),
+        ))
+        .unwrap();
+        assert_eq!(blocked["error"], "session_not_launchable");
+        assert_eq!(blocked["status"], "launching");
+        assert_eq!(blocked["launch_claimed_by"], "scheduler-a");
     }
 
     #[test]
