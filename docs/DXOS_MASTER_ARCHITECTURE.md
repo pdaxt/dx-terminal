@@ -251,6 +251,8 @@ The first architecture slice now implemented in the repo is:
 - the shared DXOS registry now groups projects into first-class portfolio views for `companies`, `programs`, and `workspaces`, which is the first concrete step from single-project orchestration toward a true multi-company control plane
 - operator policy can now scope by `project`, `company`, `program`, and `workspace`, so the hosted control plane no longer has to treat authorization as a flat project-name allowlist
 - the portal now uses the portfolio registry for sibling-project switching, which starts moving the UX from one-project dashboards toward a real multi-company control surface
+- DXOS now persists first-class `company`, `program`, and `workspace` records in the shared SQLite control-plane store, so portfolio objects can carry their own `status`, `owner`, and `summary` instead of being recomputed only from project labels
+- saving project identity now auto-seeds those portfolio records, and dedicated DXOS control endpoints/tools can update them without changing any repo path or project record
 - protected control routes now enforce optional operator policy as well as token auth, so named operators can be limited by role, project scope, and action families before a launch, debate, or lane mutation is accepted
 
 That gives the platform a native place to reason, disagree, decide, supervise, and delegate inside the system itself.

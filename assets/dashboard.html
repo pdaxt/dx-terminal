@@ -2145,6 +2145,7 @@ async function saveDxosProjectIdentity(project){
   setDxosPortalNotice('auth','Saving DXOS project identity…','yellow');
   const result=await fetchJSON('/api/dxos/project/identity',{
     method:'POST',
+    headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
       project,
       company:company||null,
@@ -2184,6 +2185,7 @@ async function saveDxosCompanyRecord(project){
   setDxosPortalNotice('auth',`Saving company record for ${name}…`,'yellow');
   const result=await fetchJSON('/api/dxos/company',{
     method:'POST',
+    headers:{'Content-Type':'application/json'},
     body:JSON.stringify({project,name,status:status||null,owner:owner||null,summary:summary||null})
   });
   if(!result){
@@ -2219,6 +2221,7 @@ async function saveDxosProgramRecord(project){
   setDxosPortalNotice('auth',`Saving program record for ${name}…`,'yellow');
   const result=await fetchJSON('/api/dxos/program',{
     method:'POST',
+    headers:{'Content-Type':'application/json'},
     body:JSON.stringify({project,company:company||null,name,status:status||null,owner:owner||null,summary:summary||null})
   });
   if(!result){
@@ -2255,6 +2258,7 @@ async function saveDxosWorkspaceRecord(project){
   setDxosPortalNotice('auth',`Saving workspace record for ${name}…`,'yellow');
   const result=await fetchJSON('/api/dxos/workspace',{
     method:'POST',
+    headers:{'Content-Type':'application/json'},
     body:JSON.stringify({project,company:company||null,program:program||null,name,status:status||null,owner:owner||null,summary:summary||null})
   });
   if(!result){
