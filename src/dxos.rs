@@ -1037,11 +1037,21 @@ fn normalize_priority(priority: Option<&str>) -> String {
 fn clear_session_launch_claim(session: &mut SessionContractRecord) {
     session.launch_claimed_by = None;
     session.launch_claimed_at = None;
+    session.launch_claim_id = None;
 }
 
-fn set_session_launch_claim(session: &mut SessionContractRecord, actor: &str, claimed_at: &str) {
+fn set_session_launch_claim(
+    session: &mut SessionContractRecord,
+    actor: &str,
+    claim_id: Option<&str>,
+    claimed_at: &str,
+) {
     session.launch_claimed_by = Some(actor.trim().to_string());
     session.launch_claimed_at = Some(claimed_at.to_string());
+    session.launch_claim_id = claim_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
 }
 
 fn launch_claim_is_stale(session: &SessionContractRecord) -> bool {
@@ -1057,6 +1067,70 @@ fn launch_claim_is_stale(session: &SessionContractRecord) -> bool {
     };
     let age = chrono::Local::now().naive_local() - claimed_at;
     age.num_seconds() >= crate::config::session_launch_claim_ttl_secs() as i64
+}
+
+const SCHEDULER_RUN_HISTORY_LIMIT: usize = 48;
+
+fn scheduler_run_result(state: &ControlPlaneState, run_id: &str) -> Option<Value> {
+    state
+        .scheduler_runs
+        .iter()
+        .find(|run| run.id == run_id.trim())
+        .map(|run| run.result.clone())
+}
+
+fn remember_scheduler_run(
+    state: &mut ControlPlaneState,
+    actor: &str,
+    run_id: &str,
+    result: Value,
+) -> Value {
+    let now = crate::state::now();
+    let run_id = run_id.trim();
+    let outcome = result
+        .get("outcome")
+        .and_then(Value::as_str)
+        .map(|value| value.to_string())
+        .or_else(|| {
+            result
+                .get("launch")
+                .and_then(|value| value.get("error"))
+                .map(|_| "error".to_string())
+        })
+        .or_else(|| {
+            result
+                .get("claim")
+                .and_then(|value| value.get("error"))
+                .map(|_| "blocked".to_string())
+        })
+        .unwrap_or_else(|| "ok".to_string());
+
+    if let Some(existing) = state.scheduler_runs.iter_mut().find(|run| run.id == run_id) {
+        existing.actor = actor.trim().to_string();
+        existing.project_name = state.project.name.clone();
+        existing.project_path = state.project.path.clone();
+        existing.outcome = outcome;
+        existing.result = result.clone();
+        existing.updated_at = now.clone();
+    } else {
+        state.scheduler_runs.push(SchedulerRunRecord {
+            id: run_id.to_string(),
+            actor: actor.trim().to_string(),
+            project_name: state.project.name.clone(),
+            project_path: state.project.path.clone(),
+            outcome,
+            result: result.clone(),
+            created_at: now.clone(),
+            updated_at: now.clone(),
+        });
+    }
+
+    if state.scheduler_runs.len() > SCHEDULER_RUN_HISTORY_LIMIT {
+        let trim = state.scheduler_runs.len() - SCHEDULER_RUN_HISTORY_LIMIT;
+        state.scheduler_runs.drain(0..trim);
+    }
+    state.updated_at = now;
+    result
 }
 
 fn normalize_stage(stage: Option<&str>) -> String {
@@ -1412,6 +1486,7 @@ fn session_summary(session: &SessionContractRecord) -> Value {
         "last_error": session.last_error,
         "launch_claimed_by": session.launch_claimed_by,
         "launch_claimed_at": session.launch_claimed_at,
+        "launch_claim_id": session.launch_claim_id,
         "provider_policy": provider_policy,
         "created_at": session.created_at,
         "updated_at": session.updated_at,
@@ -1790,6 +1865,8 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
                 "autorun_enabled": crate::config::scheduler_autorun_enabled(),
                 "interval_secs": crate::config::scheduler_interval_secs(),
                 "claim_ttl_secs": crate::config::session_launch_claim_ttl_secs(),
+                "supports_run_id": true,
+                "idempotent_ticks": true,
             },
             "supervisor": {
                 "contract_client": if crate::config::http_supervisor_base_url().is_some() { "remote_http" } else { "in_process_router" },
@@ -1797,6 +1874,7 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
                 "interval_secs": crate::config::http_supervisor_interval_secs(),
                 "event_driven": true,
                 "base_url": crate::config::http_supervisor_base_url(),
+                "identity": crate::config::http_supervisor_id(),
             },
             "control_endpoints": {
                 "scheduler_run": "/api/dxos/scheduler/run",
