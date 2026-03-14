@@ -9,6 +9,11 @@ pub fn control_plane(project: Option<&str>) -> String {
     dxos::control_plane_snapshot(&project_path, None).to_string()
 }
 
+pub fn scheduler(project: Option<&str>) -> String {
+    let project_path = resolve_project_path(project);
+    dxos::scheduler_snapshot(&project_path, None)
+}
+
 pub fn provider_plugins() -> String {
     crate::provider_plugins::plugin_inventory().to_string()
 }

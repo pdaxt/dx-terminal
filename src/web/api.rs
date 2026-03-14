@@ -2350,6 +2350,13 @@ pub async fn get_dxos_sessions(Query(q): Query<VisionQuery>) -> Json<Value> {
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
+/// GET /api/dxos/scheduler?project=NAME — Derived DXOS execution scheduler
+pub async fn get_dxos_scheduler(Query(q): Query<VisionQuery>) -> Json<Value> {
+    let project_path = resolve_project_path(&q);
+    let result = crate::dxos::scheduler_snapshot(&project_path, q.project.as_deref());
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
 /// GET /api/dxos/workflows?project=NAME — Shared workflow catalog and workflow runs
 pub async fn get_dxos_workflows(Query(q): Query<VisionQuery>) -> Json<Value> {
     let project_path = resolve_project_path(&q);

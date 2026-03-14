@@ -221,6 +221,7 @@ The first architecture slice now implemented in the repo is:
 - DX now emits a structured shared workflow catalog from those bridged skills and command packs, so provider-local assets also exist as DX-owned workflow objects with IDs, sections, and step lists
 - DXOS can now instantiate those catalog entries as governed workflow runs, creating linked session and work-order contracts and tracking step status natively inside the control plane
 - workflow runs publish their own live change events, appear in the project brief and operator portal, and can be queued from the web surface instead of being treated as passive documentation
+- linked workflow runs now auto-reconcile from real runtime lifecycle: when a session activates the first pending step moves to `in_progress`, when a blocker is raised the current step moves to `blocked`, when the lead resolves it the step resumes, and when the lane is completed the remaining governed steps auto-close with the same run
 - worker sessions can now raise blockers or permission requests through DXOS session context, and the control plane routes those requests to the supervising lead first before falling back to explicit human escalation
 - runtime lanes now receive `DXOS_SESSION_ID`, `DX_FEATURE_ID`, `DX_STAGE`, and `DX_SUPERVISOR_SESSION_ID` so agents in a live lane can report blocker and approval state without reconstructing their control-plane identity
 - the server-owned runtime replicator now detects clear approval/login/challenge prompts in live pane output and converts them into DXOS blocker events once, so “waiting for human action” is lifted out of raw terminal text and into the control plane
@@ -239,6 +240,7 @@ The first architecture slice now implemented in the repo is:
 - seeded adoption now also creates an assigned recovery work package, and the launch path injects that work package plus adoption/council context into the live lane prompt and shared guidance files automatically
 - when adoption is marked complete, DXOS now seeds the first planned specialist follow-on session and work-order contracts from that same recovery planner output, so recovery turns into governed downstream execution instead of ending at a status flip
 - the operator launch surface now reads those seeded follow-on contracts as a priority queue and auto-seeds the launch form from the first planned specialist lane until the operator takes manual control
+- DXOS now derives a real execution scheduler from the control plane, splitting `launch_queue` and `attention_queue` so the portal and later orchestrator consume the same priority-ordered work instead of separate ad hoc heuristics
 - protected control routes now enforce optional operator policy as well as token auth, so named operators can be limited by role, project scope, and action families before a launch, debate, or lane mutation is accepted
 
 That gives the platform a native place to reason, disagree, decide, supervise, and delegate inside the system itself.
