@@ -2056,6 +2056,41 @@ function clearDxOperatorIdentity(){
   renderExecutionHub();
 }
 
+async function saveDxosProjectIdentity(project){
+  if(!project)return false;
+  if(!operatorAllowsAction(project,'project_identity')){
+    setDxosPortalNotice('auth','Operator policy blocks project identity updates for this project.','red');
+    return false;
+  }
+  const company=(document.getElementById('dx-project-company')?.value||'').trim();
+  const program=(document.getElementById('dx-project-program')?.value||'').trim();
+  const workspace=(document.getElementById('dx-project-workspace')?.value||'').trim();
+  setDxosPortalNotice('auth','Saving DXOS project identity…','yellow');
+  const result=await fetchJSON('/api/dxos/project/identity',{
+    method:'POST',
+    headers:buildProtectedHeaders('/api/dxos/project/identity'),
+    body:JSON.stringify({
+      project,
+      company:company||null,
+      program:program||null,
+      workspace:workspace||null
+    })
+  });
+  if(!result){
+    setDxosPortalNotice('auth','Unable to reach the DXOS project identity endpoint.','red');
+    return false;
+  }
+  if(result.error){
+    setDxosPortalNotice('auth',String(result.error),'red');
+    return false;
+  }
+  projectBriefCache[project]=null;
+  await loadProjectBrief(project);
+  setDxosPortalNotice('auth','DXOS project identity updated.','green');
+  renderExecutionHub();
+  return false;
+}
+
 function currentDxOperatorPolicy(project){
   const auth=dxosControlAuthCache[project]||{};
   const actor=storedDxOperatorIdentity();
@@ -2684,6 +2719,7 @@ function renderDxosOperatorControls(project,activeStage,sessions,adoptions,sched
   const supervisorBaseUrl=String(supervisorContract&&supervisorContract.base_url||'').trim();
   const supervisorIdentity=String(supervisorContract&&supervisorContract.identity||'').trim();
   const schedulerSupportsRunId=scheduler&&scheduler.supports_run_id===true;
+  const projectIdentity=((((projectBriefCache[project]||{}).dxos)||{}).project)||{};
   return `<div class="action-shell">
     <div class="portal-note">The operator console below is the first real portal-native control surface for DXOS. Launching a lane uses the DX runtime broker, with the native PTY path as the default substrate and tmux kept only as the migration path.</div>
     <div class="action-grid">
@@ -2736,6 +2772,24 @@ function renderDxosOperatorControls(project,activeStage,sessions,adoptions,sched
             <button class="design-action" onclick="saveDxOperatorIdentity()">Save identity</button>
             <button class="vdd-focus-btn" onclick="clearDxOperatorIdentity();return false;">Clear</button>
             <span class="action-note">Protected control requests send this as <code>X-DX-Actor</code> for the audit trail.</span>
+          </div>
+          <div class="action-form-grid" style="margin-top:12px">
+            <div class="action-field">
+              <label for="dx-project-company">Company</label>
+              <input class="action-input" id="dx-project-company" value="${escHtml(String(projectIdentity.company||''))}" placeholder="DX Ventures">
+            </div>
+            <div class="action-field">
+              <label for="dx-project-program">Program</label>
+              <input class="action-input" id="dx-project-program" value="${escHtml(String(projectIdentity.program||''))}" placeholder="Agentic Delivery OS">
+            </div>
+          </div>
+          <div class="action-field">
+            <label for="dx-project-workspace">Workspace</label>
+            <input class="action-input" id="dx-project-workspace" value="${escHtml(String(projectIdentity.workspace||''))}" placeholder="core-platform / client-portal">
+          </div>
+          <div class="action-actions">
+            <button class="design-action" onclick="return saveDxosProjectIdentity('${escHtml(project)}')" ${operatorActionDisabledAttrs(project,'project_identity','project identity update')}>Save project identity</button>
+            <span class="action-note">These labels lift a repo into company, program, and workspace context for the shared DXOS registry.</span>
           </div>
           ${operatorPolicy?`<div class="action-note">Allowed actions: ${escHtml(((operatorPolicy.allowed_actions||[]).slice(0,6).join(', ')||'*').toString())}</div>`:controlAuth.operator_policy_configured?'<div class="action-note">The current operator identity is not registered in the DXOS operator policy.</div>':''}
           ${protectedControls?`<div class="action-field">
