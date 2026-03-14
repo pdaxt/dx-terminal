@@ -3815,7 +3815,7 @@ pub fn claim_session_launch(
         && session.status == "launching"
         && session.launch_claimed_by.as_deref() == Some(claimed_by.as_str())
         && claim_id.is_some()
-        && session.launch_claim_id == claim_id
+        && session.launch_claim_id.as_deref() == claim_id.as_deref()
     {
         return json!({
             "status": "ok",
