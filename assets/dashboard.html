@@ -2176,9 +2176,9 @@ function currentDxOperatorPolicy(project){
   if(!candidate)return null;
   const identity=((((projectBriefCache[project]||{}).dxos)||{}).project)||{};
   const projectAllowed=(Array.isArray(candidate.project_scopes)?candidate.project_scopes:['*']).some(scope=>authPatternMatches(scope,project));
-  const companyAllowed=(Array.isArray(candidate.company_scopes)?candidate.company_scopes:['*']).some(scope=>authPatternMatches(scope,identity.company||'--'));
-  const programAllowed=(Array.isArray(candidate.program_scopes)?candidate.program_scopes:['*']).some(scope=>authPatternMatches(scope,identity.program||'--'));
-  const workspaceAllowed=(Array.isArray(candidate.workspace_scopes)?candidate.workspace_scopes:['*']).some(scope=>authPatternMatches(scope,identity.workspace||'--'));
+  const companyAllowed=!identity.company|| (Array.isArray(candidate.company_scopes)?candidate.company_scopes:['*']).some(scope=>authPatternMatches(scope,identity.company||'--'));
+  const programAllowed=!identity.program|| (Array.isArray(candidate.program_scopes)?candidate.program_scopes:['*']).some(scope=>authPatternMatches(scope,identity.program||'--'));
+  const workspaceAllowed=!identity.workspace|| (Array.isArray(candidate.workspace_scopes)?candidate.workspace_scopes:['*']).some(scope=>authPatternMatches(scope,identity.workspace||'--'));
   return projectAllowed&&companyAllowed&&programAllowed&&workspaceAllowed?candidate:null;
 }
 
@@ -3987,6 +3987,34 @@ async function renderExecutionHub(){
           <div class="exec-list">${renderPriorityRows(readyFeatures,'ready')}</div>
           <div class="exec-list-title">Currently blocked</div>
           <div class="exec-list">${renderPriorityRows(blockingFeatures,'blocked')}</div>
+        </div>
+      </div>
+      <div class="exec-rail-grid">
+        <div class="exec-rail">
+          <div class="exec-rail-title">Portfolio context</div>
+          <div class="exec-rail-copy">DXOS now tracks this project inside a larger company and program model, so operators can move across sibling projects without losing the control-plane context.</div>
+          <div class="exec-list">
+            <div class="exec-row">
+              <div class="exec-row-top">
+                <span class="exec-row-title">${escHtml(String(dxosProjectIdentity.name||project))}</span>
+                <span class="exec-row-tags">
+                  ${dxosProjectIdentity.company?`<span class="doc-pill">${escHtml(String(dxosProjectIdentity.company))}</span>`:''}
+                  ${dxosProjectIdentity.program?`<span class="doc-pill shared">${escHtml(String(dxosProjectIdentity.program))}</span>`:''}
+                  ${dxosProjectIdentity.workspace?`<span class="doc-pill codex">${escHtml(String(dxosProjectIdentity.workspace))}</span>`:''}
+                </span>
+              </div>
+              <div class="exec-row-meta">${escHtml(`Portfolio totals: ${(dxosPortfolio.counts&&dxosPortfolio.counts.projects)||0} projects · ${(dxosPortfolio.counts&&dxosPortfolio.counts.companies)||0} companies · ${(dxosPortfolio.counts&&dxosPortfolio.counts.programs)||0} programs`)}</div>
+            </div>
+          </div>
+        </div>
+        <div class="exec-rail">
+          <div class="exec-rail-title">Sibling projects</div>
+          <div class="exec-rail-copy">Use these shortcuts to switch the portal to related projects in the same workspace, program, or company.</div>
+          <div class="exec-list">
+            ${renderPortfolioProjectRows('Same workspace',portfolioSiblings.workspace)}
+            ${renderPortfolioProjectRows('Same program',portfolioSiblings.program)}
+            ${renderPortfolioProjectRows('Same company',portfolioSiblings.company)}
+          </div>
         </div>
       </div>
       ${showOperatorNetwork?`<div class="exec-rail-grid">
