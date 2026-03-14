@@ -2129,7 +2129,14 @@ function currentDxOperatorPolicy(project){
   const actor=storedDxOperatorIdentity();
   const operators=Array.isArray(auth.operators)?auth.operators:[];
   if(!actor)return null;
-  return operators.find(item=>String(item.id||'')===actor)||null;
+  const candidate=operators.find(item=>String(item.id||'')===actor);
+  if(!candidate)return null;
+  const identity=((((projectBriefCache[project]||{}).dxos)||{}).project)||{};
+  const projectAllowed=(Array.isArray(candidate.project_scopes)?candidate.project_scopes:['*']).some(scope=>authPatternMatches(scope,project));
+  const companyAllowed=(Array.isArray(candidate.company_scopes)?candidate.company_scopes:['*']).some(scope=>authPatternMatches(scope,identity.company||'--'));
+  const programAllowed=(Array.isArray(candidate.program_scopes)?candidate.program_scopes:['*']).some(scope=>authPatternMatches(scope,identity.program||'--'));
+  const workspaceAllowed=(Array.isArray(candidate.workspace_scopes)?candidate.workspace_scopes:['*']).some(scope=>authPatternMatches(scope,identity.workspace||'--'));
+  return projectAllowed&&companyAllowed&&programAllowed&&workspaceAllowed?candidate:null;
 }
 
 function currentPortalMode(project){
@@ -2824,7 +2831,8 @@ function renderDxosOperatorControls(project,activeStage,sessions,adoptions,sched
             <button class="design-action" onclick="return saveDxosProjectIdentity('${escHtml(project)}')" ${operatorActionDisabledAttrs(project,'project_identity','project identity update')}>Save project identity</button>
             <span class="action-note">These labels lift a repo into company, program, and workspace context for the shared DXOS registry.</span>
           </div>
-          ${operatorPolicy?`<div class="action-note">Allowed actions: ${escHtml(((operatorPolicy.allowed_actions||[]).slice(0,6).join(', ')||'*').toString())}</div>`:controlAuth.operator_policy_configured?'<div class="action-note">The current operator identity is not registered in the DXOS operator policy.</div>':''}
+          ${operatorPolicy?`<div class="action-note">Allowed actions: ${escHtml(((operatorPolicy.allowed_actions||[]).slice(0,6).join(', ')||'*').toString())}</div>
+          <div class="action-note">Scopes: projects ${escHtml(((operatorPolicy.project_scopes||[]).join(', ')||'*').toString())} · companies ${escHtml(((operatorPolicy.company_scopes||[]).join(', ')||'*').toString())} · programs ${escHtml(((operatorPolicy.program_scopes||[]).join(', ')||'*').toString())} · workspaces ${escHtml(((operatorPolicy.workspace_scopes||[]).join(', ')||'*').toString())}</div>`:controlAuth.operator_policy_configured?'<div class="action-note">The current operator identity is not registered for this project or its portfolio scopes in the DXOS operator policy.</div>':''}
           ${protectedControls?`<div class="action-field">
             <label for="dx-control-token">DX control token</label>
             <input class="action-input" id="dx-control-token" type="password" placeholder="${controlTokenLoaded?'Stored token can be replaced':'Paste control token'}">
