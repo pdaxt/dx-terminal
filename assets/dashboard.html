@@ -1250,7 +1250,7 @@ function rememberDxOperatorIdentity(value){
 function requiresDxControlAuth(url,options){
   const method=String((options&&options.method)||'GET').toUpperCase();
   if(method==='GET')return false;
-  return /^\/api\/(dxos\/(adoption|automation-bridges|debate|project|provider-plugins|scheduler|session|work|workflow)|pane\/(talk|kill|restart))/.test(String(url||''));
+  return /^\/api\/(dxos\/(adoption|automation-bridges|company|debate|program|project|provider-plugins|scheduler|session|work|workflow|workspace)|pane\/(talk|kill|restart))/.test(String(url||''));
 }
 function withDxControlHeaders(url,options){
   const request={...(options||{})};
@@ -2163,6 +2163,111 @@ async function saveDxosProjectIdentity(project){
   projectBriefCache[project]=null;
   await loadProjectBrief(project);
   setDxosPortalNotice('auth','DXOS project identity updated.','green');
+  renderExecutionHub();
+  return false;
+}
+
+async function saveDxosCompanyRecord(project){
+  if(!project)return false;
+  if(!operatorAllowsAction(project,'company_record')){
+    setDxosPortalNotice('auth','Operator policy blocks company record updates for this project.','red');
+    return false;
+  }
+  const name=(document.getElementById('dx-project-company')?.value||'').trim();
+  if(!name){
+    setDxosPortalNotice('auth','Set a company on the project identity before saving the company record.','red');
+    return false;
+  }
+  const status=(document.getElementById('dx-company-status')?.value||'').trim();
+  const owner=(document.getElementById('dx-company-owner')?.value||'').trim();
+  const summary=(document.getElementById('dx-company-summary')?.value||'').trim();
+  setDxosPortalNotice('auth',`Saving company record for ${name}…`,'yellow');
+  const result=await fetchJSON('/api/dxos/company',{
+    method:'POST',
+    body:JSON.stringify({project,name,status:status||null,owner:owner||null,summary:summary||null})
+  });
+  if(!result){
+    setDxosPortalNotice('auth','Unable to reach the DXOS company endpoint.','red');
+    return false;
+  }
+  if(result.error){
+    setDxosPortalNotice('auth',String(result.error),'red');
+    return false;
+  }
+  projectBriefCache[project]=null;
+  await loadProjectBrief(project);
+  setDxosPortalNotice('auth',`Company record updated for ${name}.`,'green');
+  renderExecutionHub();
+  return false;
+}
+
+async function saveDxosProgramRecord(project){
+  if(!project)return false;
+  if(!operatorAllowsAction(project,'program_record')){
+    setDxosPortalNotice('auth','Operator policy blocks program record updates for this project.','red');
+    return false;
+  }
+  const company=(document.getElementById('dx-project-company')?.value||'').trim();
+  const name=(document.getElementById('dx-project-program')?.value||'').trim();
+  if(!name){
+    setDxosPortalNotice('auth','Set a program on the project identity before saving the program record.','red');
+    return false;
+  }
+  const status=(document.getElementById('dx-program-status')?.value||'').trim();
+  const owner=(document.getElementById('dx-program-owner')?.value||'').trim();
+  const summary=(document.getElementById('dx-program-summary')?.value||'').trim();
+  setDxosPortalNotice('auth',`Saving program record for ${name}…`,'yellow');
+  const result=await fetchJSON('/api/dxos/program',{
+    method:'POST',
+    body:JSON.stringify({project,company:company||null,name,status:status||null,owner:owner||null,summary:summary||null})
+  });
+  if(!result){
+    setDxosPortalNotice('auth','Unable to reach the DXOS program endpoint.','red');
+    return false;
+  }
+  if(result.error){
+    setDxosPortalNotice('auth',String(result.error),'red');
+    return false;
+  }
+  projectBriefCache[project]=null;
+  await loadProjectBrief(project);
+  setDxosPortalNotice('auth',`Program record updated for ${name}.`,'green');
+  renderExecutionHub();
+  return false;
+}
+
+async function saveDxosWorkspaceRecord(project){
+  if(!project)return false;
+  if(!operatorAllowsAction(project,'workspace_record')){
+    setDxosPortalNotice('auth','Operator policy blocks workspace record updates for this project.','red');
+    return false;
+  }
+  const company=(document.getElementById('dx-project-company')?.value||'').trim();
+  const program=(document.getElementById('dx-project-program')?.value||'').trim();
+  const name=(document.getElementById('dx-project-workspace')?.value||'').trim();
+  if(!name){
+    setDxosPortalNotice('auth','Set a workspace on the project identity before saving the workspace record.','red');
+    return false;
+  }
+  const status=(document.getElementById('dx-workspace-status')?.value||'').trim();
+  const owner=(document.getElementById('dx-workspace-owner')?.value||'').trim();
+  const summary=(document.getElementById('dx-workspace-summary')?.value||'').trim();
+  setDxosPortalNotice('auth',`Saving workspace record for ${name}…`,'yellow');
+  const result=await fetchJSON('/api/dxos/workspace',{
+    method:'POST',
+    body:JSON.stringify({project,company:company||null,program:program||null,name,status:status||null,owner:owner||null,summary:summary||null})
+  });
+  if(!result){
+    setDxosPortalNotice('auth','Unable to reach the DXOS workspace endpoint.','red');
+    return false;
+  }
+  if(result.error){
+    setDxosPortalNotice('auth',String(result.error),'red');
+    return false;
+  }
+  projectBriefCache[project]=null;
+  await loadProjectBrief(project);
+  setDxosPortalNotice('auth',`Workspace record updated for ${name}.`,'green');
   renderExecutionHub();
   return false;
 }
