@@ -2271,6 +2271,8 @@ pub(crate) async fn build_project_brief_payload(
                 "autorun_enabled": crate::config::scheduler_autorun_enabled(),
                 "interval_secs": crate::config::scheduler_interval_secs(),
                 "claim_ttl_secs": crate::config::session_launch_claim_ttl_secs(),
+                "supports_run_id": true,
+                "idempotent_ticks": true,
             },
             "supervisor": {
                 "contract_client": if crate::config::http_supervisor_base_url().is_some() { "remote_http" } else { "in_process_router" },
@@ -2278,6 +2280,7 @@ pub(crate) async fn build_project_brief_payload(
                 "interval_secs": crate::config::http_supervisor_interval_secs(),
                 "event_driven": true,
                 "base_url": crate::config::http_supervisor_base_url(),
+                "identity": crate::config::http_supervisor_id(),
             },
             "control_endpoints": {
                 "scheduler_run": "/api/dxos/scheduler/run",

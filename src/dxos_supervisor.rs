@@ -15,13 +15,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tower::ServiceExt;
-
-const SUPERVISOR_ACTOR: &str = "dxos_http_supervisor";
+use uuid::Uuid;
 const EVENT_COOLDOWN_MS: u64 = 800;
 
 #[derive(Clone)]
 struct ContractClient {
     transport: ContractTransport,
+    actor: String,
 }
 
 #[derive(Clone)]
@@ -37,6 +37,7 @@ enum ContractTransport {
 
 impl ContractClient {
     fn new(app: Arc<App>) -> Self {
+        let actor = crate::config::http_supervisor_id();
         let transport = if let Some(base_url) = crate::config::http_supervisor_base_url() {
             let connector = HttpConnector::new();
             let client = Client::builder(TokioExecutor::new()).build(connector);
@@ -44,7 +45,7 @@ impl ContractClient {
         } else {
             ContractTransport::Local { app }
         };
-        Self { transport }
+        Self { transport, actor }
     }
 
     fn is_remote(&self) -> bool {
@@ -89,7 +90,7 @@ impl ContractClient {
             .method(method)
             .uri(path_and_query)
             .header(header::ACCEPT, "application/json")
-            .header("x-dx-actor", SUPERVISOR_ACTOR);
+            .header("x-dx-actor", &self.actor);
 
         if let Some(token) = crate::config::control_token() {
             builder = builder
@@ -133,7 +134,7 @@ impl ContractClient {
             .method(method)
             .uri(full_url)
             .header(header::ACCEPT, "application/json")
-            .header("x-dx-actor", SUPERVISOR_ACTOR);
+            .header("x-dx-actor", &self.actor);
 
         if let Some(token) = crate::config::control_token() {
             builder = builder
@@ -180,12 +181,19 @@ impl ContractClient {
     }
 
     async fn scheduler_run(&self, project_name: &str, project_path: &str) -> anyhow::Result<Value> {
+        let run_id = format!(
+            "{}:{}:{}",
+            self.actor,
+            encode_component(project_name),
+            Uuid::new_v4()
+        );
         self.request_json(
             Method::POST,
             "/api/dxos/scheduler/run",
             Some(json!({
                 "project": project_name,
                 "path": project_path,
+                "run_id": run_id,
             })),
         )
         .await
@@ -238,6 +246,7 @@ impl Supervisor {
             return Ok(json!({
                 "project": project_name,
                 "project_path": project_path,
+                "actor": self.client.actor,
                 "action": "no_ready_launch",
             }));
         }
@@ -351,7 +360,7 @@ async fn stream_remote_events(supervisor: Supervisor) {
             .method(Method::GET)
             .uri(format!("{}/api/events", base_url.trim_end_matches('/')))
             .header(header::ACCEPT, "text/event-stream")
-            .header("x-dx-actor", SUPERVISOR_ACTOR);
+            .header("x-dx-actor", &supervisor.client.actor);
         if let Some(token) = crate::config::control_token() {
             builder = builder
                 .header("x-dx-control-token", &token)
@@ -442,7 +451,8 @@ pub fn start(app: Arc<App>) {
     let target = crate::config::http_supervisor_base_url()
         .unwrap_or_else(|| "in-process router".to_string());
     tracing::info!(
-        "DXOS HTTP supervisor enabled — target: {}, sweep: {}s through the public control contract",
+        "DXOS HTTP supervisor enabled — id: {}, target: {}, sweep: {}s through the public control contract",
+        crate::config::http_supervisor_id(),
         target,
         interval_secs
     );
