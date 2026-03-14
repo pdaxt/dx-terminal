@@ -5384,6 +5384,92 @@ mod tests {
     }
 
     #[test]
+    fn same_run_id_reuses_existing_launch_claim() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        std::fs::create_dir_all(&project_path).unwrap();
+        let project = project_path.to_str().unwrap();
+
+        let session: Value = serde_json::from_str(&upsert_session_contract(
+            project,
+            Some("demo"),
+            None,
+            "frontend",
+            Some("codex"),
+            Some("gpt-5.4"),
+            Some("guarded_auto"),
+            "Build the main surface",
+            vec!["ui".to_string()],
+            vec!["playwright".to_string()],
+            vec![project.to_string()],
+            vec![project.to_string()],
+            Some(project),
+            None,
+            None,
+            None,
+            Some("pty_native_adapter"),
+            None,
+            Some("F2.1"),
+            Some("build"),
+            None,
+            Some("lead_then_human"),
+            Some("planned"),
+        ))
+        .unwrap();
+        let session_id = session["session_id"].as_str().unwrap();
+
+        let initial: Value = serde_json::from_str(&claim_session_launch(
+            project,
+            Some("demo"),
+            session_id,
+            Some("scheduler-a"),
+            Some("run-123"),
+        ))
+        .unwrap();
+        assert_eq!(initial["action"], "session_launch_claimed");
+
+        let replayed: Value = serde_json::from_str(&claim_session_launch(
+            project,
+            Some("demo"),
+            session_id,
+            Some("scheduler-a"),
+            Some("run-123"),
+        ))
+        .unwrap();
+        assert_eq!(replayed["action"], "session_launch_claim_existing");
+        assert_eq!(replayed["claim_id"], "run-123");
+        assert_eq!(replayed["session"]["launch_claim_id"], "run-123");
+    }
+
+    #[test]
+    fn scheduler_run_results_are_replayed_by_run_id() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        std::fs::create_dir_all(&project_path).unwrap();
+        let project = project_path.to_str().unwrap();
+
+        let stored = remember_scheduler_run_result(
+            project,
+            Some("demo"),
+            "supervisor-a",
+            "tick-001",
+            json!({
+                "project": "demo",
+                "project_path": project,
+                "actor": "supervisor-a",
+                "run_id": "tick-001",
+                "action": "no_ready_launch",
+                "outcome": "ok",
+            }),
+        );
+        assert_eq!(stored["run_id"], "tick-001");
+
+        let replayed = scheduler_run_replay(project, Some("demo"), "tick-001").unwrap();
+        assert_eq!(replayed["action"], "no_ready_launch");
+        assert_eq!(replayed["actor"], "supervisor-a");
+    }
+
+    #[test]
     fn runtime_launch_context_includes_adoption_work_package() {
         let tmp = tempdir().unwrap();
         let project_path = tmp.path().join("demo");
