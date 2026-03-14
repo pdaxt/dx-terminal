@@ -2732,6 +2732,22 @@ impl DxTerminalService {
     }
 
     #[tool(
+        description = "Set the company, program, and workspace identity for a DXOS project. Use this to lift a project into a real portfolio structure without changing its repo path."
+    )]
+    async fn dxos_project_identity(
+        &self,
+        Parameters(req): Parameters<types::DxosProjectIdentityRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::dxos_tools::project_identity(
+            req.project.as_deref(),
+            req.company.as_deref(),
+            req.program.as_deref(),
+            req.workspace.as_deref(),
+        );
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
         description = "Get the derived DXOS execution scheduler for a project: launch queue, attention queue, and the next launch recommendation that later orchestrators should consume."
     )]
     async fn dxos_scheduler(

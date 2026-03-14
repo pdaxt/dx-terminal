@@ -9,6 +9,16 @@ pub fn control_plane(project: Option<&str>) -> String {
     dxos::control_plane_snapshot(&project_path, None).to_string()
 }
 
+pub fn project_identity(
+    project: Option<&str>,
+    company: Option<&str>,
+    program: Option<&str>,
+    workspace: Option<&str>,
+) -> String {
+    let project_path = resolve_project_path(project);
+    dxos::upsert_project_identity(&project_path, None, company, program, workspace)
+}
+
 pub fn scheduler(project: Option<&str>) -> String {
     let project_path = resolve_project_path(project);
     dxos::scheduler_snapshot(&project_path, None)
