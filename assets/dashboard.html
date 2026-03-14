@@ -4018,6 +4018,17 @@ async function renderExecutionHub(){
   const automationEl=document.getElementById('automation-brief');
   const introEl=document.getElementById('intro-spotlight');
   const project=activeProjectForHub();
+  const portfolioScopeActive=currentCompanyFilter!=='all'||currentProgramFilter!=='all';
+  const portfolioParams=new URLSearchParams();
+  if(currentCompanyFilter!=='all')portfolioParams.set('company',currentCompanyFilter);
+  if(currentProgramFilter!=='all'){
+    const programRecord=(Array.isArray(dxosPortfolioRegistry.programs)?dxosPortfolioRegistry.programs:[])
+      .find(item=>String(item.id||portfolioProgramKey(item.company,item.name))===currentProgramFilter);
+    if(programRecord){
+      if(programRecord.company&&!portfolioParams.get('company'))portfolioParams.set('company',String(programRecord.company));
+      if(programRecord.name)portfolioParams.set('program',String(programRecord.name));
+    }
+  }
   if(!project){
     section.style.display='none';
     if(introEl)introEl.innerHTML='<div class="empty-note">Open a project to see the current delivery spotlight.</div>';
@@ -4026,6 +4037,7 @@ async function renderExecutionHub(){
 
   const brief=await fetchJSON(`/api/project/brief?project=${encodeURIComponent(project)}`);
   const workflowData=await fetchJSON(`/api/dxos/workflows?project=${encodeURIComponent(project)}`);
+  const portfolioBrief=portfolioScopeActive?await fetchJSON(`/api/dxos/portfolio/brief?${portfolioParams.toString()}`):null;
   if(!brief||brief.error){
     section.style.display='none';
     if(introEl)introEl.innerHTML='<div class="empty-note">Project spotlight unavailable.</div>';
@@ -4088,6 +4100,7 @@ async function renderExecutionHub(){
   const dxosProjectIdentity=dxos.project||{};
   syncPortfolioRegistry(dxosProjectRegistry);
   const portfolioSiblings=portfolioSiblingSets(project,dxosProjectRegistry,dxosProjectIdentity);
+  const portfolioFilterSummary=portfolioBrief&&portfolioBrief.counts?`${portfolioBrief.counts.projects||0} projects · ${portfolioBrief.counts.active_sessions||0} active sessions · ${portfolioBrief.counts.queued_launches||0} queued launches`:null;
   const projectIdentityBits=[
     dxosProjectIdentity.company?`company ${dxosProjectIdentity.company}`:null,
     dxosProjectIdentity.program?`program ${dxosProjectIdentity.program}`:null,
@@ -4169,6 +4182,7 @@ async function renderExecutionHub(){
           <div class="exec-project">${escHtml(brief.project||project)}</div>
           ${projectIdentityBits.length?`<div class="meta" style="margin-top:6px">${projectIdentityBits.map(item=>escHtml(String(item))).join(' · ')}</div>`:''}
           <div class="exec-mission">${escHtml((brief.mission||'No project mission yet').toString())}</div>
+          ${portfolioScopeActive&&portfolioFilterSummary?`<div class="meta" style="margin-top:6px">Portfolio filter · ${escHtml((currentCompanyFilter!=='all'?currentCompanyFilter:'all companies').toString())}${currentProgramFilter!=='all'&&portfolioBrief&&portfolioBrief.portfolio&&portfolioBrief.portfolio.program?` · ${escHtml(String((portfolioBrief.portfolio.program||{}).name||'program'))}`:''} · ${escHtml(portfolioFilterSummary)}</div>`:''}
         </div>
         <a class="exec-link" href="${escHtml(brief.wiki_url||'/wiki')}" target="_blank">Open Handbook</a>
       </div>
