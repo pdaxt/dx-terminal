@@ -2381,6 +2381,200 @@ pub(crate) fn derive_adoption_defaults(project: &str, brief: &Value) -> Value {
     })
 }
 
+fn portfolio_scope_matches(project: &Value, query: &DxosPortfolioBriefQuery) -> bool {
+    let company = project
+        .get("company")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("");
+    let program = project
+        .get("program")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("");
+    let workspace = project
+        .get("workspace")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("");
+    let company_match = query
+        .company
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|expected| expected == company)
+        .unwrap_or(true);
+    let program_match = query
+        .program
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|expected| expected == program)
+        .unwrap_or(true);
+    let workspace_match = query
+        .workspace
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|expected| expected == workspace)
+        .unwrap_or(true);
+    company_match && program_match && workspace_match
+}
+
+fn build_dxos_portfolio_brief_payload(query: &DxosPortfolioBriefQuery) -> Value {
+    let registry =
+        serde_json::from_str::<Value>(&crate::dxos::control_plane_registry()).unwrap_or(json!({}));
+    let projects = registry
+        .get("projects")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|project| portfolio_scope_matches(project, query))
+        .collect::<Vec<_>>();
+
+    let mut active_sessions = 0usize;
+    let mut blocked_sessions = 0usize;
+    let mut blocked_work_orders = 0usize;
+    let mut active_adoptions = 0usize;
+    let mut open_debates = 0usize;
+    let mut queued_launches = 0usize;
+    let mut project_summaries = Vec::new();
+
+    for project in &projects {
+        let path = project.get("path").and_then(Value::as_str).unwrap_or("");
+        let name = project
+            .get("name")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| project_name_from_path(path));
+        let state = crate::dxos::load_control_plane(path, Some(name));
+        let scheduler =
+            serde_json::from_str::<Value>(&crate::dxos::scheduler_snapshot(path, Some(name)))
+                .unwrap_or_else(|_| json!({}));
+        let launch_queue = scheduler
+            .get("scheduler")
+            .and_then(|value| value.get("launch_queue"))
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let project_active_sessions = state
+            .sessions
+            .iter()
+            .filter(|session| matches!(session.status.as_str(), "planned" | "launching" | "active"))
+            .count();
+        let project_blocked_sessions = state
+            .sessions
+            .iter()
+            .filter(|session| session.status == "blocked")
+            .count();
+        let project_blocked_work_orders = state
+            .work_orders
+            .iter()
+            .filter(|order| order.status == "blocked")
+            .count();
+        let project_active_adoptions = state
+            .adoptions
+            .iter()
+            .filter(|adoption| matches!(adoption.status.as_str(), "active" | "planned"))
+            .count();
+        let project_open_debates = state
+            .debates
+            .iter()
+            .filter(|debate| debate.status == "open")
+            .count();
+
+        active_sessions += project_active_sessions;
+        blocked_sessions += project_blocked_sessions;
+        blocked_work_orders += project_blocked_work_orders;
+        active_adoptions += project_active_adoptions;
+        open_debates += project_open_debates;
+        queued_launches += launch_queue.len();
+
+        project_summaries.push(json!({
+            "name": name,
+            "path": path,
+            "company": state.project.company,
+            "program": state.project.program,
+            "workspace": state.project.workspace,
+            "active_sessions": project_active_sessions,
+            "blocked_sessions": project_blocked_sessions,
+            "blocked_work_orders": project_blocked_work_orders,
+            "active_adoptions": project_active_adoptions,
+            "open_debates": project_open_debates,
+            "queued_launches": launch_queue.len(),
+            "updated_at": state.updated_at,
+        }));
+    }
+
+    let current_company = query.company.as_deref().and_then(|company| {
+        registry
+            .get("companies")
+            .and_then(Value::as_array)
+            .and_then(|items| {
+                items.iter().find(|entry| {
+                    entry.get("name").and_then(Value::as_str).map(str::trim)
+                        == Some(company.trim())
+                })
+            })
+            .cloned()
+    });
+    let current_program = query.program.as_deref().and_then(|program| {
+        registry
+            .get("programs")
+            .and_then(Value::as_array)
+            .and_then(|items| {
+                items.iter().find(|entry| {
+                    entry.get("name").and_then(Value::as_str).map(str::trim)
+                        == Some(program.trim())
+                        && query.company.as_deref().map(str::trim)
+                            == entry.get("company").and_then(Value::as_str).map(str::trim)
+                })
+            })
+            .cloned()
+    });
+    let current_workspace = query.workspace.as_deref().and_then(|workspace| {
+        registry
+            .get("workspaces")
+            .and_then(Value::as_array)
+            .and_then(|items| {
+                items.iter().find(|entry| {
+                    entry.get("name").and_then(Value::as_str).map(str::trim)
+                        == Some(workspace.trim())
+                        && query.company.as_deref().map(str::trim)
+                            == entry.get("company").and_then(Value::as_str).map(str::trim)
+                        && query.program.as_deref().map(str::trim)
+                            == entry.get("program").and_then(Value::as_str).map(str::trim)
+                })
+            })
+            .cloned()
+    });
+
+    json!({
+        "scope": {
+            "company": query.company,
+            "program": query.program,
+            "workspace": query.workspace,
+        },
+        "portfolio": {
+            "company": current_company,
+            "program": current_program,
+            "workspace": current_workspace,
+        },
+        "counts": {
+            "projects": project_summaries.len(),
+            "active_sessions": active_sessions,
+            "blocked_sessions": blocked_sessions,
+            "blocked_work_orders": blocked_work_orders,
+            "active_adoptions": active_adoptions,
+            "open_debates": open_debates,
+            "queued_launches": queued_launches,
+        },
+        "projects": project_summaries,
+        "registry": registry,
+    })
+}
+
 pub async fn get_project_brief(
     State(app): State<AppState>,
     Query(q): Query<VisionQuery>,
@@ -2400,6 +2594,11 @@ pub async fn get_dxos_control_plane(Query(q): Query<VisionQuery>) -> Json<Value>
     let project_path = resolve_project_path(&q);
     let project = q.project.as_deref();
     Json(crate::dxos::control_plane_snapshot(&project_path, project))
+}
+
+/// GET /api/dxos/portfolio/brief?company=NAME&program=NAME — Aggregate DXOS view across projects
+pub async fn get_dxos_portfolio_brief(Query(q): Query<DxosPortfolioBriefQuery>) -> Json<Value> {
+    Json(build_dxos_portfolio_brief_payload(&q))
 }
 
 /// POST /api/dxos/project/identity — Set project company/program/workspace metadata
