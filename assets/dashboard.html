@@ -1955,7 +1955,7 @@ function renderPortfolioProjectRows(title,items){
   }
   return `<div class="exec-row">
     <div class="exec-row-top"><span class="exec-row-title">${escHtml(title)}</span></div>
-    <div class="exec-list">${rows.slice(0,4).map(item=>`<div class="doc-line">
+    <div class="exec-list">${rows.slice(0,4).map(item=>{const encoded=encodeURIComponent(String(item.name||'')); return `<div class="doc-line">
       <div class="doc-line-main">
         <div class="doc-line-title">${escHtml(String(item.name||shortPathLabel(item.path)||'Project'))}</div>
         <div class="doc-line-path">${escHtml((item.path||'').toString())}</div>
@@ -1963,9 +1963,9 @@ function renderPortfolioProjectRows(title,items){
       <div class="exec-row-tags">
         ${item.program?`<span class="doc-pill">${escHtml(String(item.program))}</span>`:''}
         ${item.workspace?`<span class="doc-pill shared">${escHtml(String(item.workspace))}</span>`:''}
-        <button class="vdd-focus-btn" onclick="return switchExecutionProject('${escHtml(String(item.name||''))}')">Open</button>
+        <button class="vdd-focus-btn" onclick="return switchExecutionProject(decodeURIComponent('${encoded}'))">Open</button>
       </div>
-    </div>`).join('')}</div>
+    </div>`;}).join('')}</div>
   </div>`;
 }
 

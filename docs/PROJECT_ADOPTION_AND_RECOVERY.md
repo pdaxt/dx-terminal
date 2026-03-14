@@ -41,6 +41,8 @@ Recovery projects can now also be tagged with `company`, `program`, and `workspa
 
 The shared registry now also groups those project records into company, program, and workspace views. That gives operators a portfolio-level control surface without changing the underlying recovery flow for any one project.
 
+Operator policy now understands those same scopes. A lead or operator can be authorized for one company, one program, or one workspace instead of being limited to a flat project name match. The portal also uses the grouped registry to surface sibling projects, so switching between related recovery efforts no longer depends on the tmux/runtime workspace list alone.
+
 ## Core Promise
 
 If a company points DXOS at an in-progress project, the platform should be able to:

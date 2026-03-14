@@ -249,6 +249,8 @@ The first architecture slice now implemented in the repo is:
 - scheduler observability is now first-class too: the control-plane snapshot exposes recent scheduler ticks and active launch leases so the portal can explain which supervisor is currently claiming work and which tick most recently changed queue state
 - DXOS project identity is now explicit too: each control-plane record can carry `company`, `program`, and `workspace` metadata, and the shared registry exposes that portfolio context so the portal no longer treats every project as a flat unnamed repo entry
 - the shared DXOS registry now groups projects into first-class portfolio views for `companies`, `programs`, and `workspaces`, which is the first concrete step from single-project orchestration toward a true multi-company control plane
+- operator policy can now scope by `project`, `company`, `program`, and `workspace`, so the hosted control plane no longer has to treat authorization as a flat project-name allowlist
+- the portal now uses the portfolio registry for sibling-project switching, which starts moving the UX from one-project dashboards toward a real multi-company control surface
 - protected control routes now enforce optional operator policy as well as token auth, so named operators can be limited by role, project scope, and action families before a launch, debate, or lane mutation is accepted
 
 That gives the platform a native place to reason, disagree, decide, supervise, and delegate inside the system itself.
