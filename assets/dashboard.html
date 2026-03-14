@@ -3005,6 +3005,97 @@ function renderAutomationBridgeRows(project,automationBridges){
   }).join('');
 }
 
+async function startDxosWorkflow(encodedWorkflowId){
+  const project=activeProjectForHub();
+  const workflowId=decodeURIComponent((encodedWorkflowId||'').toString());
+  if(!project||!workflowId)return false;
+  if(currentDxOperatorPolicy(project)&&!operatorActionAllowed(project,'workflow_start')){
+    setDxosPortalNotice('automation','Operator policy blocks workflow-run creation for this project.','red');
+    return false;
+  }
+  const focus=currentProjectFocus(project)||{};
+  const actor=storedDxOperatorIdentity()||'portal-operator';
+  setDxosPortalNotice('automation',`Creating DX workflow run for ${workflowId}…`,'yellow');
+  const result=await fetchJSON('/api/dxos/workflow/start',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      project,
+      workflow_id:workflowId,
+      requested_by:actor,
+      feature_id:focus.feature_id||null,
+      stage:focus.stage||null,
+      role:'workflow_runner'
+    })
+  });
+  if(!result){
+    setDxosPortalNotice('automation','Unable to reach the DX workflow runner endpoint.','red');
+    return false;
+  }
+  if(result.error){
+    setDxosPortalNotice('automation',String(result.error||'DX workflow run could not be created.'),'red');
+    return false;
+  }
+  const runId=result.workflow_run_id||'';
+  const sessionId=result.session_id||'';
+  setDxosPortalNotice('automation',`Workflow ${workflowId} is now tracked as ${runId}${sessionId?` and linked to ${sessionId}`:''}.`,'green');
+  await renderExecutionHub();
+  return false;
+}
+
+function renderWorkflowCatalogRows(project,workflows){
+  const items=Array.isArray(workflows)?workflows:[];
+  if(!items.length){
+    return '<div class="automation-note">No shared workflows are available yet.</div>';
+  }
+  return items.slice(0,6).map(item=>{
+    const workflowId=String(item.id||'');
+    const encoded=encodeURIComponent(workflowId);
+    const steps=Array.isArray(item.steps)?item.steps:[];
+    const sections=Array.isArray(item.sections)?item.sections:[];
+    return `<div class="exec-row">
+      <div class="exec-row-top">
+        <span class="exec-row-title">${escHtml(String(item.name||workflowId))}</span>
+        <span class="exec-row-tags">
+          <span class="doc-pill shared">${escHtml(String(item.kind||'workflow'))}</span>
+          <span class="doc-pill">${escHtml(String(item.scope||'project'))}</span>
+        </span>
+      </div>
+      <div class="exec-row-meta">${escHtml(String(item.summary||'No workflow summary recorded.'))}</div>
+      <div class="exec-row-meta">${steps.length} step${steps.length===1?'':'s'}${sections.length?` · ${escHtml(sections.slice(0,2).join(' · '))}`:''}</div>
+      <div class="exec-row-actions" style="margin-top:8px">
+        <button class="vdd-focus-btn" onclick="return startDxosWorkflow('${encoded}')" ${operatorActionDisabledAttrs(project,'workflow_start','workflow runner')}>Queue workflow</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderWorkflowRunRows(project,runs){
+  const items=Array.isArray(runs)?runs:[];
+  if(!items.length){
+    return '<div class="automation-note">No DX workflow runs have been started for this project yet.</div>';
+  }
+  return items.slice(0,6).map(run=>{
+    const nextStep=(Array.isArray(run.steps)?run.steps:[]).find(step=>!['completed','skipped'].includes(String(step.status||'')));
+    const progress=`${run.completed_steps||0}/${run.step_count||0} steps`;
+    return `<div class="exec-row">
+      <div class="exec-row-top">
+        <span class="exec-row-title">${escHtml(String(run.name||run.workflow_id||run.id||'Workflow run'))}</span>
+        <span class="exec-row-tags">
+          ${vddStatePill(run.status||'planned')}
+          <span class="doc-pill shared">${escHtml(progress)}</span>
+        </span>
+      </div>
+      <div class="exec-row-meta">${escHtml(String(run.summary||'No summary recorded.'))}</div>
+      <div class="exec-row-meta">${nextStep?`Next: ${escHtml(String(nextStep.title||nextStep.id||''))}`:'All workflow steps are complete.'}${run.session_id?` · session ${escHtml(String(run.session_id))}`:''}${run.work_order_id?` · work ${escHtml(String(run.work_order_id))}`:''}</div>
+      <div class="exec-row-actions" style="margin-top:8px">
+        ${run.session_id?`<button class="vdd-focus-btn" onclick="return applyDxosSessionContractToLaunchForm('${escHtml(String(run.session_id))}','workflow run ${escHtml(String(run.id||''))}')" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Apply to launch form</button>
+        <button class="design-action" style="margin-left:8px" onclick="return launchDxosSessionContract('${escHtml(String(run.session_id))}','workflow','workflow lane')" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Launch lane</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
 function renderAutomationItems(items,emptyText){
   if(!items||!items.length)return `<div class="automation-note">${escHtml(emptyText)}</div>`;
   return `<div class="automation-grid">${items.map(item=>`<div class="automation-item">
@@ -3368,6 +3459,7 @@ async function renderExecutionHub(){
   }
 
   const brief=await fetchJSON(`/api/project/brief?project=${encodeURIComponent(project)}`);
+  const workflowData=await fetchJSON(`/api/dxos/workflows?project=${encodeURIComponent(project)}`);
   if(!brief||brief.error){
     section.style.display='none';
     if(introEl)introEl.innerHTML='<div class="empty-note">Project spotlight unavailable.</div>';
@@ -3414,6 +3506,8 @@ async function renderExecutionHub(){
   const leadInboxWork=blockedOrApprovalWork.filter(order=>(order.escalation_target||'lead')!=='human');
   const humanEscalations=blockedOrApprovalWork.filter(order=>(order.escalation_target||'lead')==='human');
   const dxosDebates=(dxos.debates&&dxos.debates.recent)||[];
+  const workflowCatalog=(workflowData&&workflowData.catalog&&workflowData.catalog.workflows)||[];
+  const workflowRuns=(workflowData&&workflowData.workflow_runs)||[];
   const dxosCapabilityRegistry=dxos.capability_registry||dxos.registry||{};
   const dxosProjectRegistry=dxos.control_plane_registry||{};
   const dxosRegisteredProjects=(dxosProjectRegistry.projects||[]);
@@ -3510,6 +3604,7 @@ async function renderExecutionHub(){
         <div class="exec-kpi"><div class="label">Handbook Docs</div><div class="value">${docs.vision_doc_count||0}</div><div class="meta">${docs.guidance_doc_count||0} guidance docs</div></div>
         <div class="exec-kpi"><div class="label">Release Confidence</div><div class="value">${escHtml(confidence.label)}</div><div class="meta">${escHtml(confidence.copy)}</div></div>
         <div class="exec-kpi"><div class="label">Decision Records</div><div class="value">${(dxos.debates&&dxos.debates.total)||0}</div><div class="meta">${(dxos.debates&&dxos.debates.decided)||0} finalized with rationale</div></div>
+        <div class="exec-kpi"><div class="label">Workflow Runs</div><div class="value">${workflowRuns.length}</div><div class="meta">${workflowRuns.filter(run=>String(run.status||'')==='blocked').length} blocked · ${workflowCatalog.length} shared workflow${workflowCatalog.length===1?'':'s'} available</div></div>
         <div class="exec-kpi"><div class="label">Control Audit</div><div class="value">${(dxos.audit&&dxos.audit.total)||0}</div><div class="meta">${dxosAudit.length?`latest: ${escHtml(String(dxosAudit[0].action_kind||'action')).replace(/_/g,' ')}`:'no control actions logged yet'}</div></div>
         <div class="exec-kpi"><div class="label">Git State</div><div class="value">${git&&git.branch?escHtml(git.branch):'--'}</div><div class="meta">${escHtml(gitState)}</div></div>
         <div class="exec-kpi"><div class="label">Portal View</div><div class="value">${escHtml(portalModeInfo.label)}</div><div class="meta">${escHtml(portalModeInfo.copy)}</div></div>
@@ -3884,6 +3979,25 @@ async function renderExecutionHub(){
         </div>
         <div class="automation-sub" style="margin-bottom:10px">Use the same source selector above to export one provider’s commands and skills or push the DX shared automation catalog into a target provider bridge.</div>
         <div class="exec-list">${renderAutomationBridgeRows(project,automationBridges)}</div>
+      </div>
+      <div class="automation-block">
+        <div class="automation-head">
+          <div>
+            <div class="automation-title">DX Workflow Runner</div>
+            <div class="automation-sub">Structured workflows are now launchable DXOS objects, not just shared markdown assets. Starting a workflow creates a governed run plus linked session and work-order contracts.</div>
+          </div>
+          <span class="doc-pill shared">${workflowRuns.length} active record${workflowRuns.length===1?'':'s'}</span>
+        </div>
+        <div class="exec-rail-grid">
+          <div class="exec-rail">
+            <div class="exec-rail-title">Shared workflow catalog</div>
+            <div class="exec-list">${renderWorkflowCatalogRows(project,workflowCatalog)}</div>
+          </div>
+          <div class="exec-rail">
+            <div class="exec-rail-title">Tracked workflow runs</div>
+            <div class="exec-list">${renderWorkflowRunRows(project,workflowRuns)}</div>
+          </div>
+        </div>
       </div>
       <div class="automation-block">
         <div class="automation-head">
@@ -4768,6 +4882,12 @@ function handleWSMessage(msg){
         renderExecutionHub();
         renderPanes();
         if(activePaneNum)renderPaneContext(activePaneNum);
+      }
+      break;
+
+    case 'workflow_run_changed':
+      if(!selectedVisionProject||selectedVisionProject===msg.project||currentSpace===msg.project||currentSpace==='all'){
+        renderExecutionHub();
       }
       break;
 

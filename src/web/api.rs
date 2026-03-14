@@ -2254,6 +2254,9 @@ pub(crate) async fn build_project_brief_payload(
             "control_endpoints": {
                 "session_launch": "/api/dxos/session/launch",
                 "provider_plugin_sync": "/api/dxos/provider-plugins/sync",
+                "workflow_list": "/api/dxos/workflows",
+                "workflow_start": "/api/dxos/workflow/start",
+                "workflow_step": "/api/dxos/workflow/step",
                 "pane_talk": "/api/pane/talk",
                 "pane_kill": "/api/pane/kill",
                 "pane_restart": "/api/pane/restart",
@@ -2344,6 +2347,13 @@ pub async fn get_dxos_debates(Query(q): Query<VisionQuery>) -> Json<Value> {
 pub async fn get_dxos_sessions(Query(q): Query<VisionQuery>) -> Json<Value> {
     let project_path = resolve_project_path(&q);
     let result = crate::dxos::session_list(&project_path, q.project.as_deref());
+    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// GET /api/dxos/workflows?project=NAME — Shared workflow catalog and workflow runs
+pub async fn get_dxos_workflows(Query(q): Query<VisionQuery>) -> Json<Value> {
+    let project_path = resolve_project_path(&q);
+    let result = crate::dxos::workflow_run_list(&project_path, q.project.as_deref());
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
 }
 
@@ -2626,6 +2636,93 @@ pub async fn sync_dxos_automation_bridges(
         &actor,
         "automation_bridge_sync",
         &target,
+        &value,
+    );
+    Ok(Json(value))
+}
+
+/// POST /api/dxos/workflow/start — Instantiate a governed DX workflow run
+pub async fn start_dxos_workflow(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DxosWorkflowStartBody>,
+) -> ApiJson {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        body.project.as_deref(),
+        "workflow_start",
+        &body.workflow_id,
+    )?;
+    let result = crate::dxos::start_workflow_run(
+        &project_path,
+        body.project.as_deref(),
+        &body.workflow_id,
+        body.requested_by.as_deref(),
+        body.supervisor_session_id.as_deref(),
+        body.worker_session_id.as_deref(),
+        body.feature_id.as_deref(),
+        body.stage.as_deref(),
+        body.role.as_deref(),
+        body.provider.as_deref(),
+        body.model.as_deref(),
+    );
+    maybe_emit_dxos_session_change(&app, &project_path, &result);
+    maybe_emit_workflow_change(&app, &project_path, &result);
+    let value = serde_json::from_str(&result).unwrap_or(json!({"raw": result}));
+    record_control_action(
+        &app,
+        &project_path,
+        body.project.as_deref(),
+        &actor,
+        "workflow_start",
+        &body.workflow_id,
+        &value,
+    );
+    Ok(Json(value))
+}
+
+/// POST /api/dxos/workflow/step — Update a workflow step status
+pub async fn update_dxos_workflow_step(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DxosWorkflowStepBody>,
+) -> ApiJson {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        body.project.as_deref(),
+        "workflow_step",
+        &body.workflow_run_id,
+    )?;
+    let result = crate::dxos::update_workflow_run_step(
+        &project_path,
+        body.project.as_deref(),
+        &body.workflow_run_id,
+        &body.step_id,
+        &body.status,
+        body.note.as_deref(),
+    );
+    maybe_emit_dxos_session_change(&app, &project_path, &result);
+    maybe_emit_workflow_change(&app, &project_path, &result);
+    let value = serde_json::from_str(&result).unwrap_or(json!({"raw": result}));
+    record_control_action(
+        &app,
+        &project_path,
+        body.project.as_deref(),
+        &actor,
+        "workflow_step",
+        &body.workflow_run_id,
         &value,
     );
     Ok(Json(value))
