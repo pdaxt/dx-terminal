@@ -2860,25 +2860,99 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             })
     });
 
+    let portfolio = json!({
+        "counts": {
+            "projects": control_plane_registry.get("project_count").cloned().unwrap_or_else(|| json!(0)),
+            "companies": control_plane_registry.get("company_count").cloned().unwrap_or_else(|| json!(0)),
+            "programs": control_plane_registry.get("program_count").cloned().unwrap_or_else(|| json!(0)),
+            "workspaces": control_plane_registry.get("workspace_count").cloned().unwrap_or_else(|| json!(0)),
+        },
+        "company": current_company,
+        "program": current_program,
+        "workspace": current_workspace,
+    });
+    let provider_policy = json!({
+        "runtime_providers": ["claude", "codex", "gemini", "opencode"],
+        "contract_providers": ["shared", "claude", "codex", "gemini", "opencode"],
+        "rules": provider_policy_matrix(),
+    });
+    let runtime_contract = json!({
+        "auth": control_auth_contract(),
+        "launch_broker": {
+            "name": "dx_runtime_broker",
+            "adapters": crate::runtime_broker::adapter_inventory(),
+            "providers": crate::runtime_broker::provider_inventory(),
+        },
+        "runtime_substrate": "custom_pty_target",
+        "runtime_adapter": "pty_native_adapter",
+        "runtime_adapters": ["pty_native_adapter", "tmux_migration_adapter"],
+        "provider_native_launch": true,
+        "runtime_providers": ["claude", "codex", "gemini", "opencode"],
+        "browser_port_base": crate::config::browser_port_base(),
+        "browser_port_formula": "browser_port_base + pane",
+        "scheduler": {
+            "autorun_enabled": crate::config::scheduler_autorun_enabled(),
+            "interval_secs": crate::config::scheduler_interval_secs(),
+            "claim_ttl_secs": crate::config::session_launch_claim_ttl_secs(),
+            "supports_run_id": true,
+            "idempotent_ticks": true,
+        },
+        "supervisor": {
+            "contract_client": if crate::config::http_supervisor_base_url().is_some() { "remote_http" } else { "in_process_router" },
+            "autorun_enabled": crate::config::http_supervisor_autorun_enabled(),
+            "interval_secs": crate::config::http_supervisor_interval_secs(),
+            "event_driven": true,
+            "base_url": crate::config::http_supervisor_base_url(),
+            "identity": crate::config::http_supervisor_id(),
+        },
+        "control_endpoints": {
+            "project_identity": "/api/dxos/project/identity",
+            "company_record": "/api/dxos/company",
+            "program_record": "/api/dxos/program",
+            "workspace_record": "/api/dxos/workspace",
+            "scheduler_run": "/api/dxos/scheduler/run",
+            "session_launch": "/api/dxos/session/launch",
+            "provider_plugin_sync": "/api/dxos/provider-plugins/sync",
+            "automation_bridge_sync": "/api/dxos/automation-bridges/sync",
+            "workflow_list": "/api/dxos/workflows",
+            "workflow_start": "/api/dxos/workflow/start",
+            "workflow_step": "/api/dxos/workflow/step",
+            "pane_talk": "/api/pane/talk",
+            "pane_kill": "/api/pane/kill",
+            "pane_restart": "/api/pane/restart",
+            "pane_output": "/api/pane/{id}/output",
+            "event_stream": "/api/events",
+            "websocket": "/ws",
+        },
+    });
+    let sessions = json!({
+        "total": state.sessions.len(),
+        "active": active_sessions,
+        "blocked": blocked_sessions,
+        "records": state.sessions.iter().map(session_summary).collect::<Vec<_>>(),
+    });
+    let delegation = json!({
+        "total_work_orders": state.work_orders.len(),
+        "active_work_orders": active_work_orders,
+        "blocked_work_orders": blocked_work_orders,
+        "recent": state.work_orders.iter().rev().take(10).map(work_order_summary).collect::<Vec<_>>(),
+    });
+    let workflow_runner = json!({
+        "total_runs": state.workflow_runs.len(),
+        "active_runs": active_workflow_runs,
+        "blocked_runs": blocked_workflow_runs,
+        "recent": state.workflow_runs.iter().rev().take(10).map(workflow_run_summary).collect::<Vec<_>>(),
+    });
+    let audit = json!({
+        "total": audit_record_count(project_path),
+        "recent": audit_recent,
+    });
+
     json!({
         "project": state.project,
-        "portfolio": {
-            "counts": {
-                "projects": control_plane_registry.get("project_count").cloned().unwrap_or_else(|| json!(0)),
-                "companies": control_plane_registry.get("company_count").cloned().unwrap_or_else(|| json!(0)),
-                "programs": control_plane_registry.get("program_count").cloned().unwrap_or_else(|| json!(0)),
-                "workspaces": control_plane_registry.get("workspace_count").cloned().unwrap_or_else(|| json!(0)),
-            },
-            "company": current_company,
-            "program": current_program,
-            "workspace": current_workspace,
-        },
+        "portfolio": portfolio,
         "defaults": state.defaults,
-        "provider_policy": {
-            "runtime_providers": ["claude", "codex", "gemini", "opencode"],
-            "contract_providers": ["shared", "claude", "codex", "gemini", "opencode"],
-            "rules": provider_policy_matrix(),
-        },
+        "provider_policy": provider_policy,
         "adoptions": {
             "total": state.adoptions.len(),
             "active": active_adoptions,
@@ -2896,78 +2970,12 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
         "automation_bridges": crate::provider_asset_plugins::plugin_inventory(Some(project_path)),
         "control_plane_registry": control_plane_registry,
         "storage": control_plane_storage_summary(project_path),
-        "runtime_contract": {
-            "auth": control_auth_contract(),
-            "launch_broker": {
-                "name": "dx_runtime_broker",
-                "adapters": crate::runtime_broker::adapter_inventory(),
-                "providers": crate::runtime_broker::provider_inventory(),
-            },
-            "runtime_substrate": "custom_pty_target",
-            "runtime_adapter": "pty_native_adapter",
-            "runtime_adapters": ["pty_native_adapter", "tmux_migration_adapter"],
-            "provider_native_launch": true,
-            "runtime_providers": ["claude", "codex", "gemini", "opencode"],
-            "browser_port_base": crate::config::browser_port_base(),
-            "browser_port_formula": "browser_port_base + pane",
-            "scheduler": {
-                "autorun_enabled": crate::config::scheduler_autorun_enabled(),
-                "interval_secs": crate::config::scheduler_interval_secs(),
-                "claim_ttl_secs": crate::config::session_launch_claim_ttl_secs(),
-                "supports_run_id": true,
-                "idempotent_ticks": true,
-            },
-            "supervisor": {
-                "contract_client": if crate::config::http_supervisor_base_url().is_some() { "remote_http" } else { "in_process_router" },
-                "autorun_enabled": crate::config::http_supervisor_autorun_enabled(),
-                "interval_secs": crate::config::http_supervisor_interval_secs(),
-                "event_driven": true,
-                "base_url": crate::config::http_supervisor_base_url(),
-                "identity": crate::config::http_supervisor_id(),
-            },
-            "control_endpoints": {
-                "project_identity": "/api/dxos/project/identity",
-                "company_record": "/api/dxos/company",
-                "program_record": "/api/dxos/program",
-                "workspace_record": "/api/dxos/workspace",
-                "scheduler_run": "/api/dxos/scheduler/run",
-                "session_launch": "/api/dxos/session/launch",
-                "provider_plugin_sync": "/api/dxos/provider-plugins/sync",
-                "automation_bridge_sync": "/api/dxos/automation-bridges/sync",
-                "workflow_list": "/api/dxos/workflows",
-                "workflow_start": "/api/dxos/workflow/start",
-                "workflow_step": "/api/dxos/workflow/step",
-                "pane_talk": "/api/pane/talk",
-                "pane_kill": "/api/pane/kill",
-                "pane_restart": "/api/pane/restart",
-                "pane_output": "/api/pane/{id}/output",
-                "event_stream": "/api/events",
-                "websocket": "/ws",
-            },
-        },
-        "sessions": {
-            "total": state.sessions.len(),
-            "active": active_sessions,
-            "blocked": blocked_sessions,
-            "records": state.sessions.iter().map(session_summary).collect::<Vec<_>>(),
-        },
-        "delegation": {
-            "total_work_orders": state.work_orders.len(),
-            "active_work_orders": active_work_orders,
-            "blocked_work_orders": blocked_work_orders,
-            "recent": state.work_orders.iter().rev().take(10).map(work_order_summary).collect::<Vec<_>>(),
-        },
+        "runtime_contract": runtime_contract,
+        "sessions": sessions,
+        "delegation": delegation,
         "scheduler": scheduler_summary(&state),
-        "workflow_runner": {
-            "total_runs": state.workflow_runs.len(),
-            "active_runs": active_workflow_runs,
-            "blocked_runs": blocked_workflow_runs,
-            "recent": state.workflow_runs.iter().rev().take(10).map(workflow_run_summary).collect::<Vec<_>>(),
-        },
-        "audit": {
-            "total": audit_record_count(project_path),
-            "recent": audit_recent,
-        },
+        "workflow_runner": workflow_runner,
+        "audit": audit,
         "updated_at": state.updated_at,
     })
 }
