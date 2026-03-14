@@ -1990,6 +1990,7 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
                 "identity": crate::config::http_supervisor_id(),
             },
             "control_endpoints": {
+                "project_identity": "/api/dxos/project/identity",
                 "scheduler_run": "/api/dxos/scheduler/run",
                 "session_launch": "/api/dxos/session/launch",
                 "provider_plugin_sync": "/api/dxos/provider-plugins/sync",
