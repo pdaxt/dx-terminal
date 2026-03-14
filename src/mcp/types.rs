@@ -2208,7 +2208,9 @@ pub struct DxosWorkflowStartRequest {
     pub requested_by: Option<String>,
     #[schemars(description = "Optional supervising lead session ID")]
     pub supervisor_session_id: Option<String>,
-    #[schemars(description = "Optional worker session ID to bind instead of creating a planned runner session")]
+    #[schemars(
+        description = "Optional worker session ID to bind instead of creating a planned runner session"
+    )]
     pub worker_session_id: Option<String>,
     #[schemars(description = "Optional linked feature ID")]
     pub feature_id: Option<String>,

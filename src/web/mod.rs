@@ -98,7 +98,10 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/dxos/session/launch", post(api::launch_dxos_session))
         .route("/api/dxos/session/upsert", post(api::upsert_dxos_session))
         .route("/api/dxos/workflow/start", post(api::start_dxos_workflow))
-        .route("/api/dxos/workflow/step", post(api::update_dxos_workflow_step))
+        .route(
+            "/api/dxos/workflow/step",
+            post(api::update_dxos_workflow_step),
+        )
         .route(
             "/api/dxos/session/status",
             post(api::update_dxos_session_status),

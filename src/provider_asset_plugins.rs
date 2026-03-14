@@ -88,7 +88,11 @@ pub fn runtime_guidance(project_root: Option<&str>, provider: &str, max_items: u
 
 pub fn shared_workflow_catalog(project_root: Option<&str>, source_provider: Option<&str>) -> Value {
     let project_root = project_root.map(PathBuf::from);
-    let items = shared_assets(project_root.as_deref(), &crate::config::home_dir(), source_provider);
+    let items = shared_assets(
+        project_root.as_deref(),
+        &crate::config::home_dir(),
+        source_provider,
+    );
     json!({
         "source_of_truth": SHARED_SOURCE,
         "source_provider": source_provider
@@ -845,17 +849,20 @@ fn collect_names_for_scope_kind(
 fn workflow_records(outcomes: &[ExportOutcome]) -> Vec<Value> {
     outcomes
         .iter()
-        .map(|outcome| workflow_record_value(
-            &outcome.asset,
-            &outcome.sources,
-            Some(outcome.target_path.to_string_lossy().to_string()),
-            Some(outcome.status.to_string()),
-        ))
+        .map(|outcome| {
+            workflow_record_value(
+                &outcome.asset,
+                &outcome.sources,
+                Some(outcome.target_path.to_string_lossy().to_string()),
+                Some(outcome.status.to_string()),
+            )
+        })
         .collect()
 }
 
 fn workflow_records_from_assets(items: &[(AssetRecord, Vec<String>)]) -> Vec<Value> {
-    items.iter()
+    items
+        .iter()
         .map(|(asset, sources)| workflow_record_value(asset, sources, None, None))
         .collect()
 }

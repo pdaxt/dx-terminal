@@ -1626,10 +1626,12 @@ fn recompute_workflow_run_status(steps: &[WorkflowStepRecord]) -> &'static str {
     {
         return "completed";
     }
-    if steps
-        .iter()
-        .any(|step| matches!(step.status.as_str(), "in_progress" | "completed" | "skipped"))
-    {
+    if steps.iter().any(|step| {
+        matches!(
+            step.status.as_str(),
+            "in_progress" | "completed" | "skipped"
+        )
+    }) {
         return "active";
     }
     "planned"
@@ -1663,9 +1665,11 @@ pub fn start_workflow_run(
         return json!({"error": "workflow_id required"}).to_string();
     }
 
-    let Some(workflow) =
-        crate::provider_asset_plugins::shared_workflow_definition(Some(project_path), None, workflow_id)
-    else {
+    let Some(workflow) = crate::provider_asset_plugins::shared_workflow_definition(
+        Some(project_path),
+        None,
+        workflow_id,
+    ) else {
         return json!({
             "error": "workflow_not_found",
             "workflow_id": workflow_id.trim(),
@@ -1748,7 +1752,11 @@ pub fn start_workflow_run(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
     if let Some(supervisor_id) = explicit_supervisor.as_deref() {
-        if !state.sessions.iter().any(|session| session.id == supervisor_id) {
+        if !state
+            .sessions
+            .iter()
+            .any(|session| session.id == supervisor_id)
+        {
             return json!({"error": "supervisor_session_not_found"}).to_string();
         }
     }
@@ -1759,7 +1767,13 @@ pub fn start_workflow_run(
         let session_id = next_session_id(&state);
         let chosen_role = normalize_role(role.unwrap_or("workflow_runner"));
         let (normalized_provider, _provider_policy, policy_violations) =
-            validate_provider_selection(&chosen_role, Some(&normalized_stage), provider, None, None);
+            validate_provider_selection(
+                &chosen_role,
+                Some(&normalized_stage),
+                provider,
+                None,
+                None,
+            );
         let session_status = if policy_violations.is_empty() {
             "planned".to_string()
         } else {
@@ -1774,7 +1788,10 @@ pub fn start_workflow_run(
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty()),
             autonomy_level: "guarded_auto".to_string(),
-            objective: format!("Execute workflow {}. {}", workflow_name, workflow_summary_text),
+            objective: format!(
+                "Execute workflow {}. {}",
+                workflow_name, workflow_summary_text
+            ),
             expected_outputs: vec![
                 "workflow_completion".to_string(),
                 "workflow_evidence".to_string(),
@@ -1783,7 +1800,10 @@ pub fn start_workflow_run(
             allowed_capabilities: vec![
                 "automation_bridge".to_string(),
                 "dx_workflow_runner".to_string(),
-                format!("workflow:{}", workflow_name.to_lowercase().replace(' ', "_")),
+                format!(
+                    "workflow:{}",
+                    workflow_name.to_lowercase().replace(' ', "_")
+                ),
             ],
             allowed_repos: vec![state.project.path.clone()],
             allowed_paths: vec![state.project.path.clone()],
@@ -1981,7 +2001,12 @@ pub fn update_workflow_run_step(
             };
             if let Some(message) = note.filter(|value| !value.trim().is_empty()) {
                 work_order.resolution_notes.push(WorkResolutionRecord {
-                    message: format!("{} [{}]: {}", step_id.trim(), normalized_step_status, message.trim()),
+                    message: format!(
+                        "{} [{}]: {}",
+                        step_id.trim(),
+                        normalized_step_status,
+                        message.trim()
+                    ),
                     created_at: now.clone(),
                 });
             }
@@ -4440,7 +4465,10 @@ mod tests {
         let project = project_path.to_str().unwrap();
         std::fs::create_dir_all(project_path.join(".claude").join("commands")).unwrap();
         std::fs::write(
-            project_path.join(".claude").join("commands").join("design-review.md"),
+            project_path
+                .join(".claude")
+                .join("commands")
+                .join("design-review.md"),
             "# Design Review\n- Capture the goal\n- Compare options\n- Publish the decision",
         )
         .unwrap();
@@ -4465,8 +4493,14 @@ mod tests {
             .as_str()
             .unwrap()
             .to_string();
-        assert!(started_value["session_id"].as_str().unwrap().starts_with("SX"));
-        assert!(started_value["work_order_id"].as_str().unwrap().starts_with("WO"));
+        assert!(started_value["session_id"]
+            .as_str()
+            .unwrap()
+            .starts_with("SX"));
+        assert!(started_value["work_order_id"]
+            .as_str()
+            .unwrap()
+            .starts_with("WO"));
 
         let progressed = update_workflow_run_step(
             project,
