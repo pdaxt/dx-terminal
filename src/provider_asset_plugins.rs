@@ -71,6 +71,63 @@ pub fn convert_provider_asset_plugin(
     )
 }
 
+pub fn runtime_guidance(project_root: Option<&str>, provider: &str, max_items: usize) -> Value {
+    runtime_guidance_with_home(
+        project_root.map(PathBuf::from).as_deref(),
+        &crate::config::home_dir(),
+        provider,
+        max_items,
+    )
+}
+
+pub fn runtime_guidance_markdown(project_root: Option<&str>, provider: &str, max_items: usize) -> String {
+    let guidance = runtime_guidance(project_root, provider, max_items);
+    let mut lines = vec![
+        "## DX Automation Workflows".to_string(),
+        format!(
+            "- Provider bridge: {}",
+            guidance
+                .get("provider_label")
+                .and_then(Value::as_str)
+                .unwrap_or(provider)
+        ),
+    ];
+
+    if let Some(path) = guidance
+        .get("project_manifest_path")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    {
+        lines.push(format!("- Project automation manifest: {}", path));
+    }
+    if let Some(path) = guidance
+        .get("user_manifest_path")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    {
+        lines.push(format!("- User automation manifest: {}", path));
+    }
+
+    append_catalog_section(
+        &mut lines,
+        "Project command packs",
+        guidance.get("project_commands"),
+    );
+    append_catalog_section(
+        &mut lines,
+        "Project skills",
+        guidance.get("project_skills"),
+    );
+    append_catalog_section(&mut lines, "User command packs", guidance.get("user_commands"));
+    append_catalog_section(&mut lines, "User skills", guidance.get("user_skills"));
+    lines.push(
+        "- Use the DX-managed provider-local assets above before inventing a new workflow from scratch. If a needed workflow is missing, document the gap explicitly."
+            .to_string(),
+    );
+
+    lines.join("\n")
+}
+
 fn plugin_inventory_with_home(project_root: Option<&Path>, home_root: &Path) -> Value {
     let shared = shared_assets(project_root, home_root, None);
     let shared_counts = asset_breakdown(&shared);
@@ -275,6 +332,33 @@ fn bridge_target(
         available_user_commands: shared_counts.user_commands,
         available_user_skills: shared_counts.user_skills,
     }
+}
+
+fn runtime_guidance_with_home(
+    project_root: Option<&Path>,
+    home_root: &Path,
+    provider: &str,
+    max_items: usize,
+) -> Value {
+    let shared = shared_assets(project_root, home_root, None);
+    let provider_root_project = project_root.map(|path| provider_root(path, provider));
+    let provider_root_user = provider_root(home_root, provider);
+
+    json!({
+        "provider": crate::provider_plugins::normalized_provider(provider),
+        "provider_label": crate::provider_plugins::provider_label(provider),
+        "project_manifest_path": provider_root_project
+            .as_ref()
+            .map(|path| path.join("dx-automation-plugin.json").to_string_lossy().to_string()),
+        "user_manifest_path": provider_root_user
+            .join("dx-automation-plugin.json")
+            .to_string_lossy()
+            .to_string(),
+        "project_commands": collect_names_for_scope_kind(&shared, "project", "command", max_items),
+        "project_skills": collect_names_for_scope_kind(&shared, "project", "skill", max_items),
+        "user_commands": collect_names_for_scope_kind(&shared, "user", "command", max_items),
+        "user_skills": collect_names_for_scope_kind(&shared, "user", "skill", max_items),
+    })
 }
 
 fn read_manifest(path: &Path) -> Value {
@@ -570,6 +654,38 @@ fn asset_breakdown(items: &[(AssetRecord, Vec<String>)]) -> AssetBreakdown {
     counts
 }
 
+fn collect_names_for_scope_kind(
+    items: &[(AssetRecord, Vec<String>)],
+    scope: &str,
+    kind: &str,
+    max_items: usize,
+) -> Vec<String> {
+    items.iter()
+        .filter(|(asset, _)| asset.scope == scope && asset.kind == kind)
+        .map(|(asset, _)| asset.name.clone())
+        .take(max_items.max(1))
+        .collect()
+}
+
+fn append_catalog_section(lines: &mut Vec<String>, heading: &str, values: Option<&Value>) {
+    let items = values
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|value| value.as_str().map(|value| value.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if items.is_empty() {
+        return;
+    }
+    lines.push(format!("- {}:", heading));
+    for item in items {
+        lines.push(format!("  - {}", item));
+    }
+}
+
 fn unix_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -643,5 +759,22 @@ mod tests {
         assert_eq!(result["user"]["conflicts"], json!(1));
         let target = std::fs::read_to_string(target_dir.join("deploy.md")).unwrap();
         assert!(target.contains("User owned command"));
+    }
+
+    #[test]
+    fn runtime_guidance_lists_shared_assets() {
+        let project = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+
+        let project_command_dir = project.path().join(".claude").join("commands");
+        let user_skill_dir = home.path().join(".codex").join("skills").join("reviewer");
+        std::fs::create_dir_all(&project_command_dir).unwrap();
+        std::fs::create_dir_all(&user_skill_dir).unwrap();
+        std::fs::write(project_command_dir.join("handoff.md"), "# Handoff").unwrap();
+        std::fs::write(user_skill_dir.join("SKILL.md"), "# Reviewer").unwrap();
+
+        let guidance = runtime_guidance_with_home(Some(project.path()), home.path(), "gemini", 5);
+        assert_eq!(guidance["project_commands"][0], json!("handoff"));
+        assert_eq!(guidance["user_skills"][0], json!("reviewer"));
     }
 }
