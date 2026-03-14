@@ -1956,6 +1956,36 @@ pub fn scheduler_snapshot(project_path: &str, project_name: Option<&str>) -> Str
     .to_string()
 }
 
+pub fn scheduler_run_replay(
+    project_path: &str,
+    project_name: Option<&str>,
+    run_id: &str,
+) -> Option<Value> {
+    let run_id = run_id.trim();
+    if run_id.is_empty() {
+        return None;
+    }
+    let state = load_control_plane(project_path, project_name);
+    scheduler_run_result(&state, run_id)
+}
+
+pub fn remember_scheduler_run_result(
+    project_path: &str,
+    project_name: Option<&str>,
+    actor: &str,
+    run_id: &str,
+    result: Value,
+) -> Value {
+    let run_id = run_id.trim();
+    if run_id.is_empty() {
+        return result;
+    }
+    let mut state = load_control_plane(project_path, project_name);
+    let stored = remember_scheduler_run(&mut state, actor, run_id, result);
+    let _ = save_control_plane(project_path, &state);
+    stored
+}
+
 fn workflow_step_status(status: &str) -> Option<&'static str> {
     match status.trim().to_lowercase().as_str() {
         "planned" => Some("planned"),
