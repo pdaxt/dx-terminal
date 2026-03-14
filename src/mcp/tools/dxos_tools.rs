@@ -19,6 +19,51 @@ pub fn project_identity(
     dxos::upsert_project_identity(&project_path, None, company, program, workspace)
 }
 
+pub fn company_record(
+    project: Option<&str>,
+    name: Option<&str>,
+    summary: Option<&str>,
+    status: Option<&str>,
+    owner: Option<&str>,
+) -> String {
+    let project_path = resolve_project_path(project);
+    dxos::upsert_company_record(&project_path, None, name, summary, status, owner)
+}
+
+pub fn program_record(
+    project: Option<&str>,
+    company: Option<&str>,
+    name: Option<&str>,
+    summary: Option<&str>,
+    status: Option<&str>,
+    owner: Option<&str>,
+) -> String {
+    let project_path = resolve_project_path(project);
+    dxos::upsert_program_record(&project_path, None, company, name, summary, status, owner)
+}
+
+pub fn workspace_record(
+    project: Option<&str>,
+    company: Option<&str>,
+    program: Option<&str>,
+    name: Option<&str>,
+    summary: Option<&str>,
+    status: Option<&str>,
+    owner: Option<&str>,
+) -> String {
+    let project_path = resolve_project_path(project);
+    dxos::upsert_workspace_record(
+        &project_path,
+        None,
+        company,
+        program,
+        name,
+        summary,
+        status,
+        owner,
+    )
+}
+
 pub fn scheduler(project: Option<&str>) -> String {
     let project_path = resolve_project_path(project);
     dxos::scheduler_snapshot(&project_path, None)
