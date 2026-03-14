@@ -1493,6 +1493,15 @@ pub struct DxosSchedulerRunBody {
 }
 
 #[derive(Deserialize, Default)]
+pub struct DxosProjectIdentityBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub company: Option<String>,
+    pub program: Option<String>,
+    pub workspace: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
 pub struct DxosProviderPluginsSyncBody {
     pub project: Option<String>,
     pub path: Option<String>,
