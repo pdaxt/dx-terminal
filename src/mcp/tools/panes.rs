@@ -629,6 +629,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
             "branch": ws_branch,
             "browser_port": browser_port,
             "provider_bridge": provider_bridge_sync,
+            "automation_bridge": automation_bridge_sync,
         })
         .to_string();
     }
@@ -710,6 +711,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
                 "branch": ws_branch,
                 "browser_port": browser_port,
                 "provider_bridge": provider_bridge_sync,
+                "automation_bridge": automation_bridge_sync,
                 "runtime_broker": launch_broker_json_from_error(&window_name, &spawn_cwd),
             })
             .to_string();
@@ -749,6 +751,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
             "branch": ws_branch,
             "browser_port": browser_port,
             "provider_bridge": provider_bridge_sync,
+            "automation_bridge": automation_bridge_sync,
             "runtime_broker": launch_broker_json(&launch_plan),
         })
         .to_string();
@@ -870,6 +873,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         "tmux_target": tmux_target,
         "runtime_broker": launch_broker_json(&launch_plan),
         "provider_bridge": provider_bridge_sync,
+        "automation_bridge": automation_bridge_sync,
         "dxos_session_id": session_value.get("session_id").cloned().unwrap_or(serde_json::Value::Null),
         "machine_ip": machine_id.ip,
         "machine_hostname": machine_id.hostname,
