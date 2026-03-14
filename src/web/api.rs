@@ -1479,6 +1479,15 @@ pub struct DxosProviderPluginsSyncBody {
     pub dry_run: Option<bool>,
 }
 
+#[derive(Deserialize, Default)]
+pub struct DxosAutomationBridgesSyncBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+    pub source_provider: Option<String>,
+    pub target_provider: Option<String>,
+    pub dry_run: Option<bool>,
+}
+
 fn resolve_project_path(q: &VisionQuery) -> String {
     if let Some(ref p) = q.path {
         return p.clone();
@@ -2285,6 +2294,14 @@ pub async fn get_dxos_provider_plugins() -> Json<Value> {
     Json(crate::provider_plugins::plugin_inventory())
 }
 
+/// GET /api/dxos/automation-bridges?project=NAME — Skills and command-pack bridge inventory
+pub async fn get_dxos_automation_bridges(Query(q): Query<VisionQuery>) -> Json<Value> {
+    let project_path = resolve_project_path(&q);
+    Json(crate::provider_asset_plugins::plugin_inventory(Some(
+        &project_path,
+    )))
+}
+
 /// GET /api/dxos/debates?project=NAME — Formal debate records for a project
 pub async fn get_dxos_debates(Query(q): Query<VisionQuery>) -> Json<Value> {
     let project_path = resolve_project_path(&q);
@@ -2530,6 +2547,53 @@ pub async fn sync_dxos_provider_plugins(
         body.project.as_deref(),
         &actor,
         "provider_plugin_sync",
+        &target,
+        &value,
+    );
+    Ok(Json(value))
+}
+
+/// POST /api/dxos/automation-bridges/sync — Export shared skills and commands into provider-local bridges
+pub async fn sync_dxos_automation_bridges(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DxosAutomationBridgesSyncBody>,
+) -> ApiJson {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let target = body
+        .target_provider
+        .clone()
+        .unwrap_or_else(|| "claude".to_string());
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        body.project.as_deref(),
+        "automation_bridge_sync",
+        &target,
+    )?;
+    let value = crate::provider_asset_plugins::convert_provider_asset_plugin(
+        Some(&project_path),
+        body.source_provider.as_deref(),
+        &target,
+        body.dry_run.unwrap_or(false),
+    )
+    .map(|result| {
+        json!({
+            "automation_bridges": crate::provider_asset_plugins::plugin_inventory(Some(&project_path)),
+            "result": result,
+        })
+    })
+    .unwrap_or_else(|error| json!({"error": error.to_string()}));
+    record_control_action(
+        &app,
+        &project_path,
+        body.project.as_deref(),
+        &actor,
+        "automation_bridge_sync",
         &target,
         &value,
     );
