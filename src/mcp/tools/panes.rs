@@ -382,13 +382,15 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     let browser_port = config::pane_browser_port(pane_num);
     let browser_profile_root = config::pane_browser_profile_root(pane_num);
     let browser_artifacts_root = config::pane_browser_artifacts_root(pane_num);
-    let provider_bridge_sync = crate::provider_plugins::convert_provider_plugin(None, &provider, false)
-        .unwrap_or_else(|error| {
-            serde_json::json!({
-                "error": error.to_string(),
-                "target": provider,
-            })
-        });
+    let provider_bridge_sync = crate::provider_plugins::convert_provider_plugin(
+        None, &provider, false,
+    )
+    .unwrap_or_else(|error| {
+        serde_json::json!({
+            "error": error.to_string(),
+            "target": provider,
+        })
+    });
     let provider_bridge_path = provider_bridge_sync
         .get("path")
         .and_then(|value| value.as_str())
@@ -460,10 +462,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         ("DX_PROVIDER".to_string(), provider.clone()),
         ("DX_MODEL".to_string(), model.clone().unwrap_or_default()),
         ("DX_RUNTIME_ADAPTER".to_string(), runtime_adapter.clone()),
-        (
-            "DX_PROVIDER_BRIDGE_PROVIDER".to_string(),
-            provider.clone(),
-        ),
+        ("DX_PROVIDER_BRIDGE_PROVIDER".to_string(), provider.clone()),
         (
             "DX_PROVIDER_BRIDGE_SOURCE".to_string(),
             "dx_shared_manifest".to_string(),
@@ -517,13 +516,19 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
             path.to_string(),
         ));
     }
-    if let Some(error) = provider_bridge_sync.get("error").and_then(|value| value.as_str()) {
+    if let Some(error) = provider_bridge_sync
+        .get("error")
+        .and_then(|value| value.as_str())
+    {
         env_vars.push((
             "DX_PROVIDER_BRIDGE_SYNC_ERROR".to_string(),
             error.to_string(),
         ));
     }
-    if let Some(error) = automation_bridge_sync.get("error").and_then(|value| value.as_str()) {
+    if let Some(error) = automation_bridge_sync
+        .get("error")
+        .and_then(|value| value.as_str())
+    {
         env_vars.push((
             "DX_AUTOMATION_BRIDGE_SYNC_ERROR".to_string(),
             error.to_string(),

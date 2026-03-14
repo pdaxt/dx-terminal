@@ -123,13 +123,8 @@ fn convert_provider_asset_plugin_with_home(
         }
     }
 
-    let project_manifest = write_manifest(
-        project_root,
-        target,
-        "project",
-        &project_outcomes,
-        dry_run,
-    )?;
+    let project_manifest =
+        write_manifest(project_root, target, "project", &project_outcomes, dry_run)?;
     let user_manifest = write_manifest(Some(home_root), target, "user", &user_outcomes, dry_run)?;
 
     Ok(json!({
@@ -224,9 +219,18 @@ fn write_manifest(
 }
 
 fn summarize_outcomes(outcomes: &[ExportOutcome]) -> Value {
-    let created = outcomes.iter().filter(|item| item.status == "created").count();
-    let updated = outcomes.iter().filter(|item| item.status == "updated").count();
-    let conflicts = outcomes.iter().filter(|item| item.status == "conflict").count();
+    let created = outcomes
+        .iter()
+        .filter(|item| item.status == "created")
+        .count();
+    let updated = outcomes
+        .iter()
+        .filter(|item| item.status == "updated")
+        .count();
+    let conflicts = outcomes
+        .iter()
+        .filter(|item| item.status == "conflict")
+        .count();
     json!({
         "assets": outcomes.len(),
         "created": created,
@@ -296,8 +300,9 @@ fn target_asset_path(
     asset: &AssetRecord,
 ) -> Result<PathBuf> {
     let base = match asset.scope.as_str() {
-        "project" => project_root
-            .ok_or_else(|| anyhow::anyhow!("project scope export requested without project root"))?,
+        "project" => project_root.ok_or_else(|| {
+            anyhow::anyhow!("project scope export requested without project root")
+        })?,
         _ => home_root,
     };
     let root = provider_root(base, target_provider);
@@ -340,7 +345,11 @@ fn is_dx_managed(path: &Path) -> bool {
     let Ok(content) = std::fs::read_to_string(path) else {
         return false;
     };
-    content.lines().next().unwrap_or_default().starts_with(MARKER_PREFIX)
+    content
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .starts_with(MARKER_PREFIX)
 }
 
 fn strip_dx_header(content: &str) -> String {
@@ -510,7 +519,11 @@ fn modified_unix_ms(path: &Path) -> u64 {
 }
 
 fn provider_dirs() -> [(&'static str, &'static str); 3] {
-    [("claude", ".claude"), ("codex", ".codex"), ("gemini", ".gemini")]
+    [
+        ("claude", ".claude"),
+        ("codex", ".codex"),
+        ("gemini", ".gemini"),
+    ]
 }
 
 fn provider_root(base: &Path, provider: &str) -> PathBuf {

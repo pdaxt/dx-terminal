@@ -75,9 +75,8 @@ fn collect_automation_assets_with_home(project_root: &Path, home_root: &Path) ->
         })
         .collect::<Vec<_>>();
     let provider_plugins = crate::provider_plugins::plugin_inventory();
-    let automation_bridges = crate::provider_asset_plugins::plugin_inventory(
-        Some(&project_root.to_string_lossy()),
-    );
+    let automation_bridges =
+        crate::provider_asset_plugins::plugin_inventory(Some(&project_root.to_string_lossy()));
 
     json!({
         "commands": {
