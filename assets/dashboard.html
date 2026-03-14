@@ -3390,6 +3390,7 @@ async function renderExecutionHub(){
   const skillProviders=(automation.skills&&automation.skills.providers)||{};
   const externalMcps=automation.external_mcps||[];
   const providerPlugins=automation.provider_plugins||{};
+  const automationBridges=automation.automation_bridges||{};
   const providerPluginRows=Array.isArray(providerPlugins.providers)?providerPlugins.providers:[];
   const guidanceDocs=docs.guidance_docs||[];
   const visionDocs=docs.vision_docs||[];
@@ -3871,6 +3872,17 @@ async function renderExecutionHub(){
         <div class="automation-sub" style="margin-bottom:10px">Use the source selector to export only one provider’s MCP set, or leave it on <strong style="color:var(--text)">DX shared manifest</strong> to push the full interoperable catalog into a target bridge.</div>
         ${renderDxosPortalNotice('automation')}
         <div class="exec-list">${renderProviderPluginRows(project,providerPlugins)}</div>
+      </div>
+      <div class="automation-block">
+        <div class="automation-head">
+          <div>
+            <div class="automation-title">Provider Skill & Command Bridges</div>
+            <div class="automation-sub">DX exports shared skills and command packs into provider-local directories, so Claude, Codex/GPT, and Gemini lanes inherit the same workflows without manual copying. DX-managed exports never overwrite user-owned assets.</div>
+          </div>
+          <span class="doc-pill shared">${((automationBridges.providers)||[]).length} providers</span>
+        </div>
+        <div class="automation-sub" style="margin-bottom:10px">Use the same source selector above to export one provider’s commands and skills or push the DX shared automation catalog into a target provider bridge.</div>
+        <div class="exec-list">${renderAutomationBridgeRows(project,automationBridges)}</div>
       </div>
       <div class="automation-block">
         <div class="automation-head">
