@@ -14,6 +14,32 @@ pub fn scheduler(project: Option<&str>) -> String {
     dxos::scheduler_snapshot(&project_path, None)
 }
 
+pub async fn scheduler_run(app: &crate::app::App, project: Option<&str>) -> String {
+    let project_path = resolve_project_path(project);
+    let project_name = project
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| {
+            std::path::Path::new(&project_path)
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("project")
+                .to_string()
+        });
+    let result = crate::dxos_scheduler::drive_once_for_project(app, &project_name, &project_path).await;
+    serde_json::json!({
+        "project": project_name,
+        "project_path": project_path,
+        "result": result,
+        "scheduler": serde_json::from_str::<serde_json::Value>(&dxos::scheduler_snapshot(&project_path, Some(&project_name)))
+            .ok()
+            .and_then(|value| value.get("scheduler").cloned())
+            .unwrap_or_else(|| serde_json::json!({})),
+    })
+    .to_string()
+}
+
 pub fn provider_plugins() -> String {
     crate::provider_plugins::plugin_inventory().to_string()
 }

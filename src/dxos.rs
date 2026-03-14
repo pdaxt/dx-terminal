@@ -723,6 +723,7 @@ fn default_allowed_actions_for_role(role: &str) -> Vec<String> {
         "admin" => vec!["*".to_string()],
         "lead" => vec![
             "adoption_*".to_string(),
+            "scheduler_*".to_string(),
             "session_*".to_string(),
             "work_*".to_string(),
             "workflow_*".to_string(),
@@ -741,6 +742,7 @@ fn default_allowed_actions_for_role(role: &str) -> Vec<String> {
         ],
         "operator" => vec![
             "adoption_*".to_string(),
+            "scheduler_*".to_string(),
             "session_*".to_string(),
             "work_*".to_string(),
             "workflow_*".to_string(),
@@ -752,6 +754,7 @@ fn default_allowed_actions_for_role(role: &str) -> Vec<String> {
         "observer" => Vec::new(),
         _ => vec![
             "adoption_*".to_string(),
+            "scheduler_*".to_string(),
             "session_*".to_string(),
             "work_*".to_string(),
             "workflow_*".to_string(),
@@ -1733,6 +1736,7 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             "browser_port_base": crate::config::browser_port_base(),
             "browser_port_formula": "browser_port_base + pane",
             "control_endpoints": {
+                "scheduler_run": "/api/dxos/scheduler/run",
                 "session_launch": "/api/dxos/session/launch",
                 "provider_plugin_sync": "/api/dxos/provider-plugins/sync",
                 "automation_bridge_sync": "/api/dxos/automation-bridges/sync",
@@ -3580,6 +3584,66 @@ pub fn update_session_status(
                 .as_ref()
                 .and_then(|update| state.workflow_runs.iter().find(|item| item.id == update.workflow_run_id))
                 .map(workflow_run_summary),
+        })
+        .to_string(),
+        Err(error) => json!({"error": error}).to_string(),
+    }
+}
+
+pub fn claim_session_launch(
+    project_path: &str,
+    project_name: Option<&str>,
+    session_id: &str,
+    actor: Option<&str>,
+) -> String {
+    if session_id.trim().is_empty() {
+        return json!({"error": "session_id required"}).to_string();
+    }
+
+    let mut state = load_control_plane(project_path, project_name);
+    let Some(session) = state
+        .sessions
+        .iter_mut()
+        .find(|item| item.id == session_id.trim())
+    else {
+        return json!({"error": "session_not_found"}).to_string();
+    };
+
+    if session.status != "planned" {
+        return json!({
+            "error": "session_not_launchable",
+            "session_id": session_id.trim(),
+            "status": session.status,
+        })
+        .to_string();
+    }
+
+    if !session.policy_violations.is_empty() {
+        return json!({
+            "error": "session_policy_blocked",
+            "session_id": session_id.trim(),
+            "policy_violations": session.policy_violations,
+        })
+        .to_string();
+    }
+
+    session.status = "launching".to_string();
+    session.last_error = None;
+    session.updated_at = crate::state::now();
+    state.updated_at = session.updated_at.clone();
+
+    match save_control_plane(project_path, &state) {
+        Ok(()) => json!({
+            "status": "ok",
+            "action": "session_launch_claimed",
+            "project": state.project.name,
+            "project_path": project_path,
+            "session_id": session_id.trim(),
+            "claimed_by": actor
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| "dxos_scheduler".to_string()),
+            "session": state.sessions.iter().find(|item| item.id == session_id.trim()).map(session_summary),
         })
         .to_string(),
         Err(error) => json!({"error": error}).to_string(),

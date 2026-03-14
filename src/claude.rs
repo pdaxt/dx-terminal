@@ -72,6 +72,7 @@ pub fn generate_preamble(
     task: &str,
     prompt: &str,
 ) -> String {
+    let _ = config::init();
     let role_short = config::role_short(role);
     let browser_port = config::pane_browser_port(pane);
     let browser_profile_root = config::pane_browser_profile_root(pane);

@@ -2160,6 +2160,12 @@ pub struct DxosSchedulerRequest {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct DxosSchedulerRunRequest {
+    #[schemars(description = "Project path (default: current directory)")]
+    pub project: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct DxosProviderPluginsRequest {}
 
 #[derive(Debug, Deserialize, JsonSchema)]

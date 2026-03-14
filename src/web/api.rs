@@ -1477,6 +1477,12 @@ pub struct DxosSessionBlockBody {
 }
 
 #[derive(Deserialize, Default)]
+pub struct DxosSchedulerRunBody {
+    pub project: Option<String>,
+    pub path: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
 pub struct DxosProviderPluginsSyncBody {
     pub project: Option<String>,
     pub path: Option<String>,
@@ -2252,6 +2258,7 @@ pub(crate) async fn build_project_brief_payload(
             "provider_native_launch": true,
             "runtime_providers": ["claude", "codex", "gemini", "opencode"],
             "control_endpoints": {
+                "scheduler_run": "/api/dxos/scheduler/run",
                 "session_launch": "/api/dxos/session/launch",
                 "provider_plugin_sync": "/api/dxos/provider-plugins/sync",
                 "workflow_list": "/api/dxos/workflows",
@@ -2355,6 +2362,61 @@ pub async fn get_dxos_scheduler(Query(q): Query<VisionQuery>) -> Json<Value> {
     let project_path = resolve_project_path(&q);
     let result = crate::dxos::scheduler_snapshot(&project_path, q.project.as_deref());
     Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+}
+
+/// POST /api/dxos/scheduler/run — Execute one DXOS scheduling tick for a project
+pub async fn run_dxos_scheduler(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DxosSchedulerRunBody>,
+) -> ApiJson {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let project_name = body
+        .project
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| project_name_from_path(&project_path));
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        Some(&project_name),
+        "scheduler_run",
+        &project_name,
+    )?;
+    let result = crate::dxos_scheduler::drive_once_for_project(
+        app.as_ref(),
+        &project_name,
+        &project_path,
+    )
+    .await;
+    let scheduler = serde_json::from_str::<Value>(&crate::dxos::scheduler_snapshot(
+        &project_path,
+        Some(&project_name),
+    ))
+    .unwrap_or_else(|_| json!({}));
+    let value = json!({
+        "project": project_name,
+        "project_path": project_path,
+        "result": result,
+        "scheduler": scheduler.get("scheduler").cloned().unwrap_or_else(|| json!({})),
+    });
+    record_control_action(
+        &app,
+        value
+            .get("project_path")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+        value.get("project").and_then(Value::as_str),
+        &actor,
+        "scheduler_run",
+        value.get("project").and_then(Value::as_str).unwrap_or("project"),
+        &value,
+    );
+    Ok(Json(value))
 }
 
 /// GET /api/dxos/workflows?project=NAME — Shared workflow catalog and workflow runs
