@@ -211,6 +211,21 @@ pub fn http_supervisor_base_url() -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+pub fn http_supervisor_id() -> String {
+    std::env::var("DX_HTTP_SUPERVISOR_ID")
+        .ok()
+        .or_else(|| std::env::var("DX_ORCHESTRATOR_ID").ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| {
+            if http_supervisor_base_url().is_some() {
+                format!("dxos-remote-supervisor-{}", std::process::id())
+            } else {
+                format!("dxos-local-supervisor-{}", std::process::id())
+            }
+        })
+}
+
 pub fn session_launch_claim_ttl_secs() -> u64 {
     std::env::var("DX_SESSION_LAUNCH_CLAIM_TTL_SECS")
         .ok()
