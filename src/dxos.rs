@@ -221,6 +221,8 @@ pub struct SessionContractRecord {
     pub launch_claimed_by: Option<String>,
     #[serde(default)]
     pub launch_claimed_at: Option<String>,
+    #[serde(default)]
+    pub launch_claim_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -260,6 +262,19 @@ pub struct WorkOrderRecord {
 pub struct WorkResolutionRecord {
     pub message: String,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SchedulerRunRecord {
+    pub id: String,
+    pub actor: String,
+    pub project_name: String,
+    pub project_path: String,
+    pub outcome: String,
+    #[serde(default)]
+    pub result: Value,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -349,6 +364,8 @@ pub struct ControlPlaneState {
     pub work_orders: Vec<WorkOrderRecord>,
     #[serde(default)]
     pub workflow_runs: Vec<WorkflowRunRecord>,
+    #[serde(default)]
+    pub scheduler_runs: Vec<SchedulerRunRecord>,
     pub updated_at: String,
 }
 
