@@ -529,6 +529,7 @@ fn default_state(project_path: &str, project_name: Option<&str>) -> ControlPlane
         sessions: Vec::new(),
         work_orders: Vec::new(),
         workflow_runs: Vec::new(),
+        scheduler_runs: Vec::new(),
         updated_at: crate::state::now(),
     }
 }
