@@ -167,6 +167,23 @@ pub fn control_operators_json() -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+pub fn scheduler_autorun_enabled() -> bool {
+    matches!(
+        std::env::var("DX_SCHEDULER_AUTORUN")
+            .ok()
+            .map(|value| value.trim().to_ascii_lowercase()),
+        Some(value) if matches!(value.as_str(), "1" | "true" | "yes" | "on")
+    )
+}
+
+pub fn scheduler_interval_secs() -> u64 {
+    std::env::var("DX_SCHEDULER_INTERVAL_SECS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(10)
+}
+
 // --- Pane resolution (uses global config) ---
 
 pub fn theme_name(pane: u8) -> &'static str {

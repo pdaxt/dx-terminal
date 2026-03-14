@@ -177,6 +177,8 @@ pub struct SessionContractRecord {
     pub id: String,
     pub status: String,
     pub role: String,
+    #[serde(default = "default_priority")]
+    pub priority: String,
     #[serde(default)]
     pub provider: Option<String>,
     #[serde(default)]
@@ -226,6 +228,8 @@ pub struct WorkOrderRecord {
     #[serde(default)]
     pub worker_session_id: Option<String>,
     pub status: String,
+    #[serde(default = "default_priority")]
+    pub priority: String,
     #[serde(default = "default_escalation_target")]
     pub escalation_target: String,
     pub title: String,
@@ -989,6 +993,22 @@ fn default_escalation_target() -> String {
     "lead".to_string()
 }
 
+fn default_priority() -> String {
+    "medium".to_string()
+}
+
+fn normalize_priority(priority: Option<&str>) -> String {
+    match priority
+        .map(|value| value.trim().to_lowercase())
+        .filter(|value| !value.is_empty())
+        .as_deref()
+    {
+        Some("high") => "high".to_string(),
+        Some("low") => "low".to_string(),
+        _ => "medium".to_string(),
+    }
+}
+
 fn normalize_stage(stage: Option<&str>) -> String {
     stage
         .map(|value| value.trim().to_lowercase())
@@ -1319,6 +1339,7 @@ fn session_summary(session: &SessionContractRecord) -> Value {
         "id": session.id,
         "status": session.status,
         "role": session.role,
+        "priority": session.priority,
         "provider": session.provider,
         "model": session.model,
         "autonomy_level": session.autonomy_level,
@@ -1356,6 +1377,7 @@ fn work_order_summary(work_order: &WorkOrderRecord) -> Value {
         "supervisor_session_id": work_order.supervisor_session_id,
         "worker_session_id": work_order.worker_session_id,
         "status": work_order.status,
+        "priority": work_order.priority,
         "escalation_target": work_order.escalation_target,
         "routed_to": routed_to,
         "title": work_order.title,
@@ -1419,6 +1441,180 @@ fn workflow_run_summary(run: &WorkflowRunRecord) -> Value {
         "steps": run.steps.iter().map(workflow_step_summary).collect::<Vec<_>>(),
         "created_at": run.created_at,
         "updated_at": run.updated_at,
+    })
+}
+
+fn priority_rank(priority: &str) -> u8 {
+    match priority {
+        "high" => 0,
+        "medium" => 1,
+        "low" => 2,
+        _ => 3,
+    }
+}
+
+fn scheduler_launch_queue(state: &ControlPlaneState) -> Vec<Value> {
+    let mut items = state
+        .sessions
+        .iter()
+        .filter_map(|session| {
+            if session.status != "planned" {
+                return None;
+            }
+            let linked_work_orders = state
+                .work_orders
+                .iter()
+                .filter(|work_order| {
+                    work_order.worker_session_id.as_deref() == Some(session.id.as_str())
+                })
+                .collect::<Vec<_>>();
+            let work_order = linked_work_orders
+                .iter()
+                .copied()
+                .filter(|work_order| matches!(work_order.status.as_str(), "planned" | "assigned"))
+                .max_by(|left, right| {
+                    priority_rank(left.priority.as_str())
+                        .cmp(&priority_rank(right.priority.as_str()))
+                        .reverse()
+                        .then_with(|| right.updated_at.cmp(&left.updated_at))
+                });
+            if work_order.is_none() && !linked_work_orders.is_empty() {
+                return None;
+            }
+            let workflow_run = state
+                .workflow_runs
+                .iter()
+                .filter(|run| {
+                    run.session_id.as_deref() == Some(session.id.as_str())
+                        && matches!(run.status.as_str(), "planned" | "active" | "blocked")
+                })
+                .max_by(|left, right| {
+                    workflow_runtime_rank(left.status.as_str())
+                        .cmp(&workflow_runtime_rank(right.status.as_str()))
+                        .reverse()
+                        .then_with(|| right.updated_at.cmp(&left.updated_at))
+                });
+            let priority = work_order
+                .map(|item| item.priority.clone())
+                .unwrap_or_else(|| session.priority.clone());
+            Some(json!({
+                "id": format!("launch:{}", session.id),
+                "kind": "launch",
+                "priority": priority,
+                "ready": session.policy_violations.is_empty(),
+                "blocked_by_policy": !session.policy_violations.is_empty(),
+                "session_id": session.id,
+                "work_order_id": work_order.map(|item| item.id.clone()),
+                "workflow_run_id": workflow_run.map(|item| item.id.clone()),
+                "role": session.role,
+                "provider": session.provider,
+                "model": session.model,
+                "runtime_adapter": session.runtime_adapter,
+                "feature_id": session.feature_id,
+                "stage": session.stage,
+                "title": work_order.map(|item| item.title.clone()).unwrap_or_else(|| format!("Launch {}", session.role)),
+                "objective": work_order.map(|item| item.objective.clone()).unwrap_or_else(|| session.objective.clone()),
+                "reason": work_order
+                    .map(|item| {
+                        if item.status == "assigned" {
+                            "A governed work package is assigned to this planned session and ready for a live lane.".to_string()
+                        } else {
+                            "DXOS has a planned specialist session that is ready to be turned into a live lane.".to_string()
+                        }
+                    })
+                    .unwrap_or_else(|| "DXOS has a planned session contract with no live lane yet.".to_string()),
+                "updated_at": session.updated_at,
+            }))
+        })
+        .collect::<Vec<_>>();
+    items.sort_by(|left, right| {
+        let left_priority = left
+            .get("priority")
+            .and_then(Value::as_str)
+            .map(priority_rank)
+            .unwrap_or(3);
+        let right_priority = right
+            .get("priority")
+            .and_then(Value::as_str)
+            .map(priority_rank)
+            .unwrap_or(3);
+        let left_ready = left.get("ready").and_then(Value::as_bool).unwrap_or(false);
+        let right_ready = right.get("ready").and_then(Value::as_bool).unwrap_or(false);
+        left_priority
+            .cmp(&right_priority)
+            .then_with(|| right_ready.cmp(&left_ready))
+            .then_with(|| {
+                right
+                    .get("updated_at")
+                    .and_then(Value::as_str)
+                    .cmp(&left.get("updated_at").and_then(Value::as_str))
+            })
+    });
+    items
+}
+
+fn scheduler_attention_queue(state: &ControlPlaneState) -> Vec<Value> {
+    let mut items = state
+        .work_orders
+        .iter()
+        .filter(|work_order| work_order.status == "blocked")
+        .map(|work_order| {
+            let session = work_order
+                .worker_session_id
+                .as_deref()
+                .and_then(|id| state.sessions.iter().find(|session| session.id == id));
+            json!({
+                "id": format!("attention:{}", work_order.id),
+                "kind": "attention",
+                "priority": work_order.priority,
+                "status": work_order.status,
+                "work_order_id": work_order.id,
+                "session_id": work_order.worker_session_id,
+                "role": session.map(|item| item.role.clone()),
+                "feature_id": work_order.feature_id,
+                "stage": work_order.stage,
+                "title": work_order.title,
+                "objective": work_order.objective,
+                "blockers": work_order.blockers,
+                "requested_permissions": work_order.requested_permissions,
+                "routed_to": if work_order.escalation_target == "human" {
+                    "human".to_string()
+                } else {
+                    work_order.supervisor_session_id.clone()
+                },
+                "updated_at": work_order.updated_at,
+            })
+        })
+        .collect::<Vec<_>>();
+    items.sort_by(|left, right| {
+        let left_priority = left
+            .get("priority")
+            .and_then(Value::as_str)
+            .map(priority_rank)
+            .unwrap_or(3);
+        let right_priority = right
+            .get("priority")
+            .and_then(Value::as_str)
+            .map(priority_rank)
+            .unwrap_or(3);
+        left_priority.cmp(&right_priority).then_with(|| {
+            right
+                .get("updated_at")
+                .and_then(Value::as_str)
+                .cmp(&left.get("updated_at").and_then(Value::as_str))
+        })
+    });
+    items
+}
+
+fn scheduler_summary(state: &ControlPlaneState) -> Value {
+    let launch_queue = scheduler_launch_queue(state);
+    let attention_queue = scheduler_attention_queue(state);
+    let next_launch = launch_queue.first().cloned();
+    json!({
+        "launch_queue": launch_queue,
+        "attention_queue": attention_queue,
+        "next_launch": next_launch,
     })
 }
 
@@ -1563,6 +1759,7 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             "blocked_work_orders": blocked_work_orders,
             "recent": state.work_orders.iter().rev().take(10).map(work_order_summary).collect::<Vec<_>>(),
         },
+        "scheduler": scheduler_summary(&state),
         "workflow_runner": {
             "total_runs": state.workflow_runs.len(),
             "active_runs": active_workflow_runs,
@@ -1597,9 +1794,19 @@ pub fn session_list(project_path: &str, project_name: Option<&str>) -> String {
             "contract_providers": ["shared", "claude", "codex", "gemini", "opencode"],
             "rules": provider_policy_matrix(),
         },
+        "scheduler": scheduler_summary(&state),
         "sessions": state.sessions.iter().map(session_summary).collect::<Vec<_>>(),
         "work_orders": state.work_orders.iter().map(work_order_summary).collect::<Vec<_>>(),
         "workflow_runs": state.workflow_runs.iter().map(workflow_run_summary).collect::<Vec<_>>(),
+    })
+    .to_string()
+}
+
+pub fn scheduler_snapshot(project_path: &str, project_name: Option<&str>) -> String {
+    let state = load_control_plane(project_path, project_name);
+    json!({
+        "project": state.project,
+        "scheduler": scheduler_summary(&state),
     })
     .to_string()
 }
@@ -1942,6 +2149,7 @@ pub fn start_workflow_run(
             id: session_id.clone(),
             status: session_status,
             role: chosen_role,
+            priority: default_priority(),
             provider: normalized_provider,
             model: model
                 .map(|value| value.trim().to_string())
@@ -2018,6 +2226,7 @@ pub fn start_workflow_run(
         supervisor_session_id: chosen_supervisor_id.clone(),
         worker_session_id: Some(worker_id.clone()),
         status: "assigned".to_string(),
+        priority: default_priority(),
         escalation_target: "lead".to_string(),
         title: format!("Execute workflow {}", workflow_name),
         objective: format!(
@@ -2079,21 +2288,24 @@ pub fn start_workflow_run(
         created_at: now.clone(),
         updated_at: now.clone(),
     });
-    let workflow_auto_update = state
+    let worker_session_is_active = state
         .sessions
         .iter()
         .find(|session| session.id == worker_id)
-        .filter(|session| session.status == "active")
-        .and_then(|_| {
-            reconcile_linked_workflow_run(
-                &mut state,
-                Some(worker_id.as_str()),
-                Some(work_order_id.as_str()),
-                WorkflowRuntimeSignal::Activate,
-                Some("Auto-started from linked active session."),
-                &now,
-            )
-        });
+        .map(|session| session.status == "active")
+        .unwrap_or(false);
+    let workflow_auto_update = if worker_session_is_active {
+        reconcile_linked_workflow_run(
+            &mut state,
+            Some(worker_id.as_str()),
+            Some(work_order_id.as_str()),
+            WorkflowRuntimeSignal::Activate,
+            Some("Auto-started from linked active session."),
+            &now,
+        )
+    } else {
+        None
+    };
     state.updated_at = now;
 
     match save_control_plane(project_path, &state) {
@@ -2423,6 +2635,7 @@ pub fn start_project_adoption_with_plan(
         id: lead_session_id.clone(),
         status: "planned".to_string(),
         role: "lead".to_string(),
+        priority: "high".to_string(),
         provider: Some(provider_policy.preferred_provider.clone()),
         model: provider_policy.suggested_models.first().cloned(),
         autonomy_level: "guarded_auto".to_string(),
@@ -2478,6 +2691,7 @@ pub fn start_project_adoption_with_plan(
         supervisor_session_id: lead_session_id.clone(),
         worker_session_id: Some(lead_session_id.clone()),
         status: "assigned".to_string(),
+        priority: "high".to_string(),
         escalation_target: "lead".to_string(),
         title: format!("Initial recovery work package · {}", project),
         objective: resolved_objective.clone(),
@@ -2643,6 +2857,7 @@ pub fn update_project_adoption_status(
                 id: session_id.clone(),
                 status: "planned".to_string(),
                 role: role.clone(),
+                priority: normalize_priority(Some(&suggestion.priority)),
                 provider: Some(provider_policy.preferred_provider.clone()),
                 model: provider_policy.suggested_models.first().cloned(),
                 autonomy_level: "guarded_auto".to_string(),
@@ -2671,6 +2886,7 @@ pub fn update_project_adoption_status(
                 supervisor_session_id: lead_session_id.clone(),
                 worker_session_id: Some(session_id.clone()),
                 status: "planned".to_string(),
+                priority: normalize_priority(Some(&suggestion.priority)),
                 escalation_target: "lead".to_string(),
                 title,
                 objective: suggestion.task_prompt.clone(),
@@ -3120,7 +3336,7 @@ pub fn upsert_session_contract(
 
     let action = if let Some(existing) = state.sessions.iter_mut().find(|item| item.id == chosen_id)
     {
-        existing.status = computed_status;
+        existing.status = computed_status.clone();
         existing.role = role.trim().to_string();
         existing.provider = normalized_provider.clone();
         existing.model = model
@@ -3178,8 +3394,9 @@ pub fn upsert_session_contract(
     } else {
         state.sessions.push(SessionContractRecord {
             id: chosen_id.clone(),
-            status: computed_status,
+            status: computed_status.clone(),
             role: role.trim().to_string(),
+            priority: default_priority(),
             provider: normalized_provider.clone(),
             model: model
                 .map(|value| value.trim().to_string())
@@ -3236,6 +3453,7 @@ pub fn upsert_session_contract(
         "session_registered"
     };
 
+    let workflow_note_now = now.clone();
     let workflow_auto_update = match computed_status.as_str() {
         "active" => reconcile_linked_workflow_run(
             &mut state,
@@ -3243,7 +3461,7 @@ pub fn upsert_session_contract(
             None,
             WorkflowRuntimeSignal::Activate,
             Some("Auto-advanced from session activation."),
-            &now,
+            &workflow_note_now,
         ),
         "blocked" | "failed" => reconcile_linked_workflow_run(
             &mut state,
@@ -3251,7 +3469,7 @@ pub fn upsert_session_contract(
             None,
             WorkflowRuntimeSignal::Block,
             Some("Auto-blocked from session state."),
-            &now,
+            &workflow_note_now,
         ),
         "completed" => reconcile_linked_workflow_run(
             &mut state,
@@ -3259,7 +3477,7 @@ pub fn upsert_session_contract(
             None,
             WorkflowRuntimeSignal::Complete,
             Some("Auto-completed from session completion."),
-            &now,
+            &workflow_note_now,
         ),
         _ => None,
     };
@@ -3274,6 +3492,7 @@ pub fn upsert_session_contract(
             "session_id": chosen_id,
             "provider_policy": provider_policy,
             "session": state.sessions.iter().find(|item| item.id == chosen_id).map(session_summary),
+            "workflow_run_id": workflow_auto_update.as_ref().map(|update| update.workflow_run_id.clone()),
             "workflow_action": workflow_auto_update.as_ref().map(|update| update.action),
             "workflow_run": workflow_auto_update
                 .as_ref()
@@ -3318,6 +3537,7 @@ pub fn update_session_status(
     }
     session.updated_at = crate::state::now();
     state.updated_at = session.updated_at.clone();
+    let workflow_updated_at = state.updated_at.clone();
     let workflow_auto_update = match status.trim() {
         "active" => reconcile_linked_workflow_run(
             &mut state,
@@ -3325,7 +3545,7 @@ pub fn update_session_status(
             None,
             WorkflowRuntimeSignal::Activate,
             note,
-            &state.updated_at.clone(),
+            &workflow_updated_at,
         ),
         "blocked" | "failed" => reconcile_linked_workflow_run(
             &mut state,
@@ -3333,7 +3553,7 @@ pub fn update_session_status(
             None,
             WorkflowRuntimeSignal::Block,
             note,
-            &state.updated_at.clone(),
+            &workflow_updated_at,
         ),
         "completed" => reconcile_linked_workflow_run(
             &mut state,
@@ -3341,7 +3561,7 @@ pub fn update_session_status(
             None,
             WorkflowRuntimeSignal::Complete,
             note,
-            &state.updated_at.clone(),
+            &workflow_updated_at,
         ),
         _ => None,
     };
@@ -3354,6 +3574,7 @@ pub fn update_session_status(
             "project_path": project_path,
             "session_id": session_id,
             "session": state.sessions.iter().find(|item| item.id == session_id.trim()).map(session_summary),
+            "workflow_run_id": workflow_auto_update.as_ref().map(|update| update.workflow_run_id.clone()),
             "workflow_action": workflow_auto_update.as_ref().map(|update| update.action),
             "workflow_run": workflow_auto_update
                 .as_ref()
@@ -3388,13 +3609,14 @@ pub fn record_session_launch_failure(
     session.last_error = Some(error.trim().to_string());
     session.updated_at = crate::state::now();
     state.updated_at = session.updated_at.clone();
+    let workflow_updated_at = state.updated_at.clone();
     let workflow_auto_update = reconcile_linked_workflow_run(
         &mut state,
         Some(session_id.trim()),
         None,
         WorkflowRuntimeSignal::Block,
         Some(error.trim()),
-        &state.updated_at.clone(),
+        &workflow_updated_at,
     );
 
     match save_control_plane(project_path, &state) {
@@ -3405,6 +3627,7 @@ pub fn record_session_launch_failure(
             "project_path": project_path,
             "session_id": session_id,
             "session": state.sessions.iter().find(|item| item.id == session_id.trim()).map(session_summary),
+            "workflow_run_id": workflow_auto_update.as_ref().map(|update| update.workflow_run_id.clone()),
             "workflow_action": workflow_auto_update.as_ref().map(|update| update.action),
             "workflow_run": workflow_auto_update
                 .as_ref()
@@ -3470,6 +3693,7 @@ pub fn delegate_work_order(
         } else {
             "planned".to_string()
         },
+        priority: default_priority(),
         escalation_target: "lead".to_string(),
         title: title.trim().to_string(),
         objective: objective.trim().to_string(),
@@ -3552,6 +3776,7 @@ pub fn raise_session_blocker(
     let work_order_id = if let Some(index) = existing_index {
         let work_order = &mut state.work_orders[index];
         work_order.status = "blocked".to_string();
+        work_order.priority = "high".to_string();
         work_order.supervisor_session_id = broker_session_id.clone();
         work_order.escalation_target = escalation_target.clone();
         if !work_order
@@ -3598,6 +3823,7 @@ pub fn raise_session_blocker(
             supervisor_session_id: broker_session_id.clone(),
             worker_session_id: Some(worker_session.id.clone()),
             status: "blocked".to_string(),
+            priority: "high".to_string(),
             escalation_target: escalation_target.clone(),
             title: format!("Broker: {} blocked", worker_session.role),
             objective: format!(
@@ -3654,6 +3880,7 @@ pub fn raise_session_blocker(
             "routed_to": if broker_session_id == worker_session_id.trim() { "human".to_string() } else { broker_session_id.clone() },
             "session": state.sessions.iter().find(|item| item.id == worker_session_id.trim()).map(session_summary),
             "work_order": state.work_orders.iter().find(|item| item.id == work_order_id).map(work_order_summary),
+            "workflow_run_id": workflow_auto_update.as_ref().map(|update| update.workflow_run_id.clone()),
             "workflow_action": workflow_auto_update.as_ref().map(|update| update.action),
             "workflow_run": workflow_auto_update
                 .as_ref()
@@ -3686,6 +3913,7 @@ pub fn work_order_block(
     };
 
     work_order.status = "blocked".to_string();
+    work_order.priority = "high".to_string();
     if !work_order
         .blockers
         .iter()
@@ -3708,23 +3936,24 @@ pub fn work_order_block(
     state.updated_at = work_order.updated_at.clone();
     let worker_session_id = work_order.worker_session_id.clone();
 
-    if let Some(worker_session_id) = worker_session_id {
+    if let Some(ref worker_session_id) = worker_session_id {
         if let Some(session) = state
             .sessions
             .iter_mut()
-            .find(|item| item.id == worker_session_id)
+            .find(|item| item.id == *worker_session_id)
         {
             session.status = "blocked".to_string();
             session.updated_at = state.updated_at.clone();
         }
     }
+    let workflow_updated_at = state.updated_at.clone();
     let workflow_auto_update = reconcile_linked_workflow_run(
         &mut state,
         worker_session_id.as_deref(),
         Some(work_order_id.trim()),
         WorkflowRuntimeSignal::Block,
         Some(blocker.trim()),
-        &state.updated_at.clone(),
+        &workflow_updated_at,
     );
 
     match save_control_plane(project_path, &state) {
@@ -3735,6 +3964,7 @@ pub fn work_order_block(
             "project_path": project_path,
             "work_order_id": work_order_id,
             "work_order": state.work_orders.iter().find(|item| item.id == work_order_id.trim()).map(work_order_summary),
+            "workflow_run_id": workflow_auto_update.as_ref().map(|update| update.workflow_run_id.clone()),
             "workflow_action": workflow_auto_update.as_ref().map(|update| update.action),
             "workflow_run": workflow_auto_update
                 .as_ref()
@@ -3778,24 +4008,25 @@ pub fn resolve_work_order(
     state.updated_at = work_order.updated_at.clone();
     let worker_session_id = work_order.worker_session_id.clone();
 
-    if let Some(worker_session_id) = worker_session_id {
+    if let Some(ref worker_session_id) = worker_session_id {
         if let Some(session) = state
             .sessions
             .iter_mut()
-            .find(|item| item.id == worker_session_id)
+            .find(|item| item.id == *worker_session_id)
         {
             session.status = "active".to_string();
             session.last_error = None;
             session.updated_at = state.updated_at.clone();
         }
     }
+    let workflow_updated_at = state.updated_at.clone();
     let workflow_auto_update = reconcile_linked_workflow_run(
         &mut state,
         worker_session_id.as_deref(),
         Some(work_order_id.trim()),
         WorkflowRuntimeSignal::Activate,
         resolution,
-        &state.updated_at.clone(),
+        &workflow_updated_at,
     );
 
     match save_control_plane(project_path, &state) {
@@ -3806,6 +4037,7 @@ pub fn resolve_work_order(
             "project_path": project_path,
             "work_order_id": work_order_id,
             "work_order": state.work_orders.iter().find(|item| item.id == work_order_id.trim()).map(work_order_summary),
+            "workflow_run_id": workflow_auto_update.as_ref().map(|update| update.workflow_run_id.clone()),
             "workflow_action": workflow_auto_update.as_ref().map(|update| update.action),
             "workflow_run": workflow_auto_update
                 .as_ref()
@@ -3840,13 +4072,14 @@ pub fn record_session_delivery_failure(
     session.last_error = Some(error.trim().to_string());
     session.updated_at = crate::state::now();
     state.updated_at = session.updated_at.clone();
+    let workflow_updated_at = state.updated_at.clone();
     let workflow_auto_update = reconcile_linked_workflow_run(
         &mut state,
         Some(session_id.trim()),
         None,
         WorkflowRuntimeSignal::Block,
         Some(error.trim()),
-        &state.updated_at.clone(),
+        &workflow_updated_at,
     );
 
     match save_control_plane(project_path, &state) {
@@ -3857,6 +4090,7 @@ pub fn record_session_delivery_failure(
             "project_path": project_path,
             "session_id": session_id,
             "session": state.sessions.iter().find(|item| item.id == session_id.trim()).map(session_summary),
+            "workflow_run_id": workflow_auto_update.as_ref().map(|update| update.workflow_run_id.clone()),
             "workflow_action": workflow_auto_update.as_ref().map(|update| update.action),
             "workflow_run": workflow_auto_update
                 .as_ref()
@@ -4719,6 +4953,12 @@ mod tests {
                 .len(),
             2
         );
+        assert_eq!(sessions["scheduler"]["launch_queue"][0]["priority"], "high");
+        assert_eq!(sessions["scheduler"]["launch_queue"][0]["role"], "design");
+        assert_eq!(
+            sessions["scheduler"]["launch_queue"][1]["priority"],
+            "medium"
+        );
     }
 
     #[test]
@@ -4870,5 +5110,127 @@ mod tests {
         let listed_value: Value = serde_json::from_str(&listed).unwrap();
         assert_eq!(listed_value["workflow_runs"][0]["status"], "completed");
         assert_eq!(listed_value["workflow_runs"][0]["completed_steps"], 3);
+    }
+
+    #[test]
+    fn workflow_run_auto_reconciles_from_session_and_work_order_state() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        let project = project_path.to_str().unwrap();
+        std::fs::create_dir_all(project_path.join(".claude").join("commands")).unwrap();
+        std::fs::write(
+            project_path
+                .join(".claude")
+                .join("commands")
+                .join("design-review.md"),
+            "# Design Review\n- Capture the goal\n- Compare options\n- Publish the decision",
+        )
+        .unwrap();
+
+        let started = start_workflow_run(
+            project,
+            Some("demo"),
+            "project:command:design-review",
+            Some("operator"),
+            None,
+            None,
+            Some("F1.1"),
+            Some("design"),
+            Some("design"),
+            Some("claude"),
+            Some("claude-opus-4.6"),
+        );
+        let started_value: Value = serde_json::from_str(&started).unwrap();
+        let session_id = started_value["session_id"].as_str().unwrap().to_string();
+        let work_order_id = started_value["work_order_id"].as_str().unwrap().to_string();
+        let workflow_run_id = started_value["workflow_run_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(started_value["workflow_run"]["status"], "planned");
+
+        let activated = update_session_status(
+            project,
+            Some("demo"),
+            &session_id,
+            "active",
+            Some("Lane launched."),
+        );
+        let activated_value: Value = serde_json::from_str(&activated).unwrap();
+        assert_eq!(
+            activated_value["workflow_action"],
+            "workflow_run_auto_activated"
+        );
+        assert_eq!(activated_value["workflow_run"]["status"], "active");
+        assert_eq!(
+            activated_value["workflow_run"]["steps"][0]["status"],
+            "in_progress"
+        );
+
+        let blocked = raise_session_blocker(
+            project,
+            Some("demo"),
+            &session_id,
+            "Need approval to publish",
+            Some("publish_post"),
+            Some("Ask lead for approval"),
+        );
+        let blocked_value: Value = serde_json::from_str(&blocked).unwrap();
+        assert_eq!(
+            blocked_value["workflow_action"],
+            "workflow_run_auto_blocked"
+        );
+        assert_eq!(blocked_value["workflow_run"]["status"], "blocked");
+        assert_eq!(
+            blocked_value["workflow_run"]["steps"][0]["status"],
+            "blocked"
+        );
+
+        let resolved = resolve_work_order(
+            project,
+            Some("demo"),
+            &work_order_id,
+            Some("Approved by lead."),
+        );
+        let resolved_value: Value = serde_json::from_str(&resolved).unwrap();
+        assert_eq!(
+            resolved_value["workflow_action"],
+            "workflow_run_auto_resumed"
+        );
+        assert_eq!(resolved_value["workflow_run"]["status"], "active");
+        assert_eq!(
+            resolved_value["workflow_run"]["steps"][0]["status"],
+            "in_progress"
+        );
+
+        let completed = update_session_status(
+            project,
+            Some("demo"),
+            &session_id,
+            "completed",
+            Some("Workflow finished."),
+        );
+        let completed_value: Value = serde_json::from_str(&completed).unwrap();
+        assert_eq!(
+            completed_value["workflow_action"],
+            "workflow_run_auto_completed"
+        );
+        assert_eq!(completed_value["workflow_run"]["status"], "completed");
+        assert!(completed_value["workflow_run"]["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|step| step["status"] == "completed"));
+
+        let listed = workflow_run_list(project, Some("demo"));
+        let listed_value: Value = serde_json::from_str(&listed).unwrap();
+        let run = listed_value["workflow_runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|run| run["id"] == workflow_run_id)
+            .unwrap();
+        assert_eq!(run["status"], "completed");
+        assert_eq!(run["completed_steps"], 3);
     }
 }

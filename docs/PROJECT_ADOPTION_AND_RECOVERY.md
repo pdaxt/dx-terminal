@@ -29,6 +29,8 @@ That same shared recovery planner now also supplies the first follow-on speciali
 
 The operator portal now surfaces those seeded follow-on lanes as a queue. The launch form auto-seeds from the first planned follow-on lane until the operator makes a manual edit, and each queued lane can be applied to the form or launched directly.
 
+That queue is no longer only an adoption-side convenience. DXOS now derives a scheduler-backed `launch_queue` from the control plane itself, so recovery follow-ons, planned workflow runners, and other governed specialist sessions all compete in one ordered execution view. The same scheduler also emits an `attention_queue` for blocked work that needs lead or human intervention.
+
 ## Core Promise
 
 If a company points DXOS at an in-progress project, the platform should be able to:

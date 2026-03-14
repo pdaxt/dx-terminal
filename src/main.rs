@@ -10,6 +10,7 @@ mod config;
 mod dashboard;
 mod design_tokens;
 mod dxos;
+mod dxos_scheduler;
 mod dxos_runtime;
 mod engine;
 mod external_mcp;

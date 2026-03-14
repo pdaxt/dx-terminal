@@ -2717,6 +2717,17 @@ impl DxTerminalService {
     }
 
     #[tool(
+        description = "Get the derived DXOS execution scheduler for a project: launch queue, attention queue, and the next launch recommendation that later orchestrators should consume."
+    )]
+    async fn dxos_scheduler(
+        &self,
+        Parameters(req): Parameters<types::DxosSchedulerRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::dxos_tools::scheduler(req.project.as_deref());
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
         description = "Inspect the DX provider-plugin bridge inventory. Use this to see how Claude native MCPs, Codex/GPT bridge files, and Gemini bridge files are being translated through the shared DX manifest."
     )]
     async fn dxos_provider_plugins(

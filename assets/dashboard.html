@@ -1742,24 +1742,49 @@ function seededFollowOnQueue(project,sessions,adoptions){
   });
 }
 
-function currentDxosLaunchDraft(project,activeStage,featureId,sessions,adoptions){
+function dxosSchedulerLaunchQueue(scheduler,sessions,adoptions){
+  const launchQueue=Array.isArray(scheduler&&scheduler.launch_queue)?scheduler.launch_queue:[];
+  if(launchQueue.length)return launchQueue;
+  return seededFollowOnQueue('',sessions,adoptions).map(item=>({
+    id:`legacy:${String((item.session&&item.session.id)||'')}`,
+    kind:'launch',
+    priority:String((item.suggestion&&item.suggestion.priority)||'medium'),
+    ready:true,
+    blocked_by_policy:false,
+    session_id:(item.session&&item.session.id)||'',
+    work_order_id:null,
+    workflow_run_id:null,
+    role:(item.session&&item.session.role)||'specialist',
+    provider:(item.session&&item.session.provider)||'claude',
+    model:(item.session&&item.session.model)||'',
+    runtime_adapter:(item.session&&item.session.runtime_adapter)||'pty_native_adapter',
+    feature_id:(item.session&&item.session.feature_id)||'',
+    stage:(item.session&&item.session.stage)||'build',
+    title:(item.suggestion&&item.suggestion.role)?`${item.suggestion.role} follow-on`:'Seeded follow-on lane',
+    objective:(item.session&&item.session.objective)||'',
+    reason:(item.suggestion&&item.suggestion.reason)||'Recovery follow-on lane seeded from adoption completion.',
+    updated_at:(item.session&&item.session.updated_at)||''
+  }));
+}
+
+function currentDxosLaunchDraft(project,activeStage,featureId,sessions,adoptions,scheduler){
   const saved=dxosLaunchDrafts[project];
   if(saved&&saved.__manual){
     return saved;
   }
-  const queued=seededFollowOnQueue(project,sessions,adoptions)[0];
-  if(queued&&queued.session){
-    const session=queued.session;
+  const queued=dxosSchedulerLaunchQueue(scheduler,sessions,adoptions)[0];
+  if(queued&&queued.session_id){
+    const session=(Array.isArray(sessions)?sessions:[]).find(item=>String(item.id||'')===String(queued.session_id||''))||{};
     return {
       pane:'auto',
       role:session.role||'design',
       provider:session.provider||'claude',
       adapter:session.runtime_adapter||'pty_native_adapter',
       model:session.model||'',
-      feature:session.feature_id||featureId||'',
-      stage:session.stage||activeStage||'build',
+      feature:session.feature_id||queued.feature_id||featureId||'',
+      stage:session.stage||queued.stage||activeStage||'build',
       supervisor:session.supervisor_session_id||'',
-      task:session.objective||`Advance ${(session.feature_id||featureId||'the next feature')} through ${(session.stage||activeStage||'build')} and report back with evidence.`,
+      task:session.objective||queued.objective||`Advance ${(session.feature_id||queued.feature_id||featureId||'the next feature')} through ${(session.stage||queued.stage||activeStage||'build')} and report back with evidence.`,
       sessionId:session.id||'',
       __manual:false
     };
@@ -1779,6 +1804,41 @@ function currentDxosLaunchDraft(project,activeStage,featureId,sessions,adoptions
     sessionId:'',
     __manual:false
   };
+}
+
+function renderDxosSchedulerLaunchRows(project,scheduler,sessions,adoptions){
+  const queue=dxosSchedulerLaunchQueue(scheduler,sessions,adoptions);
+  if(!queue.length){
+    return '<div class="empty-note">DXOS does not have a queued launch candidate right now.</div>';
+  }
+  return queue.slice(0,4).map(item=>{
+    const session=(Array.isArray(sessions)?sessions:[]).find(row=>String(row.id||'')===String(item.session_id||''))||{};
+    const priority=String(item.priority||session.priority||'medium').toLowerCase();
+    const priorityTone=priority==='high'?'gemini':priority==='low'?'shared':'codex';
+    const meta=[
+      item.feature_id||session.feature_id||null,
+      item.stage?`stage ${normalizeVddPhase(item.stage)}`:session.stage?`stage ${normalizeVddPhase(session.stage)}`:null,
+      item.runtime_adapter?`adapter ${adapterLabel(item.runtime_adapter)}`:session.runtime_adapter?`adapter ${adapterLabel(session.runtime_adapter)}`:null
+    ].filter(Boolean).join(' · ');
+    return `<div class="exec-row">
+      <div class="exec-row-top">
+        <span class="exec-row-title">${escHtml(String(item.title||session.role||'Launch lane'))}</span>
+        <span class="exec-row-tags">
+          ${item.stage?vddPhaseBadge(item.stage):session.stage?vddPhaseBadge(session.stage):''}
+          <span class="doc-pill ${priorityTone}">${escHtml(priority)}</span>
+          ${providerBadge(item.provider||session.provider,true)}
+          ${item.ready===false?`<span class="doc-pill gemini">policy gated</span>`:''}
+        </span>
+      </div>
+      <div class="exec-row-meta">${escHtml(truncateCopy(item.objective||session.objective||'',150)||'DXOS queued this lane for execution.')}</div>
+      ${meta?`<div class="exec-row-meta">${escHtml(meta)}</div>`:''}
+      ${item.reason?`<div class="exec-row-meta">${escHtml(String(item.reason))}</div>`:''}
+      <div class="exec-row-actions" style="margin-top:8px">
+        ${item.session_id?`<button class="vdd-focus-btn" onclick="return applyDxosSessionContractToLaunchForm('${escHtml(String(item.session_id))}','${escHtml(String(item.title||session.role||'queued lane'))}')" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Apply to launch form</button>`:''}
+        ${item.session_id&&item.ready!==false?`<button class="design-action" style="margin-left:8px" onclick="return launchDxosSessionContract('${escHtml(String(item.session_id))}','launch','${escHtml(String(item.title||session.role||'queued lane'))}')" ${operatorActionDisabledAttrs(project,'session_launch','lane launch')}>Launch now</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function persistDxosLaunchDraft(){
@@ -2548,7 +2608,7 @@ function renderDxosDebateRows(debates,limit){
   }).join('');
 }
 
-function renderDxosOperatorControls(project,activeStage,sessions,adoptions){
+function renderDxosOperatorControls(project,activeStage,sessions,adoptions,scheduler){
   const focus=currentProjectFocus(project)||{};
   const featureId=(focus.feature_id||'').toString();
   const defaultStage=normalizeVddPhase(activeStage||focus.stage||'build');
@@ -2559,7 +2619,7 @@ function renderDxosOperatorControls(project,activeStage,sessions,adoptions){
   const operatorPolicy=currentDxOperatorPolicy(project);
   const launchAdapterOptions=runtimeAdapterOptions(project,'pty_native_adapter');
   const sessionAdapterOptions=runtimeAdapterOptions(project,'pty_native_adapter');
-  const launchDraft=currentDxosLaunchDraft(project,defaultStage,featureId,sessions,adoptions);
+  const launchDraft=currentDxosLaunchDraft(project,defaultStage,featureId,sessions,adoptions,scheduler);
   const leadSessionOptions=sessionOptionRows(sessions,session=>!session.supervisor_session_id,null,'Choose lead session');
   const workerSessionOptions=sessionOptionRows(sessions,()=>true,null,'Assign worker later');
   const supervisorLaunchOptions=sessionOptionRows(sessions,session=>!session.supervisor_session_id,null,'No supervising lead');
@@ -2570,11 +2630,11 @@ function renderDxosOperatorControls(project,activeStage,sessions,adoptions){
       <div class="action-card">
         <div class="action-card-head">
           <div class="action-card-title">Seeded Follow-on Queue</div>
-          <div class="action-card-copy">Recovery completion now creates planned specialist lanes under the recovery lead. Use this queue to apply the next governed lane into the launch form or start it directly.</div>
+          <div class="action-card-copy">DXOS keeps a scheduler-backed launch queue. Recovery follow-ons still feed it, but this view now reflects the actual control-plane order the later orchestrator should consume.</div>
         </div>
         <div class="action-form">
-          <div class="action-note">The launch form below auto-seeds from the first queued specialist lane until you make a manual edit.</div>
-          <div class="exec-list">${renderSeededFollowOnQueue(project,sessions,adoptions)}</div>
+          <div class="action-note">The launch form below auto-seeds from the first scheduler-ready lane until you make a manual edit.</div>
+          <div class="exec-list">${renderDxosSchedulerLaunchRows(project,scheduler,sessions,adoptions)}</div>
         </div>
       </div>
       <div class="action-card">
@@ -3498,6 +3558,9 @@ async function renderExecutionHub(){
   dxosSessionCache[project]=dxosSessions;
   const dxosSessionSummary=dxos.sessions||{};
   const dxosDelegation=dxos.delegation||{};
+  const dxosScheduler=dxos.scheduler||{};
+  const dxosLaunchQueue=Array.isArray(dxosScheduler.launch_queue)?dxosScheduler.launch_queue:[];
+  const dxosAttentionQueue=Array.isArray(dxosScheduler.attention_queue)?dxosScheduler.attention_queue:[];
   const dxosAudit=(dxos.audit&&dxos.audit.recent)||[];
   const delegatedWork=(dxosDelegation.recent||[]);
   const blockedWorkOrders=delegatedWork.filter(order=>order.status==='blocked');
@@ -3601,6 +3664,7 @@ async function renderExecutionHub(){
         <div class="exec-kpi"><div class="label">Work Lanes</div><div class="value">${brief.runtime_count||0}</div><div class="meta">${brief.worktree_count||0} isolated worktrees</div></div>
         <div class="exec-kpi"><div class="label">DXOS Sessions</div><div class="value">${dxosSessionSummary.active||0}</div><div class="meta">${leadSessions.length} lead · ${workerSessions.length} worker · ${(dxosStorage.registered_projects||0)} project records</div></div>
         <div class="exec-kpi"><div class="label">Blocked Handoffs</div><div class="value">${blockedWorkOrders.length}</div><div class="meta">${leadInboxWork.length} routed to leads · ${humanEscalations.length} escalated to humans</div></div>
+        <div class="exec-kpi"><div class="label">Launch Queue</div><div class="value">${dxosLaunchQueue.length}</div><div class="meta">${dxosLaunchQueue.filter(item=>item.ready!==false).length} ready · ${dxosLaunchQueue.filter(item=>item.ready===false).length} policy gated</div></div>
         <div class="exec-kpi"><div class="label">Handbook Docs</div><div class="value">${docs.vision_doc_count||0}</div><div class="meta">${docs.guidance_doc_count||0} guidance docs</div></div>
         <div class="exec-kpi"><div class="label">Release Confidence</div><div class="value">${escHtml(confidence.label)}</div><div class="meta">${escHtml(confidence.copy)}</div></div>
         <div class="exec-kpi"><div class="label">Decision Records</div><div class="value">${(dxos.debates&&dxos.debates.total)||0}</div><div class="meta">${(dxos.debates&&dxos.debates.decided)||0} finalized with rationale</div></div>
@@ -3643,6 +3707,8 @@ async function renderExecutionHub(){
         <div class="exec-rail">
           <div class="exec-rail-title">Suggested next lanes</div>
           <div class="exec-rail-copy">These launch suggestions pre-fill the governed operator form below, so recovery work starts from DXOS guidance instead of guesswork.</div>
+          <div class="exec-list-title">DXOS execution scheduler</div>
+          <div class="exec-list">${renderDxosSchedulerLaunchRows(project,dxosScheduler,dxosSessions,dxosAdoptions)}</div>
           <div class="exec-list-title">Launch recommendations</div>
           <div class="exec-list">${renderRecoverySuggestionRows(project,recoverySuggestions)}</div>
         </div>
@@ -3757,6 +3823,10 @@ async function renderExecutionHub(){
         <div class="meta">${dxosDelegation.active_work_orders||0} in flight · ${leadInboxWork.length} lead inbox · ${humanEscalations.length} human escalation${humanEscalations.length===1?'':'s'}</div>
       </div>
       <div class="doc-mini-card">
+        <div class="label">Execution scheduler</div>
+        <div class="meta">${dxosLaunchQueue.length} queued launch${dxosLaunchQueue.length===1?'':'es'} · ${dxosAttentionQueue.length} attention item${dxosAttentionQueue.length===1?'':'s'}</div>
+      </div>
+      <div class="doc-mini-card">
         <div class="label">DXOS Store</div>
         <div class="meta">${escHtml((dxosStorage.backend||'sqlite_with_repo_mirror').toString())} · ${dxosProjectRegistry.project_count||dxosStorage.registered_projects||0} project records</div>
       </div>
@@ -3797,6 +3867,13 @@ async function renderExecutionHub(){
           <span class="exec-row-tags"><span class="doc-pill shared">${dxosSessions.length} tracked</span></span>
         </div>
         <div class="exec-list">${renderDxosSessionRows(dxosSessions,4)}</div>
+      </div>
+      <div class="exec-row">
+        <div class="exec-row-top">
+          <span class="exec-row-title">DXOS execution scheduler</span>
+          <span class="exec-row-tags"><span class="doc-pill shared">${dxosLaunchQueue.length} queued</span></span>
+        </div>
+        <div class="exec-list">${renderDxosSchedulerLaunchRows(project,dxosScheduler,dxosSessions,dxosAdoptions)}</div>
       </div>
       <div class="exec-row">
         <div class="exec-row-top">
@@ -3850,7 +3927,7 @@ async function renderExecutionHub(){
         </div>`).join(''):'<div class="empty-note">No control-plane mutations have been logged for this project yet.</div>'}</div>
       </div>
     </div>
-    ${showOperatorControls?renderDxosOperatorControls(project,activeStage,dxosSessions,dxosAdoptions):`<div class="action-shell"><div class="portal-note">${portalMode==='reviewer'?'This identity is in reviewer mode. Approval, debate, and evidence surfaces stay visible, while launch and pane controls remain hidden.':'This identity is in client mode. DXOS execution controls are intentionally hidden here; use a registered operator identity for lane launch, pane control, and work delegation.'}</div></div>`}`;
+    ${showOperatorControls?renderDxosOperatorControls(project,activeStage,dxosSessions,dxosAdoptions,dxosScheduler):`<div class="action-shell"><div class="portal-note">${portalMode==='reviewer'?'This identity is in reviewer mode. Approval, debate, and evidence surfaces stay visible, while launch and pane controls remain hidden.':'This identity is in client mode. DXOS execution controls are intentionally hidden here; use a registered operator identity for lane launch, pane control, and work delegation.'}</div></div>`}`;
   runtimeEl.innerHTML=runtimePanelHtml;
   if(showOperatorControls){
     syncDxosLaunchProviderOptions();
