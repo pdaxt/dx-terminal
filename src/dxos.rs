@@ -724,11 +724,18 @@ fn registry_projects_for_store_path(registry_path: &Path) -> Result<Vec<Value>, 
     Ok(rows.filter_map(Result::ok).collect::<Vec<_>>())
 }
 
-fn portfolio_groups(projects: &[Value], field: &str) -> Vec<Value> {
+fn sorted_unique_strings(values: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut items = values.into_iter().collect::<Vec<_>>();
+    items.sort();
+    items.dedup();
+    items
+}
+
+fn company_groups(projects: &[Value]) -> Vec<Value> {
     let mut grouped: BTreeMap<String, Vec<Value>> = BTreeMap::new();
     for project in projects {
         let Some(name) = project
-            .get(field)
+            .get("company")
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|value| !value.is_empty())
@@ -740,52 +747,126 @@ fn portfolio_groups(projects: &[Value], field: &str) -> Vec<Value> {
             .or_default()
             .push(project.clone());
     }
-
-    let mut items = grouped
+    grouped
         .into_iter()
         .map(|(name, grouped_projects)| {
-            let mut companies = grouped_projects
-                .iter()
-                .filter_map(|project| project.get("company").and_then(Value::as_str))
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(|value| value.to_string())
-                .collect::<Vec<_>>();
-            companies.sort();
-            companies.dedup();
-
-            let mut programs = grouped_projects
-                .iter()
-                .filter_map(|project| project.get("program").and_then(Value::as_str))
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(|value| value.to_string())
-                .collect::<Vec<_>>();
-            programs.sort();
-            programs.dedup();
-
-            let mut workspaces = grouped_projects
-                .iter()
-                .filter_map(|project| project.get("workspace").and_then(Value::as_str))
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(|value| value.to_string())
-                .collect::<Vec<_>>();
-            workspaces.sort();
-            workspaces.dedup();
-
             json!({
+                "id": company_record_id(&name),
                 "name": name,
                 "project_count": grouped_projects.len(),
-                "companies": companies,
-                "programs": programs,
-                "workspaces": workspaces,
+                "programs": sorted_unique_strings(grouped_projects.iter().filter_map(|project| project.get("program").and_then(Value::as_str)).map(str::trim).filter(|value| !value.is_empty()).map(|value| value.to_string())),
+                "workspaces": sorted_unique_strings(grouped_projects.iter().filter_map(|project| project.get("workspace").and_then(Value::as_str)).map(str::trim).filter(|value| !value.is_empty()).map(|value| value.to_string())),
                 "projects": grouped_projects,
             })
         })
-        .collect::<Vec<_>>();
+        .collect::<Vec<_>>()
+}
 
-    items.sort_by(|left, right| {
+fn program_groups(projects: &[Value]) -> Vec<Value> {
+    let mut grouped: BTreeMap<String, (Option<String>, String, Vec<Value>)> = BTreeMap::new();
+    for project in projects {
+        let Some(name) = project
+            .get("program")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        let company = clean_optional_label(project.get("company").and_then(Value::as_str));
+        let key = program_record_id(company.as_deref(), name);
+        let entry = grouped
+            .entry(key)
+            .or_insert_with(|| (company.clone(), name.to_string(), Vec::new()));
+        entry.2.push(project.clone());
+    }
+    grouped
+        .into_iter()
+        .map(|(id, (company, name, grouped_projects))| {
+            json!({
+                "id": id,
+                "name": name,
+                "company": company,
+                "companies": sorted_unique_strings(grouped_projects.iter().filter_map(|project| project.get("company").and_then(Value::as_str)).map(str::trim).filter(|value| !value.is_empty()).map(|value| value.to_string())),
+                "project_count": grouped_projects.len(),
+                "workspaces": sorted_unique_strings(grouped_projects.iter().filter_map(|project| project.get("workspace").and_then(Value::as_str)).map(str::trim).filter(|value| !value.is_empty()).map(|value| value.to_string())),
+                "projects": grouped_projects,
+            })
+        })
+        .collect::<Vec<_>>()
+}
+
+fn workspace_groups(projects: &[Value]) -> Vec<Value> {
+    let mut grouped: BTreeMap<String, (Option<String>, Option<String>, String, Vec<Value>)> =
+        BTreeMap::new();
+    for project in projects {
+        let Some(name) = project
+            .get("workspace")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        let company = clean_optional_label(project.get("company").and_then(Value::as_str));
+        let program = clean_optional_label(project.get("program").and_then(Value::as_str));
+        let key = workspace_record_id(company.as_deref(), program.as_deref(), name);
+        let entry = grouped
+            .entry(key)
+            .or_insert_with(|| (company.clone(), program.clone(), name.to_string(), Vec::new()));
+        entry.3.push(project.clone());
+    }
+    grouped
+        .into_iter()
+        .map(|(id, (company, program, name, grouped_projects))| {
+            json!({
+                "id": id,
+                "name": name,
+                "company": company,
+                "program": program,
+                "project_count": grouped_projects.len(),
+                "projects": grouped_projects,
+            })
+        })
+        .collect::<Vec<_>>()
+}
+
+fn merge_company_groups(derived: Vec<Value>, records: Vec<CompanyRecord>) -> Vec<Value> {
+    let mut items = derived
+        .into_iter()
+        .map(|item| {
+            let key = item
+                .get("name")
+                .and_then(Value::as_str)
+                .map(company_record_id)
+                .unwrap_or_default();
+            (key, item)
+        })
+        .collect::<BTreeMap<_, _>>();
+    for record in records {
+        let key = record.id.clone();
+        let entry = items.entry(key).or_insert_with(|| {
+            json!({
+                "id": record.id,
+                "name": record.name,
+                "project_count": 0,
+                "programs": [],
+                "workspaces": [],
+                "projects": [],
+            })
+        });
+        if let Some(object) = entry.as_object_mut() {
+            object.insert("id".to_string(), json!(record.id));
+            object.insert("name".to_string(), json!(record.name));
+            object.insert("summary".to_string(), json!(record.summary));
+            object.insert("status".to_string(), json!(record.status));
+            object.insert("owner".to_string(), json!(record.owner));
+            object.insert("created_at".to_string(), json!(record.created_at));
+            object.insert("updated_at".to_string(), json!(record.updated_at));
+        }
+    }
+    let mut values = items.into_values().collect::<Vec<_>>();
+    values.sort_by(|left, right| {
         right
             .get("project_count")
             .and_then(Value::as_u64)
@@ -796,13 +877,128 @@ fn portfolio_groups(projects: &[Value], field: &str) -> Vec<Value> {
                     .cmp(&right.get("name").and_then(Value::as_str))
             })
     });
-    items
+    values
 }
 
-fn portfolio_registry_summary(projects: &[Value]) -> Value {
-    let companies = portfolio_groups(projects, "company");
-    let programs = portfolio_groups(projects, "program");
-    let workspaces = portfolio_groups(projects, "workspace");
+fn merge_program_groups(derived: Vec<Value>, records: Vec<ProgramRecord>) -> Vec<Value> {
+    let mut items = derived
+        .into_iter()
+        .map(|item| {
+            let key = item
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            (key, item)
+        })
+        .collect::<BTreeMap<_, _>>();
+    for record in records {
+        let key = record.id.clone();
+        let entry = items.entry(key).or_insert_with(|| {
+            json!({
+                "id": record.id,
+                "name": record.name,
+                "company": record.company,
+                "companies": record.company.clone().map(|value| vec![value]).unwrap_or_default(),
+                "project_count": 0,
+                "workspaces": [],
+                "projects": [],
+            })
+        });
+        if let Some(object) = entry.as_object_mut() {
+            object.insert("id".to_string(), json!(record.id));
+            object.insert("name".to_string(), json!(record.name));
+            object.insert("company".to_string(), json!(record.company));
+            object.insert(
+                "companies".to_string(),
+                json!(record.company.clone().map(|value| vec![value]).unwrap_or_default()),
+            );
+            object.insert("summary".to_string(), json!(record.summary));
+            object.insert("status".to_string(), json!(record.status));
+            object.insert("owner".to_string(), json!(record.owner));
+            object.insert("created_at".to_string(), json!(record.created_at));
+            object.insert("updated_at".to_string(), json!(record.updated_at));
+        }
+    }
+    let mut values = items.into_values().collect::<Vec<_>>();
+    values.sort_by(|left, right| {
+        right
+            .get("project_count")
+            .and_then(Value::as_u64)
+            .cmp(&left.get("project_count").and_then(Value::as_u64))
+            .then_with(|| {
+                left.get("name")
+                    .and_then(Value::as_str)
+                    .cmp(&right.get("name").and_then(Value::as_str))
+            })
+    });
+    values
+}
+
+fn merge_workspace_groups(derived: Vec<Value>, records: Vec<WorkspaceRecord>) -> Vec<Value> {
+    let mut items = derived
+        .into_iter()
+        .map(|item| {
+            let key = item
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            (key, item)
+        })
+        .collect::<BTreeMap<_, _>>();
+    for record in records {
+        let key = record.id.clone();
+        let entry = items.entry(key).or_insert_with(|| {
+            json!({
+                "id": record.id,
+                "name": record.name,
+                "company": record.company,
+                "program": record.program,
+                "project_count": 0,
+                "projects": [],
+            })
+        });
+        if let Some(object) = entry.as_object_mut() {
+            object.insert("id".to_string(), json!(record.id));
+            object.insert("name".to_string(), json!(record.name));
+            object.insert("company".to_string(), json!(record.company));
+            object.insert("program".to_string(), json!(record.program));
+            object.insert("summary".to_string(), json!(record.summary));
+            object.insert("status".to_string(), json!(record.status));
+            object.insert("owner".to_string(), json!(record.owner));
+            object.insert("created_at".to_string(), json!(record.created_at));
+            object.insert("updated_at".to_string(), json!(record.updated_at));
+        }
+    }
+    let mut values = items.into_values().collect::<Vec<_>>();
+    values.sort_by(|left, right| {
+        right
+            .get("project_count")
+            .and_then(Value::as_u64)
+            .cmp(&left.get("project_count").and_then(Value::as_u64))
+            .then_with(|| {
+                left.get("name")
+                    .and_then(Value::as_str)
+                    .cmp(&right.get("name").and_then(Value::as_str))
+            })
+    });
+    values
+}
+
+fn portfolio_registry_summary(projects: &[Value], registry_path: &Path) -> Value {
+    let companies = merge_company_groups(
+        company_groups(projects),
+        query_company_records_for_store_path(registry_path).unwrap_or_default(),
+    );
+    let programs = merge_program_groups(
+        program_groups(projects),
+        query_program_records_for_store_path(registry_path).unwrap_or_default(),
+    );
+    let workspaces = merge_workspace_groups(
+        workspace_groups(projects),
+        query_workspace_records_for_store_path(registry_path).unwrap_or_default(),
+    );
     json!({
         "company_count": companies.len(),
         "program_count": programs.len(),
@@ -818,7 +1014,7 @@ fn control_plane_registry_value_for_store_path(registry_path: &Path) -> Value {
         Ok(projects) => projects,
         Err(error) => return json!({"error": error}),
     };
-    let portfolio = portfolio_registry_summary(&projects);
+    let portfolio = portfolio_registry_summary(&projects, registry_path);
     json!({
         "backend": "sqlite_with_repo_mirror",
         "database_path": registry_path.to_string_lossy().to_string(),
