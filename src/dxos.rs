@@ -5363,13 +5363,7 @@ mod tests {
         .unwrap();
         let session_id = session["session_id"].as_str().unwrap();
 
-        let _ = claim_session_launch(
-            project,
-            Some("demo"),
-            session_id,
-            Some("scheduler-a"),
-            None,
-        );
+        let _ = claim_session_launch(project, Some("demo"), session_id, Some("scheduler-a"), None);
         let blocked: Value = serde_json::from_str(&claim_session_launch(
             project,
             Some("demo"),

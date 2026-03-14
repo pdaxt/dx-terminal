@@ -188,14 +188,20 @@ pub async fn drive_once_for_project(
     }
 
     let Some(candidate) = next_launch_candidate(project_name, project_path) else {
-        return finalize_scheduler_run(project_name, project_path, actor, &run_id, json!({
-            "project": project_name,
-            "project_path": project_path,
-            "actor": actor,
-            "run_id": run_id,
-            "action": "no_ready_launch",
-            "outcome": "ok",
-        }));
+        return finalize_scheduler_run(
+            project_name,
+            project_path,
+            actor,
+            &run_id,
+            json!({
+                "project": project_name,
+                "project_path": project_path,
+                "actor": actor,
+                "run_id": run_id,
+                "action": "no_ready_launch",
+                "outcome": "ok",
+            }),
+        );
     };
 
     let claim = crate::dxos::claim_session_launch(
@@ -207,15 +213,21 @@ pub async fn drive_once_for_project(
     );
     let claim_value = serde_json::from_str::<Value>(&claim).unwrap_or_else(|_| json!({}));
     if claim_value.get("error").is_some() {
-        return finalize_scheduler_run(project_name, project_path, actor, &run_id, json!({
-            "project": project_name,
-            "project_path": project_path,
-            "actor": actor,
-            "run_id": run_id,
-            "action": "claim_skipped",
-            "outcome": "blocked",
-            "claim": claim_value,
-        }));
+        return finalize_scheduler_run(
+            project_name,
+            project_path,
+            actor,
+            &run_id,
+            json!({
+                "project": project_name,
+                "project_path": project_path,
+                "actor": actor,
+                "run_id": run_id,
+                "action": "claim_skipped",
+                "outcome": "blocked",
+                "claim": claim_value,
+            }),
+        );
     }
 
     let launched = launch_claimed_candidate(app, &candidate).await;
@@ -250,17 +262,23 @@ pub async fn drive_once_for_project(
         }),
     );
 
-    finalize_scheduler_run(project_name, project_path, actor, &run_id, json!({
-        "project": project_name,
-        "project_path": project_path,
-        "actor": actor,
-        "run_id": run_id,
-        "action": "launch_attempted",
-        "outcome": outcome,
-        "session_id": candidate.session_id,
-        "claim": claim_value,
-        "launch": launched,
-    }))
+    finalize_scheduler_run(
+        project_name,
+        project_path,
+        actor,
+        &run_id,
+        json!({
+            "project": project_name,
+            "project_path": project_path,
+            "actor": actor,
+            "run_id": run_id,
+            "action": "launch_attempted",
+            "outcome": outcome,
+            "session_id": candidate.session_id,
+            "claim": claim_value,
+            "launch": launched,
+        }),
+    )
 }
 
 pub async fn drive_once(app: &App) -> Value {

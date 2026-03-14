@@ -32,9 +32,14 @@ pub async fn scheduler_run(
                 .unwrap_or("project")
                 .to_string()
         });
-    let result =
-        crate::dxos_scheduler::drive_once_for_project(app, &project_name, &project_path, actor, run_id)
-            .await;
+    let result = crate::dxos_scheduler::drive_once_for_project(
+        app,
+        &project_name,
+        &project_path,
+        actor,
+        run_id,
+    )
+    .await;
     serde_json::json!({
         "project": project_name,
         "project_path": project_path,
