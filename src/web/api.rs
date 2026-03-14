@@ -1302,6 +1302,13 @@ pub struct VisionQuery {
 }
 
 #[derive(Deserialize, Default)]
+pub struct DxosPortfolioBriefQuery {
+    pub company: Option<String>,
+    pub program: Option<String>,
+    pub workspace: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
 pub struct DxosAdoptionStartBody {
     pub project: Option<String>,
     pub path: Option<String>,
