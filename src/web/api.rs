@@ -2332,6 +2332,7 @@ pub(crate) async fn build_project_brief_payload(
                 "identity": crate::config::http_supervisor_id(),
             },
             "control_endpoints": {
+                "portfolio_brief": "/api/dxos/portfolio/brief",
                 "project_identity": "/api/dxos/project/identity",
                 "company_record": "/api/dxos/company",
                 "program_record": "/api/dxos/program",

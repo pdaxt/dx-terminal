@@ -2940,6 +2940,7 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             "identity": crate::config::http_supervisor_id(),
         },
         "control_endpoints": {
+            "portfolio_brief": "/api/dxos/portfolio/brief",
             "project_identity": "/api/dxos/project/identity",
             "company_record": "/api/dxos/company",
             "program_record": "/api/dxos/program",
