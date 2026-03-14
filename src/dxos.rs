@@ -1737,6 +1737,164 @@ pub fn upsert_project_identity(
     }
 }
 
+pub fn upsert_company_record(
+    project_path: &str,
+    project_name: Option<&str>,
+    name: Option<&str>,
+    summary: Option<&str>,
+    status: Option<&str>,
+    owner: Option<&str>,
+) -> String {
+    let state = load_control_plane(project_path, project_name);
+    let Some(company_name) = clean_optional_label(name).or_else(|| clean_optional_label(state.project.company.as_deref())) else {
+        return json!({"error": "Company name is required."}).to_string();
+    };
+    let registry_path = control_plane_store_path(project_path);
+    let mut record = company_record_for_store_path(&registry_path, &company_name).unwrap_or_else(|| {
+        let now = crate::state::now();
+        CompanyRecord {
+            id: company_record_id(&company_name),
+            name: company_name.clone(),
+            summary: None,
+            status: "active".to_string(),
+            owner: None,
+            created_at: now.clone(),
+            updated_at: now,
+        }
+    });
+    record.name = company_name;
+    record.summary = clean_optional_label(summary);
+    record.status = clean_optional_label(status).unwrap_or_else(|| "active".to_string());
+    record.owner = clean_optional_label(owner);
+    record.updated_at = crate::state::now();
+    match store_company_record(project_path, &record) {
+        Ok(()) => json!({
+            "status": "ok",
+            "action": "company_record_updated",
+            "company": record,
+            "portfolio": {
+                "registry": control_plane_registry_value_for_project_path(project_path),
+            },
+        }).to_string(),
+        Err(error) => json!({"error": error}).to_string(),
+    }
+}
+
+pub fn upsert_program_record(
+    project_path: &str,
+    project_name: Option<&str>,
+    company: Option<&str>,
+    name: Option<&str>,
+    summary: Option<&str>,
+    status: Option<&str>,
+    owner: Option<&str>,
+) -> String {
+    let state = load_control_plane(project_path, project_name);
+    let company_name = clean_optional_label(company).or_else(|| clean_optional_label(state.project.company.as_deref()));
+    let Some(program_name) = clean_optional_label(name).or_else(|| clean_optional_label(state.project.program.as_deref())) else {
+        return json!({"error": "Program name is required."}).to_string();
+    };
+    let registry_path = control_plane_store_path(project_path);
+    let mut record = program_record_for_store_path(&registry_path, company_name.as_deref(), &program_name)
+        .unwrap_or_else(|| {
+            let now = crate::state::now();
+            ProgramRecord {
+                id: program_record_id(company_name.as_deref(), &program_name),
+                name: program_name.clone(),
+                company: company_name.clone(),
+                summary: None,
+                status: "active".to_string(),
+                owner: None,
+                created_at: now.clone(),
+                updated_at: now,
+            }
+        });
+    record.id = program_record_id(company_name.as_deref(), &program_name);
+    record.name = program_name;
+    record.company = company_name;
+    record.summary = clean_optional_label(summary);
+    record.status = clean_optional_label(status).unwrap_or_else(|| "active".to_string());
+    record.owner = clean_optional_label(owner);
+    record.updated_at = crate::state::now();
+    match store_program_record(project_path, &record) {
+        Ok(()) => json!({
+            "status": "ok",
+            "action": "program_record_updated",
+            "program": record,
+            "portfolio": {
+                "registry": control_plane_registry_value_for_project_path(project_path),
+            },
+        }).to_string(),
+        Err(error) => json!({"error": error}).to_string(),
+    }
+}
+
+pub fn upsert_workspace_record(
+    project_path: &str,
+    project_name: Option<&str>,
+    company: Option<&str>,
+    program: Option<&str>,
+    name: Option<&str>,
+    summary: Option<&str>,
+    status: Option<&str>,
+    owner: Option<&str>,
+) -> String {
+    let state = load_control_plane(project_path, project_name);
+    let company_name = clean_optional_label(company).or_else(|| clean_optional_label(state.project.company.as_deref()));
+    let program_name = clean_optional_label(program).or_else(|| clean_optional_label(state.project.program.as_deref()));
+    let Some(workspace_name) = clean_optional_label(name).or_else(|| clean_optional_label(state.project.workspace.as_deref())) else {
+        return json!({"error": "Workspace name is required."}).to_string();
+    };
+    let registry_path = control_plane_store_path(project_path);
+    let mut record = workspace_record_for_store_path(
+        &registry_path,
+        company_name.as_deref(),
+        program_name.as_deref(),
+        &workspace_name,
+    )
+    .unwrap_or_else(|| {
+        let now = crate::state::now();
+        WorkspaceRecord {
+            id: workspace_record_id(
+                company_name.as_deref(),
+                program_name.as_deref(),
+                &workspace_name,
+            ),
+            name: workspace_name.clone(),
+            company: company_name.clone(),
+            program: program_name.clone(),
+            summary: None,
+            status: "active".to_string(),
+            owner: None,
+            created_at: now.clone(),
+            updated_at: now,
+        }
+    });
+    record.id = workspace_record_id(
+        company_name.as_deref(),
+        program_name.as_deref(),
+        &workspace_name,
+    );
+    record.name = workspace_name;
+    record.company = company_name;
+    record.program = program_name;
+    record.summary = clean_optional_label(summary);
+    record.status = clean_optional_label(status).unwrap_or_else(|| "active".to_string());
+    record.owner = clean_optional_label(owner);
+    record.updated_at = crate::state::now();
+    match store_workspace_record(project_path, &record) {
+        Ok(()) => json!({
+            "status": "ok",
+            "action": "workspace_record_updated",
+            "workspace": record,
+            "portfolio": {
+                "registry": control_plane_registry_value_for_project_path(project_path),
+            },
+        }).to_string(),
+        Err(error) => json!({"error": error}).to_string(),
+    }
+}
+
 fn next_debate_id(state: &ControlPlaneState) -> String {
     format!("DB{:04}", state.debates.len() + 1)
 }
