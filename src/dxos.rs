@@ -5293,6 +5293,7 @@ mod tests {
             Some("demo"),
             session_id,
             Some("scheduler-a"),
+            None,
         ))
         .unwrap();
         assert_eq!(initial_claim["action"], "session_launch_claimed");
@@ -5318,6 +5319,7 @@ mod tests {
             Some("demo"),
             session_id,
             Some("scheduler-b"),
+            None,
         ))
         .unwrap();
         assert_eq!(reclaimed["action"], "session_launch_reclaimed");
@@ -5361,12 +5363,19 @@ mod tests {
         .unwrap();
         let session_id = session["session_id"].as_str().unwrap();
 
-        let _ = claim_session_launch(project, Some("demo"), session_id, Some("scheduler-a"));
+        let _ = claim_session_launch(
+            project,
+            Some("demo"),
+            session_id,
+            Some("scheduler-a"),
+            None,
+        );
         let blocked: Value = serde_json::from_str(&claim_session_launch(
             project,
             Some("demo"),
             session_id,
             Some("scheduler-b"),
+            None,
         ))
         .unwrap();
         assert_eq!(blocked["error"], "session_not_launchable");
