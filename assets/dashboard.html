@@ -1505,6 +1505,8 @@ async function renderGauges(){
 
 function activeProjectForHub(){
   if(currentSpace&&currentSpace!=='all')return currentSpace;
+  const filteredProjects=allKnownProjectSpaces((wsState&&wsState.workspaces)||[]);
+  if(filteredProjects.length)return filteredProjects[0];
   if(selectedVisionProject)return selectedVisionProject;
   if(wsState&&wsState.workspaces&&wsState.workspaces.length)return wsState.workspaces[0];
   if(statusData&&statusData.panes){
@@ -4084,7 +4086,7 @@ async function renderExecutionHub(){
   const dxosWorkspaces=(dxosProjectRegistry.workspaces||[]);
   const dxosStorage=dxos.storage||{};
   const dxosProjectIdentity=dxos.project||{};
-  syncPortfolioProjects(dxosRegisteredProjects.map(item=>item&&item.name).filter(Boolean));
+  syncPortfolioRegistry(dxosProjectRegistry);
   const portfolioSiblings=portfolioSiblingSets(project,dxosProjectRegistry,dxosProjectIdentity);
   const projectIdentityBits=[
     dxosProjectIdentity.company?`company ${dxosProjectIdentity.company}`:null,
