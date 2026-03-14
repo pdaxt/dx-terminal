@@ -348,4 +348,29 @@ mod tests {
             json!("Builder skill")
         );
     }
+
+    #[test]
+    fn collects_lowercase_skill_files() {
+        let project = tempdir().unwrap();
+        let home = tempdir().unwrap();
+        let claude_skill_dir = project
+            .path()
+            .join(".claude")
+            .join("skills")
+            .join("gov-pdf-downloader");
+        std::fs::create_dir_all(&claude_skill_dir).unwrap();
+        std::fs::write(
+            claude_skill_dir.join("skill.md"),
+            "# Gov PDF Downloader\nDownload and extract policy PDFs",
+        )
+        .unwrap();
+
+        let assets = collect_automation_assets_with_home(project.path(), home.path());
+        assert_eq!(assets["counts"]["project_skills"], json!(1));
+        assert_eq!(assets["skills"]["project"][0]["provider"], json!("claude"));
+        assert_eq!(
+            assets["skills"]["project"][0]["name"],
+            json!("gov-pdf-downloader")
+        );
+    }
 }
