@@ -35,6 +35,8 @@ The scheduler is now controllable two ways: a local autorun loop can watch the q
 
 DXOS also now supports a contract-driven supervisor target. In the local runtime it can consume the router boundary directly with event-driven kicks; with `DX_HTTP_SUPERVISOR_BASE_URL` set it can instead supervise a remote DXOS instance over the published HTTP contract and its live event stream. Supervisors can now publish an explicit identity (`DX_HTTP_SUPERVISOR_ID`) and launch claims are lease-based with claim IDs, so a dead orchestrator can be replaced, stale `launching` sessions reclaimed, and same-run retries replayed safely instead of remaining stuck indefinitely or racing a duplicate launch.
 
+The scheduler is no longer opaque in the portal. DXOS now publishes recent scheduler ticks and active launch leases as part of the same control-plane snapshot, so operators can see which supervisor claimed a lane, which `run_id` produced the current launch attempt, and whether a tick was replayed or actually advanced work.
+
 ## Core Promise
 
 If a company points DXOS at an in-progress project, the platform should be able to:

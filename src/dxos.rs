@@ -5526,8 +5526,12 @@ mod tests {
         assert_eq!(replayed["action"], "no_ready_launch");
         assert_eq!(replayed["actor"], "supervisor-a");
 
-        let scheduler: Value = serde_json::from_str(&scheduler_snapshot(project, Some("demo"))).unwrap();
-        assert_eq!(scheduler["scheduler"]["recent_runs"][0]["run_id"], "tick-001");
+        let scheduler: Value =
+            serde_json::from_str(&scheduler_snapshot(project, Some("demo"))).unwrap();
+        assert_eq!(
+            scheduler["scheduler"]["recent_runs"][0]["run_id"],
+            "tick-001"
+        );
     }
 
     #[test]
