@@ -217,6 +217,10 @@ pub struct SessionContractRecord {
     pub policy_violations: Vec<String>,
     #[serde(default)]
     pub last_error: Option<String>,
+    #[serde(default)]
+    pub launch_claimed_by: Option<String>,
+    #[serde(default)]
+    pub launch_claimed_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -1012,6 +1016,31 @@ fn normalize_priority(priority: Option<&str>) -> String {
     }
 }
 
+fn clear_session_launch_claim(session: &mut SessionContractRecord) {
+    session.launch_claimed_by = None;
+    session.launch_claimed_at = None;
+}
+
+fn set_session_launch_claim(session: &mut SessionContractRecord, actor: &str, claimed_at: &str) {
+    session.launch_claimed_by = Some(actor.trim().to_string());
+    session.launch_claimed_at = Some(claimed_at.to_string());
+}
+
+fn launch_claim_is_stale(session: &SessionContractRecord) -> bool {
+    if session.status != "launching" {
+        return false;
+    }
+    let Some(claimed_at) = session.launch_claimed_at.as_deref() else {
+        return false;
+    };
+    let Ok(claimed_at) = chrono::NaiveDateTime::parse_from_str(claimed_at, "%Y-%m-%dT%H:%M:%S")
+    else {
+        return false;
+    };
+    let age = chrono::Local::now().naive_local() - claimed_at;
+    age.num_seconds() >= crate::config::session_launch_claim_ttl_secs() as i64
+}
+
 fn normalize_stage(stage: Option<&str>) -> String {
     stage
         .map(|value| value.trim().to_lowercase())
@@ -1363,6 +1392,8 @@ fn session_summary(session: &SessionContractRecord) -> Value {
         "escalation_policy": session.escalation_policy,
         "policy_violations": session.policy_violations,
         "last_error": session.last_error,
+        "launch_claimed_by": session.launch_claimed_by,
+        "launch_claimed_at": session.launch_claimed_at,
         "provider_policy": provider_policy,
         "created_at": session.created_at,
         "updated_at": session.updated_at,
@@ -2192,6 +2223,8 @@ pub fn start_workflow_run(
             escalation_policy: Some("lead_first_workflow_runner".to_string()),
             policy_violations,
             last_error: None,
+            launch_claimed_by: None,
+            launch_claimed_at: None,
             created_at: now.clone(),
             updated_at: now.clone(),
         });
@@ -2420,6 +2453,9 @@ pub fn update_workflow_run_step(
             };
             if session.status != "blocked" {
                 session.last_error = None;
+            }
+            if session.status != "launching" {
+                clear_session_launch_claim(session);
             }
             session.updated_at = now.clone();
         }
@@ -2669,12 +2705,14 @@ pub fn start_project_adoption_with_plan(
         feature_id: feature_id.clone(),
         stage: Some(normalized_stage.clone()),
         supervisor_session_id: None,
-        escalation_policy: Some("human".to_string()),
-        policy_violations: Vec::new(),
-        last_error: None,
-        created_at: now.clone(),
-        updated_at: now.clone(),
-    });
+            escalation_policy: Some("human".to_string()),
+            policy_violations: Vec::new(),
+            last_error: None,
+            launch_claimed_by: None,
+            launch_claimed_at: None,
+            created_at: now.clone(),
+            updated_at: now.clone(),
+        });
 
     state.debates.push(DebateRecord {
         id: debate_id.clone(),
@@ -2884,6 +2922,8 @@ pub fn update_project_adoption_status(
                 escalation_policy: Some("lead_then_human".to_string()),
                 policy_violations: Vec::new(),
                 last_error: None,
+                launch_claimed_by: None,
+                launch_claimed_at: None,
                 created_at: updated_at.clone(),
                 updated_at: updated_at.clone(),
             });
@@ -3395,6 +3435,9 @@ pub fn upsert_session_contract(
         existing.policy_violations.clear();
         existing.policy_violations.append(&mut policy_violations);
         existing.last_error = None;
+        if existing.status != "launching" {
+            clear_session_launch_claim(existing);
+        }
         existing.updated_at = now.clone();
         "session_updated"
     } else {
@@ -3453,6 +3496,8 @@ pub fn upsert_session_contract(
                 .filter(|value| !value.is_empty()),
             policy_violations,
             last_error: None,
+            launch_claimed_by: None,
+            launch_claimed_at: None,
             created_at: now.clone(),
             updated_at: now.clone(),
         });
@@ -3534,6 +3579,9 @@ pub fn update_session_status(
     if !matches!(session.status.as_str(), "blocked" | "failed") {
         session.last_error = None;
     }
+    if session.status != "launching" {
+        clear_session_launch_claim(session);
+    }
     if let Some(note) = note.filter(|value| !value.trim().is_empty()) {
         session.objective = format!(
             "{}\n\nStatus note: {}",
@@ -3611,11 +3659,18 @@ pub fn claim_session_launch(
         return json!({"error": "session_not_found"}).to_string();
     };
 
-    if session.status != "planned" {
+    let claimed_by = actor
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "dxos_scheduler".to_string());
+    let reclaiming = session.status == "launching" && launch_claim_is_stale(session);
+    if session.status != "planned" && !reclaiming {
         return json!({
             "error": "session_not_launchable",
             "session_id": session_id.trim(),
             "status": session.status,
+            "launch_claimed_by": session.launch_claimed_by,
+            "launch_claimed_at": session.launch_claimed_at,
         })
         .to_string();
     }
@@ -3629,22 +3684,21 @@ pub fn claim_session_launch(
         .to_string();
     }
 
+    let now = crate::state::now();
     session.status = "launching".to_string();
     session.last_error = None;
-    session.updated_at = crate::state::now();
+    set_session_launch_claim(session, &claimed_by, &now);
+    session.updated_at = now;
     state.updated_at = session.updated_at.clone();
 
     match save_control_plane(project_path, &state) {
         Ok(()) => json!({
             "status": "ok",
-            "action": "session_launch_claimed",
+            "action": if reclaiming { "session_launch_reclaimed" } else { "session_launch_claimed" },
             "project": state.project.name,
             "project_path": project_path,
             "session_id": session_id.trim(),
-            "claimed_by": actor
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| "dxos_scheduler".to_string()),
+            "claimed_by": claimed_by,
             "session": state.sessions.iter().find(|item| item.id == session_id.trim()).map(session_summary),
         })
         .to_string(),
@@ -3673,6 +3727,7 @@ pub fn record_session_launch_failure(
 
     session.status = "blocked".to_string();
     session.last_error = Some(error.trim().to_string());
+    clear_session_launch_claim(session);
     session.updated_at = crate::state::now();
     state.updated_at = session.updated_at.clone();
     let workflow_updated_at = state.updated_at.clone();
@@ -3923,6 +3978,7 @@ pub fn raise_session_blocker(
 
     let session = &mut state.sessions[session_index];
     session.status = "blocked".to_string();
+    clear_session_launch_claim(session);
     session.updated_at = now.clone();
     state.updated_at = now.clone();
     let workflow_auto_update = reconcile_linked_workflow_run(
@@ -4009,6 +4065,7 @@ pub fn work_order_block(
             .find(|item| item.id == *worker_session_id)
         {
             session.status = "blocked".to_string();
+            clear_session_launch_claim(session);
             session.updated_at = state.updated_at.clone();
         }
     }
@@ -4082,6 +4139,7 @@ pub fn resolve_work_order(
         {
             session.status = "active".to_string();
             session.last_error = None;
+            clear_session_launch_claim(session);
             session.updated_at = state.updated_at.clone();
         }
     }
@@ -4136,6 +4194,7 @@ pub fn record_session_delivery_failure(
 
     session.status = "blocked".to_string();
     session.last_error = Some(error.trim().to_string());
+    clear_session_launch_claim(session);
     session.updated_at = crate::state::now();
     state.updated_at = session.updated_at.clone();
     let workflow_updated_at = state.updated_at.clone();

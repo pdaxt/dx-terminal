@@ -4,6 +4,12 @@ use axum::{
     body::{to_bytes, Body},
     http::{header, Method, Request},
 };
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full};
+use hyper_util::{
+    client::legacy::{connect::HttpConnector, Client},
+    rt::TokioExecutor,
+};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -15,16 +21,54 @@ const EVENT_COOLDOWN_MS: u64 = 800;
 
 #[derive(Clone)]
 struct ContractClient {
-    app: Arc<App>,
+    transport: ContractTransport,
+}
+
+#[derive(Clone)]
+enum ContractTransport {
+    Local { app: Arc<App> },
+    Remote {
+        base_url: String,
+        client: Client<HttpConnector, Full<Bytes>>,
+    },
 }
 
 impl ContractClient {
     fn new(app: Arc<App>) -> Self {
-        Self { app }
+        let transport = if let Some(base_url) = crate::config::http_supervisor_base_url() {
+            let connector = HttpConnector::new();
+            let client = Client::builder(TokioExecutor::new()).build(connector);
+            ContractTransport::Remote { base_url, client }
+        } else {
+            ContractTransport::Local { app }
+        };
+        Self { transport }
+    }
+
+    fn is_remote(&self) -> bool {
+        matches!(self.transport, ContractTransport::Remote { .. })
     }
 
     async fn request_json(
         &self,
+        method: Method,
+        path_and_query: &str,
+        body: Option<Value>,
+    ) -> anyhow::Result<Value> {
+        match &self.transport {
+            ContractTransport::Local { app } => {
+                self.request_json_local(app, method, path_and_query, body).await
+            }
+            ContractTransport::Remote { base_url, client } => {
+                self.request_json_remote(client, base_url, method, path_and_query, body)
+                    .await
+            }
+        }
+    }
+
+    async fn request_json_local(
+        &self,
+        app: &Arc<App>,
         method: Method,
         path_and_query: &str,
         body: Option<Value>,
@@ -49,11 +93,53 @@ impl ContractClient {
             builder.body(Body::empty())?
         };
 
-        let response = crate::web::build_router(Arc::clone(&self.app))
+        let response = crate::web::build_router(Arc::clone(app))
             .oneshot(request)
             .await?;
         let status = response.status();
         let bytes = to_bytes(response.into_body(), usize::MAX).await?;
+        let mut value = serde_json::from_slice::<Value>(&bytes)
+            .unwrap_or_else(|_| json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+        if !status.is_success() {
+            if let Some(object) = value.as_object_mut() {
+                object.insert("_http_status".to_string(), json!(status.as_u16()));
+            }
+        }
+        Ok(value)
+    }
+
+    async fn request_json_remote(
+        &self,
+        client: &Client<HttpConnector, Full<Bytes>>,
+        base_url: &str,
+        method: Method,
+        path_and_query: &str,
+        body: Option<Value>,
+    ) -> anyhow::Result<Value> {
+        let full_url = format!("{}{}", base_url.trim_end_matches('/'), path_and_query);
+        let mut builder = Request::builder()
+            .method(method)
+            .uri(full_url)
+            .header(header::ACCEPT, "application/json")
+            .header("x-dx-actor", SUPERVISOR_ACTOR);
+
+        if let Some(token) = crate::config::control_token() {
+            builder = builder
+                .header("x-dx-control-token", &token)
+                .header(header::AUTHORIZATION, format!("Bearer {}", token));
+        }
+
+        let request = if let Some(payload) = body {
+            builder
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Full::new(Bytes::from(payload.to_string())))?
+        } else {
+            builder.body(Full::new(Bytes::new()))?
+        };
+
+        let response = client.request(request).await?;
+        let status = response.status();
+        let bytes = response.into_body().collect().await?.to_bytes();
         let mut value = serde_json::from_slice::<Value>(&bytes)
             .unwrap_or_else(|_| json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
         if !status.is_success() {
@@ -91,6 +177,16 @@ impl ContractClient {
             })),
         )
         .await
+    }
+
+    async fn registered_projects(&self) -> anyhow::Result<Vec<(String, String)>> {
+        if !self.is_remote() {
+            return Ok(local_registered_projects());
+        }
+        let registry = self
+            .request_json(Method::GET, "/api/dxos/registry", None)
+            .await?;
+        Ok(projects_from_registry(&registry))
     }
 }
 
@@ -178,9 +274,7 @@ fn encode_component(value: &str) -> String {
     encoded
 }
 
-fn registered_projects() -> Vec<(String, String)> {
-    let registry = serde_json::from_str::<Value>(&crate::dxos::control_plane_registry())
-        .unwrap_or_else(|_| json!({}));
+fn projects_from_registry(registry: &Value) -> Vec<(String, String)> {
     registry
         .get("projects")
         .and_then(Value::as_array)
@@ -209,6 +303,12 @@ fn registered_projects() -> Vec<(String, String)> {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default()
+}
+
+fn local_registered_projects() -> Vec<(String, String)> {
+    let registry = serde_json::from_str::<Value>(&crate::dxos::control_plane_registry())
+        .unwrap_or_else(|_| json!({}));
+    projects_from_registry(&registry)
 }
 
 fn event_project(event: &StateEvent) -> Option<String> {
@@ -242,7 +342,10 @@ pub fn start(app: Arc<App>) {
         let interval = std::time::Duration::from_secs(interval_secs);
         loop {
             tokio::time::sleep(interval).await;
-            for (project_name, project_path) in registered_projects() {
+            let Ok(projects) = periodic.client.registered_projects().await else {
+                continue;
+            };
+            for (project_name, project_path) in projects {
                 if let Some(result) = periodic
                     .tick_project_with_cooldown(&project_name, &project_path)
                     .await
@@ -263,29 +366,31 @@ pub fn start(app: Arc<App>) {
         }
     });
 
-    let evented = supervisor.clone();
-    tokio::spawn(async move {
-        let mut rx = app.state.event_bus.subscribe();
-        loop {
-            match rx.recv().await {
-                Ok(event) => {
-                    let Some(project_name) = event_project(&event) else {
-                        continue;
-                    };
-                    let project_path = registered_projects()
-                        .into_iter()
-                        .find(|(name, _)| name == &project_name)
-                        .map(|(_, path)| path)
-                        .unwrap_or_else(|| project_name.clone());
-                    let _ = evented
-                        .tick_project_with_cooldown(&project_name, &project_path)
-                        .await;
+    if !supervisor.client.is_remote() {
+        let evented = supervisor.clone();
+        tokio::spawn(async move {
+            let mut rx = app.state.event_bus.subscribe();
+            loop {
+                match rx.recv().await {
+                    Ok(event) => {
+                        let Some(project_name) = event_project(&event) else {
+                            continue;
+                        };
+                        let project_path = local_registered_projects()
+                            .into_iter()
+                            .find(|(name, _)| name == &project_name)
+                            .map(|(_, path)| path)
+                            .unwrap_or_else(|| project_name.clone());
+                        let _ = evented
+                            .tick_project_with_cooldown(&project_name, &project_path)
+                            .await;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             }
-        }
-    });
+        });
+    }
 }
 
 #[cfg(test)]

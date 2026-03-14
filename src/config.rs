@@ -203,6 +203,22 @@ pub fn http_supervisor_interval_secs() -> u64 {
         .unwrap_or(15)
 }
 
+pub fn http_supervisor_base_url() -> Option<String> {
+    std::env::var("DX_HTTP_SUPERVISOR_BASE_URL")
+        .ok()
+        .or_else(|| std::env::var("DX_ORCHESTRATOR_BASE_URL").ok())
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .filter(|value| !value.is_empty())
+}
+
+pub fn session_launch_claim_ttl_secs() -> u64 {
+    std::env::var("DX_SESSION_LAUNCH_CLAIM_TTL_SECS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(90)
+}
+
 // --- Pane resolution (uses global config) ---
 
 pub fn theme_name(pane: u8) -> &'static str {
