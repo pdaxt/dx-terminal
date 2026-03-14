@@ -20,6 +20,7 @@ pub mod machine;
 pub mod mcp;
 pub mod mcp_registry;
 pub mod multi_agent;
+pub mod provider_asset_plugins;
 pub mod provider_plugins;
 pub mod pty;
 pub mod quality;

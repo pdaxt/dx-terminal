@@ -20,6 +20,7 @@ mod machine;
 mod mcp;
 mod mcp_registry;
 mod multi_agent;
+mod provider_asset_plugins;
 mod provider_plugins;
 mod pty;
 mod quality;
