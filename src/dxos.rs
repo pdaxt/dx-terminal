@@ -675,6 +675,7 @@ fn default_allowed_actions_for_role(role: &str) -> Vec<String> {
             "work_*".to_string(),
             "debate_*".to_string(),
             "provider_plugin_*".to_string(),
+            "automation_bridge_*".to_string(),
             "pane_talk".to_string(),
             "pane_restart".to_string(),
         ],
@@ -690,6 +691,7 @@ fn default_allowed_actions_for_role(role: &str) -> Vec<String> {
             "work_*".to_string(),
             "debate_*".to_string(),
             "provider_plugin_*".to_string(),
+            "automation_bridge_*".to_string(),
             "pane_*".to_string(),
         ],
         "observer" => Vec::new(),
@@ -699,6 +701,7 @@ fn default_allowed_actions_for_role(role: &str) -> Vec<String> {
             "work_*".to_string(),
             "debate_*".to_string(),
             "provider_plugin_*".to_string(),
+            "automation_bridge_*".to_string(),
             "pane_talk".to_string(),
         ],
     }
@@ -1399,6 +1402,7 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
         "registry": capability_registry.clone(),
         "capability_registry": capability_registry,
         "provider_plugins": crate::provider_plugins::plugin_inventory(),
+        "automation_bridges": crate::provider_asset_plugins::plugin_inventory(Some(project_path)),
         "control_plane_registry": control_plane_registry,
         "storage": control_plane_storage_summary(project_path),
         "runtime_contract": {
@@ -1418,6 +1422,7 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             "control_endpoints": {
                 "session_launch": "/api/dxos/session/launch",
                 "provider_plugin_sync": "/api/dxos/provider-plugins/sync",
+                "automation_bridge_sync": "/api/dxos/automation-bridges/sync",
                 "pane_talk": "/api/pane/talk",
                 "pane_kill": "/api/pane/kill",
                 "pane_restart": "/api/pane/restart",

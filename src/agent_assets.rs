@@ -75,6 +75,9 @@ fn collect_automation_assets_with_home(project_root: &Path, home_root: &Path) ->
         })
         .collect::<Vec<_>>();
     let provider_plugins = crate::provider_plugins::plugin_inventory();
+    let automation_bridges = crate::provider_asset_plugins::plugin_inventory(
+        Some(&project_root.to_string_lossy()),
+    );
 
     json!({
         "commands": {
@@ -89,6 +92,7 @@ fn collect_automation_assets_with_home(project_root: &Path, home_root: &Path) ->
         },
         "external_mcps": external_mcps,
         "provider_plugins": provider_plugins,
+        "automation_bridges": automation_bridges,
         "counts": {
             "project_commands": project_commands.len(),
             "user_commands": user_commands.len(),
@@ -96,6 +100,11 @@ fn collect_automation_assets_with_home(project_root: &Path, home_root: &Path) ->
             "user_skills": user_skills.len(),
             "external_mcps": external_mcps.len(),
             "provider_plugins": provider_plugins
+                .get("providers")
+                .and_then(|value| value.as_array())
+                .map(|items| items.len())
+                .unwrap_or(0),
+            "automation_bridges": automation_bridges
                 .get("providers")
                 .and_then(|value| value.as_array())
                 .map(|items| items.len())
