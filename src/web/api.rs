@@ -2358,6 +2358,49 @@ pub async fn get_dxos_control_plane(Query(q): Query<VisionQuery>) -> Json<Value>
     Json(crate::dxos::control_plane_snapshot(&project_path, project))
 }
 
+/// POST /api/dxos/project/identity — Set project company/program/workspace metadata
+pub async fn update_dxos_project_identity(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DxosProjectIdentityBody>,
+) -> ApiJson {
+    let project_path = resolve_project_path(&VisionQuery {
+        project: body.project.clone(),
+        path: body.path.clone(),
+    });
+    let project = body
+        .project
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| project_name_from_path(&project_path));
+    let actor = require_control_access(
+        &app,
+        &headers,
+        &project_path,
+        Some(&project),
+        "project_identity",
+        &project,
+    )?;
+    let raw = crate::dxos::upsert_project_identity(
+        &project_path,
+        Some(&project),
+        body.company.as_deref(),
+        body.program.as_deref(),
+        body.workspace.as_deref(),
+    );
+    let value = serde_json::from_str::<Value>(&raw).unwrap_or_else(|_| json!({"raw": raw}));
+    record_control_action(
+        &app,
+        &project_path,
+        Some(&project),
+        &actor,
+        "project_identity",
+        &project,
+        &value,
+    );
+    Ok(Json(value))
+}
+
 /// GET /api/dxos/registry — Shared DXOS control-plane registry
 pub async fn get_dxos_registry() -> Json<Value> {
     let result = crate::dxos::control_plane_registry();
