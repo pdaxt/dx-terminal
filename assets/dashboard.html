@@ -3853,6 +3853,20 @@ async function renderExecutionHub(){
           <div class="exec-list">${renderDxosWorkOrderRows(humanEscalations,dxosSessions,4,'blocked')}</div>
         </div>
       </div>
+      <div class="exec-rail-grid">
+        <div class="exec-rail">
+          <div class="exec-rail-title">Scheduler run history</div>
+          <div class="exec-rail-copy">This is the hosted-orchestrator audit trail: which supervisor tick ran, what it tried to do, and whether the result was replayed, blocked, or launched work.</div>
+          <div class="exec-list-title">Recent scheduler ticks</div>
+          <div class="exec-list">${renderDxosSchedulerRunRows(dxosScheduler)}</div>
+        </div>
+        <div class="exec-rail">
+          <div class="exec-rail-title">Active launch leases</div>
+          <div class="exec-rail-copy">If a lane is currently claimed for launch, DXOS shows the owning supervisor and claim id here so remote orchestrators can be debugged without reading raw JSON.</div>
+          <div class="exec-list-title">Current claim ownership</div>
+          <div class="exec-list">${renderDxosActiveClaimRows(dxosScheduler)}</div>
+        </div>
+      </div>
       <div class="exec-rail" style="margin-top:12px">
         <div class="exec-rail-title">Decision council</div>
         <div class="exec-rail-copy">Formal debates, contradictions, and votes preserve why a design or architecture direction won before implementation accelerates.</div>
