@@ -12,6 +12,7 @@ mod design_tokens;
 mod dxos;
 mod dxos_runtime;
 mod dxos_scheduler;
+mod dxos_supervisor;
 mod engine;
 mod external_mcp;
 mod factory;
@@ -196,6 +197,7 @@ async fn main() -> anyhow::Result<()> {
             });
             engine::start_background_tasks(Some(Arc::clone(&application.state))).await;
             dxos_scheduler::start(Arc::clone(&application));
+            dxos_supervisor::start(Arc::clone(&application));
 
             let tui_app = application;
             let handle = std::thread::spawn(move || tui::run_tui(tui_app));
@@ -207,6 +209,7 @@ async fn main() -> anyhow::Result<()> {
             // TUI uses blocking_read() which panics inside tokio runtime.
             // Spawn on a dedicated OS thread outside the runtime.
             dxos_scheduler::start(Arc::clone(&application));
+            dxos_supervisor::start(Arc::clone(&application));
             let tui_app = application;
             let handle = std::thread::spawn(move || tui::run_tui(tui_app));
             handle
@@ -218,6 +221,7 @@ async fn main() -> anyhow::Result<()> {
             init_tracing();
             tracing::info!("Web dashboard at http://localhost:{}", port);
             dxos_scheduler::start(Arc::clone(&application));
+            dxos_supervisor::start(Arc::clone(&application));
             web::run_web_server(application, port).await?;
         }
         Some(Commands::Gateway { command }) => {
@@ -308,6 +312,7 @@ async fn run_mcp_mode(
     // Background engine: dead agent reaper, lock expiry, data retention, reconciler
     engine::start_background_tasks(Some(Arc::clone(&app.state))).await;
     dxos_scheduler::start(Arc::clone(&app));
+    dxos_supervisor::start(Arc::clone(&app));
 
     // Background auto-cycle timer — reads interval from config, runs auto_cycle periodically
     let cycle_app = Arc::clone(&app);
