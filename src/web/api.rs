@@ -1489,6 +1489,7 @@ pub struct DxosSessionBlockBody {
 pub struct DxosSchedulerRunBody {
     pub project: Option<String>,
     pub path: Option<String>,
+    pub run_id: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -2408,9 +2409,14 @@ pub async fn run_dxos_scheduler(
         "scheduler_run",
         &project_name,
     )?;
-    let result =
-        crate::dxos_scheduler::drive_once_for_project(app.as_ref(), &project_name, &project_path)
-            .await;
+    let result = crate::dxos_scheduler::drive_once_for_project(
+        app.as_ref(),
+        &project_name,
+        &project_path,
+        Some(&actor),
+        body.run_id.as_deref(),
+    )
+    .await;
     let scheduler = serde_json::from_str::<Value>(&crate::dxos::scheduler_snapshot(
         &project_path,
         Some(&project_name),

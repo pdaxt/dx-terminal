@@ -14,7 +14,12 @@ pub fn scheduler(project: Option<&str>) -> String {
     dxos::scheduler_snapshot(&project_path, None)
 }
 
-pub async fn scheduler_run(app: &crate::app::App, project: Option<&str>) -> String {
+pub async fn scheduler_run(
+    app: &crate::app::App,
+    project: Option<&str>,
+    actor: Option<&str>,
+    run_id: Option<&str>,
+) -> String {
     let project_path = resolve_project_path(project);
     let project_name = project
         .map(str::trim)
@@ -28,7 +33,8 @@ pub async fn scheduler_run(app: &crate::app::App, project: Option<&str>) -> Stri
                 .to_string()
         });
     let result =
-        crate::dxos_scheduler::drive_once_for_project(app, &project_name, &project_path).await;
+        crate::dxos_scheduler::drive_once_for_project(app, &project_name, &project_path, actor, run_id)
+            .await;
     serde_json::json!({
         "project": project_name,
         "project_path": project_path,

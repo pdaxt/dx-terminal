@@ -2749,8 +2749,13 @@ impl DxTerminalService {
         &self,
         Parameters(req): Parameters<types::DxosSchedulerRunRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result =
-            tools::dxos_tools::scheduler_run(self.app.as_ref(), req.project.as_deref()).await;
+        let result = tools::dxos_tools::scheduler_run(
+            self.app.as_ref(),
+            req.project.as_deref(),
+            Some("dxos_mcp_scheduler"),
+            req.run_id.as_deref(),
+        )
+        .await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 

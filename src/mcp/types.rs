@@ -2163,6 +2163,8 @@ pub struct DxosSchedulerRequest {
 pub struct DxosSchedulerRunRequest {
     #[schemars(description = "Project path (default: current directory)")]
     pub project: Option<String>,
+    #[schemars(description = "Optional idempotency key for this scheduler tick")]
+    pub run_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
