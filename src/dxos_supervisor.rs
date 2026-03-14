@@ -90,7 +90,7 @@ impl ContractClient {
             .method(method)
             .uri(path_and_query)
             .header(header::ACCEPT, "application/json")
-            .header("x-dx-actor", &self.actor);
+            .header("x-dx-actor", self.actor.as_str());
 
         if let Some(token) = crate::config::control_token() {
             builder = builder
@@ -134,7 +134,7 @@ impl ContractClient {
             .method(method)
             .uri(full_url)
             .header(header::ACCEPT, "application/json")
-            .header("x-dx-actor", &self.actor);
+            .header("x-dx-actor", self.actor.as_str());
 
         if let Some(token) = crate::config::control_token() {
             builder = builder
@@ -246,7 +246,7 @@ impl Supervisor {
             return Ok(json!({
                 "project": project_name,
                 "project_path": project_path,
-                "actor": self.client.actor,
+                "actor": self.client.actor.clone(),
                 "action": "no_ready_launch",
             }));
         }
@@ -360,7 +360,7 @@ async fn stream_remote_events(supervisor: Supervisor) {
             .method(Method::GET)
             .uri(format!("{}/api/events", base_url.trim_end_matches('/')))
             .header(header::ACCEPT, "text/event-stream")
-            .header("x-dx-actor", &supervisor.client.actor);
+            .header("x-dx-actor", supervisor.client.actor.as_str());
         if let Some(token) = crate::config::control_token() {
             builder = builder
                 .header("x-dx-control-token", &token)
