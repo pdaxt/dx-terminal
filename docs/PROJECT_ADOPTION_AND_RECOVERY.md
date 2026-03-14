@@ -37,6 +37,8 @@ DXOS also now supports a contract-driven supervisor target. In the local runtime
 
 The scheduler is no longer opaque in the portal. DXOS now publishes recent scheduler ticks and active launch leases as part of the same control-plane snapshot, so operators can see which supervisor claimed a lane, which `run_id` produced the current launch attempt, and whether a tick was replayed or actually advanced work.
 
+Recovery projects can now also be tagged with `company`, `program`, and `workspace` identity through DXOS itself. That metadata is stored on the project record and propagated into the shared DXOS registry, which is the first step from a flat list of repos toward a true multi-company portfolio model.
+
 ## Core Promise
 
 If a company points DXOS at an in-progress project, the platform should be able to:

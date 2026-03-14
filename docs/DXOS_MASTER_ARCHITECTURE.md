@@ -247,6 +247,7 @@ The first architecture slice now implemented in the repo is:
 - supervisors now have an explicit identity (`DX_HTTP_SUPERVISOR_ID` / `DX_ORCHESTRATOR_ID`), and scheduler ticks support caller-supplied `run_id` idempotency keys so remote retries can safely replay the same scheduling decision instead of double-claiming work
 - session launch claims now carry a TTL-backed lease plus the owning `claim_id`, so an external supervisor crash does not strand queued work in `launching` forever; stale claims are reclaimed explicitly, repeated retries from the same supervisor run are idempotent, and lease ownership is preserved in the session record/audit trail
 - scheduler observability is now first-class too: the control-plane snapshot exposes recent scheduler ticks and active launch leases so the portal can explain which supervisor is currently claiming work and which tick most recently changed queue state
+- DXOS project identity is now explicit too: each control-plane record can carry `company`, `program`, and `workspace` metadata, and the shared registry exposes that portfolio context so the portal no longer treats every project as a flat unnamed repo entry
 - protected control routes now enforce optional operator policy as well as token auth, so named operators can be limited by role, project scope, and action families before a launch, debate, or lane mutation is accepted
 
 That gives the platform a native place to reason, disagree, decide, supervise, and delegate inside the system itself.
