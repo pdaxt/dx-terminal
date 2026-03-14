@@ -5133,6 +5133,39 @@ mod tests {
     }
 
     #[test]
+    fn project_identity_is_persisted_and_exposed_in_registry() {
+        let tmp = tempdir().unwrap();
+        let project_path = tmp.path().join("demo");
+        std::fs::create_dir_all(&project_path).unwrap();
+        let project = project_path.to_str().unwrap();
+
+        let updated: Value = serde_json::from_str(&upsert_project_identity(
+            project,
+            Some("demo"),
+            Some("DX Ventures"),
+            Some("Agentic Delivery"),
+            Some("core-platform"),
+        ))
+        .unwrap();
+        assert_eq!(updated["action"], "project_identity_updated");
+        assert_eq!(updated["project"]["company"], "DX Ventures");
+
+        let snapshot = control_plane_snapshot(project, Some("demo"));
+        assert_eq!(snapshot["project"]["program"], "Agentic Delivery");
+
+        let registry: Value =
+            serde_json::from_str(&control_plane_registry_for_project(project)).unwrap();
+        let entry = registry["projects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["path"] == project)
+            .unwrap();
+        assert_eq!(entry["company"], "DX Ventures");
+        assert_eq!(entry["workspace"], "core-platform");
+    }
+
+    #[test]
     fn legacy_repo_json_is_imported_into_sqlite_store() {
         let tmp = tempdir().unwrap();
         let project_path = tmp.path().join("demo");
