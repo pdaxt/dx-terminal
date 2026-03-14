@@ -1667,6 +1667,9 @@ pub fn control_auth_contract() -> Value {
         "operators": operator_registry["operators"].clone(),
         "required_for": [
             "/api/dxos/project/identity",
+            "/api/dxos/company",
+            "/api/dxos/program",
+            "/api/dxos/workspace",
             "/api/dxos/session/launch",
             "/api/dxos/session/upsert",
             "/api/dxos/session/status",
@@ -2796,7 +2799,8 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             .and_then(Value::as_array)
             .and_then(|items| {
                 items.iter().find(|entry| {
-                    entry.get("name").and_then(Value::as_str).map(str::trim) == Some(company.trim())
+                    entry.get("name").and_then(Value::as_str).map(str::trim)
+                        == Some(company.trim())
                 })
             })
             .cloned()
@@ -2807,10 +2811,25 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             .and_then(Value::as_array)
             .and_then(|items| {
                 items.iter().find(|entry| {
-                    entry.get("name").and_then(Value::as_str).map(str::trim) == Some(program.trim())
+                    entry.get("name").and_then(Value::as_str).map(str::trim)
+                        == Some(program.trim())
+                        && entry.get("company").and_then(Value::as_str).map(str::trim)
+                            == state.project.company.as_deref().map(str::trim)
                 })
             })
             .cloned()
+            .or_else(|| {
+                control_plane_registry
+                    .get("programs")
+                    .and_then(Value::as_array)
+                    .and_then(|items| {
+                        items.iter().find(|entry| {
+                            entry.get("name").and_then(Value::as_str).map(str::trim)
+                                == Some(program.trim())
+                        })
+                    })
+                    .cloned()
+            })
     });
     let current_workspace = state.project.workspace.as_deref().and_then(|workspace| {
         control_plane_registry
@@ -2820,9 +2839,25 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
                 items.iter().find(|entry| {
                     entry.get("name").and_then(Value::as_str).map(str::trim)
                         == Some(workspace.trim())
+                        && entry.get("company").and_then(Value::as_str).map(str::trim)
+                            == state.project.company.as_deref().map(str::trim)
+                        && entry.get("program").and_then(Value::as_str).map(str::trim)
+                            == state.project.program.as_deref().map(str::trim)
                 })
             })
             .cloned()
+            .or_else(|| {
+                control_plane_registry
+                    .get("workspaces")
+                    .and_then(Value::as_array)
+                    .and_then(|items| {
+                        items.iter().find(|entry| {
+                            entry.get("name").and_then(Value::as_str).map(str::trim)
+                                == Some(workspace.trim())
+                        })
+                    })
+                    .cloned()
+            })
     });
 
     json!({
@@ -2892,6 +2927,9 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             },
             "control_endpoints": {
                 "project_identity": "/api/dxos/project/identity",
+                "company_record": "/api/dxos/company",
+                "program_record": "/api/dxos/program",
+                "workspace_record": "/api/dxos/workspace",
                 "scheduler_run": "/api/dxos/scheduler/run",
                 "session_launch": "/api/dxos/session/launch",
                 "provider_plugin_sync": "/api/dxos/provider-plugins/sync",
