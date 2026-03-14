@@ -2,6 +2,17 @@ use anyhow::Result;
 use serde::Serialize;
 use std::process::Command;
 
+const DX_BOOTSTRAP_FILES: &[&str] = &[
+    "DX_SHARED_GUIDANCE_PATH",
+    "DX_PROVIDER_GUIDANCE_PATH",
+    "DX_AUTOMATION_GUIDE_PATH",
+    "DX_PROVIDER_BRIDGE_PATH",
+    "DX_AUTOMATION_BRIDGE_PROJECT_PATH",
+    "DX_AUTOMATION_BRIDGE_USER_PATH",
+    "DX_WORKFLOW_CATALOG_PROJECT_PATH",
+    "DX_WORKFLOW_CATALOG_USER_PATH",
+];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RuntimeProvider {
     Claude,
@@ -60,6 +71,8 @@ pub struct RuntimeLaunchPlan {
     pub project_path: String,
     pub window_name: String,
     pub command: String,
+    pub bootstrap_mode: String,
+    pub bootstrap_files: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -209,6 +222,11 @@ pub fn plan_launch(
         project_path: project_path.to_string(),
         window_name: window_name.to_string(),
         command,
+        bootstrap_mode: "dx_runtime_bootstrap".to_string(),
+        bootstrap_files: DX_BOOTSTRAP_FILES
+            .iter()
+            .map(|item| item.to_string())
+            .collect(),
     })
 }
 
@@ -238,7 +256,7 @@ fn build_provider_command_with_binary(
     autonomous: bool,
     model: Option<&str>,
 ) -> String {
-    let escaped_prompt = shell_escape(prompt);
+    let escaped_prompt = shell_escape(&decorate_prompt_with_bootstrap(provider, prompt));
     let model_arg = model
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -286,6 +304,48 @@ fn build_provider_command_with_binary(
                 .unwrap_or_default();
             format!("{}{} {}", binary, model_flag, escaped_prompt)
         }
+    }
+}
+
+fn decorate_prompt_with_bootstrap(provider: RuntimeProvider, prompt: &str) -> String {
+    let provider_label = provider.label();
+    let provider_runtime = match provider {
+        RuntimeProvider::Claude => "Claude Code",
+        RuntimeProvider::Codex => "Codex CLI",
+        RuntimeProvider::Gemini => "Gemini CLI",
+        RuntimeProvider::OpenCode => "OpenCode",
+    };
+    let mut sections = vec![
+        "## DX Runtime Bootstrap".to_string(),
+        format!("- Runtime provider: {} ({})", provider_label, provider_runtime),
+        "- Before major work, consult the DX runtime guidance files if they exist.".to_string(),
+        "- Canonical guidance files: $DX_SHARED_GUIDANCE_PATH, $DX_PROVIDER_GUIDANCE_PATH, $DX_AUTOMATION_GUIDE_PATH.".to_string(),
+        "- Canonical bridge manifests: $DX_PROVIDER_BRIDGE_PATH, $DX_AUTOMATION_BRIDGE_PROJECT_PATH, $DX_AUTOMATION_BRIDGE_USER_PATH.".to_string(),
+        "- Structured workflow catalogs: $DX_WORKFLOW_CATALOG_PROJECT_PATH, $DX_WORKFLOW_CATALOG_USER_PATH.".to_string(),
+        "- Prefer DX-shared workflows and bridged commands/skills over inventing a new local workflow.".to_string(),
+        "- If the task conflicts with the shared guidance or bridge contracts, surface the contradiction explicitly.".to_string(),
+    ];
+
+    match provider {
+        RuntimeProvider::Claude => sections.push(
+            "- Use the DX guidance and automation files as the first execution context before tool-heavy work.".to_string(),
+        ),
+        RuntimeProvider::Codex => sections.push(
+            "- Treat the DX guidance files as the startup contract for this Codex lane and preserve them as read-only context.".to_string(),
+        ),
+        RuntimeProvider::Gemini => sections.push(
+            "- Start from the DX guidance files and automation bridge inventory before drafting or executing workflow steps.".to_string(),
+        ),
+        RuntimeProvider::OpenCode => sections.push(
+            "- Follow the DX runtime bootstrap files before acting so this lane stays interoperable with the other providers.".to_string(),
+        ),
+    }
+
+    let trimmed_prompt = prompt.trim();
+    if trimmed_prompt.is_empty() {
+        sections.join("\n")
+    } else {
+        format!("{}\n\n{}", sections.join("\n"), trimmed_prompt)
     }
 }
 
@@ -387,11 +447,17 @@ mod tests {
                 true,
                 Some("claude-sonnet-4-6"),
             ),
+            bootstrap_mode: "dx_runtime_bootstrap".to_string(),
+            bootstrap_files: DX_BOOTSTRAP_FILES
+                .iter()
+                .map(|item| item.to_string())
+                .collect(),
         };
         assert!(plan.command.contains("/bin/claude"));
         assert!(plan.command.contains("--dangerously-skip-permissions"));
         assert!(plan.command.contains("--model 'claude-sonnet-4-6'"));
-        assert!(plan.command.ends_with("-p 'ship it'"));
+        assert!(plan.command.contains("DX_SHARED_GUIDANCE_PATH"));
+        assert!(plan.command.contains("ship it"));
     }
 
     #[test]
@@ -406,7 +472,8 @@ mod tests {
         assert!(cmd.contains("/bin/codex"));
         assert!(cmd.contains("--full-auto"));
         assert!(cmd.contains("-m 'gpt-5.4'"));
-        assert!(cmd.ends_with("'review this diff'"));
+        assert!(cmd.contains("DX_AUTOMATION_GUIDE_PATH"));
+        assert!(cmd.contains("review this diff"));
     }
 
     #[test]
@@ -419,8 +486,10 @@ mod tests {
             Some("gemini-2.5-pro"),
         );
         assert!(cmd.contains("/bin/gemini"));
-        assert!(cmd.contains("--prompt-interactive 'design three options'"));
+        assert!(cmd.contains("--prompt-interactive"));
         assert!(cmd.contains("-m 'gemini-2.5-pro'"));
+        assert!(cmd.contains("DX_PROVIDER_BRIDGE_PATH"));
+        assert!(cmd.contains("design three options"));
         assert!(!cmd.contains("--yolo"));
     }
 
@@ -438,6 +507,11 @@ mod tests {
         if let Ok(plan) = plan {
             assert_eq!(plan.adapter, "pty_native_adapter");
             assert_eq!(plan.provider, "codex");
+            assert_eq!(plan.bootstrap_mode, "dx_runtime_bootstrap");
+            assert!(plan
+                .bootstrap_files
+                .iter()
+                .any(|item| item == "DX_AUTOMATION_GUIDE_PATH"));
         }
     }
 

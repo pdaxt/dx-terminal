@@ -505,6 +505,24 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         .and_then(|value| value.get("assets"))
         .and_then(|value| value.as_u64())
         .unwrap_or(0);
+    let automation_project_workflow_catalog_path = automation_bridge_sync
+        .get("project_workflow_catalog_path")
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
+    let automation_user_workflow_catalog_path = automation_bridge_sync
+        .get("user_workflow_catalog_path")
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
+    let automation_project_workflows = automation_bridge_sync
+        .get("project")
+        .and_then(|value| value.get("workflows"))
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let automation_user_workflows = automation_bridge_sync
+        .get("user")
+        .and_then(|value| value.get("workflows"))
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
     let automation_user_assets = automation_bridge_sync
         .get("user")
         .and_then(|value| value.get("assets"))
@@ -586,6 +604,14 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
             automation_user_assets.to_string(),
         ),
         (
+            "DX_WORKFLOW_CATALOG_PROJECT_COUNT".to_string(),
+            automation_project_workflows.to_string(),
+        ),
+        (
+            "DX_WORKFLOW_CATALOG_USER_COUNT".to_string(),
+            automation_user_workflows.to_string(),
+        ),
+        (
             "DX_AUTOMATION_GUIDE_PATH".to_string(),
             automation_doc_path.clone(),
         ),
@@ -610,6 +636,18 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
     if let Some(path) = automation_user_manifest_path.as_deref() {
         env_vars.push((
             "DX_AUTOMATION_BRIDGE_USER_PATH".to_string(),
+            path.to_string(),
+        ));
+    }
+    if let Some(path) = automation_project_workflow_catalog_path.as_deref() {
+        env_vars.push((
+            "DX_WORKFLOW_CATALOG_PROJECT_PATH".to_string(),
+            path.to_string(),
+        ));
+    }
+    if let Some(path) = automation_user_workflow_catalog_path.as_deref() {
+        env_vars.push((
+            "DX_WORKFLOW_CATALOG_USER_PATH".to_string(),
             path.to_string(),
         ));
     }
@@ -731,8 +769,11 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
             "branch": ws_branch,
             "browser_port": browser_port,
             "automation_doc_path": serde_json::Value::Null,
+            "shared_guidance_path": serde_json::Value::Null,
+            "provider_guidance_path": serde_json::Value::Null,
             "provider_bridge": provider_bridge_sync,
             "automation_bridge": automation_bridge_sync,
+            "workflow_catalog": serde_json::Value::Null,
         })
         .to_string();
     }
@@ -772,9 +813,35 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         &automation_doc_path,
         format!("{}\n", automation_context_section.trim()),
     );
+    let shared_guidance = render_generated_guidance(
+        "AGENTS.md",
+        &provider,
+        &preamble,
+        &automation_context_section,
+        &shared_guidance_doc_path,
+        &automation_doc_path,
+    );
+    let provider_guidance = render_generated_guidance(
+        &format!("{}.md", provider.to_uppercase()),
+        &provider,
+        &preamble,
+        &automation_context_section,
+        &shared_guidance_doc_path,
+        &automation_doc_path,
+    );
+    let _ = std::fs::write(&shared_guidance_doc_path, &shared_guidance);
+    let _ = std::fs::write(&provider_guidance_doc_path, &provider_guidance);
     for guidance_file in ["AGENTS.md", "CLAUDE.md", "CODEX.md", "GEMINI.md"] {
         let guidance_path = format!("{}/{}", spawn_cwd, guidance_file);
-        let _ = std::fs::write(&guidance_path, &preamble);
+        let guidance_content = render_generated_guidance(
+            guidance_file,
+            &provider,
+            &preamble,
+            &automation_context_section,
+            &shared_guidance_doc_path,
+            &automation_doc_path,
+        );
+        write_guidance_if_safe(&guidance_path, &guidance_content);
     }
 
     let task_prompt = format!(
@@ -826,8 +893,16 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
                 "branch": ws_branch,
                 "browser_port": browser_port,
                 "automation_doc_path": automation_doc_path,
+                "shared_guidance_path": shared_guidance_doc_path,
+                "provider_guidance_path": provider_guidance_doc_path,
                 "provider_bridge": provider_bridge_sync,
                 "automation_bridge": automation_bridge_sync,
+                "workflow_catalog": {
+                    "project_path": automation_project_workflow_catalog_path,
+                    "user_path": automation_user_workflow_catalog_path,
+                    "project_workflows": automation_project_workflows,
+                    "user_workflows": automation_user_workflows,
+                },
                 "runtime_broker": launch_broker_json_from_error(&window_name, &spawn_cwd),
             })
             .to_string();
@@ -867,8 +942,16 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
             "branch": ws_branch,
             "browser_port": browser_port,
             "automation_doc_path": automation_doc_path,
+            "shared_guidance_path": shared_guidance_doc_path,
+            "provider_guidance_path": provider_guidance_doc_path,
             "provider_bridge": provider_bridge_sync,
             "automation_bridge": automation_bridge_sync,
+            "workflow_catalog": {
+                "project_path": automation_project_workflow_catalog_path,
+                "user_path": automation_user_workflow_catalog_path,
+                "project_workflows": automation_project_workflows,
+                "user_workflows": automation_user_workflows,
+            },
             "runtime_broker": launch_broker_json(&launch_plan),
         })
         .to_string();
@@ -985,6 +1068,8 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         "branch": ws_branch,
         "browser_port": browser_port,
         "automation_doc_path": automation_doc_path,
+        "shared_guidance_path": shared_guidance_doc_path,
+        "provider_guidance_path": provider_guidance_doc_path,
         "browser_profile_root": browser_profile_root,
         "browser_artifacts_root": browser_artifacts_root,
         "launch": launch_status,
@@ -992,6 +1077,12 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         "runtime_broker": launch_broker_json(&launch_plan),
         "provider_bridge": provider_bridge_sync,
         "automation_bridge": automation_bridge_sync,
+        "workflow_catalog": {
+            "project_path": automation_project_workflow_catalog_path,
+            "user_path": automation_user_workflow_catalog_path,
+            "project_workflows": automation_project_workflows,
+            "user_workflows": automation_user_workflows,
+        },
         "dxos_session_id": session_value.get("session_id").cloned().unwrap_or(serde_json::Value::Null),
         "machine_ip": machine_id.ip,
         "machine_hostname": machine_id.hostname,
@@ -1275,6 +1366,8 @@ fn launch_broker_json(plan: &runtime_broker::RuntimeLaunchPlan) -> serde_json::V
         "provider_label": plan.provider_label,
         "binary": plan.binary,
         "model": plan.model,
+        "bootstrap_mode": plan.bootstrap_mode,
+        "bootstrap_files": plan.bootstrap_files,
     })
 }
 
@@ -1424,6 +1517,42 @@ pub async fn assign_adhoc(app: &App, req: AssignAdhocRequest) -> String {
         },
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preserves_user_owned_guidance_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("AGENTS.md");
+        std::fs::write(&path, "# User guidance\nkeep this").unwrap();
+
+        write_guidance_if_safe(path.to_str().unwrap(), "# DX guidance");
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("keep this"));
+    }
+
+    #[test]
+    fn updates_dx_owned_guidance_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("AGENTS.md");
+        std::fs::write(
+            &path,
+            format!(
+                "{} {{\"provider\":\"shared\"}} -->\n\nold",
+                DX_GENERATED_GUIDANCE_MARKER
+            ),
+        )
+        .unwrap();
+
+        write_guidance_if_safe(path.to_str().unwrap(), "# DX guidance");
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(content, "# DX guidance");
+    }
 }
 
 /// Execute os_collect logic — reads tmux output (or PTY fallback)

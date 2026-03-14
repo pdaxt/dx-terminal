@@ -33,8 +33,14 @@ struct BridgeTarget {
     user_exists: bool,
     project_exported_assets: usize,
     user_exported_assets: usize,
+    project_exported_workflows: usize,
+    user_exported_workflows: usize,
+    project_conflicts: usize,
+    user_conflicts: usize,
     available_project_assets: usize,
     available_user_assets: usize,
+    available_project_workflows: usize,
+    available_user_workflows: usize,
     available_project_commands: usize,
     available_project_skills: usize,
     available_user_commands: usize,
@@ -80,6 +86,41 @@ pub fn runtime_guidance(project_root: Option<&str>, provider: &str, max_items: u
     )
 }
 
+pub fn shared_workflow_catalog(project_root: Option<&str>, source_provider: Option<&str>) -> Value {
+    let project_root = project_root.map(PathBuf::from);
+    let items = shared_assets(project_root.as_deref(), &crate::config::home_dir(), source_provider);
+    json!({
+        "source_of_truth": SHARED_SOURCE,
+        "source_provider": source_provider
+            .map(crate::provider_plugins::normalized_provider)
+            .unwrap_or(SHARED_SOURCE),
+        "project_scope": project_root
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string()),
+        "workflows": workflow_records_from_assets(&items),
+    })
+}
+
+pub fn shared_workflow_definition(
+    project_root: Option<&str>,
+    source_provider: Option<&str>,
+    workflow_id: &str,
+) -> Option<Value> {
+    if workflow_id.trim().is_empty() {
+        return None;
+    }
+    let catalog = shared_workflow_catalog(project_root, source_provider);
+    catalog
+        .get("workflows")
+        .and_then(Value::as_array)
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|item| item.get("id").and_then(Value::as_str) == Some(workflow_id.trim()))
+        })
+        .cloned()
+}
+
 pub fn runtime_guidance_markdown(
     project_root: Option<&str>,
     provider: &str,
@@ -105,11 +146,25 @@ pub fn runtime_guidance_markdown(
         lines.push(format!("- Project automation manifest: {}", path));
     }
     if let Some(path) = guidance
+        .get("project_workflow_catalog_path")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    {
+        lines.push(format!("- Project workflow catalog: {}", path));
+    }
+    if let Some(path) = guidance
         .get("user_manifest_path")
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
     {
         lines.push(format!("- User automation manifest: {}", path));
+    }
+    if let Some(path) = guidance
+        .get("user_workflow_catalog_path")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    {
+        lines.push(format!("- User workflow catalog: {}", path));
     }
 
     append_catalog_section(
@@ -120,10 +175,20 @@ pub fn runtime_guidance_markdown(
     append_catalog_section(&mut lines, "Project skills", guidance.get("project_skills"));
     append_catalog_section(
         &mut lines,
+        "Project structured workflows",
+        guidance.get("project_workflows"),
+    );
+    append_catalog_section(
+        &mut lines,
         "User command packs",
         guidance.get("user_commands"),
     );
     append_catalog_section(&mut lines, "User skills", guidance.get("user_skills"));
+    append_catalog_section(
+        &mut lines,
+        "User structured workflows",
+        guidance.get("user_workflows"),
+    );
     lines.push(
         "- Use the DX-managed provider-local assets above before inventing a new workflow from scratch. If a needed workflow is missing, document the gap explicitly."
             .to_string(),
@@ -146,6 +211,8 @@ fn plugin_inventory_with_home(project_root: Option<&Path>, home_root: &Path) -> 
         "counts": {
             "project_assets": shared_counts.project_assets,
             "user_assets": shared_counts.user_assets,
+            "project_workflows": shared_counts.project_workflows,
+            "user_workflows": shared_counts.user_workflows,
             "project_commands": shared_counts.project_commands,
             "project_skills": shared_counts.project_skills,
             "user_commands": shared_counts.user_commands,
@@ -187,6 +254,10 @@ fn convert_provider_asset_plugin_with_home(
     let project_manifest =
         write_manifest(project_root, target, "project", &project_outcomes, dry_run)?;
     let user_manifest = write_manifest(Some(home_root), target, "user", &user_outcomes, dry_run)?;
+    let project_workflow_catalog =
+        write_workflow_catalog(project_root, target, "project", &project_outcomes, dry_run)?;
+    let user_workflow_catalog =
+        write_workflow_catalog(Some(home_root), target, "user", &user_outcomes, dry_run)?;
 
     Ok(json!({
         "ok": true,
@@ -195,6 +266,8 @@ fn convert_provider_asset_plugin_with_home(
         "dry_run": dry_run,
         "project_manifest_path": project_manifest,
         "user_manifest_path": user_manifest,
+        "project_workflow_catalog_path": project_workflow_catalog,
+        "user_workflow_catalog_path": user_workflow_catalog,
         "project": summarize_outcomes(&project_outcomes),
         "user": summarize_outcomes(&user_outcomes),
     }))
@@ -279,6 +352,46 @@ fn write_manifest(
     Ok(Some(manifest_path.to_string_lossy().to_string()))
 }
 
+fn write_workflow_catalog(
+    root: Option<&Path>,
+    target_provider: &str,
+    scope: &str,
+    outcomes: &[ExportOutcome],
+    dry_run: bool,
+) -> Result<Option<String>> {
+    let Some(root) = root else {
+        return Ok(None);
+    };
+    let path = provider_root(root, target_provider).join("dx-workflow-catalog.json");
+    let payload = build_workflow_catalog_payload(target_provider, scope, outcomes);
+    if !dry_run {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let tmp = path.with_extension("tmp");
+        std::fs::write(&tmp, serde_json::to_string_pretty(&payload)?)?;
+        std::fs::rename(&tmp, &path)?;
+    }
+    Ok(Some(path.to_string_lossy().to_string()))
+}
+
+fn build_workflow_catalog_payload(
+    target_provider: &str,
+    scope: &str,
+    outcomes: &[ExportOutcome],
+) -> Value {
+    json!({
+        "dxWorkflowCatalog": {
+            "version": BRIDGE_VERSION,
+            "provider": target_provider,
+            "scope": scope,
+            "sourceOfTruth": SHARED_SOURCE,
+            "exportedAt": unix_timestamp(),
+            "workflows": workflow_records(outcomes),
+        }
+    })
+}
+
 fn summarize_outcomes(outcomes: &[ExportOutcome]) -> Value {
     let created = outcomes
         .iter()
@@ -297,6 +410,7 @@ fn summarize_outcomes(outcomes: &[ExportOutcome]) -> Value {
         "created": created,
         "updated": updated,
         "conflicts": conflicts,
+        "workflows": outcomes.len(),
         "commands": outcomes.iter().filter(|item| item.asset.kind == "command").count(),
         "skills": outcomes.iter().filter(|item| item.asset.kind == "skill").count(),
         "conflict_paths": outcomes
@@ -327,10 +441,16 @@ fn bridge_target(
         user_path: user_path.to_string_lossy().to_string(),
         project_exists: project_path.exists(),
         user_exists: user_path.exists(),
-        project_exported_assets: manifest_asset_count(&project_manifest),
-        user_exported_assets: manifest_asset_count(&user_manifest),
+        project_exported_assets: manifest_status_count(&project_manifest, &["created", "updated"]),
+        user_exported_assets: manifest_status_count(&user_manifest, &["created", "updated"]),
+        project_exported_workflows: manifest_workflow_count(&project_path),
+        user_exported_workflows: manifest_workflow_count(&user_path),
+        project_conflicts: manifest_status_count(&project_manifest, &["conflict"]),
+        user_conflicts: manifest_status_count(&user_manifest, &["conflict"]),
         available_project_assets: shared_counts.project_assets,
         available_user_assets: shared_counts.user_assets,
+        available_project_workflows: shared_counts.project_workflows,
+        available_user_workflows: shared_counts.user_workflows,
         available_project_commands: shared_counts.project_commands,
         available_project_skills: shared_counts.project_skills,
         available_user_commands: shared_counts.user_commands,
@@ -354,14 +474,23 @@ fn runtime_guidance_with_home(
         "project_manifest_path": provider_root_project
             .as_ref()
             .map(|path| path.join("dx-automation-plugin.json").to_string_lossy().to_string()),
+        "project_workflow_catalog_path": provider_root_project
+            .as_ref()
+            .map(|path| path.join("dx-workflow-catalog.json").to_string_lossy().to_string()),
         "user_manifest_path": provider_root_user
             .join("dx-automation-plugin.json")
             .to_string_lossy()
             .to_string(),
+        "user_workflow_catalog_path": provider_root_user
+            .join("dx-workflow-catalog.json")
+            .to_string_lossy()
+            .to_string(),
         "project_commands": collect_names_for_scope_kind(&shared, "project", "command", max_items),
         "project_skills": collect_names_for_scope_kind(&shared, "project", "skill", max_items),
+        "project_workflows": collect_names_for_scope_kind(&shared, "project", "workflow", max_items),
         "user_commands": collect_names_for_scope_kind(&shared, "user", "command", max_items),
         "user_skills": collect_names_for_scope_kind(&shared, "user", "skill", max_items),
+        "user_workflows": collect_names_for_scope_kind(&shared, "user", "workflow", max_items),
     })
 }
 
@@ -372,11 +501,42 @@ fn read_manifest(path: &Path) -> Value {
     serde_json::from_str(&raw).unwrap_or(Value::Null)
 }
 
-fn manifest_asset_count(manifest: &Value) -> usize {
+fn manifest_status_count(manifest: &Value, statuses: &[&str]) -> usize {
     manifest
         .get("dxAutomationPlugin")
         .and_then(|value| value.get("assets"))
         .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| {
+                    item.get("status")
+                        .and_then(Value::as_str)
+                        .map(|status| statuses.iter().any(|candidate| candidate == &status))
+                        .unwrap_or(false)
+                })
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+fn manifest_workflow_count(manifest_path: &Path) -> usize {
+    let workflow_path = manifest_path
+        .parent()
+        .map(|parent| parent.join("dx-workflow-catalog.json"));
+    let Some(workflow_path) = workflow_path else {
+        return 0;
+    };
+    let Ok(raw) = std::fs::read_to_string(workflow_path) else {
+        return 0;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&raw) else {
+        return 0;
+    };
+    value
+        .get("dxWorkflowCatalog")
+        .and_then(|value| value.get("workflows"))
+        .and_then(Value::as_array)
         .map(|items| items.len())
         .unwrap_or(0)
 }
@@ -627,6 +787,8 @@ fn provider_root(base: &Path, provider: &str) -> PathBuf {
 struct AssetBreakdown {
     project_assets: usize,
     user_assets: usize,
+    project_workflows: usize,
+    user_workflows: usize,
     project_commands: usize,
     project_skills: usize,
     user_commands: usize,
@@ -639,18 +801,22 @@ fn asset_breakdown(items: &[(AssetRecord, Vec<String>)]) -> AssetBreakdown {
         match (asset.scope.as_str(), asset.kind.as_str()) {
             ("project", "command") => {
                 counts.project_assets += 1;
+                counts.project_workflows += 1;
                 counts.project_commands += 1;
             }
             ("project", _) => {
                 counts.project_assets += 1;
+                counts.project_workflows += 1;
                 counts.project_skills += 1;
             }
             ("user", "command") => {
                 counts.user_assets += 1;
+                counts.user_workflows += 1;
                 counts.user_commands += 1;
             }
             _ => {
                 counts.user_assets += 1;
+                counts.user_workflows += 1;
                 counts.user_skills += 1;
             }
         }
@@ -666,10 +832,99 @@ fn collect_names_for_scope_kind(
 ) -> Vec<String> {
     items
         .iter()
-        .filter(|(asset, _)| asset.scope == scope && asset.kind == kind)
+        .filter(|(asset, _)| {
+            asset.scope == scope
+                && (asset.kind == kind
+                    || (kind == "workflow" && matches!(asset.kind.as_str(), "command" | "skill")))
+        })
         .map(|(asset, _)| asset.name.clone())
         .take(max_items.max(1))
         .collect()
+}
+
+fn workflow_records(outcomes: &[ExportOutcome]) -> Vec<Value> {
+    outcomes
+        .iter()
+        .map(|outcome| workflow_record_value(
+            &outcome.asset,
+            &outcome.sources,
+            Some(outcome.target_path.to_string_lossy().to_string()),
+            Some(outcome.status.to_string()),
+        ))
+        .collect()
+}
+
+fn workflow_records_from_assets(items: &[(AssetRecord, Vec<String>)]) -> Vec<Value> {
+    items.iter()
+        .map(|(asset, sources)| workflow_record_value(asset, sources, None, None))
+        .collect()
+}
+
+fn workflow_record_value(
+    asset: &AssetRecord,
+    sources: &[String],
+    target_path: Option<String>,
+    export_status: Option<String>,
+) -> Value {
+    let (headings, steps) = extract_workflow_structure(&asset.content);
+    json!({
+        "id": format!("{}:{}:{}", asset.scope, asset.kind, asset.name),
+        "name": asset.name,
+        "kind": asset.kind,
+        "scope": asset.scope,
+        "summary": asset.summary,
+        "canonical_provider": asset.provider,
+        "sources": sources,
+        "source_path": asset.path.to_string_lossy().to_string(),
+        "target_path": target_path,
+        "export_status": export_status,
+        "sections": headings,
+        "steps": steps,
+    })
+}
+
+fn extract_workflow_structure(content: &str) -> (Vec<String>, Vec<String>) {
+    let mut headings = Vec::new();
+    let mut steps = Vec::new();
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(heading) = line.strip_prefix('#') {
+            let value = heading.trim_start_matches('#').trim();
+            if !value.is_empty() {
+                headings.push(value.to_string());
+            }
+            continue;
+        }
+        if let Some(step) = line.strip_prefix("- ").or_else(|| line.strip_prefix("* ")) {
+            let value = step.trim();
+            if !value.is_empty() {
+                steps.push(value.to_string());
+            }
+            continue;
+        }
+        if let Some((prefix, rest)) = line.split_once(". ") {
+            if prefix.chars().all(|ch| ch.is_ascii_digit()) && !rest.trim().is_empty() {
+                steps.push(rest.trim().to_string());
+            }
+        }
+    }
+    if steps.is_empty() {
+        steps.extend(
+            content
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty() && !line.starts_with('#'))
+                .take(5)
+                .map(|line| line.to_string()),
+        );
+    }
+    (
+        headings.into_iter().take(6).collect(),
+        steps.into_iter().take(8).collect(),
+    )
 }
 
 fn append_catalog_section(lines: &mut Vec<String>, heading: &str, values: Option<&Value>) {
@@ -781,5 +1036,23 @@ mod tests {
         let guidance = runtime_guidance_with_home(Some(project.path()), home.path(), "gemini", 5);
         assert_eq!(guidance["project_commands"][0], json!("handoff"));
         assert_eq!(guidance["user_skills"][0], json!("reviewer"));
+    }
+
+    #[test]
+    fn extracts_structured_workflow_steps() {
+        let content = r#"
+# Ship Flow
+
+## Steps
+1. Inspect the diff
+2. Run tests
+- Summarize the release risk
+"#;
+        let (headings, steps) = extract_workflow_structure(content);
+        assert_eq!(headings[0], "Ship Flow");
+        assert!(headings.iter().any(|item| item == "Steps"));
+        assert_eq!(steps[0], "Inspect the diff");
+        assert_eq!(steps[1], "Run tests");
+        assert_eq!(steps[2], "Summarize the release risk");
     }
 }

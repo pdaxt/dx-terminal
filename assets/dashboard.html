@@ -2995,8 +2995,9 @@ function renderAutomationBridgeRows(project,automationBridges){
       </div>
       <div class="exec-row-meta">Project manifest: ${escHtml(String(item.project_path||''))}</div>
       <div class="exec-row-meta">User manifest: ${escHtml(String(item.user_path||''))}</div>
-      <div class="exec-row-meta">${item.available_project_commands||0} project commands · ${item.available_project_skills||0} project skills · ${item.available_user_commands||0} user commands · ${item.available_user_skills||0} user skills</div>
-      <div class="exec-row-meta">${item.project_exported_assets||0} project assets exported · ${item.user_exported_assets||0} user assets exported</div>
+      <div class="exec-row-meta">${item.available_project_commands||0} project commands · ${item.available_project_skills||0} project skills · ${item.available_project_workflows||0} project workflows</div>
+      <div class="exec-row-meta">${item.available_user_commands||0} user commands · ${item.available_user_skills||0} user skills · ${item.available_user_workflows||0} user workflows</div>
+      <div class="exec-row-meta">${item.project_exported_assets||0} project assets exported · ${item.user_exported_assets||0} user assets exported · ${item.project_exported_workflows||0} project workflows exported · ${item.user_exported_workflows||0} user workflows exported${(item.project_conflicts||0)||(item.user_conflicts||0)?` · ${item.project_conflicts||0} project conflicts · ${item.user_conflicts||0} user conflicts`:''}</div>
       <div class="exec-row-actions" style="margin-top:8px">
         <button class="vdd-focus-btn" onclick="return syncAutomationBridge('${escHtml(provider)}')" ${operatorActionDisabledAttrs(project,'automation_bridge_sync','automation bridge sync')}>Sync automation</button>
       </div>
