@@ -2292,6 +2292,7 @@ pub(crate) async fn build_project_brief_payload(
                 "identity": crate::config::http_supervisor_id(),
             },
             "control_endpoints": {
+                "project_identity": "/api/dxos/project/identity",
                 "scheduler_run": "/api/dxos/scheduler/run",
                 "session_launch": "/api/dxos/session/launch",
                 "provider_plugin_sync": "/api/dxos/provider-plugins/sync",
