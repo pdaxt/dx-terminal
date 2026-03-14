@@ -1213,6 +1213,7 @@ let dxosRuntimeBrokerCache={};
 let dxosControlAuthCache={};
 let dxosRecoveryCache={};
 let dxosSessionCache={};
+let dxosPortfolioProjects=[];
 const DX_CONTROL_TOKEN_KEY='dx_control_token';
 const DX_OPERATOR_IDENTITY_KEY='dx_operator_identity';
 
@@ -1293,12 +1294,21 @@ function updateClock(){
 setInterval(updateClock,1000);updateClock();
 
 // === Spaces / Workspaces ===
+function allKnownProjectSpaces(workspaces){
+  const fromRuntime=Array.isArray(workspaces)?workspaces:[];
+  const merged=[...fromRuntime,...dxosPortfolioProjects]
+    .map(item=>String(item||'').trim())
+    .filter(Boolean);
+  return [...new Set(merged)].sort((a,b)=>a.localeCompare(b));
+}
+
 function updateWorkspaces(workspaces){
   const sel=document.getElementById('space-select');
   const prev=sel.value;
   let opts='<option value="all">All Projects</option>';
-  if(workspaces&&workspaces.length){
-    opts+=workspaces.map(s=>`<option value="${s}">${s}</option>`).join('');
+  const spaces=allKnownProjectSpaces(workspaces);
+  if(spaces.length){
+    opts+=spaces.map(s=>`<option value="${s}">${s}</option>`).join('');
   }
   sel.innerHTML=opts;
   // Restore previous selection if still valid
@@ -1310,6 +1320,30 @@ async function loadSpaces(){
   const sel=document.getElementById('space-select');
   sel.innerHTML='<option value="all">All Projects</option>';
   currentSpace='all';
+}
+
+function syncPortfolioProjects(projects){
+  dxosPortfolioProjects=(Array.isArray(projects)?projects:[])
+    .map(item=>String(item||'').trim())
+    .filter(Boolean);
+  updateWorkspaces((wsState&&wsState.workspaces)||[]);
+}
+
+async function switchExecutionProject(project){
+  const target=String(project||'').trim();
+  if(!target)return false;
+  currentSpace=target;
+  selectedVisionProject=target;
+  const sel=document.getElementById('space-select');
+  if(sel){
+    if(![...sel.options].some(option=>option.value===target)){
+      dxosPortfolioProjects=[...new Set([...dxosPortfolioProjects,target])];
+      updateWorkspaces((wsState&&wsState.workspaces)||[]);
+    }
+    sel.value=target;
+  }
+  await refresh();
+  return false;
 }
 
 // === Monitor + Status + Alerts ===
