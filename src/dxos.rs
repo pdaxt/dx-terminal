@@ -5313,6 +5313,43 @@ mod tests {
     }
 
     #[test]
+    fn control_plane_registry_groups_company_and_program_portfolio() {
+        let tmp = tempdir().unwrap();
+        let project_a = tmp.path().join("alpha");
+        let project_b = tmp.path().join("beta");
+        std::fs::create_dir_all(&project_a).unwrap();
+        std::fs::create_dir_all(&project_b).unwrap();
+
+        let project_a_str = project_a.to_str().unwrap();
+        let project_b_str = project_b.to_str().unwrap();
+
+        let _ = upsert_project_identity(
+            project_a_str,
+            Some("alpha"),
+            Some("DX Ventures"),
+            Some("Agentic Delivery"),
+            Some("core-platform"),
+        );
+        let _ = upsert_project_identity(
+            project_b_str,
+            Some("beta"),
+            Some("DX Ventures"),
+            Some("Agentic Delivery"),
+            Some("client-portal"),
+        );
+
+        let registry: Value =
+            serde_json::from_str(&control_plane_registry_for_project(project_a_str)).unwrap();
+        assert_eq!(registry["company_count"], 1);
+        assert_eq!(registry["program_count"], 1);
+        assert_eq!(registry["workspace_count"], 2);
+        assert_eq!(registry["companies"][0]["name"], "DX Ventures");
+        assert_eq!(registry["companies"][0]["project_count"], 2);
+        assert_eq!(registry["programs"][0]["name"], "Agentic Delivery");
+        assert_eq!(registry["programs"][0]["project_count"], 2);
+    }
+
+    #[test]
     fn legacy_repo_json_is_imported_into_sqlite_store() {
         let tmp = tempdir().unwrap();
         let project_path = tmp.path().join("demo");

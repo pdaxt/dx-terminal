@@ -4074,8 +4074,8 @@ async function renderExecutionHub(){
       </div>
       <div class="exec-row">
         <div class="exec-row-top">
-          <span class="exec-row-title">DXOS store and project registry</span>
-          <span class="exec-row-tags"><span class="doc-pill shared">${dxosProjectRegistry.project_count||dxosStorage.registered_projects||0} projects</span></span>
+          <span class="exec-row-title">DXOS store and portfolio registry</span>
+          <span class="exec-row-tags"><span class="doc-pill shared">${dxosProjectRegistry.project_count||dxosStorage.registered_projects||0} projects</span><span class="doc-pill">${dxosProjectRegistry.company_count||0} companies</span></span>
         </div>
         <div class="doc-line">
           <div class="doc-line-main">
@@ -4091,6 +4091,20 @@ async function renderExecutionHub(){
           </div>
           <div class="exec-row-tags"><span class="doc-pill">${escHtml((dxosStorage.mirror||'repo_local_json').toString())}</span></div>
         </div>
+        <div class="exec-list-title">Companies in this DXOS store</div>
+        <div class="exec-list">${dxosCompanies.length?dxosCompanies.slice(0,4).map(item=>`<div class="doc-line">
+          <div class="doc-line-main">
+            <div class="doc-line-title">${escHtml((item.name||'Unnamed company').toString())}</div>
+            <div class="doc-line-path">${escHtml(`${item.project_count||0} projects · ${((item.programs||[]).length||0)} programs · ${((item.workspaces||[]).length||0)} workspaces`)}</div>
+          </div>
+        </div>`).join(''):'<div class="empty-note">No company-level portfolio records are tagged yet.</div>'}</div>
+        <div class="exec-list-title">Programs in this DXOS store</div>
+        <div class="exec-list">${dxosPrograms.length?dxosPrograms.slice(0,4).map(item=>`<div class="doc-line">
+          <div class="doc-line-main">
+            <div class="doc-line-title">${escHtml((item.name||'Unnamed program').toString())}</div>
+            <div class="doc-line-path">${escHtml(`${item.project_count||0} projects · ${((item.companies||[]).join(', '))||'unassigned company'}`)}</div>
+          </div>
+        </div>`).join(''):'<div class="empty-note">No program-level portfolio records are tagged yet.</div>'}</div>
         <div class="exec-list-title">Registered projects in this DXOS store</div>
         <div class="exec-list">${dxosRegisteredProjects.length?dxosRegisteredProjects.slice(0,5).map(item=>`<div class="doc-line">
           <div class="doc-line-main">
