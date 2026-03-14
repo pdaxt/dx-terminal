@@ -2514,8 +2514,7 @@ fn build_dxos_portfolio_brief_payload(query: &DxosPortfolioBriefQuery) -> Value 
             .and_then(Value::as_array)
             .and_then(|items| {
                 items.iter().find(|entry| {
-                    entry.get("name").and_then(Value::as_str).map(str::trim)
-                        == Some(company.trim())
+                    entry.get("name").and_then(Value::as_str).map(str::trim) == Some(company.trim())
                 })
             })
             .cloned()
@@ -2526,8 +2525,7 @@ fn build_dxos_portfolio_brief_payload(query: &DxosPortfolioBriefQuery) -> Value 
             .and_then(Value::as_array)
             .and_then(|items| {
                 items.iter().find(|entry| {
-                    entry.get("name").and_then(Value::as_str).map(str::trim)
-                        == Some(program.trim())
+                    entry.get("name").and_then(Value::as_str).map(str::trim) == Some(program.trim())
                         && query.company.as_deref().map(str::trim)
                             == entry.get("company").and_then(Value::as_str).map(str::trim)
                 })

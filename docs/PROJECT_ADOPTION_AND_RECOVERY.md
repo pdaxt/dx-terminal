@@ -45,6 +45,8 @@ Those portfolio views are no longer read-only derived summaries. DXOS now persis
 
 Operator policy now understands those same scopes. A lead or operator can be authorized for one company, one program, or one workspace instead of being limited to a flat project name match. The portal also uses the grouped registry to surface sibling projects, so switching between related recovery efforts no longer depends on the tmux/runtime workspace list alone.
 
+The portal header now also filters the live project selector by company and program, and DXOS exposes a portfolio brief endpoint for that same scope. That means a hosted control plane can summarize the current portfolio slice across projects instead of pretending one repo brief is enough.
+
 ## Core Promise
 
 If a company points DXOS at an in-progress project, the platform should be able to:

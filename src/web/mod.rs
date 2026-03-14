@@ -66,7 +66,10 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/builds/rename", post(api::post_build_rename))
         .route("/api/project/brief", get(api::get_project_brief))
         .route("/api/dxos/control-plane", get(api::get_dxos_control_plane))
-        .route("/api/dxos/portfolio/brief", get(api::get_dxos_portfolio_brief))
+        .route(
+            "/api/dxos/portfolio/brief",
+            get(api::get_dxos_portfolio_brief),
+        )
         .route(
             "/api/dxos/project/identity",
             post(api::update_dxos_project_identity),
