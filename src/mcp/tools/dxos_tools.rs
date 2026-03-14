@@ -27,7 +27,8 @@ pub async fn scheduler_run(app: &crate::app::App, project: Option<&str>) -> Stri
                 .unwrap_or("project")
                 .to_string()
         });
-    let result = crate::dxos_scheduler::drive_once_for_project(app, &project_name, &project_path).await;
+    let result =
+        crate::dxos_scheduler::drive_once_for_project(app, &project_name, &project_path).await;
     serde_json::json!({
         "project": project_name,
         "project_path": project_path,

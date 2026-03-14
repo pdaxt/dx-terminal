@@ -71,6 +71,21 @@ impl DxTerminalService {
         }
     }
 
+    fn maybe_kick_scheduler(&self, project_path: &str, project_name: Option<&str>) {
+        let name = project_name
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| {
+                std::path::Path::new(project_path)
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or("project")
+                    .to_string()
+            });
+        crate::dxos_scheduler::kick_project(Arc::clone(&self.app), name, project_path.to_string());
+    }
+
     // === AGENT LIFECYCLE ===
 
     #[tool(
@@ -2734,7 +2749,8 @@ impl DxTerminalService {
         &self,
         Parameters(req): Parameters<types::DxosSchedulerRunRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = tools::dxos_tools::scheduler_run(self.app.as_ref(), req.project.as_deref()).await;
+        let result =
+            tools::dxos_tools::scheduler_run(self.app.as_ref(), req.project.as_deref()).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -2824,6 +2840,7 @@ impl DxTerminalService {
         );
         self.emit_dxos_session_change(&project_path, &result);
         self.emit_workflow_change(&project_path, &result);
+        self.maybe_kick_scheduler(&project_path, req.project.as_deref());
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -2940,6 +2957,7 @@ impl DxTerminalService {
         );
         self.emit_dxos_session_change(&project_path, &result);
         self.emit_debate_change(&project_path, &result);
+        self.maybe_kick_scheduler(&project_path, Some(&project_name));
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -2958,6 +2976,7 @@ impl DxTerminalService {
             req.note.as_deref(),
         );
         self.emit_dxos_session_change(&project_path, &result);
+        self.maybe_kick_scheduler(&project_path, req.project.as_deref());
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
@@ -3097,6 +3116,7 @@ impl DxTerminalService {
             req.status.as_deref(),
         );
         self.emit_dxos_session_change(&project_path, &result);
+        self.maybe_kick_scheduler(&project_path, req.project.as_deref());
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 

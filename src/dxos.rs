@@ -1615,6 +1615,8 @@ fn scheduler_summary(state: &ControlPlaneState) -> Value {
     let attention_queue = scheduler_attention_queue(state);
     let next_launch = launch_queue.first().cloned();
     json!({
+        "autorun_enabled": crate::config::scheduler_autorun_enabled(),
+        "interval_secs": crate::config::scheduler_interval_secs(),
         "launch_queue": launch_queue,
         "attention_queue": attention_queue,
         "next_launch": next_launch,

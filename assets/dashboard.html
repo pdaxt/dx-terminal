@@ -2624,6 +2624,8 @@ function renderDxosOperatorControls(project,activeStage,sessions,adoptions,sched
   const workerSessionOptions=sessionOptionRows(sessions,()=>true,null,'Assign worker later');
   const supervisorLaunchOptions=sessionOptionRows(sessions,session=>!session.supervisor_session_id,null,'No supervising lead');
   const paneOptions=paneOptionRows(project,launchDraft.pane||'auto');
+  const autorunEnabled=scheduler&&scheduler.autorun_enabled===true;
+  const schedulerInterval=Number(scheduler&&scheduler.interval_secs||10);
   return `<div class="action-shell">
     <div class="portal-note">The operator console below is the first real portal-native control surface for DXOS. Launching a lane uses the DX runtime broker, with the native PTY path as the default substrate and tmux kept only as the migration path.</div>
     <div class="action-grid">
@@ -2634,6 +2636,7 @@ function renderDxosOperatorControls(project,activeStage,sessions,adoptions,sched
         </div>
         <div class="action-form">
           <div class="action-note">The launch form below auto-seeds from the first scheduler-ready lane until you make a manual edit.</div>
+          <div class="action-note">${autorunEnabled?`Scheduler autorun is enabled locally and polls every ${escHtml(String(schedulerInterval))}s. Manual runs are still useful when you want an immediate tick after a new approval or handoff.`:'Scheduler autorun is disabled in this runtime. Use the manual scheduler trigger below, or enable DX_SCHEDULER_AUTORUN on the server for continuous local execution.'}</div>
           <div class="exec-row-actions" style="margin:10px 0 12px">
             <button class="design-action" onclick="return runDxosSchedulerNow()" ${operatorActionDisabledAttrs(project,'scheduler_run','scheduler tick')}>Run scheduler now</button>
           </div>

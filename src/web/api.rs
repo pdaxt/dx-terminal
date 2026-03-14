@@ -79,6 +79,15 @@ fn maybe_emit_workflow_change(app: &AppState, project_path: &str, result: &str) 
     }
 }
 
+fn maybe_kick_dxos_scheduler(app: &AppState, project_path: &str, project_name: Option<&str>) {
+    let name = project_name
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| project_name_from_path(project_path));
+    crate::dxos_scheduler::kick_project(Arc::clone(app), name, project_path.to_string());
+}
+
 fn control_token_from_headers(headers: &HeaderMap) -> Option<String> {
     if let Some(value) = headers
         .get("x-dx-control-token")
@@ -2257,6 +2266,10 @@ pub(crate) async fn build_project_brief_payload(
             "runtime_adapters": ["pty_native_adapter", "tmux_migration_adapter"],
             "provider_native_launch": true,
             "runtime_providers": ["claude", "codex", "gemini", "opencode"],
+            "scheduler": {
+                "autorun_enabled": crate::config::scheduler_autorun_enabled(),
+                "interval_secs": crate::config::scheduler_interval_secs(),
+            },
             "control_endpoints": {
                 "scheduler_run": "/api/dxos/scheduler/run",
                 "session_launch": "/api/dxos/session/launch",
@@ -2387,12 +2400,9 @@ pub async fn run_dxos_scheduler(
         "scheduler_run",
         &project_name,
     )?;
-    let result = crate::dxos_scheduler::drive_once_for_project(
-        app.as_ref(),
-        &project_name,
-        &project_path,
-    )
-    .await;
+    let result =
+        crate::dxos_scheduler::drive_once_for_project(app.as_ref(), &project_name, &project_path)
+            .await;
     let scheduler = serde_json::from_str::<Value>(&crate::dxos::scheduler_snapshot(
         &project_path,
         Some(&project_name),
@@ -2413,7 +2423,10 @@ pub async fn run_dxos_scheduler(
         value.get("project").and_then(Value::as_str),
         &actor,
         "scheduler_run",
-        value.get("project").and_then(Value::as_str).unwrap_or("project"),
+        value
+            .get("project")
+            .and_then(Value::as_str)
+            .unwrap_or("project"),
         &value,
     );
     Ok(Json(value))
@@ -2533,6 +2546,7 @@ pub async fn start_dxos_adoption(
             .unwrap_or("project_adoption"),
         &value,
     );
+    maybe_kick_dxos_scheduler(&app, &project_path, Some(&project));
     Ok(Json(value))
 }
 
@@ -2572,6 +2586,7 @@ pub async fn update_dxos_adoption_status(
         &body.adoption_id,
         &value,
     );
+    maybe_kick_dxos_scheduler(&app, &project_path, body.project.as_deref());
     Ok(Json(value))
 }
 
@@ -2753,6 +2768,7 @@ pub async fn start_dxos_workflow(
         &body.workflow_id,
         &value,
     );
+    maybe_kick_dxos_scheduler(&app, &project_path, body.project.as_deref());
     Ok(Json(value))
 }
 
@@ -3017,6 +3033,7 @@ pub async fn upsert_dxos_session(
         body.session_id.as_deref().unwrap_or(&body.role),
         &value,
     );
+    maybe_kick_dxos_scheduler(&app, &project_path, body.project.as_deref());
     Ok(Json(value))
 }
 

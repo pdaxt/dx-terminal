@@ -184,6 +184,25 @@ pub fn scheduler_interval_secs() -> u64 {
         .unwrap_or(10)
 }
 
+pub fn http_supervisor_autorun_enabled() -> bool {
+    matches!(
+        std::env::var("DX_HTTP_SUPERVISOR_AUTORUN")
+            .ok()
+            .or_else(|| std::env::var("DX_ORCHESTRATOR_AUTORUN").ok())
+            .map(|value| value.trim().to_ascii_lowercase()),
+        Some(value) if matches!(value.as_str(), "1" | "true" | "yes" | "on")
+    )
+}
+
+pub fn http_supervisor_interval_secs() -> u64 {
+    std::env::var("DX_HTTP_SUPERVISOR_INTERVAL_SECS")
+        .ok()
+        .or_else(|| std::env::var("DX_ORCHESTRATOR_INTERVAL_SECS").ok())
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(15)
+}
+
 // --- Pane resolution (uses global config) ---
 
 pub fn theme_name(pane: u8) -> &'static str {

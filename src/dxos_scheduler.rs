@@ -251,6 +251,21 @@ pub fn start(app: Arc<App>) {
     });
 }
 
+pub fn kick_project(app: Arc<App>, project_name: String, project_path: String) {
+    if !crate::config::scheduler_autorun_enabled() {
+        return;
+    }
+    tokio::spawn(async move {
+        let result = drive_once_for_project(app.as_ref(), &project_name, &project_path).await;
+        if result.get("action").and_then(Value::as_str) == Some("launch_attempted") {
+            tracing::info!(
+                "DXOS scheduler kick launched queued lane for {}",
+                project_name
+            );
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

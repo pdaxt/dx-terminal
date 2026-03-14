@@ -241,6 +241,8 @@ The first architecture slice now implemented in the repo is:
 - when adoption is marked complete, DXOS now seeds the first planned specialist follow-on session and work-order contracts from that same recovery planner output, so recovery turns into governed downstream execution instead of ending at a status flip
 - the operator launch surface now reads those seeded follow-on contracts as a priority queue and auto-seeds the launch form from the first planned specialist lane until the operator takes manual control
 - DXOS now derives a real execution scheduler from the control plane, splitting `launch_queue` and `attention_queue` so the portal and later orchestrator consume the same priority-ordered work instead of separate ad hoc heuristics
+- the scheduler now has both a local autorun loop and a manual `scheduler_run` control endpoint/tool, so operators and future hosted orchestrators can force one governed scheduling tick without waiting for the poll interval
+- queue-producing mutations now kick the scheduler immediately when autorun is enabled, so adoption, workflow creation, and planned session registration can hand off into execution with lower latency
 - protected control routes now enforce optional operator policy as well as token auth, so named operators can be limited by role, project scope, and action families before a launch, debate, or lane mutation is accepted
 
 That gives the platform a native place to reason, disagree, decide, supervise, and delegate inside the system itself.

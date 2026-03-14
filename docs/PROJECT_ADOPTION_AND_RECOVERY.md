@@ -31,6 +31,8 @@ The operator portal now surfaces those seeded follow-on lanes as a queue. The la
 
 That queue is no longer only an adoption-side convenience. DXOS now derives a scheduler-backed `launch_queue` from the control plane itself, so recovery follow-ons, planned workflow runners, and other governed specialist sessions all compete in one ordered execution view. The same scheduler also emits an `attention_queue` for blocked work that needs lead or human intervention.
 
+The scheduler is now controllable two ways: a local autorun loop can watch the queue continuously, and operators or future hosted orchestrators can force one scheduling tick through the dedicated `scheduler_run` control endpoint/tool. When autorun is enabled, adoption start/completion and other queue-producing DXOS mutations now kick the scheduler immediately instead of waiting for the next poll window.
+
 ## Core Promise
 
 If a company points DXOS at an in-progress project, the platform should be able to:
