@@ -78,6 +78,8 @@ Typical flows:
 4. Export the same catalog into the Gemini bridge.
 5. Launch provider-native DXOS lanes with the same governed capability inventory.
 
+DX now also auto-syncs the selected provider bridge during lane launch, so a Codex or Gemini lane starts with a current DX bridge file instead of depending on a separate manual export step.
+
 Reverse flow:
 
 1. Curate or edit the Codex / Gemini bridge.
