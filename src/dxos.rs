@@ -2039,8 +2039,7 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             .and_then(Value::as_array)
             .and_then(|items| {
                 items.iter().find(|entry| {
-                    entry.get("name").and_then(Value::as_str).map(str::trim)
-                        == Some(company.trim())
+                    entry.get("name").and_then(Value::as_str).map(str::trim) == Some(company.trim())
                 })
             })
             .cloned()
@@ -2051,8 +2050,7 @@ pub fn control_plane_snapshot(project_path: &str, project_name: Option<&str>) ->
             .and_then(Value::as_array)
             .and_then(|items| {
                 items.iter().find(|entry| {
-                    entry.get("name").and_then(Value::as_str).map(str::trim)
-                        == Some(program.trim())
+                    entry.get("name").and_then(Value::as_str).map(str::trim) == Some(program.trim())
                 })
             })
             .cloned()
