@@ -1926,6 +1926,49 @@ function renderDxosActiveClaimRows(scheduler){
   }).join('');
 }
 
+function portfolioSiblingSets(currentProject,registry,identity){
+  const projects=Array.isArray(registry&&registry.projects)?registry.projects:[];
+  const others=projects.filter(item=>String(item.name||'')!==String(currentProject||''));
+  const byWorkspace=identity&&identity.workspace
+    ? others.filter(item=>String(item.workspace||'')===String(identity.workspace))
+    : [];
+  const byProgram=identity&&identity.program
+    ? others.filter(item=>String(item.program||'')===String(identity.program))
+    : [];
+  const byCompany=identity&&identity.company
+    ? others.filter(item=>String(item.company||'')===String(identity.company))
+    : [];
+  return {
+    workspace:[...new Map(byWorkspace.map(item=>[String(item.name||item.path||''),item])).values()],
+    program:[...new Map(byProgram.map(item=>[String(item.name||item.path||''),item])).values()],
+    company:[...new Map(byCompany.map(item=>[String(item.name||item.path||''),item])).values()]
+  };
+}
+
+function renderPortfolioProjectRows(title,items){
+  const rows=Array.isArray(items)?items:[];
+  if(!rows.length){
+    return `<div class="exec-row">
+      <div class="exec-row-top"><span class="exec-row-title">${escHtml(title)}</span></div>
+      <div class="empty-note">No sibling projects are linked here yet.</div>
+    </div>`;
+  }
+  return `<div class="exec-row">
+    <div class="exec-row-top"><span class="exec-row-title">${escHtml(title)}</span></div>
+    <div class="exec-list">${rows.slice(0,4).map(item=>`<div class="doc-line">
+      <div class="doc-line-main">
+        <div class="doc-line-title">${escHtml(String(item.name||shortPathLabel(item.path)||'Project'))}</div>
+        <div class="doc-line-path">${escHtml((item.path||'').toString())}</div>
+      </div>
+      <div class="exec-row-tags">
+        ${item.program?`<span class="doc-pill">${escHtml(String(item.program))}</span>`:''}
+        ${item.workspace?`<span class="doc-pill shared">${escHtml(String(item.workspace))}</span>`:''}
+        <button class="vdd-focus-btn" onclick="return switchExecutionProject('${escHtml(String(item.name||''))}')">Open</button>
+      </div>
+    </div>`).join('')}</div>
+  </div>`;
+}
+
 function persistDxosLaunchDraft(){
   const project=activeProjectForHub();
   if(!project)return;
@@ -3783,6 +3826,8 @@ async function renderExecutionHub(){
   const dxosWorkspaces=(dxosProjectRegistry.workspaces||[]);
   const dxosStorage=dxos.storage||{};
   const dxosProjectIdentity=dxos.project||{};
+  syncPortfolioProjects(dxosRegisteredProjects.map(item=>item&&item.name).filter(Boolean));
+  const portfolioSiblings=portfolioSiblingSets(project,dxosProjectRegistry,dxosProjectIdentity);
   const projectIdentityBits=[
     dxosProjectIdentity.company?`company ${dxosProjectIdentity.company}`:null,
     dxosProjectIdentity.program?`program ${dxosProjectIdentity.program}`:null,
