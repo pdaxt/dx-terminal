@@ -759,6 +759,7 @@ fn default_allowed_actions_for_role(role: &str) -> Vec<String> {
         "admin" => vec!["*".to_string()],
         "lead" => vec![
             "adoption_*".to_string(),
+            "project_identity".to_string(),
             "scheduler_*".to_string(),
             "session_*".to_string(),
             "work_*".to_string(),
@@ -778,6 +779,7 @@ fn default_allowed_actions_for_role(role: &str) -> Vec<String> {
         ],
         "operator" => vec![
             "adoption_*".to_string(),
+            "project_identity".to_string(),
             "scheduler_*".to_string(),
             "session_*".to_string(),
             "work_*".to_string(),
