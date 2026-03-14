@@ -14,8 +14,11 @@ use crate::state::types::PaneState;
 use crate::tmux;
 use crate::tracker;
 use crate::workspace;
+use serde_json::json;
 use serde_json::Value;
 use std::path::PathBuf;
+
+const DX_GENERATED_GUIDANCE_MARKER: &str = "<!-- dx-generated-guidance:";
 
 fn emit_dxos_session_change(app: &App, project_path: &str, result: &str) {
     if let Some(event) = crate::dxos::session_event_from_result(project_path, result) {
@@ -231,6 +234,81 @@ fn merge_prompt_sections(prompt: &str, sections: &[Option<&str>]) -> String {
         }
     }
     parts.join("\n\n")
+}
+
+fn guidance_file_provider(file_name: &str) -> Option<&'static str> {
+    match file_name {
+        "CLAUDE.md" => Some("claude"),
+        "CODEX.md" => Some("codex"),
+        "GEMINI.md" => Some("gemini"),
+        _ => None,
+    }
+}
+
+fn render_generated_guidance(
+    file_name: &str,
+    active_provider: &str,
+    preamble: &str,
+    automation_context: &str,
+    shared_guidance_path: &str,
+    automation_doc_path: &str,
+) -> String {
+    let target_provider = guidance_file_provider(file_name).unwrap_or("shared");
+    let payload = json!({
+        "provider": target_provider,
+        "activeProvider": active_provider,
+        "file": file_name,
+        "sourceOfTruth": "dx_runtime_shell",
+    });
+    let title = if target_provider == "shared" {
+        "DX Shared Guidance".to_string()
+    } else {
+        format!(
+            "DX {} Guidance",
+            crate::runtime_broker::provider_short(target_provider)
+        )
+    };
+    let provider_note = if target_provider == "shared" {
+        format!(
+            "This file is DX-managed shared guidance. Provider-specific runtime notes live beside it. Shared runtime guide: `{}`. Automation guide: `{}`.",
+            shared_guidance_path, automation_doc_path
+        )
+    } else {
+        format!(
+            "This file is DX-managed provider guidance for {}. Active runtime provider for this lane: {}. Shared runtime guide: `{}`. Automation guide: `{}`.",
+            crate::runtime_broker::provider_label(target_provider),
+            crate::runtime_broker::provider_label(active_provider),
+            shared_guidance_path,
+            automation_doc_path
+        )
+    };
+    format!(
+        "{} {} -->\n\n# {}\n\n{}\n\n{}\n",
+        DX_GENERATED_GUIDANCE_MARKER,
+        serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()),
+        title,
+        provider_note,
+        if target_provider == "shared" {
+            preamble.trim()
+        } else {
+            automation_context.trim()
+        }
+    )
+}
+
+fn is_dx_generated_guidance(path: &str) -> bool {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|content| content.lines().next().map(|line| line.to_string()))
+        .map(|line| line.starts_with(DX_GENERATED_GUIDANCE_MARKER))
+        .unwrap_or(false)
+}
+
+fn write_guidance_if_safe(path: &str, content: &str) {
+    if std::path::Path::new(path).exists() && !is_dx_generated_guidance(path) {
+        return;
+    }
+    let _ = std::fs::write(path, content);
 }
 
 fn inject_dxos_runtime_env(env_vars: &mut Vec<(String, String)>, context: &Value) {
@@ -452,6 +530,9 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         }
     }
     let automation_doc_path = format!("{}/DX_AUTOMATION.md", spawn_cwd);
+    let shared_guidance_doc_path = format!("{}/DX_GUIDANCE.md", spawn_cwd);
+    let provider_guidance_doc_path =
+        format!("{}/DX_{}_GUIDANCE.md", spawn_cwd, provider.to_uppercase());
 
     // Register machine identity
     let machine_id = machine::register(pane_num);
@@ -507,6 +588,14 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         (
             "DX_AUTOMATION_GUIDE_PATH".to_string(),
             automation_doc_path.clone(),
+        ),
+        (
+            "DX_SHARED_GUIDANCE_PATH".to_string(),
+            shared_guidance_doc_path.clone(),
+        ),
+        (
+            "DX_PROVIDER_GUIDANCE_PATH".to_string(),
+            provider_guidance_doc_path.clone(),
         ),
     ];
     if let Some(path) = provider_bridge_path.as_deref() {
