@@ -1,0 +1,10 @@
+{
+  "dxAutomationPlugin": {
+    "assets": [],
+    "exportedAt": 1773544148,
+    "provider": "claude",
+    "scope": "project",
+    "sourceOfTruth": "dx",
+    "version": 1
+  }
+}
