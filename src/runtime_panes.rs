@@ -442,4 +442,32 @@ mod tests {
             "/Users/pran/Projects/social-media-autopilot".to_string()
         );
     }
+
+    #[test]
+    fn live_cwd_wins_over_generic_jsonl_project_metadata() {
+        let mut state = DxTerminalState::default();
+        let mut pane = PaneState::default();
+        pane.project = "stale-project".into();
+        state.panes.insert("2".into(), pane);
+
+        let live = vec![LivePane {
+            target: "dx:2.1".into(),
+            session: "dx".into(),
+            window: 2,
+            pane_idx: 1,
+            window_name: "claude".into(),
+            command: "claude".into(),
+            cwd: "/Users/pran/Projects/social-media-autopilot".into(),
+            pid: 2,
+            jsonl_path: None,
+            session_id: None,
+        }];
+
+        let resolved = resolve_runtime_panes(&state, &live, None);
+        assert_eq!(resolved[0].pane_state.project, "social-media-autopilot");
+        assert_eq!(
+            resolved[0].pane_state.project_path,
+            "/Users/pran/Projects/social-media-autopilot".to_string()
+        );
+    }
 }
