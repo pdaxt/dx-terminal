@@ -17,7 +17,6 @@ use axum::response::IntoResponse;
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
@@ -25,7 +24,6 @@ use crate::app::App;
 use crate::mcp::{tools, types};
 use crate::session_stream;
 use crate::state::events::{next_seq, StateEvent};
-use crate::sync::SyncEvent;
 use crate::tmux;
 
 type AppState = Arc<App>;
@@ -836,29 +834,5 @@ async fn handle_client_command(app: &App, cmd: &Value) -> Value {
             }
         }
         _ => json!({"error": format!("unknown command: {}", cmd_type)}),
-    }
-}
-
-/// Resolve a pane number to its tmux target.
-/// First checks state, then falls back to auto-discovered live panes.
-async fn resolve_pane_target(app: &App, pane: u8) -> Option<String> {
-    // 1) Check state
-    let pane_data = app.state.get_pane(pane).await;
-    if let Some(ref t) = pane_data.tmux_target {
-        if tmux::pane_exists(t) {
-            return Some(t.clone());
-        }
-    }
-
-    // 2) Fall back to live discovery (pane number maps to index)
-    let live = tokio::task::spawn_blocking(|| tmux::discover_live_panes())
-        .await
-        .unwrap_or_default();
-
-    let idx = (pane as usize).wrapping_sub(1);
-    if idx < live.len() {
-        Some(live[idx].target.clone())
-    } else {
-        None
     }
 }

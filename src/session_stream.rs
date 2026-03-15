@@ -4,7 +4,7 @@
 //! Each line is a JSON object with type, role, message content, tool calls, etc.
 //! This module tails those files and extracts structured events for the web dashboard.
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{BufRead, Seek, SeekFrom};
@@ -48,13 +48,6 @@ pub fn tail_session_events(jsonl_path: &str, max_events: usize) -> Vec<SessionEv
         return vec![];
     }
 
-    // Read from end of file — seek back to find last N meaningful lines
-    let file = match std::fs::File::open(path) {
-        Ok(f) => f,
-        Err(_) => return vec![],
-    };
-
-    // Read from end of file for large files
     let file_size = path.metadata().map(|m| m.len()).unwrap_or(0);
     let seek_pos = if file_size > 500_000 {
         file_size - 500_000

@@ -400,7 +400,7 @@ fn test_pipeline_id_backwards_compat() {
 // Test full queue roundtrip with pipeline_id (no filesystem)
 #[test]
 fn test_queue_roundtrip_with_pipeline_id() {
-    use dx_terminal::queue::{QueueTask, TaskQueue};
+    use dx_terminal::queue::TaskQueue;
 
     let queue = TaskQueue {
         tasks: vec![

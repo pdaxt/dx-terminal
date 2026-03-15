@@ -9,7 +9,7 @@ use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
 use crate::app::App;
-use crate::state::events::{next_seq, StateEvent};
+use crate::state::events::next_seq;
 
 type AppState = Arc<App>;
 

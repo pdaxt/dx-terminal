@@ -97,7 +97,6 @@ struct VisionCache {
 #[derive(Debug)]
 enum Classification {
     NewVision {
-        prompt: String,
         suggested_project: Option<String>,
     },
     ExistingGoal {
@@ -105,23 +104,17 @@ enum Classification {
         project_path: String,
         goal: Value,
         features: Vec<Value>,
-        score: i32,
-        vision: Value,
     },
     ExistingFeature {
         project: String,
         project_path: String,
         goal: Value,
         feature: Value,
-        features: Vec<Value>,
-        score: i32,
-        vision: Value,
     },
     UnmatchedWork {
         project: String,
         project_path: String,
         vision: Value,
-        prompt: String,
     },
 }
 
@@ -780,7 +773,6 @@ fn classify_prompt(prompt: &str, visions: &[Value]) -> Option<Classification> {
                 .and_then(|r| r.captures(prompt_trimmed))
                 .map(|c| c[1].to_string());
             return Some(Classification::NewVision {
-                prompt: prompt.to_string(),
                 suggested_project: proj,
             });
         }
@@ -862,9 +854,6 @@ fn classify_prompt(prompt: &str, visions: &[Value]) -> Option<Classification> {
                         project_path: project_path.to_string(),
                         goal: goal.clone(),
                         feature: matched_feature.unwrap(),
-                        features: goal_features,
-                        score: total_score,
-                        vision: vision.clone(),
                     }
                 } else {
                     Classification::ExistingGoal {
@@ -872,8 +861,6 @@ fn classify_prompt(prompt: &str, visions: &[Value]) -> Option<Classification> {
                         project_path: project_path.to_string(),
                         goal: goal.clone(),
                         features: goal_features,
-                        score: total_score,
-                        vision: vision.clone(),
                     }
                 });
             }
@@ -912,7 +899,6 @@ fn classify_prompt(prompt: &str, visions: &[Value]) -> Option<Classification> {
                             .to_string(),
                         project_path: current,
                         vision: v.clone(),
-                        prompt: prompt.to_string(),
                     });
                 }
             }
@@ -2041,9 +2027,6 @@ mod tests {
             project_path: "/tmp/demo".into(),
             goal: json!({"id": "G1"}),
             feature: json!({"id": "F1.2"}),
-            features: vec![],
-            score: 5,
-            vision: json!({}),
         };
 
         let session = session_for_classification(&classification);

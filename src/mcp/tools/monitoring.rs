@@ -391,16 +391,14 @@ pub async fn monitor(app: &App, req: MonitorRequest) -> String {
         let mut error_msg: Option<String> = None;
         let mut done_marker: Option<String> = None;
         let mut output_snippet = String::new();
-        let mut is_running = false;
-        let mut line_count = 0usize;
 
         // Check via tmux if target exists, otherwise PTY fallback
-        if let Some(ref target) = pd.tmux_target {
+        let (is_running, line_count) = if let Some(ref target) = pd.tmux_target {
             let tmux_done = crate::tmux::check_done(target);
             let tmux_error = crate::tmux::check_error(target);
             let tmux_output = crate::tmux::capture_output(target);
-            line_count = tmux_output.lines().count();
-            is_running = !tmux_done;
+            let line_count = tmux_output.lines().count();
+            let is_running = !tmux_done;
 
             if let Some(err) = tmux_error {
                 health_status = "error";
@@ -450,12 +448,13 @@ pub async fn monitor(app: &App, req: MonitorRequest) -> String {
             if include_output {
                 output_snippet = truncate(&tmux_output, 500);
             }
+            (is_running, line_count)
         } else {
             // PTY fallback
             let pty = app.pty_lock();
             let has_pty = pty.has_agent(*i);
-            is_running = pty.is_running(*i);
-            line_count = pty.line_count(*i);
+            let is_running = pty.is_running(*i);
+            let line_count = pty.line_count(*i);
 
             if has_pty {
                 let h = pty.check_health(*i, &markers);
@@ -490,7 +489,8 @@ pub async fn monitor(app: &App, req: MonitorRequest) -> String {
                     output_snippet = truncate(&screen, 500);
                 }
             }
-        }
+            (is_running, line_count)
+        };
 
         let mut pane_info = serde_json::json!({
             "pane": i,

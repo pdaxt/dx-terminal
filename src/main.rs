@@ -1,51 +1,8 @@
-mod agent_assets;
-mod analytics;
-mod app;
-mod audit;
-mod build;
-mod capacity;
-mod claude;
-mod collab;
-mod config;
-mod dashboard;
-mod design_tokens;
-mod dxos;
-mod dxos_runtime;
-mod dxos_scheduler;
-mod dxos_supervisor;
-mod engine;
-mod external_mcp;
-mod factory;
-mod ipc;
-mod knowledge;
-mod machine;
-mod mcp;
-mod mcp_registry;
-mod multi_agent;
-mod provider_asset_plugins;
-mod provider_plugins;
-mod pty;
-mod quality;
-mod queue;
-mod recovery_planning;
-mod runtime_broker;
-mod scanner;
-mod screen;
-mod session_stream;
-mod state;
-mod sync;
-mod tmux;
-mod tracker;
-mod tui;
-mod ui_audit;
-mod ux_audit;
-mod vision;
-mod vision_events;
-mod vision_focus;
-mod web;
-mod workspace;
-
 use clap::{Parser, Subcommand};
+use dx_terminal::{
+    app, config, dxos_scheduler, dxos_supervisor, engine, ipc, machine, mcp, queue, sync, tui, web,
+    workspace,
+};
 use serde_json::{json, Value};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;

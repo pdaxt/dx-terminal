@@ -12,7 +12,6 @@
 //! - Dynamic pane count beyond the original 9
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::RwLock;

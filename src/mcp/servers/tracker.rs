@@ -15,15 +15,13 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct DxTrackerService {
-    app: Arc<App>,
     tool_router: ToolRouter<Self>,
 }
 
 #[tool_router]
 impl DxTrackerService {
-    pub fn new(app: Arc<App>) -> Self {
+    pub fn new(_app: Arc<App>) -> Self {
         Self {
-            app,
             tool_router: Self::tool_router(),
         }
     }

@@ -7,7 +7,6 @@ use uuid::Uuid;
 
 #[derive(Clone, Debug)]
 struct LaunchCandidate {
-    project_name: String,
     project_path: String,
     session_id: String,
     role: String,
@@ -76,7 +75,6 @@ fn next_launch_candidate(project_name: &str, project_path: &str) -> Option<Launc
         crate::dxos::runtime_launch_context(project_path, Some(project_name), &session_id);
     let session = context.get("session")?;
     Some(LaunchCandidate {
-        project_name: project_name.to_string(),
         project_path: project_path.to_string(),
         session_id,
         role: session
