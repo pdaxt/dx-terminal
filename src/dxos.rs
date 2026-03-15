@@ -1420,6 +1420,7 @@ fn default_allowed_actions_for_role(role: &str) -> Vec<String> {
         "admin" => vec!["*".to_string()],
         "lead" => vec![
             "adoption_*".to_string(),
+            "portfolio_read".to_string(),
             "project_identity".to_string(),
             "scheduler_*".to_string(),
             "session_*".to_string(),
@@ -1433,6 +1434,7 @@ fn default_allowed_actions_for_role(role: &str) -> Vec<String> {
         ],
         "reviewer" => vec![
             "debate_*".to_string(),
+            "portfolio_read".to_string(),
             "work_resolve".to_string(),
             "workflow_*".to_string(),
             "session_block".to_string(),
@@ -1440,6 +1442,7 @@ fn default_allowed_actions_for_role(role: &str) -> Vec<String> {
         ],
         "operator" => vec![
             "adoption_*".to_string(),
+            "portfolio_read".to_string(),
             "project_identity".to_string(),
             "scheduler_*".to_string(),
             "session_*".to_string(),
@@ -1450,9 +1453,10 @@ fn default_allowed_actions_for_role(role: &str) -> Vec<String> {
             "automation_bridge_*".to_string(),
             "pane_*".to_string(),
         ],
-        "observer" => Vec::new(),
+        "observer" => vec!["portfolio_read".to_string()],
         _ => vec![
             "adoption_*".to_string(),
+            "portfolio_read".to_string(),
             "scheduler_*".to_string(),
             "session_*".to_string(),
             "work_*".to_string(),
@@ -1644,6 +1648,93 @@ pub fn authorize_operator_action(
         project_name,
         actor,
         action_kind,
+    )
+}
+
+fn authorize_operator_scope_read_with_profiles(
+    profiles: &[ControlOperatorProfile],
+    actor: &str,
+    action_kind: &str,
+    company: Option<&str>,
+    program: Option<&str>,
+    workspace: Option<&str>,
+) -> Result<Value, String> {
+    if profiles.is_empty() {
+        return Ok(json!({
+            "mode": "authenticated_open",
+            "id": actor,
+            "role": "operator",
+            "project_scopes": ["*"],
+            "company_scopes": ["*"],
+            "program_scopes": ["*"],
+            "workspace_scopes": ["*"],
+            "allowed_actions": ["*"],
+        }));
+    }
+    let Some(operator) = profiles.iter().find(|profile| profile.id == actor) else {
+        return Err(format!(
+            "Operator '{}' is not registered for DXOS control.",
+            actor
+        ));
+    };
+    if !metadata_scope_matches(&operator.company_scopes, company) {
+        return Err(format!(
+            "Operator '{}' cannot read company scope '{}'.",
+            actor,
+            company.map(str::trim).filter(|value| !value.is_empty()).unwrap_or("--")
+        ));
+    }
+    if !metadata_scope_matches(&operator.program_scopes, program) {
+        return Err(format!(
+            "Operator '{}' cannot read program scope '{}'.",
+            actor,
+            program.map(str::trim).filter(|value| !value.is_empty()).unwrap_or("--")
+        ));
+    }
+    if !metadata_scope_matches(&operator.workspace_scopes, workspace) {
+        return Err(format!(
+            "Operator '{}' cannot read workspace scope '{}'.",
+            actor,
+            workspace.map(str::trim).filter(|value| !value.is_empty()).unwrap_or("--")
+        ));
+    }
+    if !operator
+        .allowed_actions
+        .iter()
+        .any(|pattern| authorization_pattern_matches(pattern, action_kind))
+    {
+        return Err(format!(
+            "Operator '{}' with role '{}' is not allowed to perform '{}'.",
+            actor, operator.role, action_kind
+        ));
+    }
+    Ok(json!({
+        "mode": "operator_policy",
+        "id": operator.id,
+        "role": operator.role,
+        "project_scopes": operator.project_scopes,
+        "company_scopes": operator.company_scopes,
+        "program_scopes": operator.program_scopes,
+        "workspace_scopes": operator.workspace_scopes,
+        "allowed_actions": operator.allowed_actions,
+        "note": operator.note,
+    }))
+}
+
+pub fn authorize_operator_scope_read(
+    actor: &str,
+    action_kind: &str,
+    company: Option<&str>,
+    program: Option<&str>,
+    workspace: Option<&str>,
+) -> Result<Value, String> {
+    authorize_operator_scope_read_with_profiles(
+        &load_control_operator_profiles(),
+        actor,
+        action_kind,
+        company,
+        program,
+        workspace,
     )
 }
 
