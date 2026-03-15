@@ -2443,7 +2443,14 @@ fn build_dxos_portfolio_brief_payload(query: &DxosPortfolioBriefQuery) -> Value 
     let mut project_summaries = Vec::new();
 
     for project in &projects {
-        let path = project.get("path").and_then(Value::as_str).unwrap_or("");
+        let Some(path) = project
+            .get("path")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
         let name = project
             .get("name")
             .and_then(Value::as_str)
