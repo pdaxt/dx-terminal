@@ -28,6 +28,37 @@ impl DxCoordService {
         }
     }
 
+    #[tool(
+        description = "Start an issue-to-PR swarm: open issues are queued, isolated worktrees are created, and provider agents are launched in tmux."
+    )]
+    async fn swarm_start(
+        &self,
+        Parameters(req): Parameters<SwarmStartRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::swarm_tools::swarm_start(Arc::clone(&self.app), req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Show the current swarm queue, active panes, PRs, and failures.")]
+    async fn swarm_status(
+        &self,
+        Parameters(req): Parameters<SwarmStatusRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::swarm_tools::swarm_status(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Stop the active swarm, kill running panes, and clean up issue worktrees."
+    )]
+    async fn swarm_stop(
+        &self,
+        Parameters(req): Parameters<SwarmStopRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::swarm_tools::swarm_stop(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
     // === MULTI-AGENT COORDINATION (37 tools) ===
 
     #[tool(

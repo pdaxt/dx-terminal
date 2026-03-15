@@ -1,4 +1,5 @@
 pub mod agent_assets;
+pub mod agent_router;
 pub mod agents;
 pub mod analytics;
 pub mod app;
@@ -36,6 +37,7 @@ pub mod screen;
 pub mod session_controller;
 pub mod session_stream;
 pub mod state;
+pub mod swarm;
 pub mod sync;
 pub mod tmux;
 pub mod tracker;

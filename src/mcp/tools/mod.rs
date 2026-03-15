@@ -22,6 +22,7 @@
 //! - `scanner_tools` — project intelligence (scan, list, detail, test, deps)
 //! - `audit_tools` — code audit (code, security, intent, deps, full)
 
+pub mod agent_router_tools;
 pub mod analytics_tools;
 pub mod audit_tools;
 pub mod build_tools;
@@ -45,6 +46,7 @@ pub mod routing;
 pub mod scanner_tools;
 pub mod screen_tools;
 pub mod session_control_tools;
+pub mod swarm_tools;
 pub mod tracker_tools;
 pub mod ui_audit_tools;
 pub mod vision_tools;

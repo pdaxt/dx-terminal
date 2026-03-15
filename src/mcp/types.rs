@@ -173,6 +173,45 @@ pub struct McpSearchRequest {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct SwarmStartRequest {
+    #[schemars(description = "GitHub repository slug in owner/repo form")]
+    pub repo: String,
+    #[schemars(description = "Maximum number of parallel agents (default 5)")]
+    pub max_agents: Option<usize>,
+    #[schemars(description = "Optional GitHub labels; matched issues must include all labels")]
+    pub labels: Option<Vec<String>>,
+    #[schemars(description = "Agent provider to launch: claude, codex, gemini, opencode")]
+    pub provider: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SwarmStatusRequest {}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SwarmStopRequest {}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RouteTaskRequest {
+    #[schemars(description = "Task description to route to the best agent provider")]
+    pub description: String,
+    #[schemars(description = "Optional language hint such as rust or typescript")]
+    pub language: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AgentStatsRequest {}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AddRoutingRuleRequest {
+    #[schemars(description = "Regex pattern matched against task descriptions")]
+    pub pattern: String,
+    #[schemars(description = "Preferred provider when the pattern matches")]
+    pub provider: String,
+    #[schemars(description = "Why this rule should influence routing")]
+    pub reason: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct GitSyncRequest {
     #[schemars(description = "Pane reference")]
     pub pane: String,

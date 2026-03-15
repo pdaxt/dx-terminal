@@ -304,6 +304,35 @@ impl DxTerminalService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
+    #[tool(
+        description = "Route a task to the best provider based on task type, language, historical success, and estimated cost."
+    )]
+    async fn route_task(
+        &self,
+        Parameters(req): Parameters<RouteTaskRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::agent_router_tools::route_task(req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Show provider usage statistics and cost-per-task history.")]
+    async fn agent_stats(
+        &self,
+        Parameters(req): Parameters<AgentStatsRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::agent_router_tools::agent_stats(req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Add a custom regex routing rule for provider selection.")]
+    async fn add_routing_rule(
+        &self,
+        Parameters(req): Parameters<AddRoutingRuleRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::agent_router_tools::add_routing_rule(req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
     // === GIT ISOLATION ===
 
     #[tool(description = "Sync agent's worktree with latest from base branch (fetch + rebase).")]
@@ -2202,6 +2231,37 @@ impl DxTerminalService {
         Parameters(req): Parameters<SessionControlSendRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let result = tools::session_control_tools::session_control_send(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Start an issue-to-PR swarm: open issues are queued, isolated worktrees are created, and provider agents are launched in tmux."
+    )]
+    async fn swarm_start(
+        &self,
+        Parameters(req): Parameters<SwarmStartRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::swarm_tools::swarm_start(Arc::clone(&self.app), req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Show the current swarm queue, active panes, PRs, and failures.")]
+    async fn swarm_status(
+        &self,
+        Parameters(req): Parameters<SwarmStatusRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::swarm_tools::swarm_status(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Stop the active swarm, kill running panes, and clean up issue worktrees."
+    )]
+    async fn swarm_stop(
+        &self,
+        Parameters(req): Parameters<SwarmStopRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::swarm_tools::swarm_stop(&self.app, req).await;
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 

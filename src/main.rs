@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use dx_terminal::{
-    app, config, dxos_scheduler, dxos_supervisor, engine, go, ipc, machine, mcp, queue, sync, tui,
-    web, workspace,
+    agent_router, app, config, dxos_scheduler, dxos_supervisor, engine, go, ipc, machine, mcp,
+    queue, swarm, sync, tui, web, workspace,
 };
 use serde_json::{json, Value};
 use std::hash::{Hash, Hasher};
@@ -40,10 +40,59 @@ enum Commands {
     },
     /// Zero-config project launch: tmux session, issues, agents, dashboard
     Go(go::GoArgs),
+    /// Issue-to-PR swarm orchestration
+    Swarm {
+        #[command(subcommand)]
+        command: SwarmCommands,
+    },
+    /// Provider-neutral agent routing
+    Router {
+        #[command(subcommand)]
+        command: RouterCommands,
+    },
     /// Use external MCP servers configured outside dx through the gateway bridge
     Gateway {
         #[command(subcommand)]
         command: GatewayCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum SwarmCommands {
+    /// Start a swarm for open GitHub issues in the current repository
+    Start {
+        #[arg(long)]
+        repo: String,
+        #[arg(long, default_value_t = 5)]
+        max_agents: usize,
+        #[arg(long = "label")]
+        labels: Vec<String>,
+        #[arg(long, default_value = "claude")]
+        provider: String,
+    },
+    /// Show the current swarm state
+    Status,
+    /// Stop the current swarm and clean up worktrees
+    Stop,
+}
+
+#[derive(Subcommand)]
+enum RouterCommands {
+    /// Recommend the best provider for a task
+    Route {
+        description: String,
+        #[arg(long)]
+        language: Option<String>,
+    },
+    /// Show provider usage statistics and cost history
+    Stats,
+    /// Show cost-per-provider summary
+    Cost,
+    /// Add a custom regex rule
+    AddRule {
+        pattern: String,
+        provider: String,
+        reason: String,
     },
 }
 
@@ -99,6 +148,23 @@ fn runtime_identity(cli: &Cli, default_web_port: u16) -> String {
         Some(Commands::Go(args)) => {
             format!("go-{}-{}-{:x}", args.agents, args.max_issues, cwd_hash)
         }
+        Some(Commands::Swarm { command }) => match command {
+            SwarmCommands::Start {
+                repo, max_agents, ..
+            } => format!("swarm-start-{}-{}-{:x}", repo, max_agents, cwd_hash),
+            SwarmCommands::Status => format!("swarm-status-{:x}", cwd_hash),
+            SwarmCommands::Stop => format!("swarm-stop-{:x}", cwd_hash),
+        },
+        Some(Commands::Router { command }) => match command {
+            RouterCommands::Route { description, .. } => {
+                format!("router-route-{}-{:x}", description, cwd_hash)
+            }
+            RouterCommands::Stats => format!("router-stats-{:x}", cwd_hash),
+            RouterCommands::Cost => format!("router-cost-{:x}", cwd_hash),
+            RouterCommands::AddRule {
+                provider, pattern, ..
+            } => format!("router-rule-{}-{}-{:x}", provider, pattern, cwd_hash),
+        },
         Some(Commands::Gateway { command }) => match command {
             GatewayCommands::List { .. } => format!("gateway-list-{:x}", cwd_hash),
             GatewayCommands::Discover { capability, .. } => {
@@ -190,6 +256,13 @@ async fn main() -> anyhow::Result<()> {
             init_tracing();
             go::go(application, args).await?;
         }
+        Some(Commands::Swarm { command }) => {
+            init_tracing();
+            run_swarm_cli(application, command).await?;
+        }
+        Some(Commands::Router { command }) => {
+            run_router_cli(command)?;
+        }
         Some(Commands::Gateway { command }) => {
             run_gateway_cli(application, command).await?;
         }
@@ -253,6 +326,54 @@ async fn run_gateway_cli(app: Arc<app::App>, command: GatewayCommands) -> anyhow
     };
 
     let value = serde_json::from_str::<Value>(&output).unwrap_or_else(|_| json!({ "raw": output }));
+    println!("{}", serde_json::to_string_pretty(&value)?);
+    Ok(())
+}
+
+async fn run_swarm_cli(app: Arc<app::App>, command: SwarmCommands) -> anyhow::Result<()> {
+    let value = match command {
+        SwarmCommands::Start {
+            repo,
+            max_agents,
+            labels,
+            provider,
+        } => serde_json::to_value(
+            swarm::start(
+                app,
+                swarm::SwarmConfig {
+                    repo,
+                    max_agents,
+                    issue_labels: labels,
+                    agent_provider: provider,
+                },
+            )
+            .await?,
+        )?,
+        SwarmCommands::Status => serde_json::to_value(swarm::status(app.as_ref()).await?)?,
+        SwarmCommands::Stop => serde_json::to_value(swarm::stop(app.as_ref()).await?)?,
+    };
+
+    println!("{}", serde_json::to_string_pretty(&value)?);
+    Ok(())
+}
+
+fn run_router_cli(command: RouterCommands) -> anyhow::Result<()> {
+    let value = match command {
+        RouterCommands::Route {
+            description,
+            language,
+        } => serde_json::to_value(agent_router::route_task(&description, language.as_deref())?)?,
+        RouterCommands::Stats => agent_router::agent_stats()?,
+        RouterCommands::Cost => agent_router::cost_report()?,
+        RouterCommands::AddRule {
+            pattern,
+            provider,
+            reason,
+        } => serde_json::to_value(agent_router::add_routing_rule(
+            &pattern, &provider, &reason,
+        )?)?,
+    };
+
     println!("{}", serde_json::to_string_pretty(&value)?);
     Ok(())
 }

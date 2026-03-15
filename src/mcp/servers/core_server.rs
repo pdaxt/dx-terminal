@@ -246,6 +246,35 @@ impl DxCoreService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
+    #[tool(
+        description = "Route a task to the best provider based on task type, language, historical success, and estimated cost."
+    )]
+    async fn route_task(
+        &self,
+        Parameters(req): Parameters<RouteTaskRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::agent_router_tools::route_task(req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Show provider usage statistics and cost-per-task history.")]
+    async fn agent_stats(
+        &self,
+        Parameters(req): Parameters<AgentStatsRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::agent_router_tools::agent_stats(req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Add a custom regex routing rule for provider selection.")]
+    async fn add_routing_rule(
+        &self,
+        Parameters(req): Parameters<AddRoutingRuleRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::agent_router_tools::add_routing_rule(req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
     // === GIT ISOLATION ===
 
     #[tool(description = "Sync agent's worktree with latest from base branch (fetch + rebase).")]
