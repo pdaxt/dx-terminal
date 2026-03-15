@@ -3,76 +3,104 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DX Delivery OS</title>
+<title>DX Terminal</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><defs><linearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'><stop offset='0%25' stop-color='%2306B6D4'/><stop offset='50%25' stop-color='%23A855F7'/><stop offset='100%25' stop-color='%23FF00AA'/></linearGradient></defs><polygon points='100,20 170,60 170,140 100,180 30,140 30,60' stroke='url(%23g)' stroke-width='10' fill='none'/><circle cx='100' cy='100' r='25' fill='url(%23g)'/></svg>">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
-  --bg:#0f0f1a;--surface:#17172a;--surface2:#1f2036;--border:#2b3151;--border-bright:#425486;
-  --text:#f3f7ff;--muted:#adb7d4;--dim:#7984a6;
-  --blue:#06b6d4;--green:#34d399;--yellow:#f59e0b;--red:#fb7185;--purple:#a855f7;--teal:#22d3ee;--orange:#fb923c;--pink:#ff00aa;
-  --bg-top:#0b0b14;--bg-mid:#0f0f1a;--bg-floor:#111322;
-  --cyan-soft:#7fe7ff;--rejected-soft:#ff8c8c;--danger-soft:#ff9f9f;
-  --mono:'SF Mono','JetBrains Mono','Cascadia Code','Fira Code',Monaco,Consolas,monospace;
-  --sans:'Avenir Next','SF Pro Display','IBM Plex Sans','Segoe UI','Helvetica Neue',sans-serif;
-  --display:'Avenir Next','SF Pro Display','IBM Plex Sans','Segoe UI','Helvetica Neue',sans-serif;
-  --radius:10px;--radius-sm:6px;--radius-pill:999px;
-  --shadow:0 8px 24px rgba(0,0,0,.32);
-  --transition:all .2s cubic-bezier(.4,0,.2,1);
-  --glow-blue:0 0 20px rgba(6,182,212,.18);
-  --glow-green:0 0 20px rgba(52,211,153,.16);
-  --glow-purple:0 0 20px rgba(168,85,247,.2);
+  --bg:#06080d;--surface:#0f151d;--surface2:#151d28;--border:#263444;--border-bright:#506b88;
+  --text:#f4f7fb;--muted:#a4b2c3;--dim:#677789;
+  --blue:#7fd8ff;--green:#71e6a5;--yellow:#f7c971;--red:#ff8c8c;--purple:#c9a4ff;--teal:#6ae7da;--orange:#ffb56c;--pink:#91d4ff;
+  --bg-top:#04060a;--bg-mid:#081019;--bg-floor:#06080d;
+  --cyan-soft:#8fe3ff;--rejected-soft:#ff9b9b;--danger-soft:#ffadad;
+  --surface-strong:#121a24;--surface-terminal:#071019;--grid-line:rgba(255,255,255,.045);
+  --mono:'IBM Plex Mono','SF Mono','JetBrains Mono','Cascadia Code','Fira Code',Menlo,Monaco,monospace;
+  --sans:'Avenir Next','IBM Plex Sans','SF Pro Display','Segoe UI','Helvetica Neue',sans-serif;
+  --display:'Avenir Next Condensed','Avenir Next','IBM Plex Sans','SF Pro Display','Segoe UI',sans-serif;
+  --radius:14px;--radius-sm:8px;--radius-pill:999px;
+  --shadow:0 18px 50px rgba(0,0,0,.34);
+  --transition:all .22s cubic-bezier(.2,.65,.25,1);
+  --glow-blue:0 0 28px rgba(127,216,255,.18);
+  --glow-green:0 0 24px rgba(113,230,165,.16);
+  --glow-purple:0 0 24px rgba(201,164,255,.16);
 }
 
 body{font-family:var(--sans);background:
-  radial-gradient(circle at top left, rgba(6,182,212,.12), transparent 24%),
-  radial-gradient(circle at top right, rgba(168,85,247,.13), transparent 26%),
-  radial-gradient(circle at bottom right, rgba(255,0,170,.08), transparent 20%),
-  linear-gradient(180deg,var(--bg-top) 0%, var(--bg-mid) 48%, var(--bg-floor) 100%);
-  color:var(--text);min-height:100vh;overflow-x:hidden;line-height:1.5;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+  radial-gradient(circle at 14% -4%, rgba(127,216,255,.18), transparent 28%),
+  radial-gradient(circle at 88% 6%, rgba(255,181,108,.12), transparent 22%),
+  radial-gradient(circle at 55% 100%, rgba(113,230,165,.08), transparent 28%),
+  linear-gradient(180deg,var(--bg-top) 0%, var(--bg-mid) 45%, var(--bg-floor) 100%);
+  color:var(--text);min-height:100vh;overflow-x:hidden;line-height:1.5;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;position:relative}
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.18;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size:88px 88px;
+  mask-image:radial-gradient(circle at 50% 22%, #000 22%, transparent 82%);
+}
+body::after{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(circle at 50% 50%, transparent 58%, rgba(2,4,8,.72) 100%);
+}
 
 /* === Layout: sidebar + main + terminal panel === */
 .app{display:grid;grid-template-columns:1fr;grid-template-rows:auto 1fr;height:100vh}
 .app.has-panel{grid-template-columns:1fr 420px}
 .app.has-panel .main{grid-column:1}
 .app.has-panel .panel{grid-column:2;grid-row:1/3}
+.app>*{position:relative;z-index:1}
 
 /* === Header === */
 .header{
   grid-column:1/-1;
-  background:linear-gradient(180deg,rgba(12,18,25,.98) 0%,rgba(12,18,25,.95) 100%);
-  border-bottom:1px solid var(--border);
-  padding:0 24px;height:64px;
-  display:flex;align-items:center;justify-content:space-between;
-  backdrop-filter:blur(20px) saturate(1.5);z-index:100;
-  box-shadow:0 1px 3px rgba(0,0,0,.3),0 1px 0 rgba(77,166,255,.03);
+  background:
+    linear-gradient(180deg,rgba(8,11,16,.96) 0%,rgba(8,12,18,.88) 100%),
+    rgba(8,11,16,.8);
+  border-bottom:1px solid rgba(255,255,255,.07);
+  padding:16px 24px;min-height:84px;
+  display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;
+  backdrop-filter:blur(20px) saturate(1.35);z-index:100;position:sticky;top:0;
+  box-shadow:0 20px 44px rgba(0,0,0,.22),0 1px 0 rgba(127,216,255,.08);
 }
 .logo{display:flex;align-items:center;gap:10px}
 .logo-mark{
   width:36px;height:36px;
   display:flex;align-items:center;justify-content:center;
-  filter:drop-shadow(0 10px 20px rgba(6,182,212,.18));
+  filter:drop-shadow(0 14px 24px rgba(127,216,255,.18));
 }
 .logo-mark svg{width:100%;height:100%;display:block}
-.logo h1{font-size:16px;font-weight:800;color:var(--text);letter-spacing:-.3px}
-.logo h1 span{color:var(--muted);font-weight:500;margin-left:6px;font-size:12px;text-transform:uppercase;letter-spacing:.08em}
-.header-right{display:flex;gap:10px;align-items:center}
+.logo-copy{display:grid;gap:2px}
+.logo-copy h1{font-family:var(--sans);font-size:26px;font-weight:900;color:var(--text);letter-spacing:-.05em;line-height:1}
+.brand-note{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.16em}
+.header-right{display:flex;gap:14px;align-items:center;justify-content:flex-end;flex:1 1 560px;flex-wrap:wrap}
+.header-metrics{display:flex;gap:10px;flex-wrap:wrap}
+.header-stat{
+  min-width:130px;padding:10px 14px;border-radius:16px;
+  border:1px solid rgba(255,255,255,.06);
+  background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.015));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.03);
+}
+.header-stat .label{display:block;font-size:10px;color:var(--dim);font-weight:700;text-transform:uppercase;letter-spacing:.16em}
+.header-stat .value{display:block;font-family:var(--sans);font-size:26px;font-weight:900;letter-spacing:-.05em;line-height:1;margin-top:4px}
+.header-right-rail{display:flex;gap:10px;align-items:center;justify-content:flex-end;flex-wrap:wrap;flex:1}
+.header-controls{display:flex;gap:10px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
 .live-badge{
   display:flex;align-items:center;gap:5px;
-  padding:3px 10px;border-radius:20px;
-  background:rgba(68,217,140,.1);border:1px solid rgba(68,217,140,.2);
-  font-size:10px;font-weight:700;color:var(--green);letter-spacing:.5px;
+  padding:7px 12px;border-radius:20px;
+  background:rgba(113,230,165,.08);border:1px solid rgba(113,230,165,.18);
+  font-size:10px;font-weight:800;color:var(--green);letter-spacing:.16em;text-transform:uppercase;
 }
 .live-dot{width:6px;height:6px;background:var(--green);border-radius:50%;animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-.clock{font-family:var(--mono);font-size:11px;color:var(--dim)}
+.clock{font-family:var(--mono);font-size:11px;color:var(--muted);padding:0 6px}
 select{
-  background:var(--surface2);color:var(--text);
-  border:1px solid var(--border);padding:4px 10px;
-  border-radius:var(--radius-sm);font-size:11px;cursor:pointer;
+  background:rgba(12,18,25,.85);color:var(--text);
+  border:1px solid rgba(255,255,255,.08);padding:9px 12px;
+  border-radius:12px;font-size:11px;cursor:pointer;
   transition:var(--transition);
 }
-select:hover{border-color:var(--border-bright)}
+select:hover{border-color:var(--border-bright);box-shadow:0 0 0 3px rgba(127,216,255,.06)}
 
 /* === Main Content === */
 .main{padding:18px 24px;overflow-y:auto;scroll-behavior:smooth}
@@ -261,12 +289,12 @@ select:hover{border-color:var(--border-bright)}
 .exec-row-title{font-size:13px;font-weight:700;color:var(--text)}
 .exec-row-meta{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.5}
 .exec-row-tags{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.provider-pill{font-size:9px;font-weight:800;padding:3px 8px;border-radius:var(--radius-pill);text-transform:uppercase;letter-spacing:.35px;border:1px solid transparent}
-.provider-claude{background:rgba(138,120,230,.12);color:var(--purple);border-color:rgba(138,120,230,.2)}
-.provider-codex{background:rgba(47,191,113,.12);color:var(--green);border-color:rgba(47,191,113,.2)}
-.provider-gemini{background:rgba(216,167,57,.12);color:var(--yellow);border-color:rgba(216,167,57,.2)}
-.provider-opencode{background:rgba(34,184,173,.12);color:var(--teal);border-color:rgba(34,184,173,.2)}
-.provider-shared{background:rgba(79,143,247,.12);color:var(--blue);border-color:rgba(79,143,247,.2)}
+.provider-pill{font-size:10px;font-weight:800;padding:5px 9px;border-radius:var(--radius-pill);text-transform:uppercase;letter-spacing:.18em;border:1px solid transparent}
+.provider-claude{background:rgba(255,181,108,.12);color:var(--orange);border-color:rgba(255,181,108,.24)}
+.provider-codex{background:rgba(113,230,165,.12);color:var(--green);border-color:rgba(113,230,165,.22)}
+.provider-gemini{background:rgba(247,201,113,.12);color:var(--yellow);border-color:rgba(247,201,113,.22)}
+.provider-opencode{background:rgba(106,231,218,.12);color:var(--teal);border-color:rgba(106,231,218,.22)}
+.provider-shared{background:rgba(127,216,255,.12);color:var(--blue);border-color:rgba(127,216,255,.22)}
 .provider-unknown{background:rgba(145,163,184,.1);color:var(--muted);border-color:rgba(145,163,184,.15)}
 .doc-pill{font-size:9px;font-weight:800;padding:3px 8px;border-radius:var(--radius-pill);text-transform:uppercase;letter-spacing:.35px;background:var(--surface2);color:var(--muted);border:1px solid rgba(255,255,255,.04)}
 .doc-pill.shared{color:var(--blue)}
@@ -360,17 +388,16 @@ select:hover{border-color:var(--border-bright)}
 /* === Pane Grid === */
 .section-head{
   font-size:13px;font-weight:700;color:var(--text);
-  letter-spacing:.2px;margin-bottom:12px;display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  letter-spacing:.2px;margin-bottom:16px;display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;
 }
 .section-head .count{
-  font-size:11px;padding:2px 7px;border-radius:10px;
-  background:var(--surface2);color:var(--dim);font-weight:600;
+  font-size:11px;padding:8px 12px;border-radius:999px;
+  background:rgba(255,255,255,.035);color:var(--muted);font-weight:700;border:1px solid rgba(255,255,255,.06);letter-spacing:.08em;text-transform:uppercase;
 }
 .section-head-main{display:grid;gap:4px}
-.section-head-main h2{font-family:var(--sans);font-size:26px;font-weight:900;letter-spacing:-.04em;color:var(--text)}
-.section-head-main p{font-size:13px;color:var(--muted);line-height:1.6;max-width:68ch}
-.pane-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:20px}
-@media(max-width:900px){.pane-grid{grid-template-columns:repeat(2,1fr)}}
+.section-head-main h2{font-family:var(--sans);font-size:26px;font-weight:900;letter-spacing:-.06em;color:var(--text);line-height:1}
+.section-head-main p{font-size:15px;color:var(--muted);line-height:1.7;max-width:72ch}
+.pane-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:28px}
 .col-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin-bottom:20px}
 .operator-shell{
   display:grid;
@@ -415,42 +442,67 @@ select:hover{border-color:var(--border-bright)}
 .build-card .build-desc{font-size:9px;color:var(--dim);margin-top:4px}
 
 .pane-card{
-  border:1px solid var(--border);border-radius:var(--radius);
-  padding:12px 14px;cursor:pointer;position:relative;overflow:hidden;
-  transition:var(--transition);border-left:3px solid transparent;
-  background:var(--surface);
+  border:1px solid rgba(255,255,255,.06);border-radius:20px;
+  padding:18px;cursor:pointer;position:relative;overflow:hidden;
+  transition:var(--transition);background:
+    linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01)),
+    linear-gradient(135deg,color-mix(in srgb,var(--pane-color,var(--blue)) 10%,transparent) 0%,rgba(9,14,20,.96) 34%,rgba(8,11,16,.98) 100%);
+  box-shadow:var(--shadow);
 }
-.pane-card:hover{transform:translateY(-2px);box-shadow:0 6px 24px color-mix(in srgb,var(--pane-color,var(--blue)) 15%,transparent),var(--shadow);border-color:var(--border-bright)}
-.pane-card.selected{box-shadow:0 0 0 2px var(--pane-color,var(--blue)),var(--shadow);background:color-mix(in srgb,var(--pane-color,var(--blue)) 3%,var(--surface))}
-.pane-card.idle{opacity:.3;padding:12px 14px}
-.pane-card.idle:hover{opacity:.55}
-.pane-card.has-error{box-shadow:inset 0 0 20px rgba(255,92,92,.1)}
-.pane-card.is-done{box-shadow:inset 0 0 20px rgba(68,217,140,.1)}
+.pane-card::after{
+  content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(135deg,rgba(255,255,255,.06),transparent 42%,transparent 62%,rgba(255,255,255,.03));
+  opacity:.65;
+}
+.pane-card:hover{transform:translateY(-3px);box-shadow:0 24px 44px color-mix(in srgb,var(--pane-color,var(--blue)) 10%,transparent),var(--shadow);border-color:rgba(255,255,255,.12)}
+.pane-card.selected{box-shadow:0 0 0 1px rgba(255,255,255,.08),0 0 0 2px color-mix(in srgb,var(--pane-color,var(--blue)) 55%,transparent),0 24px 52px rgba(0,0,0,.42);background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.012)),linear-gradient(135deg,color-mix(in srgb,var(--pane-color,var(--blue)) 18%,transparent) 0%,rgba(10,14,20,.98) 32%,rgba(8,11,16,.99) 100%)}
+.pane-card.idle{opacity:.88}
+.pane-card.idle:hover{opacity:1}
+.pane-card.has-error{box-shadow:inset 0 0 0 1px rgba(255,140,140,.25),var(--shadow)}
+.pane-card.is-done{box-shadow:inset 0 0 0 1px rgba(113,230,165,.18),var(--shadow)}
+.pane-card.lane-empty{background:linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,.008)),linear-gradient(135deg,rgba(80,96,114,.18),rgba(8,11,16,.98) 42%)}
 
 /* Shimmer for active agents */
 .pane-card.active::before{
   content:'';position:absolute;top:0;left:-100%;width:60%;height:100%;
-  background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--pane-color,var(--blue)) 6%,transparent),transparent);
-  animation:shimmer 3s infinite;
+  background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--pane-color,var(--blue)) 11%,transparent),transparent);
+  animation:shimmer 4s infinite;
 }
 @keyframes shimmer{0%{left:-100%}100%{left:200%}}
 
-.pane-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+.pane-top{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}
+.pane-id-wrap{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .pane-num{
-  font-family:var(--mono);font-size:10px;font-weight:800;
-  padding:2px 6px;border-radius:4px;color:#000;min-width:20px;text-align:center;
+  font-family:var(--mono);font-size:11px;font-weight:800;
+  padding:5px 8px;border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);min-width:unset;text-align:center;border:1px solid rgba(255,255,255,.08);text-transform:uppercase;letter-spacing:.12em;
 }
-.pane-status{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+.pane-status{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.16em}
 .s-active{color:var(--green)}.s-idle{color:var(--dim)}.s-done{color:var(--teal)}.s-error{color:var(--red)}.s-stuck{color:var(--yellow)}
-.pane-project{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pane-task{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
-.pane-meta{display:flex;gap:4px;margin-top:6px;flex-wrap:wrap}
-.badge{
-  font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;
-  text-transform:uppercase;letter-spacing:.3px;
+.pane-status-indicator{
+  display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.16em;color:var(--muted)
 }
-.b-provider{background:var(--surface2)}
-.b-provider.provider-claude{color:var(--purple)}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--dim);box-shadow:0 0 0 4px rgba(104,119,137,.12)}
+.pane-status-indicator.is-live{color:var(--green);border-color:rgba(113,230,165,.16);background:rgba(113,230,165,.07)}
+.pane-status-indicator.is-live .status-dot{background:var(--green);box-shadow:0 0 0 4px rgba(113,230,165,.12),0 0 16px rgba(113,230,165,.28)}
+.pane-project{font-family:var(--sans);font-size:26px;font-weight:900;letter-spacing:-.06em;line-height:1.05;overflow:hidden;text-overflow:ellipsis}
+.pane-project-sub{margin-top:8px;min-height:38px;font-size:12px;color:var(--muted);line-height:1.6}
+.pane-task{font-size:12px;color:var(--muted);line-height:1.55;min-height:38px;margin-top:1px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pane-grid-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}
+.pane-detail{
+  padding:11px 12px;border-radius:14px;background:rgba(255,255,255,.028);
+  border:1px solid rgba(255,255,255,.06);display:grid;gap:5px;min-height:68px;
+}
+.pane-detail .label{font-size:10px;color:var(--dim);font-weight:800;text-transform:uppercase;letter-spacing:.16em}
+.pane-detail .value{font-size:13px;color:var(--text);font-weight:700;line-height:1.4}
+.pane-detail .value.mono{font-family:var(--mono);font-size:12px}
+.pane-meta{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.badge{
+  font-size:10px;font-weight:700;padding:5px 8px;border-radius:999px;
+  text-transform:uppercase;letter-spacing:.14em;border:1px solid rgba(255,255,255,.04);
+}
+.b-provider{background:rgba(255,255,255,.04)}
+.b-provider.provider-claude{color:var(--orange)}
 .b-provider.provider-codex{color:var(--green)}
 .b-provider.provider-gemini{color:var(--yellow)}
 .b-provider.provider-opencode{color:var(--teal)}
@@ -463,10 +515,17 @@ select:hover{border-color:var(--border-bright)}
 .b-done{background:rgba(61,214,208,.1);color:var(--teal)}
 
 /* Mini output preview on pane card */
+.pane-preview-shell{
+  margin-top:14px;padding:14px;border-radius:16px;background:linear-gradient(180deg,rgba(5,10,16,.94),rgba(5,10,16,.84));
+  border:1px solid rgba(127,216,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.02);
+}
+.pane-preview-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.pane-preview-head span:first-child{font-size:10px;font-weight:800;color:var(--blue);text-transform:uppercase;letter-spacing:.18em}
+.pane-preview-head span:last-child{font-size:10px;color:var(--dim);font-family:var(--mono)}
 .pane-preview{
-  font-family:var(--mono);font-size:9px;line-height:1.3;color:var(--dim);
-  margin-top:6px;padding:4px 6px;background:var(--bg);border-radius:4px;
-  max-height:36px;overflow:hidden;white-space:pre;
+  font-family:var(--mono);font-size:11px;line-height:1.6;color:#d8e5f3;
+  margin-top:0;padding:0;background:transparent;border-radius:0;
+  min-height:132px;max-height:172px;overflow:hidden;white-space:pre-wrap;word-break:break-word;
 }
 
 /* === Content Grid (Queue + Board side by side) === */
@@ -848,9 +907,16 @@ canvas{width:100%;display:block}
 
 /* === Mobile Responsive === */
 @media(max-width:700px){
-  .header{padding:0 12px;height:46px}
-  .logo h1{font-size:13px}
-  .header-right{gap:6px}
+  .header{padding:14px 12px;min-height:auto}
+  .logo-mark{width:32px;height:32px}
+  .logo-copy h1{font-size:18px}
+  .brand-note{font-size:10px}
+  .header-right{gap:8px}
+  .header-metrics{width:100%}
+  .header-stat{min-width:0;flex:1 1 120px}
+  .header-right-rail{width:100%;justify-content:flex-start}
+  .header-controls{display:grid;grid-template-columns:1fr;width:100%}
+  .header-controls select{width:100%}
   .main{padding:12px}
   .pane-grid{grid-template-columns:1fr}
   .content-grid{grid-template-columns:1fr}
@@ -867,8 +933,11 @@ canvas{width:100%;display:block}
   .kanban-col{min-width:unset}
 }
 @media(max-width:500px){
-  .pane-meta{gap:3px}
-  .badge{font-size:8px;padding:1px 4px}
+  .section-head-main h2{font-size:26px}
+  .pane-project{font-size:26px}
+  .pane-grid-meta{grid-template-columns:1fr}
+  .pane-meta{gap:4px}
+  .badge{font-size:8px;padding:4px 6px}
   .q-table{font-size:10px}
   .q-table th,.q-table td{padding:6px 6px}
 }
@@ -911,14 +980,31 @@ canvas{width:100%;display:block}
           <circle cx="45" cy="70" r="8" fill="url(#dx-logo-grad)"></circle>
         </svg>
       </div>
-      <h1>DX Delivery OS<span>client portal + terminal</span></h1>
+      <div class="logo-copy">
+        <h1>DX Terminal</h1>
+        <div class="brand-note">Mission Control For Autonomous Agents</div>
+      </div>
     </div>
     <div class="header-right">
-      <div class="live-badge"><span class="live-dot"></span> LIVE</div>
-      <span class="clock" id="clock"></span>
-      <select id="portfolio-company-select" onchange="applyPortfolioFilters()"></select>
-      <select id="portfolio-program-select" onchange="applyPortfolioFilters()"></select>
-      <select id="space-select" onchange="refresh()"></select>
+      <div class="header-metrics">
+        <div class="header-stat">
+          <span class="label">Total Agents</span>
+          <span class="value" id="header-agents-count">0</span>
+        </div>
+        <div class="header-stat">
+          <span class="label">Total Projects</span>
+          <span class="value" id="header-projects-count">0</span>
+        </div>
+      </div>
+      <div class="header-right-rail">
+        <div class="live-badge"><span class="live-dot"></span> <span id="header-live-count">0 active</span></div>
+        <span class="clock" id="clock"></span>
+        <div class="header-controls">
+          <select id="portfolio-company-select" onchange="applyPortfolioFilters()"></select>
+          <select id="portfolio-program-select" onchange="applyPortfolioFilters()"></select>
+          <select id="space-select" onchange="refresh()"></select>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1054,10 +1140,10 @@ canvas{width:100%;display:block}
 
     <div class="section-head" id="execution-network">
       <div class="section-head-main">
-        <h2>Execution Network</h2>
-        <p>These are the specialist lanes behind the portal. Each lane keeps a provider runtime, worktree or shared tree, browser lane, and terminal history attached to the same delivery story.</p>
+        <h2>Mission Control</h2>
+        <p>Live agent lanes with provider identity, runtime target, and terminal telemetry. The operator should know who is working, where they are attached, and what happened last without opening a pane.</p>
       </div>
-      <span class="count" id="pane-count">0/9</span>
+      <span class="count" id="pane-count">0 active · 0 visible</span>
     </div>
     <div class="pane-grid" id="panes"><div class="loading">Loading agents</div></div>
 
@@ -1199,6 +1285,7 @@ let pollTimer=null;
 let ws=null;
 let wsState=null;
 let paneOutputs={};
+let panePreviewOutputs={};
 let paneEvents={};   // Structured JSONL events per pane
 let paneSessionInfo={}; // session_id, jsonl_path, cwd per pane
 let activePaneNum=null;
@@ -2521,6 +2608,7 @@ async function refreshPaneOutput(pane){
   const output=(result&&((typeof result.output==='string'&&result.output)||(typeof result.screen==='string'&&result.screen)))||'';
   if(!output)return false;
   paneOutputs[paneNum]=output;
+  panePreviewOutputs[paneNum]=output;
   if(activePaneNum===paneNum){
     const term=document.getElementById('panel-terminal');
     if(term){
@@ -4733,8 +4821,13 @@ function getStatusPane(paneNum){
   return statusData&&statusData.panes?statusData.panes.find(p=>p.pane===paneNum):null;
 }
 function renderPanes(){
-  const allPanes=wsState?wsState.panes:(monitorData?monitorData.panes:null);
-  if(!allPanes)return;
+  const allPanes=fleetSourcePanes();
+  if(!allPanes.length){
+    const el=document.getElementById('panes');
+    if(el)el.innerHTML='<div class="loading">Loading agents</div>';
+    updateFleetHeaderMetrics([],0,0);
+    return;
+  }
   // Filter by workspace
   const ws=currentSpace||'all';
   const src=ws==='all'?allPanes:allPanes.filter(p=>p.project===ws||(!p.project||p.project==='--'));
@@ -4745,15 +4838,14 @@ function renderPanes(){
     const isActive=p.status==='active'||p.live||(sp&&sp.running);
     const hasProject=p.project&&p.project!=='--';
     const color=paneColor(p.pane);
-    const preview=paneOutputs[p.pane];
-    const previewLines=preview?preview.trim().split('\n').slice(-2).join('\n'):'';
+    const previewText=terminalPreviewTail(panePreviewText(p.pane),8);
+    const previewLabel=previewText?`last ${previewText.split('\n').length} lines`:'awaiting stream';
     const browserPort=paneBrowserPortForRuntime(p,sp);
     const dxosSessionId=p.dxos_session_id||'';
     const modelLabel=(p.model||'').toString();
     const runtimeAdapter=(p.runtime_adapter||(sp&&sp.runtime_adapter)||'').toString();
     if(isActive)activeCount++;
     const h=p.health||p.status||'idle';
-    const sc=h==='active'||isActive?'s-active':h==='done'?'s-done':h==='error'?'s-error':h==='stuck'?'s-stuck':'s-idle';
     let cls=isActive?'active':hasProject?'':'idle';
     if(h==='error')cls+=' has-error';
     if(h==='done')cls+=' is-done';
@@ -4767,26 +4859,58 @@ function renderPanes(){
     }
 
     if(!hasProject){
-      html+=`<div class="pane-card idle" style="--pane-color:${color};border-left-color:${color};background:linear-gradient(135deg,${color}08 0%,var(--surface) 60%);border-color:${color}20" onclick="openPanel(${p.pane})">
-        <div class="pane-top" style="margin-bottom:0">
-          <span class="pane-num" style="background:${color}">${p.pane}</span>
-          <span class="pane-status s-idle">available</span>
-        </div></div>`;
-    } else {
-      html+=`<div class="pane-card ${cls}" style="--pane-color:${color};border-left-color:${color};background:linear-gradient(135deg,${color}15 0%,${color}05 30%,var(--surface) 100%);border-color:${color}30" onclick="openPanel(${p.pane})">
+      html+=`<div class="pane-card lane-empty idle" style="--pane-color:${color}" onclick="openPanel(${p.pane})">
         <div class="pane-top">
-          <span class="pane-num" style="background:${color}">${p.pane}</span>
-          <span class="pane-status ${sc}">${h}</span>
+          <div class="pane-id-wrap">
+            <span class="pane-num">Pane ${p.pane}</span>
+            <span class="provider-pill provider-unknown">Standby</span>
+          </div>
+          <span class="pane-status-indicator is-idle"><span class="status-dot"></span>idle</span>
         </div>
-        <div class="pane-project">${p.project||'--'}${sp&&sp.branch?' <span style="color:var(--dim);font-size:9px">⌥ '+sp.branch+'</span>':''}</div>
-        <div class="pane-task">${paneLastActivity(p.pane)||(p.task||'').slice(0,60)}</div>
+        <div class="pane-project">Available Lane</div>
+        <div class="pane-project-sub">No project is attached. This slot is ready for a new tmux target or native PTY session.</div>
+        <div class="pane-grid-meta">
+          <div class="pane-detail"><span class="label">tmux</span><span class="value mono">unassigned</span></div>
+          <div class="pane-detail"><span class="label">role</span><span class="value">awaiting launch</span></div>
+        </div>
+        <div class="pane-preview-shell">
+          <div class="pane-preview-head"><span>Terminal Preview</span><span>standby</span></div>
+          <pre class="pane-preview">No terminal session attached.</pre>
+        </div>
+      </div>`;
+    } else {
+      html+=`<div class="pane-card ${cls}" style="--pane-color:${color}" onclick="openPanel(${p.pane})">
+        <div class="pane-top">
+          <div class="pane-id-wrap">
+            <span class="pane-num">Pane ${p.pane}</span>
+            ${providerBadge({id:p.provider||'unknown',label:p.provider_label||providerLabel(p.provider||'unknown'),short:p.provider_short||p.provider_label||p.provider||'Unknown'})}
+          </div>
+          <span class="pane-status-indicator ${isActive?'is-live':'is-idle'}"><span class="status-dot"></span>${isActive?'active':'idle'}</span>
+        </div>
+        <div class="pane-project">${escHtml(p.project||'--')}</div>
+        <div class="pane-task">${paneLastActivity(p.pane)||escHtml((p.task||'No task attached').slice(0,140))}</div>
+        <div class="pane-grid-meta">
+          <div class="pane-detail">
+            <span class="label">tmux target</span>
+            <span class="value mono">${escHtml((p.tmux_target||runtimeAdapter&&adapterLabel(runtimeAdapter)||'native PTY').toString())}</span>
+          </div>
+          <div class="pane-detail">
+            <span class="label">status</span>
+            <span class="value">${escHtml((h||'idle').toString())}</span>
+          </div>
+          <div class="pane-detail">
+            <span class="label">role</span>
+            <span class="value">${escHtml((p.role&&p.role!=='--'?p.role:'developer').toString())}</span>
+          </div>
+          <div class="pane-detail">
+            <span class="label">terminal lines</span>
+            <span class="value mono" id="pane-lines-${p.pane}">${escHtml(String(p.line_count||p.lines||0))} lines</span>
+          </div>
+        </div>
         <div class="pane-meta">
-          ${p.provider&&p.provider!=='unknown'?`<span class="badge b-provider provider-${p.provider}">${p.provider_short||p.provider_label||p.provider}</span>`:''}
           ${runtimeAdapter?`<span class="badge" style="background:rgba(79,143,247,.12);color:var(--blue)">${escHtml(adapterLabel(runtimeAdapter))}</span>`:''}
-          ${modelLabel?`<span class="badge" style="background:rgba(168,85,247,.12);color:var(--purple)">${escHtml(modelLabel)}</span>`:''}
-          ${p.role&&p.role!=='--'?`<span class="badge b-role">${p.role}</span>`:''}
+          ${modelLabel?`<span class="badge" style="background:rgba(201,164,255,.12);color:var(--purple)">${escHtml(modelLabel)}</span>`:''}
           ${dxosSessionId?`<span class="badge" style="background:rgba(79,143,247,.12);color:var(--blue)">DX ${escHtml(dxosSessionId)}</span>`:''}
-          <span class="badge b-lines" id="pane-lines-${p.pane}">${p.line_count||p.lines||0}L</span>
           ${browserPort?`<span class="badge" style="background:rgba(77,166,255,.12);color:var(--blue)">PW ${browserPort}</span>`:''}
           ${runtime?`<span class="badge b-runtime">${runtime}</span>`:''}
           ${sp&&sp.acu?`<span class="badge" style="background:rgba(176,122,255,.1);color:var(--purple)">${sp.acu} ACU</span>`:''}
@@ -4795,12 +4919,15 @@ function renderPanes(){
           ${h==='done'?'<span class="badge b-done">DONE</span>':''}
           ${(p.workspace_path||(sp&&sp.workspace))?'<span class="badge b-worktree">WT</span>':''}
         </div>
-        ${previewLines?`<div class="pane-preview">${escHtml(previewLines)}</div>`:''}
+        <div class="pane-preview-shell">
+          <div class="pane-preview-head"><span>Terminal Preview</span><span>${escHtml(previewLabel)}</span></div>
+          <pre class="pane-preview">${escHtml(previewText||'Waiting for terminal output...')}</pre>
+        </div>
       </div>`;
     }
   }
   el.innerHTML=html;
-  document.getElementById('pane-count').textContent=`${activeCount}/${src.length}`;
+  updateFleetHeaderMetrics(allPanes,src.length,activeCount);
 }
 
 function paneLastActivity(pane){
@@ -4835,6 +4962,73 @@ function paneBrowserProfileLabel(profileRoot){
   if(!profileRoot)return '--';
   const parts=String(profileRoot).split('/');
   return parts[parts.length-1]||profileRoot;
+}
+function fleetSourcePanes(){
+  if(wsState&&Array.isArray(wsState.panes))return wsState.panes;
+  if(monitorData&&Array.isArray(monitorData.panes))return monitorData.panes;
+  return [];
+}
+function panePreviewText(paneNum){
+  return panePreviewOutputs[paneNum]||paneOutputs[paneNum]||'';
+}
+function terminalPreviewTail(output,limit){
+  const lines=String(output||'').replace(/\r/g,'').split('\n');
+  while(lines.length&&!lines[lines.length-1].trim())lines.pop();
+  return lines.slice(-Math.max(1,limit||8)).join('\n');
+}
+function updateFleetHeaderMetrics(allPanes,visibleCount,activeVisibleCount){
+  const panes=Array.isArray(allPanes)?allPanes:[];
+  const liveCount=panes.filter(p=>{
+    const sp=getStatusPane(p.pane);
+    return p.status==='active'||p.live||(sp&&sp.running);
+  }).length;
+  const agentCount=panes.filter(p=>(p.project&&p.project!=='--')||p.live||p.status==='active'||(p.line_count||p.lines||0)>0).length;
+  const projectCount=new Set(panes.filter(p=>p.project&&p.project!=='--').map(p=>p.project)).size;
+  const agentsEl=document.getElementById('header-agents-count');
+  const projectsEl=document.getElementById('header-projects-count');
+  const liveEl=document.getElementById('header-live-count');
+  const paneCountEl=document.getElementById('pane-count');
+  if(agentsEl)agentsEl.textContent=String(agentCount);
+  if(projectsEl)projectsEl.textContent=String(projectCount);
+  if(liveEl)liveEl.textContent=`${liveCount} active`;
+  if(paneCountEl)paneCountEl.textContent=`${activeVisibleCount} active · ${visibleCount} visible`;
+}
+let panePreviewRefreshInFlight=false;
+async function refreshPanePreviews(){
+  if(panePreviewRefreshInFlight)return;
+  const allPanes=fleetSourcePanes();
+  if(!allPanes.length)return;
+  const ws=currentSpace||'all';
+  const visible=ws==='all'?allPanes:allPanes.filter(p=>p.project===ws||(!p.project||p.project==='--'));
+  const targets=visible.filter(p=>Number.isFinite(Number(p.pane))&&p.pane>0&&((p.project&&p.project!=='--')||p.live||p.status==='active'||(p.line_count||p.lines||0)>0));
+  if(!targets.length)return;
+  panePreviewRefreshInFlight=true;
+  let changed=false;
+  try{
+    const results=await Promise.allSettled(targets.map(p=>fetchJSON(`/api/pane/${p.pane}/output?lines=12`)));
+    results.forEach((result,idx)=>{
+      if(result.status!=='fulfilled')return;
+      const paneNum=targets[idx].pane;
+      const payload=result.value||{};
+      const output=(typeof payload.output==='string'&&payload.output)||(typeof payload.screen==='string'&&payload.screen)||'';
+      const next=String(output||'').trimEnd();
+      const prev=String(panePreviewOutputs[paneNum]||'').trimEnd();
+      if(next&&next!==prev){
+        panePreviewOutputs[paneNum]=next;
+        changed=true;
+      }
+      if(typeof payload.lines==='number'&&wsState&&Array.isArray(wsState.panes)){
+        const pane=wsState.panes.find(item=>item.pane===paneNum);
+        if(pane&&pane.line_count!==payload.lines){
+          pane.line_count=payload.lines;
+          changed=true;
+        }
+      }
+    });
+  } finally {
+    panePreviewRefreshInFlight=false;
+  }
+  if(changed)renderPanes();
 }
 
 // === Right Panel: Terminal ===
@@ -5472,12 +5666,16 @@ function handleWSMessage(msg){
       resyncPending=false;
       wsState=msg.data;
       for(const p of wsState.panes||[]){
-        if(p.output)paneOutputs[p.pane]=p.output;
+        if(p.output){
+          paneOutputs[p.pane]=p.output;
+          panePreviewOutputs[p.pane]=p.output;
+        }
         if(p.events&&p.events.length)paneEvents[p.pane]=p.events;
         if(p.session_id)paneSessionInfo[p.pane]={session_id:p.session_id,jsonl_path:p.jsonl_path,cwd:p.cwd};
       }
       updateWorkspaces(wsState.workspaces);
       renderPanes();renderGauges();renderExecutionHub();
+      void refreshPanePreviews();
       break;
 
     case 'pane_upsert':
@@ -5505,6 +5703,7 @@ function handleWSMessage(msg){
         const prev=paneOutputs[u.pane]||'';
         paneOutputs[u.pane]=prev+u.output;
         if(paneOutputs[u.pane].length>8000)paneOutputs[u.pane]=paneOutputs[u.pane].slice(-6000);
+        panePreviewOutputs[u.pane]=paneOutputs[u.pane];
         // Update live terminal panel
         if(activePaneNum===u.pane){
           const term=document.getElementById('panel-terminal');
@@ -5512,7 +5711,7 @@ function handleWSMessage(msg){
         }
         // Update line badge
         const badge=document.getElementById(`pane-lines-${u.pane}`);
-        if(badge)badge.textContent=u.full_lines+'L';
+        if(badge)badge.textContent=(u.full_lines||0)+' lines';
       }
       renderPanes();
       break;
@@ -5599,6 +5798,7 @@ function handleWSMessage(msg){
       if(msg.cmd==='capture'&&msg.result&&msg.result.output){
         const pn=msg.result.pane;
         paneOutputs[pn]=msg.result.output;
+        panePreviewOutputs[pn]=msg.result.output;
         if(activePaneNum===pn){
           const term=document.getElementById('panel-terminal');
           if(term){term.textContent=msg.result.output;term.scrollTop=term.scrollHeight;}
@@ -6381,6 +6581,7 @@ async function refresh(){
   await loadCapacity();
   renderPanes();
   renderLogs();
+  void refreshPanePreviews();
   await Promise.all([renderGauges(),renderExecutionHub(),renderRoles(),renderQueue(),renderBoard(),renderSprint(),renderDigest(),renderOverview(),renderInfra(),renderBuilds(),renderVision(),renderVddDocs(),renderSync()]);
 }
 
@@ -6415,6 +6616,7 @@ async function init(){
   await loadSpaces();
   await refresh();
   connectWS();
+  setInterval(refreshPanePreviews,2500);
   setInterval(refresh,30000);
 }
 init();
