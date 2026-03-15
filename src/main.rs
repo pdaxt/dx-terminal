@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use dx_terminal::{
-    app, config, dxos_scheduler, dxos_supervisor, engine, ipc, machine, mcp, queue, sync, tui, web,
-    workspace,
+    app, config, dxos_scheduler, dxos_supervisor, engine, go, ipc, machine, mcp, queue, sync, tui,
+    web, workspace,
 };
 use serde_json::{json, Value};
 use std::hash::{Hash, Hasher};
@@ -38,6 +38,8 @@ enum Commands {
         #[arg(long)]
         port: Option<u16>,
     },
+    /// Zero-config project launch: tmux session, issues, agents, dashboard
+    Go(go::GoArgs),
     /// Use external MCP servers configured outside dx through the gateway bridge
     Gateway {
         #[command(subcommand)]
@@ -93,6 +95,9 @@ fn runtime_identity(cli: &Cli, default_web_port: u16) -> String {
         Some(Commands::Tui) => format!("tui-{:x}", cwd_hash),
         Some(Commands::Web { port }) => {
             format!("web-{}-{:x}", port.unwrap_or(default_web_port), cwd_hash)
+        }
+        Some(Commands::Go(args)) => {
+            format!("go-{}-{}-{:x}", args.agents, args.max_issues, cwd_hash)
         }
         Some(Commands::Gateway { command }) => match command {
             GatewayCommands::List { .. } => format!("gateway-list-{:x}", cwd_hash),
@@ -180,6 +185,10 @@ async fn main() -> anyhow::Result<()> {
             dxos_scheduler::start(Arc::clone(&application));
             dxos_supervisor::start(Arc::clone(&application));
             web::run_web_server(application, port).await?;
+        }
+        Some(Commands::Go(args)) => {
+            init_tracing();
+            go::go(application, args).await?;
         }
         Some(Commands::Gateway { command }) => {
             run_gateway_cli(application, command).await?;

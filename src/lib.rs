@@ -17,6 +17,7 @@ pub mod dxos_supervisor;
 pub mod engine;
 pub mod external_mcp;
 pub mod factory;
+pub mod go;
 pub mod ipc;
 pub mod knowledge;
 pub mod machine;
