@@ -2751,8 +2751,24 @@ pub async fn get_dxos_control_plane(Query(q): Query<VisionQuery>) -> Json<Value>
 }
 
 /// GET /api/dxos/portfolio/brief?company=NAME&program=NAME — Aggregate DXOS view across projects
-pub async fn get_dxos_portfolio_brief(Query(q): Query<DxosPortfolioBriefQuery>) -> Json<Value> {
-    Json(build_dxos_portfolio_brief_payload(&q))
+pub async fn get_dxos_portfolio_brief(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<DxosPortfolioBriefQuery>,
+) -> ApiJson {
+    let policy = require_portfolio_read_access(
+        &app,
+        &headers,
+        q.company.as_deref(),
+        q.program.as_deref(),
+        q.workspace.as_deref(),
+        "portfolio_read",
+        "portfolio brief",
+    )?;
+    let registry =
+        serde_json::from_str::<Value>(&crate::dxos::control_plane_registry()).unwrap_or(json!({}));
+    let filtered = filter_dxos_registry_for_policy(&registry, &policy);
+    Ok(Json(build_dxos_portfolio_brief_payload(&q, &filtered)))
 }
 
 /// POST /api/dxos/project/identity — Set project company/program/workspace metadata
@@ -2934,9 +2950,19 @@ pub async fn update_dxos_workspace_record(
 }
 
 /// GET /api/dxos/registry — Shared DXOS control-plane registry
-pub async fn get_dxos_registry() -> Json<Value> {
+pub async fn get_dxos_registry(State(app): State<AppState>, headers: HeaderMap) -> ApiJson {
+    let policy = require_portfolio_read_access(
+        &app,
+        &headers,
+        None,
+        None,
+        None,
+        "portfolio_read",
+        "portfolio registry",
+    )?;
     let result = crate::dxos::control_plane_registry();
-    Json(serde_json::from_str(&result).unwrap_or(json!({"raw": result})))
+    let registry = serde_json::from_str(&result).unwrap_or(json!({"raw": result}));
+    Ok(Json(filter_dxos_registry_for_policy(&registry, &policy)))
 }
 
 /// GET /api/dxos/provider-plugins — Provider interoperability bridge inventory

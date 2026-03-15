@@ -1779,6 +1779,8 @@ pub fn control_auth_contract() -> Value {
         "authorization_scheme": "Bearer",
         "operators": operator_registry["operators"].clone(),
         "required_for": [
+            "/api/dxos/portfolio/brief",
+            "/api/dxos/registry",
             "/api/dxos/project/identity",
             "/api/dxos/company",
             "/api/dxos/program",

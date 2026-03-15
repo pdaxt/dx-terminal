@@ -1254,7 +1254,10 @@ function rememberDxOperatorIdentity(value){
 }
 function requiresDxControlAuth(url,options){
   const method=String((options&&options.method)||'GET').toUpperCase();
-  if(method==='GET')return false;
+  const path=String(url||'');
+  if(method==='GET'){
+    return /^\/api\/dxos\/(portfolio\/brief|registry)/.test(path);
+  }
   return /^\/api\/(dxos\/(adoption|automation-bridges|company|debate|program|project|provider-plugins|scheduler|session|work|workflow|workspace)|pane\/(talk|kill|restart))/.test(String(url||''));
 }
 function withDxControlHeaders(url,options){
