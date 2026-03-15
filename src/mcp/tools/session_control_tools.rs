@@ -59,16 +59,7 @@ pub async fn session_control_status(app: &App, req: SessionControlStatusRequest)
 
 pub async fn session_control_list(app: &App) -> String {
     let watchers = app.session_controller.list().await;
-    let values: Vec<_> = watchers
-        .iter()
-        .map(session_controller::watcher_to_value)
-        .collect();
-
-    json!({
-        "count": values.len(),
-        "watchers": values,
-    })
-    .to_string()
+    session_controller::watchers_to_value(&watchers).to_string()
 }
 
 pub async fn session_control_send(app: &App, req: SessionControlSendRequest) -> String {

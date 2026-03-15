@@ -48,6 +48,10 @@ pub fn build_router(app: Arc<App>) -> Router {
         .route("/api/queue/retry", post(api::post_queue_retry))
         // Enhanced monitoring endpoints
         .route("/api/monitor", get(api::get_monitor))
+        .route(
+            "/api/session-control/status",
+            get(api::get_session_control_status),
+        )
         .route("/api/pane/{id}/watch", get(api::get_watch))
         // Analytics endpoints (FORGE data for TUI)
         .route("/api/analytics/digest", get(api::get_analytics_digest))
@@ -229,4 +233,64 @@ pub async fn run_web_server(app: Arc<App>, port: u16) -> anyhow::Result<()> {
     eprintln!("DX Terminal web dashboard: http://localhost:{}", port);
     axum::serve(listener, router).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
+    use http_body_util::BodyExt;
+    use serde_json::Value;
+    use std::time::{Duration, Instant};
+    use tower::ServiceExt;
+
+    use crate::agents::AgentType;
+    use crate::session_controller::{AgentState, PaneWatcher, WatcherState};
+
+    #[tokio::test]
+    async fn session_control_status_endpoint_returns_watcher_snapshots() {
+        let _ = crate::config::init();
+        let app = Arc::new(App::new());
+        app.session_controller
+            .insert_watcher_for_test(PaneWatcher {
+                pane_id: "%42".to_string(),
+                agent_type: AgentType::CodexCli,
+                mission: "Expose watcher state".to_string(),
+                state: WatcherState::Active(AgentState::Working {
+                    description: "Wiring dashboard status".to_string(),
+                    duration_secs: 42,
+                }),
+                context_pct: Some(68),
+                approvals_given: 3,
+                corrections_sent: 2,
+                errors_unblocked: 1,
+                started_at: Instant::now() - Duration::from_secs(42),
+            })
+            .await;
+
+        let response = build_router(Arc::clone(&app))
+            .oneshot(
+                Request::builder()
+                    .uri("/api/session-control/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let value: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["count"], 1);
+        assert_eq!(value["watchers"][0]["pane"], "%42");
+        assert_eq!(value["watchers"][0]["state"]["kind"], "working");
+        assert_eq!(value["watchers"][0]["approvals_given"], 3);
+        assert_eq!(value["watchers"][0]["corrections_sent"], 2);
+    }
 }

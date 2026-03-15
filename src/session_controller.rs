@@ -514,6 +514,14 @@ pub fn watcher_to_value(watcher: &PaneWatcher) -> Value {
     })
 }
 
+pub fn watchers_to_value(watchers: &[PaneWatcher]) -> Value {
+    let values: Vec<_> = watchers.iter().map(watcher_to_value).collect();
+    json!({
+        "count": values.len(),
+        "watchers": values,
+    })
+}
+
 fn watcher_state_to_value(state: &WatcherState) -> Value {
     match state {
         WatcherState::Starting => json!({"kind": "starting"}),
@@ -1117,6 +1125,16 @@ fn is_known_executable_path(token: &str) -> bool {
 
 fn default_project_dir() -> PathBuf {
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
+
+#[cfg(test)]
+impl SessionController {
+    pub(crate) async fn insert_watcher_for_test(&self, watcher: PaneWatcher) {
+        self.watchers
+            .write()
+            .await
+            .insert(watcher.pane_id.clone(), Arc::new(RwLock::new(watcher)));
+    }
 }
 
 #[cfg(test)]

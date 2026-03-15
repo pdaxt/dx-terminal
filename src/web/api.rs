@@ -16,6 +16,7 @@ use crate::capacity;
 use crate::config;
 use crate::mcp::{tools, types};
 use crate::queue;
+use crate::session_controller;
 
 type AppState = Arc<App>;
 type ApiJson = Result<Json<Value>, (StatusCode, Json<Value>)>;
@@ -1141,6 +1142,16 @@ pub async fn get_monitor(State(app): State<AppState>) -> Json<Value> {
     )
     .await;
     Json(parse_mcp(&result))
+}
+
+/// GET /api/session-control/status — Current SessionController watcher state
+pub async fn get_session_control_status(State(app): State<AppState>) -> Json<Value> {
+    let watchers = app.session_controller.list().await;
+    let mut value = session_controller::watchers_to_value(&watchers);
+    if let Some(object) = value.as_object_mut() {
+        object.insert("status".to_string(), json!("ok"));
+    }
+    Json(value)
 }
 
 /// GET /api/pane/:id/watch — Watch pane output (via tools::watch)
