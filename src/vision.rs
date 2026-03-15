@@ -1071,7 +1071,12 @@ pub fn vision_summary(project_path: &str) -> String {
     let active_milestones: Vec<_> = vision
         .milestones
         .iter()
-        .filter(|m| m.status == MilestoneStatus::Active)
+        .filter(|m| {
+            matches!(
+                m.status,
+                MilestoneStatus::Active | MilestoneStatus::InProgress
+            )
+        })
         .map(|m| {
             serde_json::json!({
                 "id": m.id, "title": m.title, "progress": m.progress_pct,
@@ -4123,6 +4128,31 @@ mod tests {
             m.err()
         );
         assert!(matches!(m.unwrap().status, MilestoneStatus::InProgress));
+    }
+
+    #[test]
+    fn test_vision_summary_treats_in_progress_milestones_as_active() {
+        let dir = temp_project();
+        let path = dir.path().to_str().unwrap();
+        init_test_vision(dir.path());
+
+        let mut vision = load_vision(path).unwrap();
+        vision.milestones.push(Milestone {
+            id: "M2.5".into(),
+            title: "Enterprise QA & Documentation".into(),
+            description: "Confluence-style wiki, 8-framework QA engine, VDD pipeline automation"
+                .into(),
+            status: MilestoneStatus::InProgress,
+            target_date: Some("2026-03-15".into()),
+            goals: vec!["G7".into(), "G9".into()],
+            github_milestone: None,
+            progress_pct: 85,
+        });
+        save_vision(path, &vision).unwrap();
+
+        let summary: serde_json::Value = serde_json::from_str(&vision_summary(path)).unwrap();
+        assert_eq!(summary["milestones"]["active"][0]["id"], "M2.5");
+        assert_eq!(summary["milestones"]["active"][0]["progress"], 85);
     }
 }
 
