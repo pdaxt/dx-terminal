@@ -218,11 +218,7 @@ fn enrich_pane_state(pane_state: &mut PaneState, pane: u8, live: &LivePane) {
     let project_path = project_root_from_cwd(&project_cwd);
 
     pane_state.theme = crate::config::theme_name(pane).to_string();
-    if project != "--" {
-        pane_state.project = project;
-    } else if pane_state.project.trim().is_empty() {
-        pane_state.project = "--".to_string();
-    }
+    pane_state.project = project;
     pane_state.project_path = if project_path.is_empty() {
         project_cwd.clone()
     } else {
@@ -469,5 +465,29 @@ mod tests {
             resolved[0].pane_state.project_path,
             "/Users/pran/Projects/social-media-autopilot".to_string()
         );
+    }
+
+    #[test]
+    fn generic_projects_root_clears_stale_project_name() {
+        let mut state = DxTerminalState::default();
+        let mut pane = PaneState::default();
+        pane.project = "stale-project".into();
+        state.panes.insert("4".into(), pane);
+
+        let live = vec![LivePane {
+            target: "dx:4.1".into(),
+            session: "dx".into(),
+            window: 4,
+            pane_idx: 1,
+            window_name: "claude".into(),
+            command: "claude".into(),
+            cwd: "/Users/pran/Projects".into(),
+            pid: 4,
+            jsonl_path: None,
+            session_id: None,
+        }];
+
+        let resolved = resolve_runtime_panes(&state, &live, None);
+        assert_eq!(resolved[0].pane_state.project, "--");
     }
 }
