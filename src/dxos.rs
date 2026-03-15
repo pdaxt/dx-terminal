@@ -1681,21 +1681,30 @@ fn authorize_operator_scope_read_with_profiles(
         return Err(format!(
             "Operator '{}' cannot read company scope '{}'.",
             actor,
-            company.map(str::trim).filter(|value| !value.is_empty()).unwrap_or("--")
+            company
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("--")
         ));
     }
     if !metadata_scope_matches(&operator.program_scopes, program) {
         return Err(format!(
             "Operator '{}' cannot read program scope '{}'.",
             actor,
-            program.map(str::trim).filter(|value| !value.is_empty()).unwrap_or("--")
+            program
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("--")
         ));
     }
     if !metadata_scope_matches(&operator.workspace_scopes, workspace) {
         return Err(format!(
             "Operator '{}' cannot read workspace scope '{}'.",
             actor,
-            workspace.map(str::trim).filter(|value| !value.is_empty()).unwrap_or("--")
+            workspace
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("--")
         ));
     }
     if !operator

@@ -218,25 +218,19 @@ fn require_portfolio_read_access(
         return Err(error);
     }
     let actor = control_actor(headers);
-    crate::dxos::authorize_operator_scope_read(
-        &actor,
-        action_kind,
-        company,
-        program,
-        workspace,
-    )
-    .map_err(|error| {
-        deny_control_action(
-            app,
-            "",
-            None,
-            &actor,
-            action_kind,
-            target,
-            StatusCode::FORBIDDEN,
-            &error,
-        )
-    })
+    crate::dxos::authorize_operator_scope_read(&actor, action_kind, company, program, workspace)
+        .map_err(|error| {
+            deny_control_action(
+                app,
+                "",
+                None,
+                &actor,
+                action_kind,
+                target,
+                StatusCode::FORBIDDEN,
+                &error,
+            )
+        })
 }
 
 fn auth_pattern_matches(pattern: &str, value: &str) -> bool {
@@ -264,7 +258,10 @@ fn policy_scope_matches(scopes: Option<&Value>, candidate: Option<&str>) -> bool
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or("--");
-    items.iter().filter_map(Value::as_str).any(|pattern| auth_pattern_matches(pattern, normalized))
+    items
+        .iter()
+        .filter_map(Value::as_str)
+        .any(|pattern| auth_pattern_matches(pattern, normalized))
 }
 
 fn policy_project_matches(scopes: Option<&Value>, path: Option<&str>, name: Option<&str>) -> bool {
@@ -274,10 +271,17 @@ fn policy_project_matches(scopes: Option<&Value>, path: Option<&str>, name: Opti
     if items.is_empty() {
         return true;
     }
-    let normalized_path = path.map(str::trim).filter(|value| !value.is_empty()).unwrap_or("--");
-    let normalized_name = name.map(str::trim).filter(|value| !value.is_empty()).unwrap_or("--");
+    let normalized_path = path
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("--");
+    let normalized_name = name
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("--");
     items.iter().filter_map(Value::as_str).any(|pattern| {
-        auth_pattern_matches(pattern, normalized_path) || auth_pattern_matches(pattern, normalized_name)
+        auth_pattern_matches(pattern, normalized_path)
+            || auth_pattern_matches(pattern, normalized_name)
     })
 }
 
@@ -313,7 +317,10 @@ fn filter_dxos_registry_for_policy(registry: &Value, policy: &Value) -> Value {
         .unwrap_or_default()
         .into_iter()
         .filter(|company| {
-            policy_scope_matches(policy.get("company_scopes"), company.get("name").and_then(Value::as_str))
+            policy_scope_matches(
+                policy.get("company_scopes"),
+                company.get("name").and_then(Value::as_str),
+            )
         })
         .collect::<Vec<_>>();
     let programs = registry
@@ -323,8 +330,13 @@ fn filter_dxos_registry_for_policy(registry: &Value, policy: &Value) -> Value {
         .unwrap_or_default()
         .into_iter()
         .filter(|program| {
-            policy_scope_matches(policy.get("company_scopes"), program.get("company").and_then(Value::as_str))
-                && policy_scope_matches(policy.get("program_scopes"), program.get("name").and_then(Value::as_str))
+            policy_scope_matches(
+                policy.get("company_scopes"),
+                program.get("company").and_then(Value::as_str),
+            ) && policy_scope_matches(
+                policy.get("program_scopes"),
+                program.get("name").and_then(Value::as_str),
+            )
         })
         .collect::<Vec<_>>();
     let workspaces = registry
@@ -334,9 +346,16 @@ fn filter_dxos_registry_for_policy(registry: &Value, policy: &Value) -> Value {
         .unwrap_or_default()
         .into_iter()
         .filter(|workspace| {
-            policy_scope_matches(policy.get("company_scopes"), workspace.get("company").and_then(Value::as_str))
-                && policy_scope_matches(policy.get("program_scopes"), workspace.get("program").and_then(Value::as_str))
-                && policy_scope_matches(policy.get("workspace_scopes"), workspace.get("name").and_then(Value::as_str))
+            policy_scope_matches(
+                policy.get("company_scopes"),
+                workspace.get("company").and_then(Value::as_str),
+            ) && policy_scope_matches(
+                policy.get("program_scopes"),
+                workspace.get("program").and_then(Value::as_str),
+            ) && policy_scope_matches(
+                policy.get("workspace_scopes"),
+                workspace.get("name").and_then(Value::as_str),
+            )
         })
         .collect::<Vec<_>>();
 
