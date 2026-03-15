@@ -6947,6 +6947,41 @@ mod tests {
     }
 
     #[test]
+    fn operator_policy_can_authorize_portfolio_scope_reads() {
+        let profiles = vec![ControlOperatorProfile {
+            id: "observer-1".to_string(),
+            role: "observer".to_string(),
+            project_scopes: vec!["*".to_string()],
+            company_scopes: vec!["DX Ventures".to_string()],
+            program_scopes: vec!["Agentic Delivery".to_string()],
+            workspace_scopes: vec!["*".to_string()],
+            allowed_actions: vec!["portfolio_read".to_string()],
+            note: None,
+        }];
+        let decision = authorize_operator_scope_read_with_profiles(
+            &profiles,
+            "observer-1",
+            "portfolio_read",
+            Some("DX Ventures"),
+            Some("Agentic Delivery"),
+            None,
+        )
+        .unwrap();
+        assert_eq!(decision["role"], "observer");
+
+        let denied = authorize_operator_scope_read_with_profiles(
+            &profiles,
+            "observer-1",
+            "portfolio_read",
+            Some("Another Co"),
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert!(denied.contains("cannot read company scope"));
+    }
+
+    #[test]
     fn workflow_run_start_and_step_updates_roundtrip() {
         let tmp = tempdir().unwrap();
         let project_path = tmp.path().join("demo");
