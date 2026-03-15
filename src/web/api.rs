@@ -205,6 +205,155 @@ fn require_control_access(
     Ok(actor)
 }
 
+fn require_portfolio_read_access(
+    app: &AppState,
+    headers: &HeaderMap,
+    company: Option<&str>,
+    program: Option<&str>,
+    workspace: Option<&str>,
+    action_kind: &str,
+    target: &str,
+) -> Result<Value, (StatusCode, Json<Value>)> {
+    if let Err(error) = require_control_token(headers) {
+        return Err(error);
+    }
+    let actor = control_actor(headers);
+    crate::dxos::authorize_operator_scope_read(
+        &actor,
+        action_kind,
+        company,
+        program,
+        workspace,
+    )
+    .map_err(|error| {
+        deny_control_action(
+            app,
+            "",
+            None,
+            &actor,
+            action_kind,
+            target,
+            StatusCode::FORBIDDEN,
+            &error,
+        )
+    })
+}
+
+fn auth_pattern_matches(pattern: &str, value: &str) -> bool {
+    let trimmed = pattern.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    if trimmed == "*" {
+        return true;
+    }
+    if let Some(prefix) = trimmed.strip_suffix('*') {
+        return value.starts_with(prefix);
+    }
+    trimmed == value
+}
+
+fn policy_scope_matches(scopes: Option<&Value>, candidate: Option<&str>) -> bool {
+    let Some(items) = scopes.and_then(Value::as_array) else {
+        return true;
+    };
+    if items.is_empty() {
+        return true;
+    }
+    let normalized = candidate
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("--");
+    items.iter().filter_map(Value::as_str).any(|pattern| auth_pattern_matches(pattern, normalized))
+}
+
+fn policy_project_matches(scopes: Option<&Value>, path: Option<&str>, name: Option<&str>) -> bool {
+    let Some(items) = scopes.and_then(Value::as_array) else {
+        return true;
+    };
+    if items.is_empty() {
+        return true;
+    }
+    let normalized_path = path.map(str::trim).filter(|value| !value.is_empty()).unwrap_or("--");
+    let normalized_name = name.map(str::trim).filter(|value| !value.is_empty()).unwrap_or("--");
+    items.iter().filter_map(Value::as_str).any(|pattern| {
+        auth_pattern_matches(pattern, normalized_path) || auth_pattern_matches(pattern, normalized_name)
+    })
+}
+
+fn filter_dxos_registry_for_policy(registry: &Value, policy: &Value) -> Value {
+    let projects = registry
+        .get("projects")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|project| {
+            policy_project_matches(
+                policy.get("project_scopes"),
+                project.get("path").and_then(Value::as_str),
+                project.get("name").and_then(Value::as_str),
+            ) && policy_scope_matches(
+                policy.get("company_scopes"),
+                project.get("company").and_then(Value::as_str),
+            ) && policy_scope_matches(
+                policy.get("program_scopes"),
+                project.get("program").and_then(Value::as_str),
+            ) && policy_scope_matches(
+                policy.get("workspace_scopes"),
+                project.get("workspace").and_then(Value::as_str),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let companies = registry
+        .get("companies")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|company| {
+            policy_scope_matches(policy.get("company_scopes"), company.get("name").and_then(Value::as_str))
+        })
+        .collect::<Vec<_>>();
+    let programs = registry
+        .get("programs")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|program| {
+            policy_scope_matches(policy.get("company_scopes"), program.get("company").and_then(Value::as_str))
+                && policy_scope_matches(policy.get("program_scopes"), program.get("name").and_then(Value::as_str))
+        })
+        .collect::<Vec<_>>();
+    let workspaces = registry
+        .get("workspaces")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|workspace| {
+            policy_scope_matches(policy.get("company_scopes"), workspace.get("company").and_then(Value::as_str))
+                && policy_scope_matches(policy.get("program_scopes"), workspace.get("program").and_then(Value::as_str))
+                && policy_scope_matches(policy.get("workspace_scopes"), workspace.get("name").and_then(Value::as_str))
+        })
+        .collect::<Vec<_>>();
+
+    json!({
+        "backend": registry.get("backend").cloned().unwrap_or_else(|| json!("sqlite_with_repo_mirror")),
+        "database_path": registry.get("database_path").cloned().unwrap_or(Value::Null),
+        "project_count": projects.len(),
+        "projects": projects,
+        "company_count": companies.len(),
+        "program_count": programs.len(),
+        "workspace_count": workspaces.len(),
+        "companies": companies,
+        "programs": programs,
+        "workspaces": workspaces,
+    })
+}
+
 fn record_control_action(
     app: &AppState,
     project_path: &str,
@@ -2422,9 +2571,7 @@ fn portfolio_scope_matches(project: &Value, query: &DxosPortfolioBriefQuery) -> 
     company_match && program_match && workspace_match
 }
 
-fn build_dxos_portfolio_brief_payload(query: &DxosPortfolioBriefQuery) -> Value {
-    let registry =
-        serde_json::from_str::<Value>(&crate::dxos::control_plane_registry()).unwrap_or(json!({}));
+fn build_dxos_portfolio_brief_payload(query: &DxosPortfolioBriefQuery, registry: &Value) -> Value {
     let projects = registry
         .get("projects")
         .and_then(Value::as_array)
