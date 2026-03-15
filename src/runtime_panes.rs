@@ -177,18 +177,14 @@ fn synthesize_pane_state(pane: u8, live: &LivePane) -> PaneState {
     let provider =
         tmux::infer_provider(&live.command, &live.window_name, live.jsonl_path.as_deref())
             .to_string();
-    let project_source = live
-        .jsonl_path
-        .as_deref()
-        .and_then(tmux::read_jsonl_cwd)
-        .unwrap_or_else(|| live.cwd.clone());
-    let project_path = project_root_from_cwd(&project_source);
+    let project_cwd = live_project_cwd(live);
+    let project_path = project_root_from_cwd(&project_cwd);
 
     PaneState {
         theme: crate::config::theme_name(pane).to_string(),
-        project: project_from_cwd(&project_source),
+        project: project_from_cwd(&project_cwd),
         project_path: if project_path.is_empty() {
-            project_source.clone()
+            project_cwd.clone()
         } else {
             project_path.clone()
         },
@@ -203,7 +199,7 @@ fn synthesize_pane_state(pane: u8, live: &LivePane) -> PaneState {
         status: "active".to_string(),
         started_at: None,
         acu_spent: 0.0,
-        workspace_path: Some(live.cwd.clone()),
+        workspace_path: Some(project_cwd),
         branch_name: None,
         base_branch: None,
         machine_ip: None,
@@ -217,13 +213,9 @@ fn enrich_pane_state(pane_state: &mut PaneState, pane: u8, live: &LivePane) {
     let provider =
         tmux::infer_provider(&live.command, &live.window_name, live.jsonl_path.as_deref())
             .to_string();
-    let project_source = live
-        .jsonl_path
-        .as_deref()
-        .and_then(tmux::read_jsonl_cwd)
-        .unwrap_or_else(|| live.cwd.clone());
-    let project = project_from_cwd(&project_source);
-    let project_path = project_root_from_cwd(&project_source);
+    let project_cwd = live_project_cwd(live);
+    let project = project_from_cwd(&project_cwd);
+    let project_path = project_root_from_cwd(&project_cwd);
 
     pane_state.theme = crate::config::theme_name(pane).to_string();
     if project != "--" {
@@ -232,7 +224,7 @@ fn enrich_pane_state(pane_state: &mut PaneState, pane: u8, live: &LivePane) {
         pane_state.project = "--".to_string();
     }
     pane_state.project_path = if project_path.is_empty() {
-        project_source.clone()
+        project_cwd.clone()
     } else {
         project_path
     };
@@ -254,8 +246,19 @@ fn enrich_pane_state(pane_state: &mut PaneState, pane: u8, live: &LivePane) {
         pane_state.task = format!("{} in {}", tmux::provider_label(&provider), live.target);
     }
     pane_state.status = "active".to_string();
-    pane_state.workspace_path = Some(live.cwd.clone());
+    pane_state.workspace_path = Some(project_cwd);
     pane_state.tmux_target = Some(live.target.clone());
+}
+
+fn live_project_cwd(live: &LivePane) -> String {
+    if !live.cwd.trim().is_empty() {
+        live.cwd.clone()
+    } else {
+        live.jsonl_path
+            .as_deref()
+            .and_then(tmux::read_jsonl_cwd)
+            .unwrap_or_default()
+    }
 }
 
 fn next_unused_pane(used_panes: &BTreeSet<u8>) -> u8 {
