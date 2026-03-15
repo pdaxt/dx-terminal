@@ -5,7 +5,7 @@ pub mod overlays;
 pub mod widgets;
 
 use std::collections::VecDeque;
-use std::io;
+use std::io::{self, IsTerminal};
 use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
@@ -178,6 +178,8 @@ pub struct TuiResult {
 // ========== Entry Point ==========
 
 pub fn run_tui(app: Arc<App>) -> anyhow::Result<()> {
+    ensure_interactive_terminal()?;
+
     // Create a small tokio runtime for async tool calls
     // (TUI thread has no parent runtime — main.rs spawns it on bare OS thread)
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -619,6 +621,7 @@ fn run_loop(
 ) -> anyhow::Result<()> {
     let mut selected: u8 = 1;
     let mut view_mode = ViewMode::Normal;
+    let mut pane_focus = false;
     let mut mode = TuiMode::Navigate;
     let mut feature_cursor: usize = 0;
     let tick_rate = Duration::from_millis(TICK_MS);
@@ -654,13 +657,15 @@ fn run_loop(
             }
         }
 
-        let mut data = dashboard::collect_data(app, selected, view_mode, feature_cursor);
+        let mut data =
+            dashboard::collect_data(app, selected, view_mode, feature_cursor, pane_focus);
         if let Some(first_pane) = data.panes.first().map(|pane| pane.pane) {
             if !data.panes.iter().any(|pane| pane.pane == selected)
                 && selected > crate::config::pane_count()
             {
                 selected = first_pane;
-                data = dashboard::collect_data(app, selected, view_mode, feature_cursor);
+                data =
+                    dashboard::collect_data(app, selected, view_mode, feature_cursor, pane_focus);
             }
         }
         data.action_log = action_log.iter().cloned().collect();
@@ -747,6 +752,7 @@ fn run_loop(
                         key,
                         &mut mode,
                         &mut view_mode,
+                        &mut pane_focus,
                         &mut selected,
                         &data,
                         cmd_tx,
@@ -784,6 +790,7 @@ fn handle_navigate(
     key: crossterm::event::KeyEvent,
     mode: &mut TuiMode,
     view_mode: &mut ViewMode,
+    pane_focus: &mut bool,
     selected: &mut u8,
     data: &dashboard::DashboardData,
     cmd_tx: &mpsc::Sender<TuiCommand>,
@@ -791,6 +798,9 @@ fn handle_navigate(
     match key.code {
         KeyCode::Char('q') => return Some(true),
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Some(true),
+        KeyCode::Esc if *pane_focus => {
+            *pane_focus = false;
+        }
 
         // Command mode
         KeyCode::Char(':') => {
@@ -895,6 +905,7 @@ fn handle_navigate(
 
         // View toggles
         KeyCode::Char('f') => {
+            *pane_focus = false;
             *view_mode = if *view_mode == ViewMode::Features {
                 ViewMode::Normal
             } else {
@@ -902,6 +913,7 @@ fn handle_navigate(
             };
         }
         KeyCode::Char('b') => {
+            *pane_focus = false;
             *view_mode = if *view_mode == ViewMode::Board {
                 ViewMode::Normal
             } else {
@@ -909,6 +921,7 @@ fn handle_navigate(
             };
         }
         KeyCode::Char('c') => {
+            *pane_focus = false;
             *view_mode = if *view_mode == ViewMode::Coord {
                 ViewMode::Normal
             } else {
@@ -916,6 +929,7 @@ fn handle_navigate(
             };
         }
         KeyCode::Char('p') => {
+            *pane_focus = false;
             *view_mode = if *view_mode == ViewMode::Projects {
                 ViewMode::Normal
             } else {
@@ -923,6 +937,7 @@ fn handle_navigate(
             };
         }
         KeyCode::Char('i') => {
+            *pane_focus = false;
             *view_mode = if *view_mode == ViewMode::Infra {
                 ViewMode::Normal
             } else {
@@ -930,6 +945,7 @@ fn handle_navigate(
             };
         }
         KeyCode::Char('g') => {
+            *pane_focus = false;
             *view_mode = if *view_mode == ViewMode::Intel {
                 ViewMode::Normal
             } else {
@@ -937,6 +953,7 @@ fn handle_navigate(
             };
         }
         KeyCode::Char('h') => {
+            *pane_focus = false;
             *view_mode = if *view_mode == ViewMode::Audit {
                 ViewMode::Normal
             } else {
@@ -944,6 +961,7 @@ fn handle_navigate(
             };
         }
         KeyCode::Char('l') => {
+            *pane_focus = false;
             *view_mode = if *view_mode == ViewMode::Log {
                 ViewMode::Normal
             } else {
@@ -951,6 +969,7 @@ fn handle_navigate(
             };
         }
         KeyCode::Char('y') => {
+            *pane_focus = false;
             *view_mode = if *view_mode == ViewMode::Pipeline {
                 ViewMode::Normal
             } else {
@@ -958,11 +977,16 @@ fn handle_navigate(
             };
         }
         KeyCode::Char('0') => {
+            *pane_focus = false;
             *view_mode = if *view_mode == ViewMode::Dashboard {
                 ViewMode::Normal
             } else {
                 ViewMode::Dashboard
             };
+        }
+
+        KeyCode::Enter if *view_mode == ViewMode::Normal => {
+            *pane_focus = data.panes.iter().any(|pane| pane.pane == *selected) && !*pane_focus;
         }
 
         // Screen management
@@ -1038,6 +1062,16 @@ fn handle_navigate(
         _ => {}
     }
     Some(false)
+}
+
+fn ensure_interactive_terminal() -> anyhow::Result<()> {
+    if io::stdin().is_terminal() && io::stdout().is_terminal() {
+        return Ok(());
+    }
+
+    Err(anyhow::anyhow!(
+        "dx tui requires an interactive terminal. No TTY is available here, so raw mode cannot be enabled. Run `dx tui` from a real terminal or tmux pane."
+    ))
 }
 
 fn handle_command(

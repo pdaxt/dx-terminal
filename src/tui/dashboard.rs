@@ -19,6 +19,10 @@ use crate::runtime_panes;
 use crate::scanner;
 use crate::tracker;
 
+const GRID_CAPTURE_LINES: u32 = 160;
+const FOCUSED_CAPTURE_LINES: u32 = 500;
+const GRID_PREVIEW_LINES: usize = 14;
+
 /// Snapshot of pane data for rendering (no locks held during draw)
 pub struct PaneSnapshot {
     pub pane: u8,
@@ -178,6 +182,7 @@ pub struct PipelineStageSnapshot {
 pub struct DashboardData {
     pub panes: Vec<PaneSnapshot>,
     pub selected: u8,
+    pub pane_focus: bool,
     pub acu_used: f64,
     pub acu_total: f64,
     pub reviews_used: usize,
@@ -219,6 +224,7 @@ pub fn collect_data(
     selected: u8,
     view_mode: ViewMode,
     feature_cursor: usize,
+    pane_focus: bool,
 ) -> DashboardData {
     let state = app.state.blocking_read().clone();
     let live_panes = crate::tmux::discover_live_panes();
@@ -246,6 +252,7 @@ pub fn collect_data(
 
         for resolved in resolved_panes {
             let pane = resolved.pane;
+            let focused_selected_pane = pane_focus && pane == selected;
             let pane_state = resolved.pane_state.clone();
             let tmux_target = pane_state.tmux_target.clone();
             let provider = resolved
@@ -317,9 +324,14 @@ pub fn collect_data(
 
             if let Some(ref target) = tmux_target {
                 if resolved.live.is_some() || crate::tmux::pane_exists(target) {
+                    let capture_lines = if focused_selected_pane {
+                        FOCUSED_CAPTURE_LINES
+                    } else {
+                        GRID_CAPTURE_LINES
+                    };
                     snapshot.pty_running = true;
                     pty_count += 1;
-                    snapshot.output = crate::tmux::capture_output_extended(target, 120);
+                    snapshot.output = crate::tmux::capture_output_extended(target, capture_lines);
                     snapshot.line_count = snapshot.output.lines().count();
 
                     if snapshot.status == "active" {
@@ -334,16 +346,29 @@ pub fn collect_data(
                     }
                 }
             } else {
+                let capture_lines = if focused_selected_pane {
+                    FOCUSED_CAPTURE_LINES as usize
+                } else {
+                    GRID_CAPTURE_LINES as usize
+                };
                 snapshot.pty_running = pty.is_running(pane);
                 snapshot.line_count = pty.line_count(pane);
                 if snapshot.pty_running {
                     pty_count += 1;
                 }
                 if pty.has_agent(pane) {
-                    snapshot.output = pty
-                        .screen_text(pane)
-                        .filter(|screen| !screen.trim().is_empty())
-                        .unwrap_or_else(|| pty.last_output(pane, 120).unwrap_or_default());
+                    let history = pty.last_output(pane, capture_lines).unwrap_or_default();
+                    snapshot.output = if focused_selected_pane {
+                        if history.trim().is_empty() {
+                            pty.screen_text(pane).unwrap_or_default()
+                        } else {
+                            history
+                        }
+                    } else {
+                        pty.screen_text(pane)
+                            .filter(|screen| !screen.trim().is_empty())
+                            .unwrap_or(history)
+                    };
                 }
                 if snapshot.status == "active" && pty.has_agent(pane) {
                     let h = pty.check_health(pane, &markers);
@@ -538,6 +563,7 @@ pub fn collect_data(
     DashboardData {
         panes,
         selected,
+        pane_focus,
         acu_used: cap.acu_used,
         acu_total: cap.acu_total,
         reviews_used: cap.reviews_used,
@@ -1704,24 +1730,43 @@ pub fn render(f: &mut Frame, data: &DashboardData) {
             render_help_bar(f, chunks[6], data);
         }
         ViewMode::Normal => {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(3),            // Header
-                    Constraint::Length(alert_height), // Alerts (conditional)
-                    Constraint::Min(10),              // Live pane grid
-                    Constraint::Length(4),            // Selected pane status
-                    Constraint::Length(1),            // Help
-                ])
-                .split(f.area());
+            if data.pane_focus {
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(3),            // Header
+                        Constraint::Length(alert_height), // Alerts (conditional)
+                        Constraint::Min(12),              // Focused terminal
+                        Constraint::Length(1),            // Help
+                    ])
+                    .split(f.area());
 
-            render_header(f, chunks[0], data);
-            if alert_height > 0 {
-                render_alert_bar(f, chunks[1], data);
+                render_header(f, chunks[0], data);
+                if alert_height > 0 {
+                    render_alert_bar(f, chunks[1], data);
+                }
+                render_pty_output(f, chunks[2], data);
+                render_help_bar(f, chunks[3], data);
+            } else {
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(3),            // Header
+                        Constraint::Length(alert_height), // Alerts (conditional)
+                        Constraint::Min(10),              // Live pane grid
+                        Constraint::Length(4),            // Selected pane status
+                        Constraint::Length(1),            // Help
+                    ])
+                    .split(f.area());
+
+                render_header(f, chunks[0], data);
+                if alert_height > 0 {
+                    render_alert_bar(f, chunks[1], data);
+                }
+                render_multiplexer_grid(f, chunks[2], data);
+                render_selected_pane_status(f, chunks[3], data);
+                render_help_bar(f, chunks[4], data);
             }
-            render_multiplexer_grid(f, chunks[2], data);
-            render_selected_pane_status(f, chunks[3], data);
-            render_help_bar(f, chunks[4], data);
         }
     }
 }
@@ -2014,34 +2059,56 @@ fn render_pane_table(f: &mut Frame, area: Rect, data: &DashboardData) {
 }
 
 fn render_pty_output(f: &mut Frame, area: Rect, data: &DashboardData) {
-    let idx = (data.selected - 1) as usize;
-    if idx >= data.panes.len() {
+    let Some(sel) = data
+        .panes
+        .iter()
+        .find(|pane| pane.pane == data.selected)
+        .or_else(|| data.panes.first())
+    else {
+        let block = Block::default()
+            .title(" Pane Output ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray));
+        let paragraph = Paragraph::new(Line::from(Span::styled(
+            "  No live pane selected",
+            Style::default().fg(Color::DarkGray),
+        )))
+        .block(block);
+        f.render_widget(paragraph, area);
         return;
-    }
-    let sel = &data.panes[idx];
+    };
     let branch_display = sel.branch.as_deref().unwrap_or("");
+    let project_name = if sel.project.is_empty() || sel.project == "--" {
+        "idle"
+    } else {
+        sel.project.as_str()
+    };
+    let agent_type = if sel.role.trim().is_empty() {
+        crate::tmux::provider_short(&sel.provider).to_ascii_uppercase()
+    } else {
+        sel.role.to_ascii_uppercase()
+    };
+    let state = if sel.health.is_empty() {
+        sel.status.clone()
+    } else {
+        format!("{} {}", sel.status, sel.health)
+    };
     let title = if !branch_display.is_empty() {
         format!(
-            " P{} {} — {} [{}] ",
+            " P{} {} {} {} [{}] ",
             sel.pane,
-            sel.theme,
-            if sel.project.is_empty() || sel.project == "--" {
-                "idle"
-            } else {
-                &sel.project
-            },
+            widgets::truncate_pub(project_name, 20),
+            widgets::truncate_pub(&agent_type, 10),
+            widgets::truncate_pub(&state, 14),
             branch_display
         )
     } else {
         format!(
-            " P{} {} — {} ",
+            " P{} {} {} {} ",
             sel.pane,
-            sel.theme,
-            if sel.project.is_empty() || sel.project == "--" {
-                "idle"
-            } else {
-                &sel.project
-            }
+            widgets::truncate_pub(project_name, 22),
+            widgets::truncate_pub(&agent_type, 10),
+            widgets::truncate_pub(&state, 14)
         )
     };
 
@@ -2154,11 +2221,21 @@ fn render_mux_pane(f: &mut Frame, area: Rect, pane: &PaneSnapshot, selected: boo
     } else {
         format!("{} {}", pane.status, pane.health)
     };
+    let project_name = if pane.project.is_empty() || pane.project == "--" {
+        "idle"
+    } else {
+        pane.project.as_str()
+    };
+    let agent_type = if pane.role.trim().is_empty() {
+        provider.to_ascii_uppercase()
+    } else {
+        pane.role.to_ascii_uppercase()
+    };
     let title = format!(
         " P{} {} {} {} ",
         pane.pane,
-        provider.to_uppercase(),
-        widgets::truncate_pub(&pane.project, 14),
+        widgets::truncate_pub(project_name, 14),
+        widgets::truncate_pub(&agent_type, 10),
         widgets::truncate_pub(&state, 12)
     );
 
@@ -2180,6 +2257,13 @@ fn render_mux_pane(f: &mut Frame, area: Rect, pane: &PaneSnapshot, selected: boo
     let lines_capacity = inner.height as usize;
     let mut lines = Vec::new();
     lines.push(Line::from(vec![
+        Span::styled(
+            widgets::truncate_pub(&provider.to_ascii_uppercase(), 8),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("  ", Style::default().fg(Color::DarkGray)),
         Span::styled(target, Style::default().fg(Color::DarkGray)),
         if !pane.runtime.is_empty() {
             Span::styled(
@@ -2201,7 +2285,7 @@ fn render_mux_pane(f: &mut Frame, area: Rect, pane: &PaneSnapshot, selected: boo
         pane.output
             .lines()
             .rev()
-            .take(body_capacity.max(1))
+            .take(body_capacity.min(GRID_PREVIEW_LINES).max(1))
             .collect::<Vec<_>>()
             .into_iter()
             .rev()
@@ -2233,6 +2317,16 @@ fn render_selected_pane_status(f: &mut Frame, area: Rect, data: &DashboardData) 
         .title(" Selected ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(widgets::theme_color(&selected.theme_fg)));
+    let project_name = if selected.project.is_empty() || selected.project == "--" {
+        "idle"
+    } else {
+        selected.project.as_str()
+    };
+    let state = if selected.health.is_empty() {
+        selected.status.clone()
+    } else {
+        format!("{} {}", selected.status, selected.health)
+    };
     let details = vec![
         Line::from(vec![
             Span::styled(
@@ -2243,11 +2337,25 @@ fn render_selected_pane_status(f: &mut Frame, area: Rect, data: &DashboardData) 
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                format!(" {} ", widgets::truncate_pub(&selected.project, 22)),
+                format!(" {} ", widgets::truncate_pub(project_name, 22)),
                 Style::default().fg(Color::White),
             ),
             Span::styled(
-                format!("{} ", selected.status),
+                format!(
+                    "{} ",
+                    widgets::truncate_pub(
+                        if selected.role.trim().is_empty() {
+                            &selected.provider
+                        } else {
+                            &selected.role
+                        },
+                        10
+                    )
+                ),
+                Style::default().fg(Color::Cyan),
+            ),
+            Span::styled(
+                format!("{} ", state),
                 Style::default().fg(widgets::status_color(&selected.status)),
             ),
             if !selected.runtime.is_empty() {
@@ -3615,6 +3723,7 @@ fn render_help_bar(f: &mut Frame, area: Rect, data: &DashboardData) {
             Span::styled("uit", Style::default().fg(Color::DarkGray)),
         ])
     } else {
+        let focus_label = if data.pane_focus { "grid " } else { "focus " };
         Line::from(vec![
             Span::styled(
                 " [s]",
@@ -3771,6 +3880,13 @@ fn render_help_bar(f: &mut Frame, area: Rect, data: &DashboardData) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(" sel ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                "[Enter]",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(focus_label, Style::default().fg(Color::DarkGray)),
             Span::styled(
                 "[Tab]",
                 Style::default()
