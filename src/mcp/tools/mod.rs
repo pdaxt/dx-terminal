@@ -44,6 +44,7 @@ pub mod queue_tools;
 pub mod routing;
 pub mod scanner_tools;
 pub mod screen_tools;
+pub mod session_control_tools;
 pub mod tracker_tools;
 pub mod ui_audit_tools;
 pub mod vision_tools;

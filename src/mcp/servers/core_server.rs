@@ -387,6 +387,55 @@ impl DxCoreService {
         )]))
     }
 
+    // === SESSION CONTROL ===
+
+    #[tool(
+        description = "Start supervising a tmux pane. Watches agent output, auto-approves safe commands, nudges idle agents, and sends recovery instructions on errors."
+    )]
+    async fn session_control_start(
+        &self,
+        Parameters(req): Parameters<SessionControlStartRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::session_control_tools::session_control_start(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Stop supervising a tmux pane.")]
+    async fn session_control_stop(
+        &self,
+        Parameters(req): Parameters<SessionControlStopRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::session_control_tools::session_control_stop(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Get the current supervision state for one tmux pane.")]
+    async fn session_control_status(
+        &self,
+        Parameters(req): Parameters<SessionControlStatusRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::session_control_tools::session_control_status(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "List all supervised tmux panes and their control-loop state.")]
+    async fn session_control_list(
+        &self,
+        Parameters(_req): Parameters<SessionControlListRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::session_control_tools::session_control_list(&self.app).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(description = "Send a manual instruction into a supervised tmux pane.")]
+    async fn session_control_send(
+        &self,
+        Parameters(req): Parameters<SessionControlSendRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::session_control_tools::session_control_send(&self.app, req).await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
     // === SCREEN MANAGEMENT ===
 
     #[tool(

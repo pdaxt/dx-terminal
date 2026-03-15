@@ -1,4 +1,5 @@
 pub mod agent_assets;
+pub mod agents;
 pub mod analytics;
 pub mod app;
 pub mod audit;
@@ -31,6 +32,7 @@ pub mod recovery_planning;
 pub mod runtime_broker;
 pub mod scanner;
 pub mod screen;
+pub mod session_controller;
 pub mod session_stream;
 pub mod state;
 pub mod sync;

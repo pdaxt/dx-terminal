@@ -1,6 +1,7 @@
 use crate::config;
 use crate::pty::PtyManager;
 use crate::screen::ScreenManager;
+use crate::session_controller::SessionController;
 use crate::state::StateManager;
 use crate::sync::SyncManager;
 use dx_gateway::MCPRegistry;
@@ -11,6 +12,7 @@ pub struct App {
     pub pty: Arc<Mutex<PtyManager>>,
     pub gateway: Arc<tokio::sync::Mutex<MCPRegistry>>,
     pub screens: Arc<RwLock<ScreenManager>>,
+    pub session_controller: Arc<SessionController>,
     pub sync_manager: Arc<RwLock<Option<Arc<SyncManager>>>>,
 }
 
@@ -27,6 +29,7 @@ impl App {
             pty: Arc::new(Mutex::new(PtyManager::new())),
             gateway: Arc::new(tokio::sync::Mutex::new(gateway)),
             screens: Arc::new(RwLock::new(screen_mgr)),
+            session_controller: Arc::new(SessionController::new()),
             sync_manager: Arc::new(RwLock::new(None)),
         }
     }

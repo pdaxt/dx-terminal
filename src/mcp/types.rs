@@ -2583,6 +2583,41 @@ pub struct DxosSessionRaiseBlockerRequest {
     pub resolution_hint: Option<String>,
 }
 
+// ── Session Control ──
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SessionControlStartRequest {
+    #[schemars(description = "tmux pane target to supervise, e.g. 'dx-build:2.1'")]
+    pub pane: String,
+    #[schemars(description = "Mission or objective the supervised agent should complete")]
+    pub mission: String,
+    #[schemars(description = "Agent type: claude, codex, gemini, opencode, unknown")]
+    pub agent_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SessionControlStopRequest {
+    #[schemars(description = "tmux pane target to stop supervising")]
+    pub pane: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SessionControlStatusRequest {
+    #[schemars(description = "tmux pane target to inspect")]
+    pub pane: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SessionControlListRequest {}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SessionControlSendRequest {
+    #[schemars(description = "tmux pane target to send an instruction to")]
+    pub pane: String,
+    #[schemars(description = "Manual instruction to type into the supervised pane")]
+    pub instruction: String,
+}
+
 // ── Screen Management ──
 
 #[derive(Debug, Deserialize, JsonSchema)]
