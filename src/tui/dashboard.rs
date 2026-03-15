@@ -15,6 +15,7 @@ use crate::config;
 use crate::multi_agent;
 use crate::quality;
 use crate::queue;
+use crate::runtime_panes;
 use crate::scanner;
 use crate::tracker;
 
@@ -25,6 +26,7 @@ pub struct PaneSnapshot {
     pub theme_fg: String,
     pub project: String,
     pub role: String,
+    pub provider: String,
     pub task: String,
     pub status: String,
     pub branch: Option<String>,
@@ -32,6 +34,9 @@ pub struct PaneSnapshot {
     pub line_count: usize,
     pub health: String,  // "error", "done", "stuck", "ok", ""
     pub runtime: String, // "3m", "1h22m", "" for non-active
+    pub tmux_target: Option<String>,
+    pub output: String,
+    pub state_backed: bool,
 }
 
 /// Snapshot of a feature and its micro-features
@@ -215,41 +220,9 @@ pub fn collect_data(
     view_mode: ViewMode,
     feature_cursor: usize,
 ) -> DashboardData {
-    let state = app.state.blocking_read();
-
-    let max_panes = config::pane_count();
-    let mut panes = Vec::with_capacity(max_panes as usize);
-    let mut active_count = 0;
-
-    for i in 1..=max_panes {
-        let pd = state.panes.get(&i.to_string()).cloned().unwrap_or_default();
-        if pd.status == "active" {
-            active_count += 1;
-        }
-        // Compute runtime from started_at
-        let runtime = if pd.status == "active" {
-            pd.started_at
-                .as_deref()
-                .map(|s| format_runtime(s))
-                .unwrap_or_default()
-        } else {
-            String::new()
-        };
-        panes.push(PaneSnapshot {
-            pane: i,
-            theme: config::theme_name(i).to_string(),
-            theme_fg: config::theme_fg(i).to_string(),
-            project: pd.project,
-            role: config::role_short(&pd.role).to_string(),
-            task: pd.task,
-            status: pd.status,
-            branch: pd.branch_name,
-            pty_running: false,
-            line_count: 0,
-            health: String::new(),
-            runtime,
-        });
-    }
+    let state = app.state.blocking_read().clone();
+    let live_panes = crate::tmux::discover_live_panes();
+    let resolved_panes = runtime_panes::resolve_runtime_panes(&state, &live_panes, None);
 
     let log_lines: Vec<String> = state
         .activity_log
@@ -263,90 +236,155 @@ pub fn collect_data(
 
     let markers = state.config.completion_markers.clone();
 
-    // Collect tmux targets before dropping state lock
-    let tmux_targets: Vec<(u8, Option<String>)> = panes
-        .iter()
-        .map(|ps| {
-            let pd = state.panes.get(&ps.pane.to_string());
-            (ps.pane, pd.and_then(|p| p.tmux_target.clone()))
-        })
-        .collect();
-    drop(state);
-
     // Tmux-first health checks (PTY fallback)
+    let mut panes = Vec::new();
     let mut alerts = Vec::new();
     let mut pty_count = 0;
+    let mut active_count = 0;
+    {
+        let pty = app.pty_lock();
 
-    for ps in panes.iter_mut() {
-        let tmux_target = tmux_targets
-            .iter()
-            .find(|(p, _)| *p == ps.pane)
-            .and_then(|(_, t)| t.clone());
+        for resolved in resolved_panes {
+            let pane = resolved.pane;
+            let pane_state = resolved.pane_state.clone();
+            let tmux_target = pane_state.tmux_target.clone();
+            let provider = resolved
+                .live
+                .as_ref()
+                .map(|live| {
+                    crate::tmux::infer_provider(
+                        &live.command,
+                        &live.window_name,
+                        live.jsonl_path.as_deref(),
+                    )
+                    .to_string()
+                })
+                .or_else(|| pane_state.provider.clone())
+                .unwrap_or_else(|| "unknown".to_string());
+            let role = if !pane_state.role.trim().is_empty() {
+                config::role_short(&pane_state.role).to_string()
+            } else {
+                crate::tmux::provider_short(&provider).to_string()
+            };
+            let project = if !pane_state.project.trim().is_empty() && pane_state.project != "--" {
+                pane_state.project.clone()
+            } else if let Some(ref live) = resolved.live {
+                runtime_panes::project_from_cwd(
+                    live.jsonl_path
+                        .as_deref()
+                        .and_then(crate::tmux::read_jsonl_cwd)
+                        .as_deref()
+                        .unwrap_or(&live.cwd),
+                )
+            } else {
+                "--".to_string()
+            };
+            let task = if !pane_state.task.trim().is_empty() {
+                pane_state.task.clone()
+            } else if let Some(ref target) = tmux_target {
+                format!("{} in {}", crate::tmux::provider_label(&provider), target)
+            } else {
+                "--".to_string()
+            };
+            let runtime = if pane_state.status == "active" {
+                pane_state
+                    .started_at
+                    .as_deref()
+                    .map(format_runtime)
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
 
-        if let Some(ref target) = tmux_target {
-            // Tmux-based health check
-            if crate::tmux::pane_exists(target) {
-                ps.pty_running = true;
-                pty_count += 1;
-                let output = crate::tmux::capture_output(target);
-                ps.line_count = output.lines().count();
+            let mut snapshot = PaneSnapshot {
+                pane,
+                theme: config::theme_name(pane).to_string(),
+                theme_fg: config::theme_fg(pane).to_string(),
+                project,
+                role,
+                provider,
+                task,
+                status: pane_state.status.clone(),
+                branch: pane_state.branch_name.clone(),
+                pty_running: false,
+                line_count: 0,
+                health: String::new(),
+                runtime,
+                tmux_target: tmux_target.clone(),
+                output: String::new(),
+                state_backed: resolved.state_backed,
+            };
 
-                if ps.status == "active" {
-                    if crate::tmux::check_done(target) {
-                        ps.health = "done".to_string();
-                    } else if let Some(err) = crate::tmux::check_error(target) {
-                        ps.health = "error".to_string();
-                        alerts.push((ps.pane, err));
+            if let Some(ref target) = tmux_target {
+                if resolved.live.is_some() || crate::tmux::pane_exists(target) {
+                    snapshot.pty_running = true;
+                    pty_count += 1;
+                    snapshot.output = crate::tmux::capture_output_extended(target, 120);
+                    snapshot.line_count = snapshot.output.lines().count();
+
+                    if snapshot.status == "active" {
+                        if tmux_done_from_output(&snapshot.output) {
+                            snapshot.health = "done".to_string();
+                        } else if let Some(err) = tmux_error_from_output(&snapshot.output) {
+                            snapshot.health = "error".to_string();
+                            alerts.push((snapshot.pane, err));
+                        } else {
+                            snapshot.health = "ok".to_string();
+                        }
+                    }
+                }
+            } else {
+                snapshot.pty_running = pty.is_running(pane);
+                snapshot.line_count = pty.line_count(pane);
+                if snapshot.pty_running {
+                    pty_count += 1;
+                }
+                if pty.has_agent(pane) {
+                    snapshot.output = pty
+                        .screen_text(pane)
+                        .filter(|screen| !screen.trim().is_empty())
+                        .unwrap_or_else(|| pty.last_output(pane, 120).unwrap_or_default());
+                }
+                if snapshot.status == "active" && pty.has_agent(pane) {
+                    let h = pty.check_health(pane, &markers);
+                    if let Some(ref err) = h.error {
+                        snapshot.health = "error".to_string();
+                        alerts.push((snapshot.pane, err.clone()));
+                    } else if h.done {
+                        snapshot.health = "done".to_string();
                     } else {
-                        ps.health = "ok".to_string();
+                        snapshot.health = "ok".to_string();
                     }
                 }
             }
-        } else {
-            // PTY fallback for non-tmux panes
-            let pty = app.pty_lock();
-            ps.pty_running = pty.is_running(ps.pane);
-            ps.line_count = pty.line_count(ps.pane);
-            if ps.pty_running {
-                pty_count += 1;
-            }
-            if ps.status == "active" && pty.has_agent(ps.pane) {
-                let h = pty.check_health(ps.pane, &markers);
-                if let Some(ref err) = h.error {
-                    ps.health = "error".to_string();
-                    alerts.push((ps.pane, err.clone()));
-                } else if h.done {
-                    ps.health = "done".to_string();
-                } else {
-                    ps.health = "ok".to_string();
+
+            if snapshot.status == "active" || snapshot.pty_running || has_pane_identity(&snapshot) {
+                if snapshot.status == "active" {
+                    active_count += 1;
                 }
+                panes.push(snapshot);
             }
         }
     }
 
-    // Get selected pane output (tmux-first)
-    let selected_tmux = tmux_targets
+    panes.sort_by_key(|pane| pane.pane);
+
+    let (selected_output, selected_screen) = panes
         .iter()
-        .find(|(p, _)| *p == selected)
-        .and_then(|(_, t)| t.clone());
-    let (selected_output, selected_screen) = if let Some(ref target) = selected_tmux {
-        let output = crate::tmux::capture_output(target);
-        let lines: Vec<&str> = output.lines().collect();
-        let tail: String = lines
-            .iter()
-            .rev()
-            .take(40)
-            .rev()
-            .copied()
-            .collect::<Vec<&str>>()
-            .join("\n");
-        (tail.clone(), output)
-    } else {
-        let pty = app.pty_lock();
-        let out = pty.last_output(selected, 40).unwrap_or_default();
-        let screen = pty.screen_text(selected).unwrap_or_default();
-        (out, screen)
-    };
+        .find(|pane| pane.pane == selected)
+        .map(|pane| {
+            let lines: Vec<&str> = pane.output.lines().collect();
+            let tail = lines
+                .iter()
+                .rev()
+                .take(40)
+                .rev()
+                .copied()
+                .collect::<Vec<&str>>()
+                .join("\n");
+            (tail, pane.output.clone())
+        })
+        .unwrap_or_else(|| (String::new(), String::new()));
 
     let cap = capacity::load_capacity();
 
@@ -1669,35 +1707,21 @@ pub fn render(f: &mut Frame, data: &DashboardData) {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3),                 // Header
-                    Constraint::Length(alert_height),      // Alerts (conditional)
-                    Constraint::Length(pane_table_height), // Pane table
-                    Constraint::Min(8),                    // PTY + Roles (split H)
-                    Constraint::Length(10),                // Queue + Activity (split H)
-                    Constraint::Length(1),                 // Help
+                    Constraint::Length(3),            // Header
+                    Constraint::Length(alert_height), // Alerts (conditional)
+                    Constraint::Min(10),              // Live pane grid
+                    Constraint::Length(4),            // Selected pane status
+                    Constraint::Length(1),            // Help
                 ])
                 .split(f.area());
-
-            let middle = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
-                .split(chunks[3]);
-
-            let bottom = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
-                .split(chunks[4]);
 
             render_header(f, chunks[0], data);
             if alert_height > 0 {
                 render_alert_bar(f, chunks[1], data);
             }
-            render_pane_table(f, chunks[2], data);
-            render_pty_output(f, middle[0], data);
-            render_feature_summary(f, middle[1], data);
-            render_queue(f, bottom[0], data);
-            render_activity_log(f, bottom[1], data);
-            render_help_bar(f, chunks[5], data);
+            render_multiplexer_grid(f, chunks[2], data);
+            render_selected_pane_status(f, chunks[3], data);
+            render_help_bar(f, chunks[4], data);
         }
     }
 }
@@ -2055,6 +2079,214 @@ fn render_pty_output(f: &mut Frame, area: Rect, data: &DashboardData) {
     f.render_widget(p, area);
 }
 
+fn render_multiplexer_grid(f: &mut Frame, area: Rect, data: &DashboardData) {
+    if data.panes.is_empty() {
+        let block = Block::default()
+            .title(" Agent Panes ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray));
+        let paragraph = Paragraph::new(vec![
+            Line::from(Span::styled(
+                "  No live tmux or PTY agent panes detected.",
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(Span::styled(
+                "  Spawn with [s] or let the TUI auto-discover running claude/codex/node panes.",
+                Style::default().fg(Color::DarkGray),
+            )),
+        ])
+        .block(block);
+        f.render_widget(paragraph, area);
+        return;
+    }
+
+    let pane_count = data.panes.len();
+    let width_limited_cols = usize::from((area.width / 32).max(1));
+    let desired_cols = match pane_count {
+        0 | 1 => 1,
+        2..=4 => 2,
+        5..=9 => 3,
+        _ => 4,
+    };
+    let cols = desired_cols.min(width_limited_cols).max(1);
+    let rows = pane_count.div_ceil(cols);
+
+    let row_constraints = vec![Constraint::Ratio(1, rows as u32); rows];
+    let row_areas = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(row_constraints)
+        .split(area);
+
+    for row_idx in 0..rows {
+        let start = row_idx * cols;
+        let end = (start + cols).min(pane_count);
+        let row_panes = &data.panes[start..end];
+        let col_constraints = vec![Constraint::Ratio(1, row_panes.len() as u32); row_panes.len()];
+        let col_areas = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(col_constraints)
+            .split(row_areas[row_idx]);
+
+        for (pane, pane_area) in row_panes.iter().zip(col_areas.iter()) {
+            render_mux_pane(f, *pane_area, pane, pane.pane == data.selected);
+        }
+    }
+}
+
+fn render_mux_pane(f: &mut Frame, area: Rect, pane: &PaneSnapshot, selected: bool) {
+    let border_color = if selected {
+        widgets::theme_color(&pane.theme_fg)
+    } else if pane.health == "error" {
+        Color::Red
+    } else if pane.status == "active" {
+        Color::Green
+    } else {
+        Color::DarkGray
+    };
+    let provider = crate::tmux::provider_short(&pane.provider);
+    let target = pane
+        .tmux_target
+        .as_deref()
+        .map(|target| widgets::truncate_pub(target, 18))
+        .unwrap_or_else(|| format!("pty:{}", pane.pane));
+    let state = if pane.health.is_empty() {
+        pane.status.clone()
+    } else {
+        format!("{} {}", pane.status, pane.health)
+    };
+    let title = format!(
+        " P{} {} {} {} ",
+        pane.pane,
+        provider.to_uppercase(),
+        widgets::truncate_pub(&pane.project, 14),
+        widgets::truncate_pub(&state, 12)
+    );
+
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color).add_modifier(if selected {
+            Modifier::BOLD
+        } else {
+            Modifier::empty()
+        }));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    if inner.height == 0 {
+        return;
+    }
+
+    let lines_capacity = inner.height as usize;
+    let mut lines = Vec::new();
+    lines.push(Line::from(vec![
+        Span::styled(target, Style::default().fg(Color::DarkGray)),
+        if !pane.runtime.is_empty() {
+            Span::styled(
+                format!("  {}", pane.runtime),
+                Style::default().fg(Color::Yellow),
+            )
+        } else {
+            Span::raw("")
+        },
+    ]));
+
+    let body_capacity = lines_capacity.saturating_sub(1);
+    let body_lines: Vec<Line> = if pane.output.trim().is_empty() {
+        vec![Line::from(Span::styled(
+            "waiting for terminal output",
+            Style::default().fg(Color::DarkGray),
+        ))]
+    } else {
+        pane.output
+            .lines()
+            .rev()
+            .take(body_capacity.max(1))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .map(|line| Line::from(Span::raw(line.to_string())))
+            .collect()
+    };
+    lines.extend(body_lines);
+
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    f.render_widget(paragraph, inner);
+}
+
+fn render_selected_pane_status(f: &mut Frame, area: Rect, data: &DashboardData) {
+    let Some(selected) = data.panes.iter().find(|pane| pane.pane == data.selected) else {
+        let block = Block::default()
+            .title(" Selected ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray));
+        let paragraph = Paragraph::new(Line::from(Span::styled(
+            " No pane selected",
+            Style::default().fg(Color::DarkGray),
+        )))
+        .block(block);
+        f.render_widget(paragraph, area);
+        return;
+    };
+
+    let block = Block::default()
+        .title(" Selected ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(widgets::theme_color(&selected.theme_fg)));
+    let details = vec![
+        Line::from(vec![
+            Span::styled(
+                format!(" P{} ", selected.pane),
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(widgets::theme_color(&selected.theme_fg))
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(" {} ", widgets::truncate_pub(&selected.project, 22)),
+                Style::default().fg(Color::White),
+            ),
+            Span::styled(
+                format!("{} ", selected.status),
+                Style::default().fg(widgets::status_color(&selected.status)),
+            ),
+            if !selected.runtime.is_empty() {
+                Span::styled(
+                    format!("{} ", selected.runtime),
+                    Style::default().fg(Color::Yellow),
+                )
+            } else {
+                Span::raw("")
+            },
+            Span::styled(
+                format!("lines:{} ", selected.line_count),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(
+                if selected.state_backed {
+                    "managed"
+                } else {
+                    "discovered"
+                },
+                Style::default().fg(Color::Cyan),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled(" target ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                selected
+                    .tmux_target
+                    .clone()
+                    .unwrap_or_else(|| format!("pty:{}", selected.pane)),
+                Style::default().fg(Color::White),
+            ),
+        ]),
+    ];
+    let paragraph = Paragraph::new(details).block(block);
+    f.render_widget(paragraph, area);
+}
+
+#[allow(dead_code)]
 fn render_feature_summary(f: &mut Frame, area: Rect, data: &DashboardData) {
     let available = area.height.saturating_sub(2) as usize;
 
@@ -2428,6 +2660,50 @@ fn progress_bar(done: usize, total: usize, width: usize) -> String {
     let filled = (done * width) / total;
     let empty = width - filled;
     format!("[{}{}]", "#".repeat(filled), ".".repeat(empty))
+}
+
+fn has_pane_identity(pane: &PaneSnapshot) -> bool {
+    pane.tmux_target.is_some()
+        || pane.project != "--"
+        || !pane.task.trim().is_empty()
+        || !pane.output.trim().is_empty()
+}
+
+fn tmux_done_from_output(output: &str) -> bool {
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    trimmed
+        .lines()
+        .last()
+        .map(|line| {
+            let line = line.trim();
+            line.ends_with('$')
+                || line.ends_with("$ ")
+                || line.ends_with('%')
+                || line.ends_with("% ")
+                || line.contains("Claude exited")
+        })
+        .unwrap_or(false)
+}
+
+fn tmux_error_from_output(output: &str) -> Option<String> {
+    let patterns = [
+        "Error:",
+        "FATAL:",
+        "panic:",
+        "Traceback",
+        "rate limit",
+        "hit your limit",
+        "SIGTERM",
+    ];
+
+    patterns
+        .iter()
+        .find(|pattern| output.contains(**pattern))
+        .map(|pattern| (*pattern).to_string())
 }
 
 fn render_coord_agents(f: &mut Frame, area: Rect, data: &DashboardData) {
@@ -3489,19 +3765,19 @@ fn render_help_bar(f: &mut Frame, area: Rect, data: &DashboardData) {
             ),
             Span::styled("rm ", Style::default().fg(Color::DarkGray)),
             Span::styled(
-                "[1-9]",
+                "[←↑↓→]",
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" ", Style::default().fg(Color::DarkGray)),
+            Span::styled(" sel ", Style::default().fg(Color::DarkGray)),
             Span::styled(
                 "[Tab]",
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" ", Style::default().fg(Color::DarkGray)),
+            Span::styled(" next ", Style::default().fg(Color::DarkGray)),
             Span::styled(
                 "[q]",
                 Style::default()

@@ -32,6 +32,7 @@ pub mod quality;
 pub mod queue;
 pub mod recovery_planning;
 pub mod runtime_broker;
+pub mod runtime_panes;
 pub mod scanner;
 pub mod screen;
 pub mod session_controller;

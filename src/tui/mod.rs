@@ -68,6 +68,7 @@ pub enum TuiMode {
     },
     Talk {
         target_pane: u8,
+        tmux_target: Option<String>,
         input: String,
         cursor: usize,
     },
@@ -77,6 +78,10 @@ pub enum TuiMode {
 pub enum PendingAction {
     Kill {
         pane: u8,
+    },
+    KillTarget {
+        pane: u8,
+        tmux_target: String,
     },
     Complete {
         pane: u8,
@@ -98,6 +103,11 @@ pub enum TuiCommand {
     },
     Kill {
         pane: String,
+        reason: Option<String>,
+    },
+    KillTarget {
+        pane: u8,
+        tmux_target: String,
         reason: Option<String>,
     },
     Complete {
@@ -141,6 +151,11 @@ pub enum TuiCommand {
     },
     Talk {
         pane: u8,
+        message: String,
+    },
+    TalkTarget {
+        pane: u8,
+        tmux_target: String,
         message: String,
     },
     AddScreen {
@@ -294,6 +309,42 @@ async fn execute_command(app: &App, cmd: TuiCommand) -> TuiResult {
                 description: desc,
                 success: true,
                 message: result,
+            }
+        }
+        TuiCommand::KillTarget {
+            pane,
+            tmux_target,
+            reason,
+        } => {
+            let desc = format!("Kill P{}", pane);
+            let result = crate::tmux::kill_window(&tmux_target);
+            if result.is_ok() {
+                let mut pane_state = app.state.get_pane(pane).await;
+                if pane_state.tmux_target.as_deref() == Some(tmux_target.as_str()) {
+                    pane_state.status = "idle".to_string();
+                    pane_state.started_at = None;
+                    pane_state.tmux_target = None;
+                    let _ = app.state.set_pane(pane, pane_state).await;
+                }
+                let summary = reason.unwrap_or_else(|| format!("Killed {}", tmux_target));
+                let _ = app.state.log_activity(pane, "kill", &summary).await;
+            }
+            match result {
+                Ok(()) => TuiResult {
+                    description: desc,
+                    success: true,
+                    message: serde_json::json!({
+                        "status": "killed",
+                        "pane": pane,
+                        "tmux_target": tmux_target,
+                    })
+                    .to_string(),
+                },
+                Err(err) => TuiResult {
+                    description: desc,
+                    success: false,
+                    message: format!("Failed to kill {}: {}", tmux_target, err),
+                },
             }
         }
         TuiCommand::Complete { pane, summary } => {
@@ -502,6 +553,30 @@ async fn execute_command(app: &App, cmd: TuiCommand) -> TuiResult {
                 },
             }
         }
+        TuiCommand::TalkTarget {
+            pane,
+            tmux_target,
+            message,
+        } => {
+            let desc = format!("Talk P{}", pane);
+            let _ = crate::multi_agent::msg_send("tui", &pane.to_string(), &message);
+            match crate::tmux::send_command(&tmux_target, &message) {
+                Ok(()) => TuiResult {
+                    description: desc,
+                    success: true,
+                    message: format!(
+                        "Sent to pane {}: {}",
+                        pane,
+                        &message.chars().take(50).collect::<String>()
+                    ),
+                },
+                Err(err) => TuiResult {
+                    description: desc,
+                    success: false,
+                    message: format!("Failed to send to {}: {}", tmux_target, err),
+                },
+            }
+        }
         TuiCommand::AddScreen {
             name,
             layout,
@@ -580,6 +655,14 @@ fn run_loop(
         }
 
         let mut data = dashboard::collect_data(app, selected, view_mode, feature_cursor);
+        if let Some(first_pane) = data.panes.first().map(|pane| pane.pane) {
+            if !data.panes.iter().any(|pane| pane.pane == selected)
+                && selected > crate::config::pane_count()
+            {
+                selected = first_pane;
+                data = dashboard::collect_data(app, selected, view_mode, feature_cursor);
+            }
+        }
         data.action_log = action_log.iter().cloned().collect();
         // Clamp feature cursor
         let feat_max: usize = data.features.iter().map(|f| 1 + f.children.len()).sum();
@@ -660,9 +743,14 @@ fn run_loop(
                             continue;
                         }
                     }
-                    if let Some(true) =
-                        handle_navigate(key, &mut mode, &mut view_mode, &mut selected, app, cmd_tx)
-                    {
+                    if let Some(true) = handle_navigate(
+                        key,
+                        &mut mode,
+                        &mut view_mode,
+                        &mut selected,
+                        &data,
+                        cmd_tx,
+                    ) {
                         return Ok(());
                     }
                 } else if matches!(mode, TuiMode::Command { .. }) {
@@ -697,7 +785,7 @@ fn handle_navigate(
     mode: &mut TuiMode,
     view_mode: &mut ViewMode,
     selected: &mut u8,
-    _app: &App,
+    data: &dashboard::DashboardData,
     cmd_tx: &mpsc::Sender<TuiCommand>,
 ) -> Option<bool> {
     match key.code {
@@ -723,8 +811,14 @@ fn handle_navigate(
 
         // Talk to agent on selected pane
         KeyCode::Char('t') => {
+            let tmux_target = data
+                .panes
+                .iter()
+                .find(|pane| pane.pane == *selected)
+                .and_then(|pane| pane.tmux_target.clone());
             *mode = TuiMode::Talk {
                 target_pane: *selected,
+                tmux_target,
                 input: String::new(),
                 cursor: 0,
             };
@@ -756,8 +850,19 @@ fn handle_navigate(
         // Kill (with confirm)
         KeyCode::Char('k') => {
             let pane = *selected;
+            let action = data
+                .panes
+                .iter()
+                .find(|snapshot| snapshot.pane == pane)
+                .and_then(|snapshot| {
+                    snapshot
+                        .tmux_target
+                        .clone()
+                        .map(|tmux_target| PendingAction::KillTarget { pane, tmux_target })
+                })
+                .unwrap_or(PendingAction::Kill { pane });
             *mode = TuiMode::Confirm {
-                action: PendingAction::Kill { pane },
+                action,
                 message: format!("Kill agent on pane {}?", pane),
             };
         }
@@ -765,10 +870,27 @@ fn handle_navigate(
         // Complete/done (with confirm)
         KeyCode::Char('d') => {
             let pane = *selected;
-            *mode = TuiMode::Confirm {
-                action: PendingAction::Complete { pane },
-                message: format!("Mark pane {} as done?", pane),
-            };
+            let manageable = data
+                .panes
+                .iter()
+                .find(|snapshot| snapshot.pane == pane)
+                .map(|snapshot| snapshot.state_backed)
+                .unwrap_or(true);
+            if manageable {
+                *mode = TuiMode::Confirm {
+                    action: PendingAction::Complete { pane },
+                    message: format!("Mark pane {} as done?", pane),
+                };
+            } else {
+                *mode = TuiMode::Result {
+                    message: format!(
+                        "Pane {} is auto-discovered only; done/complete is only available for DX-managed panes",
+                        pane
+                    ),
+                    is_error: true,
+                    shown_at: Instant::now(),
+                };
+            }
         }
 
         // View toggles
@@ -858,35 +980,59 @@ fn handle_navigate(
         // Pane selection
         KeyCode::Char(c @ '1'..='9') => {
             let n = c.to_digit(10).unwrap() as u8;
-            if n <= crate::config::pane_count() {
+            if data.panes.iter().any(|pane| pane.pane == n) || n <= crate::config::pane_count() {
                 *selected = n;
             }
         }
 
         // Tab cycles
-        KeyCode::Tab => {
-            let max = crate::config::pane_count();
-            *selected = if *selected >= max { 1 } else { *selected + 1 };
+        KeyCode::Tab | KeyCode::Right | KeyCode::Down => {
+            cycle_selection(data, selected, true);
         }
-        KeyCode::BackTab => {
-            let max = crate::config::pane_count();
-            *selected = if *selected <= 1 { max } else { *selected - 1 };
+        KeyCode::BackTab | KeyCode::Left | KeyCode::Up => {
+            cycle_selection(data, selected, false);
         }
 
         // Kill pane (routes through MCP tools::kill)
         KeyCode::Char('x') => {
-            let _ = cmd_tx.send(TuiCommand::Kill {
-                pane: selected.to_string(),
-                reason: Some("TUI: user pressed x".into()),
-            });
+            if let Some(tmux_target) = data
+                .panes
+                .iter()
+                .find(|pane| pane.pane == *selected)
+                .and_then(|pane| pane.tmux_target.clone())
+            {
+                let _ = cmd_tx.send(TuiCommand::KillTarget {
+                    pane: *selected,
+                    tmux_target,
+                    reason: Some("TUI: user pressed x".into()),
+                });
+            } else {
+                let _ = cmd_tx.send(TuiCommand::Kill {
+                    pane: selected.to_string(),
+                    reason: Some("TUI: user pressed x".into()),
+                });
+            }
         }
 
         // Restart pane (kill + respawn via command channel)
         KeyCode::Char('r') => {
-            let _ = cmd_tx.send(TuiCommand::Kill {
-                pane: selected.to_string(),
-                reason: Some("TUI: restart via r key".into()),
-            });
+            if let Some(tmux_target) = data
+                .panes
+                .iter()
+                .find(|pane| pane.pane == *selected)
+                .and_then(|pane| pane.tmux_target.clone())
+            {
+                let _ = cmd_tx.send(TuiCommand::KillTarget {
+                    pane: *selected,
+                    tmux_target,
+                    reason: Some("TUI: restart via r key".into()),
+                });
+            } else {
+                let _ = cmd_tx.send(TuiCommand::Kill {
+                    pane: selected.to_string(),
+                    reason: Some("TUI: restart via r key".into()),
+                });
+            }
         }
 
         _ => {}
@@ -1089,6 +1235,14 @@ fn handle_confirm(
                     },
                     format!("Killing pane {}...", pane),
                 ),
+                PendingAction::KillTarget { pane, tmux_target } => (
+                    TuiCommand::KillTarget {
+                        pane,
+                        tmux_target,
+                        reason: Some("TUI kill".into()),
+                    },
+                    format!("Killing pane {}...", pane),
+                ),
                 PendingAction::Complete { pane } => (
                     TuiCommand::Complete {
                         pane: pane.to_string(),
@@ -1119,12 +1273,13 @@ fn handle_talk(
     mode: &mut TuiMode,
     cmd_tx: &mpsc::Sender<TuiCommand>,
 ) {
-    let (target_pane, input_str, cursor) = match mode {
+    let (target_pane, tmux_target, input_str, cursor) = match mode {
         TuiMode::Talk {
             target_pane,
+            tmux_target,
             input,
             cursor,
-        } => (*target_pane, input, cursor),
+        } => (*target_pane, tmux_target.clone(), input, cursor),
         _ => return,
     };
 
@@ -1135,10 +1290,18 @@ fn handle_talk(
         KeyCode::Enter => {
             let msg = input_str.trim().to_string();
             if !msg.is_empty() {
-                let _ = cmd_tx.send(TuiCommand::Talk {
-                    pane: target_pane,
-                    message: msg,
-                });
+                let _ = if let Some(tmux_target) = tmux_target {
+                    cmd_tx.send(TuiCommand::TalkTarget {
+                        pane: target_pane,
+                        tmux_target,
+                        message: msg,
+                    })
+                } else {
+                    cmd_tx.send(TuiCommand::Talk {
+                        pane: target_pane,
+                        message: msg,
+                    })
+                };
                 *mode = TuiMode::Executing {
                     description: format!("Talking to P{}...", target_pane),
                     _started: Instant::now(),
@@ -1178,6 +1341,38 @@ fn handle_talk(
 }
 
 // ========== Helpers ==========
+
+fn cycle_selection(data: &dashboard::DashboardData, selected: &mut u8, forward: bool) {
+    let pane_order: Vec<u8> = data.panes.iter().map(|pane| pane.pane).collect();
+    if pane_order.is_empty() {
+        let max = crate::config::pane_count();
+        *selected = if forward {
+            if *selected >= max {
+                1
+            } else {
+                *selected + 1
+            }
+        } else if *selected <= 1 {
+            max
+        } else {
+            *selected - 1
+        };
+        return;
+    }
+
+    if let Some(idx) = pane_order.iter().position(|pane| *pane == *selected) {
+        let next_idx = if forward {
+            (idx + 1) % pane_order.len()
+        } else if idx == 0 {
+            pane_order.len() - 1
+        } else {
+            idx - 1
+        };
+        *selected = pane_order[next_idx];
+    } else {
+        *selected = pane_order[0];
+    }
+}
 
 /// Get (space, issue_id, current_status) at flat cursor position
 fn feature_at_cursor(

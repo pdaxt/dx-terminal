@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::app::App;
+use crate::runtime_panes;
 use crate::session_stream::SessionTailer;
 use crate::state::events::StateEvent;
 use crate::state::types::DxTerminalState;
@@ -37,7 +38,8 @@ pub fn start(app: Arc<App>) {
 }
 
 async fn run_replicator(app: Arc<App>) {
-    let interval = tokio::time::Duration::from_secs(1);
+    let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(1));
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut prev_outputs: HashMap<String, String> = HashMap::new();
     let mut attention_signatures: HashMap<String, String> = HashMap::new();
     let mut session_tailer = SessionTailer::new();
@@ -50,16 +52,41 @@ async fn run_replicator(app: Arc<App>) {
     tracing::info!("RuntimeReplicator started — polling tmux + JSONL every 1s");
 
     loop {
-        tokio::time::sleep(interval).await;
+        ticker.tick().await;
 
-        let state = app.state.get_state_snapshot().await;
-        let max_panes = crate::config::pane_count();
+        let mut state = app.state.get_state_snapshot().await;
 
         // --- Phase 1: Discover live panes (once, shared across all clients) ---
         let live_panes = match tokio::task::spawn_blocking(|| tmux::discover_live_panes()).await {
             Ok(panes) => panes,
             Err(_) => continue,
         };
+
+        let resolved_panes =
+            runtime_panes::resolve_runtime_panes(&state, &live_panes, Some(&pane_targets));
+        if let Some(max_live_pane) = resolved_panes.iter().map(|pane| pane.pane).max() {
+            crate::config::register_live_pane_count(max_live_pane as usize);
+        }
+        for resolved in &resolved_panes {
+            let Some(live) = resolved.live.as_ref() else {
+                continue;
+            };
+            let pane_num = resolved.pane;
+            let mut pane_state = resolved.pane_state.clone();
+            if pane_state.role.trim().is_empty() {
+                pane_state.role = "developer".to_string();
+            }
+            if pane_state.started_at.is_none() {
+                pane_state.started_at = Some(crate::state::now());
+            }
+            if pane_state.workspace_path.is_none() {
+                pane_state.workspace_path = Some(live.cwd.clone());
+            }
+            if state.panes.get(&pane_num.to_string()) != Some(&pane_state) {
+                app.state.set_pane(pane_num, pane_state.clone()).await;
+            }
+            state.panes.insert(pane_num.to_string(), pane_state);
+        }
 
         // --- Phase 0: Watch VDD state files for active projects ---
         // This covers hook-driven or external vision mutations, not just in-process API calls.
@@ -125,38 +152,22 @@ async fn run_replicator(app: Arc<App>) {
         vision_fingerprints.retain(|path, _| active_vision_paths.contains(path));
         vision_features.retain(|path, _| active_vision_paths.contains(path));
 
-        // Build authoritative target list: state panes first, then discovered
-        let mut targets: Vec<(u8, String, Option<usize>)> = Vec::new(); // (pane_num, target, live_idx)
-        let mut used_targets: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-        // 1) State-managed panes with tmux targets
-        for i in 1..=max_panes {
-            if let Some(p) = state.panes.get(&i.to_string()) {
-                if let Some(ref target) = p.tmux_target {
-                    targets.push((i, target.clone(), None));
-                    used_targets.insert(target.clone());
-                }
-            }
-        }
-
-        // 2) Auto-discovered panes that aren't already in state
-        let mut next_pane = max_panes + 1;
-        for (idx, lp) in live_panes.iter().enumerate() {
-            if !used_targets.contains(&lp.target) {
-                // Try to assign to an empty state slot first
-                let pane_num = if (idx + 1) as u8 <= max_panes
-                    && !targets.iter().any(|(p, _, _)| *p == (idx + 1) as u8)
-                {
-                    (idx + 1) as u8
-                } else {
-                    let n = next_pane;
-                    next_pane += 1;
-                    n
-                };
-                targets.push((pane_num, lp.target.clone(), Some(idx)));
-                used_targets.insert(lp.target.clone());
-            }
-        }
+        let targets: Vec<(u8, String, Option<usize>)> = resolved_panes
+            .into_iter()
+            .filter_map(|resolved| {
+                resolved.pane_state.tmux_target.map(|target| {
+                    (
+                        resolved.pane,
+                        target,
+                        resolved.live.as_ref().and_then(|live| {
+                            live_panes
+                                .iter()
+                                .position(|candidate| candidate.target == live.target)
+                        }),
+                    )
+                })
+            })
+            .collect();
 
         // Update stable identity map
         let new_targets: HashMap<u8, String> =
@@ -365,17 +376,13 @@ async fn run_replicator(app: Arc<App>) {
         }
 
         // --- Phase 3: Cursor-based JSONL tailing (once for all clients) ---
-        let jsonl_polls: Vec<(u8, String)> = live_panes
+        let jsonl_polls: Vec<(u8, String)> = targets
             .iter()
-            .enumerate()
-            .filter_map(|(idx, lp)| {
-                lp.jsonl_path.as_ref().map(|jp| {
-                    let pane_num = if idx < max_panes as usize {
-                        (idx + 1) as u8
-                    } else {
-                        max_panes + 1 + idx as u8
-                    };
-                    (pane_num, jp.clone())
+            .filter_map(|(pane_num, _target, live_idx)| {
+                live_idx.and_then(|idx| {
+                    live_panes
+                        .get(idx)
+                        .and_then(|pane| pane.jsonl_path.as_ref().map(|jp| (*pane_num, jp.clone())))
                 })
             })
             .collect();

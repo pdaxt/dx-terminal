@@ -27,7 +27,7 @@ impl Default for DxTerminalState {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PaneState {
     #[serde(default)]
     pub theme: String,

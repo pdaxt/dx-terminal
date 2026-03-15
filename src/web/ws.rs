@@ -124,43 +124,19 @@ async fn handle_socket(socket: WebSocket, app: Arc<App>) {
 /// Merges DX Terminal state with auto-discovered live tmux panes.
 async fn build_full_snapshot(app: &App) -> Value {
     let state = app.state.get_state_snapshot().await;
-    let max_panes = crate::config::pane_count();
-
-    // Auto-discover all live agent panes across all tmux sessions
     let live_panes = tokio::task::spawn_blocking(|| tmux::discover_live_panes())
         .await
         .unwrap_or_default();
+    let resolved_panes = crate::runtime_panes::resolve_runtime_panes(&state, &live_panes, None);
 
     let mut panes = Vec::new();
-
-    // Map: first use DX Terminal state panes, then overlay/extend with live discovery
     let themes = crate::config::all_themes();
-    let total_panes = std::cmp::max(max_panes as usize, live_panes.len());
 
-    for i in 0..total_panes {
-        let pane_num = (i + 1) as u8;
-        let ps = state.panes.get(&pane_num.to_string());
-
-        // Determine tmux target: prefer state, fall back to discovered live pane
-        let (tmux_target, live) = if let Some(ref p) = ps {
-            if let Some(ref t) = p.tmux_target {
-                if tmux::pane_exists(t) {
-                    (Some(t.clone()), None)
-                } else if i < live_panes.len() {
-                    (Some(live_panes[i].target.clone()), Some(&live_panes[i]))
-                } else {
-                    (None, None)
-                }
-            } else if i < live_panes.len() {
-                (Some(live_panes[i].target.clone()), Some(&live_panes[i]))
-            } else {
-                (None, None)
-            }
-        } else if i < live_panes.len() {
-            (Some(live_panes[i].target.clone()), Some(&live_panes[i]))
-        } else {
-            (None, None)
-        };
+    for resolved in resolved_panes {
+        let pane_num = resolved.pane;
+        let ps = &resolved.pane_state;
+        let live = resolved.live.as_ref();
+        let tmux_target = ps.tmux_target.clone();
 
         let pty_output = if tmux_target.is_none() {
             let pty = app.pty_lock();
@@ -178,12 +154,15 @@ async fn build_full_snapshot(app: &App) -> Value {
             String::new()
         };
 
-        // Capture output
         let output = if let Some(ref target) = tmux_target {
             let t = target.clone();
-            tokio::task::spawn_blocking(move || tmux::capture_output_extended(&t, 80))
-                .await
-                .unwrap_or_default()
+            if live.is_some() || tmux::pane_exists(&t) {
+                tokio::task::spawn_blocking(move || tmux::capture_output_extended(&t, 80))
+                    .await
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            }
         } else {
             pty_output
         };
@@ -198,25 +177,20 @@ async fn build_full_snapshot(app: &App) -> Value {
             .collect::<Vec<&str>>()
             .join("\n");
 
-        let theme_idx = i % themes.len();
+        let theme_idx = (pane_num as usize).saturating_sub(1) % themes.len();
         let has_runtime_output =
             (tmux_target.is_some() || !output.trim().is_empty()) && !output.trim().is_empty();
-        let status = if has_runtime_output {
-            if let Some(ref p) = ps {
-                p.status.as_str()
-            } else {
-                "active"
-            }
+        let status = if !ps.status.trim().is_empty() {
+            ps.status.as_str()
+        } else if has_runtime_output {
+            "active"
         } else {
-            if let Some(ref p) = ps {
-                p.status.as_str()
-            } else {
-                "idle"
-            }
+            "idle"
         };
 
-        // Project: prefer JSONL cwd (most accurate), then tmux cwd, then state
-        let project = if let Some(lp) = live {
+        let project = if !ps.project.trim().is_empty() && ps.project != "--" {
+            ps.project.clone()
+        } else if let Some(lp) = live {
             if let Some(ref jp) = lp.jsonl_path {
                 let jp_clone = jp.clone();
                 let jsonl_cwd =
@@ -224,44 +198,42 @@ async fn build_full_snapshot(app: &App) -> Value {
                         .await
                         .unwrap_or(None);
                 if let Some(jcwd) = jsonl_cwd {
-                    project_from_cwd(&jcwd)
+                    crate::runtime_panes::project_from_cwd(&jcwd)
                 } else {
-                    project_from_cwd(&lp.cwd)
+                    crate::runtime_panes::project_from_cwd(&lp.cwd)
                 }
             } else {
-                project_from_cwd(&lp.cwd)
+                crate::runtime_panes::project_from_cwd(&lp.cwd)
             }
-        } else if let Some(ref p) = ps {
-            p.project.clone()
         } else {
             "--".to_string()
         };
 
         let provider = if let Some(lp) = live {
             tmux::infer_provider(&lp.command, &lp.window_name, lp.jsonl_path.as_deref()).to_string()
-        } else if let Some(ref p) = ps {
-            p.provider.clone().unwrap_or_else(|| "unknown".to_string())
+        } else if let Some(ref provider) = ps.provider {
+            provider.clone()
         } else {
             "unknown".to_string()
         };
 
-        let task = if let Some(ref p) = ps {
-            let t = &p.task;
-            if t.len() > 80 {
-                t[..80].to_string()
+        let task = if !ps.task.trim().is_empty() {
+            let task = &ps.task;
+            if task.len() > 80 {
+                task[..80].to_string()
             } else {
-                t.clone()
+                task.clone()
             }
-        } else if let Some(lp) = live {
-            format!("{} in {}", tmux::provider_label(&provider), lp.target)
+        } else if let Some(ref target) = tmux_target {
+            format!("{} in {}", tmux::provider_label(&provider), target)
         } else {
             "--".to_string()
         };
 
-        let role = if let Some(ref p) = ps {
-            crate::config::role_short(&p.role).to_string()
+        let role = if !ps.role.trim().is_empty() {
+            crate::config::role_short(&ps.role).to_string()
         } else {
-            "AG".to_string()
+            tmux::provider_short(&provider).to_ascii_uppercase()
         };
 
         // JSONL session info
@@ -288,11 +260,11 @@ async fn build_full_snapshot(app: &App) -> Value {
             "project": project,
             "task": task,
             "role": role,
-            "dxos_session_id": ps.and_then(|p| p.dxos_session_id.clone()),
+            "dxos_session_id": ps.dxos_session_id.clone(),
             "provider": provider,
             "provider_label": tmux::provider_label(&provider),
             "provider_short": tmux::provider_short(&provider),
-            "runtime_adapter": ps.and_then(|p| p.runtime_adapter.clone()).or_else(|| {
+            "runtime_adapter": ps.runtime_adapter.clone().or_else(|| {
                 if tmux_target.is_some() {
                     Some("tmux_migration_adapter".to_string())
                 } else if !output.trim().is_empty() {
@@ -302,6 +274,7 @@ async fn build_full_snapshot(app: &App) -> Value {
                 }
             }),
             "output": tail,
+            "pty_running": !output.trim().is_empty(),
             "line_count": line_vec.len(),
             "tmux_target": tmux_target,
             "live": live.is_some(),
@@ -314,10 +287,11 @@ async fn build_full_snapshot(app: &App) -> Value {
             "browser_port": crate::config::pane_browser_port(pane_num),
             "browser_profile_root": crate::config::pane_browser_profile_root(pane_num),
             "browser_artifacts_root": crate::config::pane_browser_artifacts_root(pane_num),
-            "workspace_path": ps.and_then(|p| p.workspace_path.clone()),
-            "branch_name": ps.and_then(|p| p.branch_name.clone()),
-            "base_branch": ps.and_then(|p| p.base_branch.clone()),
-            "model": ps.and_then(|p| p.model.clone()),
+            "workspace_path": ps.workspace_path.clone(),
+            "branch_name": ps.branch_name.clone(),
+            "base_branch": ps.base_branch.clone(),
+            "model": ps.model.clone(),
+            "state_backed": resolved.state_backed,
         }));
     }
 
@@ -341,6 +315,7 @@ async fn build_full_snapshot(app: &App) -> Value {
     };
 
     let active_count = panes.iter().filter(|p| p["status"] == "active").count();
+    let total_panes = panes.len();
 
     // Collect unique workspaces from all panes
     let mut workspaces: Vec<String> = panes
@@ -362,27 +337,6 @@ async fn build_full_snapshot(app: &App) -> Value {
         "live_discovered": live_panes.len(),
         "workspaces": workspaces,
     })
-}
-
-/// Extract project name from a working directory path.
-fn project_from_cwd(cwd: &str) -> String {
-    let path = std::path::Path::new(cwd);
-    let home = std::env::var("HOME").unwrap_or_default();
-    let projects_dir = format!("{}/Projects", home);
-
-    if cwd == projects_dir || cwd == home {
-        return "--".to_string();
-    }
-
-    if let Ok(rel) = path.strip_prefix(&projects_dir) {
-        if let Some(first) = rel.components().next() {
-            return first.as_os_str().to_string_lossy().to_string();
-        }
-    }
-
-    path.file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "--".to_string())
 }
 
 /// Forward state events from EventBus → WebSocket with sequence numbers.

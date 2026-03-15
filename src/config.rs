@@ -1,11 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::OnceLock;
 
 /// Runtime configuration — loaded once at startup from ~/.config/dx-terminal/config.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeConfig {
-    /// Number of agent panes (1-20, default 9)
+    /// Number of agent panes (auto-expanded to live tmux lanes, default fallback 48)
     #[serde(default = "default_pane_count")]
     pub pane_count: u8,
     /// Tmux session name prefix
@@ -29,7 +30,7 @@ pub struct ThemeEntry {
 }
 
 fn default_pane_count() -> u8 {
-    9
+    detected_live_pane_count().unwrap_or(DEFAULT_PANE_COUNT)
 }
 fn default_session_name() -> String {
     "dx".into()
@@ -38,7 +39,30 @@ fn default_web_port() -> u16 {
     3100
 }
 
+const DEFAULT_PANE_COUNT: u8 = 48;
 const DEFAULT_BROWSER_PORT_BASE: u16 = 46000;
+static LIVE_PANE_COUNT_OVERRIDE: AtomicU8 = AtomicU8::new(0);
+
+fn clamp_pane_count(count: usize) -> u8 {
+    count.min(u8::MAX as usize) as u8
+}
+
+fn detected_live_pane_count() -> Option<u8> {
+    let live_count = clamp_pane_count(crate::tmux::discover_live_panes().len());
+    if live_count == 0 {
+        None
+    } else {
+        Some(live_count)
+    }
+}
+
+fn effective_pane_count(configured: u8) -> u8 {
+    configured.max(LIVE_PANE_COUNT_OVERRIDE.load(Ordering::Relaxed))
+}
+
+fn default_theme(index: usize) -> (&'static str, &'static str) {
+    DEFAULT_THEMES[index % DEFAULT_THEMES.len()]
+}
 
 /// Default color palette (cycles if pane_count > len)
 const DEFAULT_THEMES: &[(&str, &str)] = &[
@@ -67,9 +91,9 @@ const DEFAULT_THEMES: &[(&str, &str)] = &[
 impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
-            pane_count: 9,
-            session_name: "dx".into(),
-            web_port: 3100,
+            pane_count: default_pane_count(),
+            session_name: default_session_name(),
+            web_port: default_web_port(),
             themes: Vec::new(),
             scan_dirs: Vec::new(),
         }
@@ -83,13 +107,25 @@ impl RuntimeConfig {
         if path.exists() {
             if let Ok(content) = std::fs::read_to_string(&path) {
                 if let Ok(mut cfg) = serde_json::from_str::<RuntimeConfig>(&content) {
+                    let mut changed = cfg.themes.len() < cfg.pane_count as usize;
+                    if let Some(detected) = detected_live_pane_count() {
+                        if detected > cfg.pane_count {
+                            cfg.pane_count = detected;
+                            changed = true;
+                        }
+                    }
                     cfg.ensure_themes();
+                    register_live_pane_count(cfg.pane_count as usize);
+                    if changed {
+                        let _ = cfg.save();
+                    }
                     return cfg;
                 }
             }
         }
         let mut cfg = Self::default();
         cfg.ensure_themes();
+        register_live_pane_count(cfg.pane_count as usize);
         let _ = cfg.save();
         cfg
     }
@@ -117,17 +153,25 @@ impl RuntimeConfig {
 
     /// Get theme for pane (1-indexed)
     pub fn theme_name(&self, pane: u8) -> &str {
+        if pane == 0 {
+            return "UNKNOWN";
+        }
+        let idx = (pane as usize).wrapping_sub(1);
         self.themes
-            .get((pane as usize).wrapping_sub(1))
+            .get(idx)
             .map(|t| t.name.as_str())
-            .unwrap_or("UNKNOWN")
+            .unwrap_or_else(|| default_theme(idx).1)
     }
 
     pub fn theme_fg(&self, pane: u8) -> &str {
+        if pane == 0 {
+            return "#ffffff";
+        }
+        let idx = (pane as usize).wrapping_sub(1);
         self.themes
-            .get((pane as usize).wrapping_sub(1))
+            .get(idx)
             .map(|t| t.fg.as_str())
-            .unwrap_or("#ffffff")
+            .unwrap_or_else(|| default_theme(idx).0)
     }
 }
 
@@ -250,7 +294,15 @@ pub fn all_themes() -> &'static [(&'static str, &'static str)] {
 }
 
 pub fn pane_count() -> u8 {
-    get().pane_count
+    effective_pane_count(get().pane_count)
+}
+
+pub fn register_live_pane_count(count: usize) {
+    let count = clamp_pane_count(count);
+    if count == 0 {
+        return;
+    }
+    LIVE_PANE_COUNT_OVERRIDE.fetch_max(count, Ordering::Relaxed);
 }
 
 pub fn session_name() -> &'static str {
@@ -381,7 +433,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let cfg = RuntimeConfig::default();
-        assert_eq!(cfg.pane_count, 9);
+        assert_eq!(cfg.pane_count, default_pane_count());
         assert_eq!(cfg.session_name, "dx");
         assert_eq!(cfg.web_port, 3100);
         assert!(cfg.themes.is_empty());
@@ -423,8 +475,9 @@ mod tests {
         assert_eq!(cfg.theme_name(1), "CYAN");
         assert_eq!(cfg.theme_name(2), "GREEN");
         assert_eq!(cfg.theme_name(3), "PURPLE");
-        assert_eq!(cfg.theme_name(0), "UNKNOWN"); // out of bounds
-        assert_eq!(cfg.theme_name(99), "UNKNOWN");
+        assert_eq!(cfg.theme_name(0), "UNKNOWN");
+        assert_eq!(cfg.theme_name(4), "ORANGE");
+        assert_eq!(cfg.theme_name(99), "LAVENDER");
     }
 
     #[test]
@@ -435,7 +488,17 @@ mod tests {
         };
         cfg.ensure_themes();
         assert_eq!(cfg.theme_fg(1), "#00d4ff");
-        assert_eq!(cfg.theme_fg(0), "#ffffff"); // fallback
+        assert_eq!(cfg.theme_fg(0), "#ffffff");
+        assert_eq!(cfg.theme_fg(3), "#bf00ff");
+    }
+
+    #[test]
+    fn test_pane_count_prefers_runtime_override() {
+        LIVE_PANE_COUNT_OVERRIDE.store(0, Ordering::Relaxed);
+        assert_eq!(effective_pane_count(9), 9);
+        LIVE_PANE_COUNT_OVERRIDE.store(18, Ordering::Relaxed);
+        assert_eq!(effective_pane_count(9), 18);
+        LIVE_PANE_COUNT_OVERRIDE.store(0, Ordering::Relaxed);
     }
 
     #[test]

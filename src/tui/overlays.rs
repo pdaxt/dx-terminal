@@ -40,6 +40,7 @@ pub fn render_overlay(f: &mut Frame, area: Rect, mode: &TuiMode, _data: &Dashboa
         }
         TuiMode::Talk {
             target_pane,
+            tmux_target: _,
             input: input_str,
             cursor,
         } => {
