@@ -1302,6 +1302,7 @@ let dxosRuntimeBrokerCache={};
 let dxosControlAuthCache={};
 let dxosRecoveryCache={};
 let dxosSessionCache={};
+let projectBriefCache={};
 let dxosPortfolioRegistry={projects:[],companies:[],programs:[],workspaces:[]};
 let dxosPortfolioProjects=[];
 let currentCompanyFilter='all';
@@ -4817,6 +4818,22 @@ async function renderExecutionHub(){
 }
 
 // === Pane Grid ===
+function detectProvider(p){
+  if(p.provider&&p.provider!=='unknown')return p.provider;
+  const haystack=[(p.role||''),(p.task||''),(p.agent_type||''),(p.tmux_target||'')].join(' ').toLowerCase();
+  if(haystack.includes('claude'))return 'claude';
+  if(haystack.includes('codex'))return 'codex';
+  if(haystack.includes('gemini'))return 'gemini';
+  if(haystack.includes('opencode'))return 'opencode';
+  if(p.agent_type)return p.agent_type;
+  return p.provider||'unknown';
+}
+function paneStatusLabel(p,sp,isActive){
+  const apiStatus=(p.status||'').toString();
+  if(apiStatus&&apiStatus!=='unknown')return apiStatus;
+  if(isActive)return 'active';
+  return 'idle';
+}
 function getStatusPane(paneNum){
   return statusData&&statusData.panes?statusData.panes.find(p=>p.pane===paneNum):null;
 }
