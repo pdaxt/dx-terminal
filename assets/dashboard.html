@@ -4955,7 +4955,7 @@ function renderPanes(){
         </div>
       </div>`;
     } else {
-      html+=`<div class="pane-card ${cls}" style="--pane-color:${color}" onclick="openPanel(${p.pane})">
+      html+=`<div class="pane-card ${cls}" style="--pane-color:${color}" onclick="openPaneModal(${p.pane},event)">
         <div class="pane-top">
           <div class="pane-id-wrap">
             <span class="pane-num">Pane ${p.pane}</span>
@@ -6686,6 +6686,70 @@ async function renderSync(){
   html+=`</div>`;
   html+=`<div style="margin-top:4px;font-size:10px;color:var(--dim)">Auto-commit: ${d.auto_commit?'ON':'OFF'} | Auto-push: ${d.auto_push?'ON':'OFF'} | ${d.subscribers} WS client${d.subscribers!==1?'s':''}</div>`;
   el.innerHTML=html;
+}
+
+// === Pane Detail Modal ===
+let paneModalPaneId=null;
+let paneModalRefreshTimer=null;
+
+function openPaneModal(paneId,event){
+  if(event)event.stopPropagation();
+  paneModalPaneId=paneId;
+  const overlay=document.getElementById('pane-modal');
+  const titleEl=document.getElementById('pane-modal-title');
+  const outputEl=document.getElementById('pane-modal-output');
+  titleEl.textContent=`Pane ${paneId}`;
+  outputEl.textContent='Loading...';
+  overlay.classList.add('open');
+  document.getElementById('pane-modal-cmd').value='';
+  refreshPaneModal();
+  paneModalRefreshTimer=setInterval(refreshPaneModal,3000);
+  document.addEventListener('keydown',paneModalEscHandler);
+}
+
+function closePaneModal(){
+  const overlay=document.getElementById('pane-modal');
+  overlay.classList.remove('open');
+  paneModalPaneId=null;
+  if(paneModalRefreshTimer){clearInterval(paneModalRefreshTimer);paneModalRefreshTimer=null;}
+  document.removeEventListener('keydown',paneModalEscHandler);
+}
+
+function paneModalEscHandler(e){
+  if(e.key==='Escape')closePaneModal();
+}
+
+async function refreshPaneModal(){
+  if(!paneModalPaneId)return;
+  try{
+    const data=await fetchJSON(`/api/pane/${paneModalPaneId}/output?lines=200`);
+    const outputEl=document.getElementById('pane-modal-output');
+    if(data){
+      const text=(typeof data.output==='string'&&data.output)||(typeof data.screen==='string'&&data.screen)||'No output available.';
+      outputEl.textContent=text;
+      outputEl.scrollTop=outputEl.scrollHeight;
+    }
+  }catch(e){
+    console.error('Pane modal refresh error:',e);
+  }
+}
+
+async function sendPaneModalCmd(){
+  if(!paneModalPaneId)return;
+  const input=document.getElementById('pane-modal-cmd');
+  const cmd=(input.value||'').trim();
+  if(!cmd)return;
+  input.value='';
+  try{
+    await fetch(`${API}/api/pane/${paneModalPaneId}/send`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({command:cmd})
+    });
+    setTimeout(refreshPaneModal,500);
+  }catch(e){
+    console.error('Send command error:',e);
+  }
 }
 
 async function init(){
