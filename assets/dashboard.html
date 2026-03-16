@@ -149,7 +149,7 @@ select:hover{border-color:var(--border-bright);box-shadow:0 0 0 3px rgba(127,216
   font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;
   border:1px solid transparent;
 }
-.tone-planned{background:rgba(111,128,143,.12);color:var(--dim);border-color:rgba(111,128,143,.18)}
+.tone-planned{background:rgba(111,128,143,.12);color:#c4d0de;border-color:rgba(111,128,143,.18)}
 .tone-discovery{background:rgba(198,161,91,.12);color:var(--yellow);border-color:rgba(198,161,91,.18)}
 .tone-build{background:rgba(110,164,199,.12);color:var(--blue);border-color:rgba(110,164,199,.18)}
 .tone-test{background:rgba(106,167,161,.12);color:var(--teal);border-color:rgba(106,167,161,.18)}
@@ -509,7 +509,7 @@ select:hover{border-color:var(--border-bright);box-shadow:0 0 0 3px rgba(127,216
 .b-worktree{background:rgba(34,184,173,.1);color:var(--teal)}
 .b-role{background:rgba(77,166,255,.1);color:var(--blue)}
 .b-live{background:rgba(68,217,140,.1);color:var(--green)}
-.b-lines{background:var(--surface2);color:var(--dim)}
+.b-lines{background:var(--surface2);color:#c4d0de}
 .b-runtime{background:rgba(176,122,255,.1);color:var(--purple)}
 .b-err{background:rgba(255,92,92,.1);color:var(--red)}
 .b-done{background:rgba(61,214,208,.1);color:var(--teal)}
@@ -809,7 +809,7 @@ canvas{width:100%;display:block}
 .vdd-doc-badge.discovery{background:rgba(61,214,208,.12);color:var(--teal)}
 .vdd-doc-badge.design{background:rgba(6,182,212,.12);color:var(--cyan-soft)}
 .vdd-phase-badge{font-size:8px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px}
-.vdd-phase-badge.planned{background:rgba(148,163,184,.12);color:var(--dim)}
+.vdd-phase-badge.planned{background:rgba(148,163,184,.12);color:#c4d0de}
 .vdd-phase-badge.discovery{background:rgba(240,192,64,.12);color:var(--yellow)}
 .vdd-phase-badge.build{background:rgba(77,166,255,.12);color:var(--blue)}
 .vdd-phase-badge.test{background:rgba(61,214,208,.12);color:var(--teal)}
@@ -4883,9 +4883,9 @@ function renderPanes(){
         <div class="pane-top">
           <div class="pane-id-wrap">
             <span class="pane-num">Pane ${p.pane}</span>
-            ${providerBadge({id:p.provider||'unknown',label:p.provider_label||providerLabel(p.provider||'unknown'),short:p.provider_short||p.provider_label||p.provider||'Unknown'})}
+            ${providerBadge({id:detectProvider(p)||'unknown',label:p.provider_label||providerLabel(detectProvider(p)||'unknown'),short:p.provider_short||p.provider_label||detectProvider(p)||'Unknown'})}
           </div>
-          <span class="pane-status-indicator ${isActive?'is-live':'is-idle'}"><span class="status-dot"></span>${isActive?'active':'idle'}</span>
+          <span class="pane-status-indicator ${isActive?'is-live':'is-idle'}"><span class="status-dot"></span>${paneStatusLabel(p,sp,isActive)}</span>
         </div>
         <div class="pane-project">${escHtml(p.project||'--')}</div>
         <div class="pane-task">${paneLastActivity(p.pane)||escHtml((p.task||'No task attached').slice(0,140))}</div>
