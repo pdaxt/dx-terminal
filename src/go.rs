@@ -22,6 +22,9 @@ pub struct GoArgs {
     /// Print the detected plan without starting tmux or the dashboard
     #[arg(long)]
     pub dry_run: bool,
+    /// Auto-approve Claude permission prompts in managed panes (200ms poll)
+    #[arg(long)]
+    pub auto_approve: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -102,6 +105,14 @@ pub async fn go(app: Arc<App>, args: GoArgs) -> Result<()> {
         launched.push((pane_target.clone(), issue.clone()));
     }
 
+    let approval_handle = if args.auto_approve {
+        let targets: Vec<String> = launched.iter().map(|(t, _)| t.clone()).collect();
+        println!("Auto-approve: polling {} panes every 200ms", targets.len());
+        Some(crate::approval::start(targets))
+    } else {
+        None
+    };
+
     println!(
         "DX Terminal running — {} agents on {} issues",
         launched.len(),
@@ -110,7 +121,7 @@ pub async fn go(app: Arc<App>, args: GoArgs) -> Result<()> {
     println!("Dashboard: http://localhost:{port}");
     println!("Tmux: tmux attach -t {}", session.session_name);
 
-    tokio::select! {
+    let result = tokio::select! {
         result = dashboard_handle => {
             match result {
                 Ok(Ok(())) => Ok(()),
@@ -122,7 +133,19 @@ pub async fn go(app: Arc<App>, args: GoArgs) -> Result<()> {
             signal.context("waiting for ctrl-c")?;
             Ok(())
         }
+    };
+
+    if let Some(handle) = approval_handle {
+        let stats = handle.stop().await;
+        if stats.approvals > 0 {
+            println!(
+                "Auto-approve: {} approvals across {} polls",
+                stats.approvals, stats.polls
+            );
+        }
     }
+
+    result
 }
 
 pub fn detect_project() -> Result<GoProject> {

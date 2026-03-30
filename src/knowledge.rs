@@ -1272,7 +1272,7 @@ pub fn fact_check(claim: &str) -> Value {
 }
 
 pub fn fact_check_response(response_text: &str) -> Value {
-    let re = Regex::new(r"(?<=[.!?])\s+|\n+").unwrap();
+    let re = Regex::new(r"[.!?]\s+|\n+").unwrap();
     let sentences: Vec<&str> = re
         .split(response_text)
         .filter(|s| s.len() > 10)
