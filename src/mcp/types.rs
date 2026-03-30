@@ -191,6 +191,34 @@ pub struct SwarmStatusRequest {}
 pub struct SwarmStopRequest {}
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct ClaimIssueRequest {
+    #[schemars(description = "GitHub repository slug in owner/repo form")]
+    pub repo: String,
+    #[schemars(description = "Issue number to claim")]
+    pub issue: u32,
+    #[schemars(description = "Agent identifier making the claim")]
+    pub agent_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReleaseClaimRequest {
+    #[schemars(description = "GitHub repository slug in owner/repo form")]
+    pub repo: String,
+    #[schemars(description = "Issue number to release")]
+    pub issue: u32,
+    #[schemars(description = "Final status: completed, failed, or released")]
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListClaimsRequest {
+    #[schemars(description = "Optional repo filter (owner/repo)")]
+    pub repo: Option<String>,
+    #[schemars(description = "If true, only show active claims (default true)")]
+    pub active_only: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct RouteTaskRequest {
     #[schemars(description = "Task description to route to the best agent provider")]
     pub description: String,

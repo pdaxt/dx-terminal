@@ -27,6 +27,7 @@ pub mod analytics_tools;
 pub mod audit_tools;
 pub mod build_tools;
 pub mod capacity_tools;
+pub mod claims_tools;
 pub mod collab_tools;
 pub mod config_tools;
 pub mod dashboard_tools;

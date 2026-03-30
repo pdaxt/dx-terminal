@@ -116,6 +116,24 @@ pub async fn start(app: Arc<App>, config: SwarmConfig) -> Result<SwarmStatusRepo
         bail!("no open issues matched the current swarm filters");
     }
 
+    // Filter out issues already claimed by other agents
+    let issues: Vec<SwarmIssue> = issues
+        .into_iter()
+        .filter(|issue| {
+            match crate::claims::is_claimed(&config.repo, issue.number) {
+                Ok(None) => true,  // unclaimed, keep it
+                Ok(Some(_)) => {
+                    tracing::info!(issue = issue.number, "skipping already-claimed issue");
+                    false
+                }
+                Err(_) => true, // on error, optimistically include
+            }
+        })
+        .collect();
+    if issues.is_empty() {
+        bail!("all matching issues are already claimed by other agents");
+    }
+
     let tasks = issues
         .into_iter()
         .map(|issue| SwarmTaskRecord {
@@ -202,6 +220,7 @@ pub async fn stop(app: &App) -> Result<SwarmStatusReport> {
     refresh_swarm_state(app, &active.state).await?;
 
     let mut snapshot = active.state.write().await;
+    let repo = snapshot.config.repo.clone();
     for task in &mut snapshot.tasks {
         if let Some(pane) = task.pane.as_deref() {
             let _ = app.session_controller.stop(pane).await;
@@ -212,6 +231,8 @@ pub async fn stop(app: &App) -> Result<SwarmStatusReport> {
                 reason: "swarm stopped by operator".to_string(),
             };
         }
+        // Release all claims when swarm stops
+        let _ = crate::claims::release(&repo, task.issue.number, "released");
         let _ = cleanup_worktree(Path::new(&task.worktree_path));
         task.pane = None;
     }
@@ -446,7 +467,7 @@ async fn refresh_swarm_state(app: &App, state: &Arc<RwLock<SwarmSnapshot>>) -> R
         if matches!(task.status, SwarmTaskStatus::Queued) {
             continue;
         }
-        *task = reconcile_task(app, &updated.base_branch, task.clone()).await?;
+        *task = reconcile_task(app, &updated.base_branch, &updated.config.repo, task.clone()).await?;
     }
 
     launch_queued_tasks(app, &mut updated).await?;
@@ -466,12 +487,28 @@ async fn launch_queued_tasks(app: &App, snapshot: &mut SwarmSnapshot) -> Result<
         return Ok(());
     }
 
+    let swarm_id = format!("swarm-{}", std::process::id());
     for task in snapshot
         .tasks
         .iter_mut()
         .filter(|task| matches!(task.status, SwarmTaskStatus::Queued))
         .take(available)
     {
+        // Claim the issue before launching — skip if another agent got there first
+        match crate::claims::try_claim(&snapshot.config.repo, task.issue.number, &swarm_id) {
+            Ok(true) => {} // claimed successfully
+            Ok(false) => {
+                tracing::info!(issue = task.issue.number, "issue claimed by another agent, skipping");
+                task.status = SwarmTaskStatus::Failed {
+                    reason: "issue already claimed by another agent".to_string(),
+                };
+                continue;
+            }
+            Err(err) => {
+                tracing::warn!(issue = task.issue.number, error = %err, "claim check failed, proceeding anyway");
+            }
+        }
+
         let (worktree_path, branch) =
             create_worktree(Path::new(&snapshot.repo_path), task.issue.number)?;
         let pane = spawn_agent(&worktree_path, &task.issue, &snapshot.config.agent_provider)?;
@@ -502,6 +539,7 @@ async fn launch_queued_tasks(app: &App, snapshot: &mut SwarmSnapshot) -> Result<
 async fn reconcile_task(
     app: &App,
     base_branch: &str,
+    repo: &str,
     mut task: SwarmTaskRecord,
 ) -> Result<SwarmTaskRecord> {
     let pane = task
@@ -521,6 +559,7 @@ async fn reconcile_task(
     let output = tmux::capture_output(&pane);
     if let Some(reason) = detect_failure_marker(&output, task.issue.number) {
         task.status = SwarmTaskStatus::Failed { reason };
+        let _ = crate::claims::release(repo, task.issue.number, "failed");
         return Ok(task);
     }
 
@@ -530,7 +569,7 @@ async fn reconcile_task(
     let ready_marker = detect_done_marker(&output, task.issue.number);
 
     if ready_marker || watcher_done || (pane_done && has_commits) {
-        finalize_task(&mut task, base_branch)?;
+        finalize_task(&mut task, base_branch, repo)?;
         return Ok(task);
     }
 
@@ -538,12 +577,13 @@ async fn reconcile_task(
         task.status = SwarmTaskStatus::Failed {
             reason: "agent exited without producing a commit".to_string(),
         };
+        let _ = crate::claims::release(repo, task.issue.number, "failed");
     }
 
     Ok(task)
 }
 
-fn finalize_task(task: &mut SwarmTaskRecord, base_branch: &str) -> Result<()> {
+fn finalize_task(task: &mut SwarmTaskRecord, base_branch: &str, repo: &str) -> Result<()> {
     task.commits = collect_commits(Path::new(&task.worktree_path), base_branch)?;
     if task.commits.is_empty() {
         let dirty = git_status(Path::new(&task.worktree_path))?;
@@ -553,6 +593,7 @@ fn finalize_task(task: &mut SwarmTaskRecord, base_branch: &str) -> Result<()> {
             "agent reported completion but left uncommitted changes".to_string()
         };
         task.status = SwarmTaskStatus::Failed { reason };
+        let _ = crate::claims::release(repo, task.issue.number, "failed");
         return Ok(());
     }
 
@@ -560,11 +601,13 @@ fn finalize_task(task: &mut SwarmTaskRecord, base_branch: &str) -> Result<()> {
         Ok(pr_url) => {
             task.pr_url = Some(pr_url.clone());
             task.status = SwarmTaskStatus::Complete { pr_url };
+            let _ = crate::claims::release(repo, task.issue.number, "completed");
         }
         Err(err) => {
             task.status = SwarmTaskStatus::Failed {
                 reason: err.to_string(),
             };
+            let _ = crate::claims::release(repo, task.issue.number, "failed");
         }
     }
     Ok(())

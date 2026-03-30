@@ -22,6 +22,8 @@ use crate::tracker;
 const GRID_CAPTURE_LINES: u32 = 160;
 const FOCUSED_CAPTURE_LINES: u32 = 500;
 const GRID_PREVIEW_LINES: usize = 14;
+/// Lines shown per pane card in the multiplexer grid (live output preview).
+const LIVE_PREVIEW_LINES: usize = 5;
 
 /// Snapshot of pane data for rendering (no locks held during draw)
 pub struct PaneSnapshot {
@@ -100,6 +102,7 @@ pub struct CoordSnapshot {
     pub kb_recent: Vec<(String, String, String)>, // (category, title, pane_id)
     pub branches: Vec<(String, String, String)>, // (pane_id, branch, project)
     pub ports: Vec<(i64, String, String)>,     // (port, service, pane_id)
+    pub claims: Vec<(String, u32, String, String)>, // (repo, issue, agent_id, claimed_at)
 }
 
 /// Infrastructure snapshot (ports, builds, messages, sessions)
@@ -508,6 +511,7 @@ pub fn collect_data(
             kb_recent: Vec::new(),
             branches: Vec::new(),
             ports: Vec::new(),
+            claims: Vec::new(),
         }
     };
 
@@ -898,12 +902,21 @@ fn collect_coord(_q: &queue::TaskQueue) -> CoordSnapshot {
         })
         .unwrap_or_default();
 
+    // Issue claims
+    let claims: Vec<(String, u32, String, String)> =
+        crate::claims::list(None, true)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|c| (c.repo, c.issue, c.agent_id, c.claimed_at))
+            .collect();
+
     CoordSnapshot {
         agents,
         locks,
         kb_recent,
         branches,
         ports,
+        claims,
     }
 }
 
@@ -1510,7 +1523,11 @@ pub fn render(f: &mut Frame, data: &DashboardData) {
 
             let right_split = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+                .constraints([
+                    Constraint::Percentage(35),
+                    Constraint::Percentage(35),
+                    Constraint::Percentage(30),
+                ])
                 .split(coord_panels[2]);
 
             render_header(f, chunks[0], data);
@@ -1523,7 +1540,8 @@ pub fn render(f: &mut Frame, data: &DashboardData) {
             render_coord_kb(f, mid_split[0], data);
             render_coord_branches(f, mid_split[1], data);
             render_coord_ports(f, right_split[0], data);
-            render_queue(f, right_split[1], data);
+            render_coord_claims(f, right_split[1], data);
+            render_queue(f, right_split[2], data);
             render_help_bar(f, chunks[4], data);
         }
         ViewMode::Projects => {
@@ -2200,15 +2218,24 @@ fn render_multiplexer_grid(f: &mut Frame, area: Rect, data: &DashboardData) {
     }
 }
 
+/// Map agent status + health to a color for live output streaming.
+fn status_color(status: &str, health: &str) -> Color {
+    match (status, health) {
+        (_, "error") | (_, "dead") => Color::Red,
+        ("active", "ok" | "") => Color::Green,
+        ("active", "stuck") => Color::Yellow,
+        ("idle", _) | ("", _) => Color::Yellow,
+        ("done", _) => Color::Cyan,
+        _ => Color::DarkGray,
+    }
+}
+
 fn render_mux_pane(f: &mut Frame, area: Rect, pane: &PaneSnapshot, selected: bool) {
+    let agent_color = status_color(&pane.status, &pane.health);
     let border_color = if selected {
         widgets::theme_color(&pane.theme_fg)
-    } else if pane.health == "error" {
-        Color::Red
-    } else if pane.status == "active" {
-        Color::Green
     } else {
-        Color::DarkGray
+        agent_color
     };
     let provider = crate::tmux::provider_short(&pane.provider);
     let target = pane
@@ -2276,6 +2303,9 @@ fn render_mux_pane(f: &mut Frame, area: Rect, pane: &PaneSnapshot, selected: boo
     ]));
 
     let body_capacity = lines_capacity.saturating_sub(1);
+    // Show last 5 lines of live output, color-coded by agent status
+    let preview_lines = body_capacity.min(LIVE_PREVIEW_LINES).max(1);
+    let output_color = status_color(&pane.status, &pane.health);
     let body_lines: Vec<Line> = if pane.output.trim().is_empty() {
         vec![Line::from(Span::styled(
             "waiting for terminal output",
@@ -2285,11 +2315,11 @@ fn render_mux_pane(f: &mut Frame, area: Rect, pane: &PaneSnapshot, selected: boo
         pane.output
             .lines()
             .rev()
-            .take(body_capacity.min(GRID_PREVIEW_LINES).max(1))
+            .take(preview_lines)
             .collect::<Vec<_>>()
             .into_iter()
             .rev()
-            .map(|line| Line::from(Span::raw(line.to_string())))
+            .map(|line| Line::from(Span::styled(line.to_string(), Style::default().fg(output_color))))
             .collect()
     };
     lines.extend(body_lines);
@@ -3038,6 +3068,49 @@ fn render_coord_ports(f: &mut Frame, area: Rect, data: &DashboardData) {
     let p = Paragraph::new(lines).block(block);
     f.render_widget(p, area);
 }
+fn render_coord_claims(f: &mut Frame, area: Rect, data: &DashboardData) {
+    let available = area.height.saturating_sub(2) as usize;
+    let lines: Vec<Line> = if data.coord.claims.is_empty() {
+        vec![Line::from(Span::styled(
+            "  No active claims",
+            Style::default().fg(Color::DarkGray),
+        ))]
+    } else {
+        data.coord
+            .claims
+            .iter()
+            .take(available)
+            .map(|(repo, issue, agent, claimed_at)| {
+                let time = claimed_at.get(11..16).unwrap_or(claimed_at);
+                Line::from(vec![
+                    Span::styled(
+                        format!(" #{:<5}", issue),
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format!("{:<18}", widgets::truncate_pub(repo, 18)),
+                        Style::default().fg(Color::White),
+                    ),
+                    Span::styled(
+                        format!("{:<12}", widgets::truncate_pub(agent, 12)),
+                        Style::default().fg(Color::Cyan),
+                    ),
+                    Span::styled(time.to_string(), Style::default().fg(Color::DarkGray)),
+                ])
+            })
+            .collect()
+    };
+
+    let block = Block::default()
+        .title(format!(" Claims ({}) ", data.coord.claims.len()))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+    let p = Paragraph::new(lines).block(block);
+    f.render_widget(p, area);
+}
+
 fn format_runtime(started: &str) -> String {
     // Parse ISO timestamp and compute elapsed
     if let Ok(start) = chrono::NaiveDateTime::parse_from_str(started, "%Y-%m-%dT%H:%M:%S%.fZ")
@@ -4405,4 +4478,49 @@ fn render_builds_panel(f: &mut Frame, area: Rect, data: &DashboardData) {
 
     let paragraph = Paragraph::new(lines);
     f.render_widget(paragraph, inner);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_color_active_ok_is_green() {
+        assert_eq!(status_color("active", "ok"), Color::Green);
+        assert_eq!(status_color("active", ""), Color::Green);
+    }
+
+    #[test]
+    fn status_color_error_is_red() {
+        assert_eq!(status_color("active", "error"), Color::Red);
+        assert_eq!(status_color("idle", "error"), Color::Red);
+        assert_eq!(status_color("", "dead"), Color::Red);
+    }
+
+    #[test]
+    fn status_color_idle_is_yellow() {
+        assert_eq!(status_color("idle", ""), Color::Yellow);
+        assert_eq!(status_color("idle", "ok"), Color::Yellow);
+    }
+
+    #[test]
+    fn status_color_stuck_is_yellow() {
+        assert_eq!(status_color("active", "stuck"), Color::Yellow);
+    }
+
+    #[test]
+    fn status_color_done_is_cyan() {
+        assert_eq!(status_color("done", ""), Color::Cyan);
+        assert_eq!(status_color("done", "ok"), Color::Cyan);
+    }
+
+    #[test]
+    fn status_color_unknown_is_dark_gray() {
+        assert_eq!(status_color("unknown", ""), Color::DarkGray);
+    }
+
+    #[test]
+    fn live_preview_lines_is_five() {
+        assert_eq!(LIVE_PREVIEW_LINES, 5);
+    }
 }

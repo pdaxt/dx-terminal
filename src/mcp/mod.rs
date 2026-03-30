@@ -2265,6 +2265,41 @@ impl DxTerminalService {
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
+    // === CLAIMS REGISTRY ===
+
+    #[tool(
+        description = "Claim a GitHub issue for an agent. Prevents other agents from working on the same issue. Returns denied if already claimed."
+    )]
+    async fn claim_issue(
+        &self,
+        Parameters(req): Parameters<types::ClaimIssueRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::claims_tools::claim_issue(req);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "Release a claim on a GitHub issue. Use after completing, failing, or abandoning work."
+    )]
+    async fn release_claim(
+        &self,
+        Parameters(req): Parameters<types::ReleaseClaimRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::claims_tools::release_claim(req);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = "List all issue claims across repos. Shows which agent owns each issue to prevent dogpiling."
+    )]
+    async fn list_claims(
+        &self,
+        Parameters(req): Parameters<types::ListClaimsRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = tools::claims_tools::list_claims(req);
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
     // === SCREEN MANAGEMENT ===
 
     #[tool(
