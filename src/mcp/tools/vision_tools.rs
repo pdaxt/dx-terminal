@@ -256,3 +256,79 @@ pub fn vision_update_goal(project: Option<&str>, goal_id: &str, status: &str) ->
         &format!("Status changed to {}", status),
     )
 }
+
+// ─── VDD Kernel Tools ───────────────────────────────────────────────────────
+
+/// Advance a feature through the VDD lifecycle (SQLite-tracked).
+pub fn vdd_advance(
+    project: &str,
+    feature_id: &str,
+    to_phase: &str,
+    triggered_by: Option<&str>,
+    reason: Option<&str>,
+    force: bool,
+) -> String {
+    let phase = match vision::FeaturePhase::from_str_loose(to_phase) {
+        Some(p) => p,
+        None => {
+            return serde_json::json!({
+                "error": "invalid_phase",
+                "options": ["planned","discovery","design","build","test","done"]
+            })
+            .to_string()
+        }
+    };
+
+    match crate::vdd::advance(
+        project,
+        feature_id,
+        &phase,
+        triggered_by.unwrap_or("mcp"),
+        reason.unwrap_or(""),
+        force,
+    ) {
+        Ok(f) => serde_json::json!({
+            "status": "advanced",
+            "feature": f,
+        })
+        .to_string(),
+        Err(e) => serde_json::json!({"error": e}).to_string(),
+    }
+}
+
+/// Get VDD summary for a project (feature counts by phase).
+pub fn vdd_summary(project: Option<&str>) -> String {
+    match crate::vdd::summary(project) {
+        Ok(s) => serde_json::to_string(&s).unwrap_or_else(|e| {
+            serde_json::json!({"error": e.to_string()}).to_string()
+        }),
+        Err(e) => serde_json::json!({"error": e}).to_string(),
+    }
+}
+
+/// Get transition history and time-in-stage for a feature.
+pub fn vdd_feature_history(project: &str, feature_id: &str) -> String {
+    let transitions = crate::vdd::transitions(project, feature_id);
+    let stage_times = crate::vdd::stage_times(project, feature_id);
+
+    match (transitions, stage_times) {
+        (Ok(txns), Ok(times)) => serde_json::json!({
+            "transitions": txns,
+            "stage_times": times,
+        })
+        .to_string(),
+        (Err(e), _) | (_, Err(e)) => serde_json::json!({"error": e}).to_string(),
+    }
+}
+
+/// List features in VDD tracker, optionally filtered by phase.
+pub fn vdd_list(project: &str, phase: Option<&str>) -> String {
+    match crate::vdd::list_features(project, phase) {
+        Ok(features) => serde_json::json!({
+            "count": features.len(),
+            "features": features,
+        })
+        .to_string(),
+        Err(e) => serde_json::json!({"error": e}).to_string(),
+    }
+}

@@ -147,6 +147,13 @@ pub enum StateEvent {
         data: Value,
     },
 
+    // --- Health ---
+    PaneHealthChanged {
+        pane: u8,
+        old_health: super::types::PaneHealthStatus,
+        new_health: super::types::PaneHealthStatus,
+    },
+
     // --- Control ---
     StateRefreshed,
 }

@@ -47,6 +47,7 @@ pub mod tmux;
 pub mod tracker;
 pub mod tui;
 pub mod ui_audit;
+pub mod vdd;
 pub mod ux_audit;
 pub mod vision;
 pub mod vision_events;

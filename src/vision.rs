@@ -170,6 +170,7 @@ pub struct Feature {
 pub enum FeatureStatus {
     Planned,
     Specifying,
+    Designing,
     Building,
     Testing,
     Done,
@@ -180,6 +181,7 @@ pub enum FeatureStatus {
 pub enum FeaturePhase {
     Planned,
     Discovery,
+    Design,
     Build,
     Test,
     Done,
@@ -188,6 +190,43 @@ pub enum FeaturePhase {
 impl Default for FeaturePhase {
     fn default() -> Self {
         Self::Planned
+    }
+}
+
+impl FeaturePhase {
+    /// Ordered index for stage progression (0-based).
+    pub fn ordinal(&self) -> u8 {
+        match self {
+            Self::Planned => 0,
+            Self::Discovery => 1,
+            Self::Design => 2,
+            Self::Build => 3,
+            Self::Test => 4,
+            Self::Done => 5,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Planned => "planned",
+            Self::Discovery => "discovery",
+            Self::Design => "design",
+            Self::Build => "build",
+            Self::Test => "test",
+            Self::Done => "done",
+        }
+    }
+
+    pub fn from_str_loose(s: &str) -> Option<Self> {
+        match s {
+            "planned" => Some(Self::Planned),
+            "discovery" => Some(Self::Discovery),
+            "design" => Some(Self::Design),
+            "build" => Some(Self::Build),
+            "test" => Some(Self::Test),
+            "done" => Some(Self::Done),
+            _ => None,
+        }
     }
 }
 
@@ -357,6 +396,7 @@ fn feature_phase_from_status(status: &FeatureStatus) -> FeaturePhase {
     match status {
         FeatureStatus::Planned => FeaturePhase::Planned,
         FeatureStatus::Specifying => FeaturePhase::Discovery,
+        FeatureStatus::Designing => FeaturePhase::Design,
         FeatureStatus::Building => FeaturePhase::Build,
         FeatureStatus::Testing => FeaturePhase::Test,
         FeatureStatus::Done => FeaturePhase::Done,
@@ -367,9 +407,10 @@ fn feature_state_from_status(status: &FeatureStatus) -> FeatureState {
     match status {
         FeatureStatus::Planned => FeatureState::Planned,
         FeatureStatus::Done => FeatureState::Complete,
-        FeatureStatus::Specifying | FeatureStatus::Building | FeatureStatus::Testing => {
-            FeatureState::Active
-        }
+        FeatureStatus::Specifying
+        | FeatureStatus::Designing
+        | FeatureStatus::Building
+        | FeatureStatus::Testing => FeatureState::Active,
     }
 }
 
@@ -377,6 +418,7 @@ fn feature_status_from_phase(phase: &FeaturePhase) -> FeatureStatus {
     match phase {
         FeaturePhase::Planned => FeatureStatus::Planned,
         FeaturePhase::Discovery => FeatureStatus::Specifying,
+        FeaturePhase::Design => FeatureStatus::Designing,
         FeaturePhase::Build => FeatureStatus::Building,
         FeaturePhase::Test => FeatureStatus::Testing,
         FeaturePhase::Done => FeatureStatus::Done,
@@ -759,6 +801,9 @@ pub fn save_vision(project_path: &str, vision: &Vision) -> Result<(), String> {
     if !gitignore.exists() {
         let _ = std::fs::write(&gitignore, "# Vision files are tracked in git\n!*\n");
     }
+
+    // Sync features to VDD SQLite store (best-effort, don't block on failure)
+    crate::vdd::sync_from_vision(project_path);
 
     Ok(())
 }
@@ -3436,19 +3481,21 @@ pub fn update_feature_status(project_path: &str, feature_id: &str, new_status: &
     let parsed: FeatureStatus = match new_status {
         "planned" => FeatureStatus::Planned,
         "specifying" => FeatureStatus::Specifying,
+        "designing" => FeatureStatus::Designing,
         "building" => FeatureStatus::Building,
         "testing" => FeatureStatus::Testing,
         "done" => FeatureStatus::Done,
-        _ => return serde_json::json!({"error": "invalid_status", "options": ["planned","specifying","building","testing","done"]}).to_string(),
+        _ => return serde_json::json!({"error": "invalid_status", "options": ["planned","specifying","designing","building","testing","done"]}).to_string(),
     };
 
     let old_status = serde_json::to_string(&feature.status).unwrap_or_default();
     let next_state = match parsed {
         FeatureStatus::Planned => FeatureState::Planned,
         FeatureStatus::Done => FeatureState::Complete,
-        FeatureStatus::Specifying | FeatureStatus::Building | FeatureStatus::Testing => {
-            FeatureState::Active
-        }
+        FeatureStatus::Specifying
+        | FeatureStatus::Designing
+        | FeatureStatus::Building
+        | FeatureStatus::Testing => FeatureState::Active,
     };
     set_feature_lifecycle(feature, feature_phase_from_status(&parsed), next_state);
     feature.updated_at = now();
@@ -3546,7 +3593,7 @@ mod tests {
         let vision = load_vision(path).unwrap();
         let fid = &vision.features[0].id;
 
-        for status in &["specifying", "building", "testing", "done"] {
+        for status in &["specifying", "designing", "building", "testing", "done"] {
             let result = update_feature_status(path, fid, status);
             assert!(
                 !result.contains("error"),
@@ -3558,6 +3605,7 @@ mod tests {
             let f = v.features.iter().find(|f| f.id == *fid).unwrap();
             let expected: FeatureStatus = match *status {
                 "specifying" => FeatureStatus::Specifying,
+                "designing" => FeatureStatus::Designing,
                 "building" => FeatureStatus::Building,
                 "testing" => FeatureStatus::Testing,
                 "done" => FeatureStatus::Done,
@@ -3566,6 +3614,7 @@ mod tests {
             assert_eq!(f.status, expected);
             let expected_phase = match *status {
                 "specifying" => FeaturePhase::Discovery,
+                "designing" => FeaturePhase::Design,
                 "building" => FeaturePhase::Build,
                 "testing" => FeaturePhase::Test,
                 "done" => FeaturePhase::Done,

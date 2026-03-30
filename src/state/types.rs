@@ -1,6 +1,76 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 
+/// Real-time health classification for an agent pane.
+/// Determined by polling tmux output every 2s.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PaneHealthStatus {
+    /// Agent is actively producing output / spinner is turning
+    Working,
+    /// Agent is at a prompt, waiting for input (idle between tasks)
+    Idle,
+    /// Agent output hasn't changed for longer than stuck_threshold
+    Stuck,
+    /// Process exited or tmux pane no longer exists
+    Dead,
+    /// Rate limit or usage limit detected in output
+    RateLimited,
+    /// Agent completed its task (shell prompt after work)
+    Finished,
+    /// Waiting for user approval (permission prompt detected)
+    AwaitingApproval,
+    /// No agent detected on this pane
+    Empty,
+}
+
+impl Default for PaneHealthStatus {
+    fn default() -> Self {
+        Self::Empty
+    }
+}
+
+impl PaneHealthStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Working => "working",
+            Self::Idle => "idle",
+            Self::Stuck => "stuck",
+            Self::Dead => "dead",
+            Self::RateLimited => "rate_limited",
+            Self::Finished => "finished",
+            Self::AwaitingApproval => "awaiting_approval",
+            Self::Empty => "empty",
+        }
+    }
+
+    pub fn indicator(&self) -> &'static str {
+        match self {
+            Self::Working => "●",
+            Self::Idle => "○",
+            Self::Stuck => "◌",
+            Self::Dead => "✗",
+            Self::RateLimited => "⊘",
+            Self::Finished => "✓",
+            Self::AwaitingApproval => "⚠",
+            Self::Empty => "·",
+        }
+    }
+
+    pub fn color_name(&self) -> &'static str {
+        match self {
+            Self::Working => "green",
+            Self::Idle => "blue",
+            Self::Stuck => "yellow",
+            Self::Dead => "red",
+            Self::RateLimited => "magenta",
+            Self::Finished => "cyan",
+            Self::AwaitingApproval => "yellow",
+            Self::Empty => "dark_gray",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DxTerminalState {
     #[serde(default)]
@@ -72,6 +142,15 @@ pub struct PaneState {
     /// tmux target pane (e.g. "claude6:11.1") — where the agent actually lives
     #[serde(default)]
     pub tmux_target: Option<String>,
+    /// Real-time health status (updated every 2s by health monitor)
+    #[serde(default)]
+    pub health: PaneHealthStatus,
+    /// Hash of last captured output (for stuck detection via change tracking)
+    #[serde(default)]
+    pub last_output_hash: u64,
+    /// Timestamp when output last changed (ISO 8601)
+    #[serde(default)]
+    pub last_output_changed_at: Option<String>,
 }
 
 fn default_idle() -> String {
@@ -102,6 +181,9 @@ impl Default for PaneState {
             machine_hostname: None,
             machine_mac: None,
             tmux_target: None,
+            health: PaneHealthStatus::Empty,
+            last_output_hash: 0,
+            last_output_changed_at: None,
         }
     }
 }
