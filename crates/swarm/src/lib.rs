@@ -421,16 +421,15 @@ impl SwarmDb {
         }
 
         // Find a free port
-        let allocated_ports: Vec<i64> = {
-            let mut stmt = match tx.prepare("SELECT port FROM ports") {
-                Ok(s) => s,
-                Err(e) => return json!({"error": format!("Query: {}", e)}),
-            };
-            match stmt.query_map([], |r| r.get(0)) {
-                Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
-                Err(e) => return json!({"error": format!("Query: {}", e)}),
-            }
+        let mut stmt = match tx.prepare("SELECT port FROM ports") {
+            Ok(s) => s,
+            Err(e) => return json!({"error": format!("Query: {}", e)}),
         };
+        let allocated_ports: Vec<i64> = match stmt.query_map([], |r| r.get(0)) {
+            Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
+            Err(e) => return json!({"error": format!("Query: {}", e)}),
+        };
+        drop(stmt);
 
         let mut port: Option<u16> = None;
 

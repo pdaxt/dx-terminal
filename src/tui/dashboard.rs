@@ -21,7 +21,6 @@ use crate::tracker;
 
 const GRID_CAPTURE_LINES: u32 = 160;
 const FOCUSED_CAPTURE_LINES: u32 = 500;
-const GRID_PREVIEW_LINES: usize = 14;
 /// Lines shown per pane card in the multiplexer grid (live output preview).
 const LIVE_PREVIEW_LINES: usize = 5;
 

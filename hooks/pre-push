@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+#
+# pre-push hook: Local CI gate for dx-terminal
+# Runs cargo check + test + clippy before allowing push.
+# If any step fails, push is blocked.
+#
+# Uses `dx ci` if available, otherwise falls back to raw cargo commands.
+
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+# Try dx ci first (has structured output + fail-fast)
+if command -v dx &>/dev/null; then
+    echo -e "${CYAN}━━━ dx local CI gate ━━━${NC}"
+    if dx ci; then
+        exit 0
+    else
+        echo -e "${RED}━━━ CI FAILED -- push blocked ━━━${NC}"
+        exit 1
+    fi
+fi
+
+# Fallback: raw cargo commands
+echo -e "${CYAN}━━━ dx local CI gate (fallback) ━━━${NC}"
+echo ""
+
+failed=0
+
+echo -ne "  cargo check --workspace ... "
+if cargo check --workspace 2>/dev/null; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL${NC}"
+    failed=1
+fi
+
+if [ $failed -eq 0 ]; then
+    echo -ne "  cargo test --workspace  ... "
+    if cargo test --workspace 2>/dev/null; then
+        echo -e "${GREEN}PASS${NC}"
+    else
+        echo -e "${RED}FAIL${NC}"
+        failed=1
+    fi
+fi
+
+if [ $failed -eq 0 ]; then
+    echo -ne "  cargo clippy --workspace ... "
+    if cargo clippy --workspace -- -D clippy::correctness -W clippy::suspicious 2>/dev/null; then
+        echo -e "${GREEN}PASS${NC}"
+    else
+        echo -e "${RED}FAIL${NC}"
+        failed=1
+    fi
+fi
+
+echo ""
+if [ $failed -ne 0 ]; then
+    echo -e "${RED}━━━ CI FAILED -- push blocked ━━━${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}━━━ CI passed -- pushing ━━━${NC}"
+exit 0

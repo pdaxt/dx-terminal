@@ -55,6 +55,18 @@ enum Commands {
         #[command(subcommand)]
         command: GatewayCommands,
     },
+    /// Run local CI gate (cargo check + test + clippy) — blocks push on failure
+    Ci {
+        /// Skip cargo test
+        #[arg(long)]
+        no_test: bool,
+        /// Skip cargo clippy
+        #[arg(long)]
+        no_clippy: bool,
+        /// Run all steps even if one fails
+        #[arg(long)]
+        no_fail_fast: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -175,6 +187,7 @@ fn runtime_identity(cli: &Cli, default_web_port: u16) -> String {
                 format!("gateway-call-{}-{}-{:x}", mcp, tool, cwd_hash)
             }
         },
+        Some(Commands::Ci { .. }) => format!("ci-{:x}", cwd_hash),
         None => format!("default-{}-{:x}", default_web_port, cwd_hash),
     }
 }
@@ -265,6 +278,20 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Gateway { command }) => {
             run_gateway_cli(application, command).await?;
+        }
+        Some(Commands::Ci { no_test, no_clippy, no_fail_fast }) => {
+            let config = dx_terminal::ci::CiConfig {
+                check: true,
+                test: !no_test,
+                clippy: !no_clippy,
+                working_dir: None,
+                fail_fast: !no_fail_fast,
+            };
+            let result = dx_terminal::ci::run(&config);
+            print!("{result}");
+            if !result.passed() {
+                std::process::exit(1);
+            }
         }
     }
 
