@@ -1790,7 +1790,7 @@ mod tests {
 
     #[test]
     fn test_handle_stop_blocks_when_obvious_next_step_exists() {
-        let _guard = STOP_TEST_LOCK.lock().unwrap();
+        let _guard = STOP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path();
         let vision_dir = project.join(".vision");
@@ -1855,7 +1855,7 @@ mod tests {
 
     #[test]
     fn test_handle_stop_repeats_auto_continue_on_same_message() {
-        let _guard = STOP_TEST_LOCK.lock().unwrap();
+        let _guard = STOP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path();
         let vision_dir = project.join(".vision");
@@ -1927,7 +1927,7 @@ mod tests {
 
     #[test]
     fn test_handle_stop_pauses_after_retry_budget() {
-        let _guard = STOP_TEST_LOCK.lock().unwrap();
+        let _guard = STOP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path();
         let vision_dir = project.join(".vision");
