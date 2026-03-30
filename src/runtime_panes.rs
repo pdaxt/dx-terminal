@@ -206,6 +206,7 @@ fn synthesize_pane_state(pane: u8, live: &LivePane) -> PaneState {
         machine_hostname: None,
         machine_mac: None,
         tmux_target: Some(live.target.clone()),
+        ..Default::default()
     }
 }
 

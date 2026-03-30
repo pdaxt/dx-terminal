@@ -1,4 +1,5 @@
 pub mod agent_assets;
+pub mod approval;
 pub mod agent_router;
 pub mod agents;
 pub mod analytics;
@@ -6,6 +7,8 @@ pub mod app;
 pub mod audit;
 pub mod build;
 pub mod capacity;
+pub mod ci;
+pub mod claims;
 pub mod claude;
 pub mod collab;
 pub mod config;

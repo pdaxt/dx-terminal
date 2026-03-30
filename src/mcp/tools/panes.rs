@@ -1103,6 +1103,7 @@ pub async fn spawn(app: &App, req: SpawnRequest) -> String {
         machine_hostname: Some(machine_id.hostname.clone()),
         machine_mac: Some(machine_id.mac.clone()),
         tmux_target: tmux_target.clone(),
+        ..Default::default()
     };
     let session_result = crate::dxos::upsert_session_contract(
         &project_path,
