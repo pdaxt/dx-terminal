@@ -13,10 +13,11 @@ GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# Try dx ci first (has structured output + fail-fast)
-if command -v dx &>/dev/null; then
+# Try dx-terminal's own binary if it's been built locally
+DX_BIN="$(cd "$(dirname "$0")/../.." && pwd)/target/release/dx"
+if [ -x "$DX_BIN" ] && "$DX_BIN" ci --help &>/dev/null 2>&1; then
     echo -e "${CYAN}━━━ dx local CI gate ━━━${NC}"
-    if dx ci; then
+    if "$DX_BIN" ci; then
         exit 0
     else
         echo -e "${RED}━━━ CI FAILED -- push blocked ━━━${NC}"
