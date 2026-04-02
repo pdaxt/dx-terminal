@@ -82,8 +82,34 @@ pub async fn go(app: Arc<App>, args: GoArgs) -> Result<()> {
     engine::start_background_tasks(Some(Arc::clone(&app.state))).await;
     crate::dxos_scheduler::start(Arc::clone(&app));
     crate::dxos_supervisor::start(Arc::clone(&app));
+    let _health_monitor =
+        crate::health_monitor::start(Arc::clone(&app));
 
     let port = find_free_port(3001)?;
+
+    // Launch dx web as a visible tmux pane in a "dashboard" window
+    // so it's part of the session, not a hidden background process.
+    let dx_bin = std::env::current_exe().unwrap_or_else(|_| "dx".into());
+    let dash_window = "dashboard";
+    if !tmux_window_exists(&session.session_name, dash_window) {
+        let _ = Command::new("tmux")
+            .args([
+                "new-window",
+                "-t",
+                &session.session_name,
+                "-n",
+                dash_window,
+                "-d", // don't switch to it
+                &format!(
+                    "{} web --port {}",
+                    dx_bin.to_string_lossy(),
+                    port
+                ),
+            ])
+            .status();
+    }
+
+    // Also run the web server in-process for the API/SSE that agents use
     let web_app = Arc::clone(&app);
     let dashboard_handle = tokio::spawn(async move { web::run_web_server(web_app, port).await });
 
