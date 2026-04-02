@@ -114,27 +114,64 @@ async fn classify(
         return PaneHealthStatus::Dead;
     }
 
-    // Check for completion (shell prompt after work)
+    // Check for completion (shell prompt after work — agent exited)
     if is_finished(trimmed, &ps.tmux_target) {
         return PaneHealthStatus::Finished;
     }
 
+    // Check if agent is at idle prompt (Claude Code ❯, Codex ›, etc.)
+    if is_idle_prompt(trimmed) {
+        return PaneHealthStatus::Idle;
+    }
+
     // Check for stuck (output unchanged for STUCK_THRESHOLD_SECS)
-    if ps.status == "active" {
-        if let Some(ref last_changed) = ps.last_output_changed_at {
-            if is_stuck(last_changed) {
-                return PaneHealthStatus::Stuck;
-            }
+    if let Some(ref last_changed) = ps.last_output_changed_at {
+        if is_stuck(last_changed) {
+            return PaneHealthStatus::Stuck;
         }
     }
 
-    // If status is active and output is flowing, it's working
-    if ps.status == "active" {
+    // If output is flowing and we didn't match any terminal state, it's working
+    if ps.tmux_target.is_some() {
         return PaneHealthStatus::Working;
     }
 
     // Default: idle
     PaneHealthStatus::Idle
+}
+
+/// Check if the agent is at an idle prompt waiting for input.
+/// Detects Claude Code (❯), Codex CLI (›), shell prompts, and common idle indicators.
+fn is_idle_prompt(output: &str) -> bool {
+    // Take the last ~400 chars, but snap to a char boundary
+    let tail: &str = if output.len() > 400 {
+        let start = output.len() - 400;
+        // Find the next valid char boundary
+        let safe_start = output.ceil_char_boundary(start);
+        &output[safe_start..]
+    } else {
+        output
+    };
+    let lower = tail.to_lowercase();
+
+    // Claude Code idle indicators
+    let idle_patterns = [
+        "? for shortcuts",
+        "esc to interrupt",
+        "/help for commands",
+        "for shortcuts",
+        "left \u{00b7}",  // "left ·" — Codex context remaining
+    ];
+
+    // Must have an idle pattern AND no active work indicators
+    let has_idle_pattern = idle_patterns.iter().any(|p| lower.contains(p));
+    let has_work_indicator = lower.contains("thinking")
+        || lower.contains("analyzing")
+        || lower.contains("reading")
+        || lower.contains("writing")
+        || lower.contains("running");
+
+    has_idle_pattern && !has_work_indicator
 }
 
 /// Check if output indicates rate limiting.
@@ -154,7 +191,9 @@ fn is_rate_limited(output: &str) -> bool {
 /// Check if output shows an approval/permission prompt.
 fn is_awaiting_approval(output: &str) -> bool {
     let tail: &str = if output.len() > 600 {
-        &output[output.len() - 600..]
+        let start = output.len() - 600;
+        let safe_start = output.ceil_char_boundary(start);
+        &output[safe_start..]
     } else {
         output
     };

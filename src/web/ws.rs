@@ -314,7 +314,15 @@ async fn build_full_snapshot(app: &App) -> Value {
         })
     };
 
-    let active_count = panes.iter().filter(|p| p["status"] == "active").count();
+    let active_count = panes
+        .iter()
+        .filter(|p| {
+            matches!(
+                p["status"].as_str(),
+                Some("working") | Some("awaiting_approval")
+            )
+        })
+        .count();
     let total_panes = panes.len();
 
     // Collect unique workspaces from all panes

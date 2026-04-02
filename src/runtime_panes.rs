@@ -151,7 +151,7 @@ fn pane_reserves_slot(pane_state: &PaneState) -> bool {
     pane_state.tmux_target.is_some()
         || matches!(
             pane_state.status.trim(),
-            "active" | "running" | "done" | "error" | "stuck" | "blocked" | "live"
+            "active" | "working" | "running" | "done" | "error" | "stuck" | "blocked" | "live" | "rate_limited" | "awaiting_approval" | "finished"
         )
         || pane_state
             .workspace_path
@@ -196,7 +196,7 @@ fn synthesize_pane_state(pane: u8, live: &LivePane) -> PaneState {
         task: format!("{} in {}", tmux::provider_label(&provider), live.target),
         issue_id: None,
         space: None,
-        status: "active".to_string(),
+        status: "idle".to_string(),
         started_at: None,
         acu_spent: 0.0,
         workspace_path: Some(project_cwd),
@@ -237,12 +237,13 @@ fn enrich_pane_state(pane_state: &mut PaneState, pane: u8, live: &LivePane) {
         pane_state.dxos_session_id = live.session_id.clone();
     }
     if pane_state.task.trim().is_empty()
-        || pane_state.status != "active"
         || pane_state.tmux_target.as_deref() != Some(live.target.as_str())
     {
         pane_state.task = format!("{} in {}", tmux::provider_label(&provider), live.target);
     }
-    pane_state.status = "active".to_string();
+    // Derive status from health monitor classification (updated every 2s).
+    // Don't override with "active" — let health be the source of truth.
+    pane_state.status = pane_state.health.as_str().to_string();
     pane_state.workspace_path = Some(project_cwd);
     pane_state.tmux_target = Some(live.target.clone());
 }
@@ -365,6 +366,7 @@ mod tests {
 
     #[test]
     fn reuses_idle_slots_before_allocating_new_ones() {
+        crate::config::init();
         let mut state = DxTerminalState::default();
         state.panes.insert("1".into(), PaneState::default());
         state.panes.insert("2".into(), PaneState::default());

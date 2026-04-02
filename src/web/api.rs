@@ -837,7 +837,9 @@ pub async fn get_agents(State(app): State<AppState>) -> Json<Value> {
             panes
                 .iter()
                 .filter(|p| {
-                    p["status"].as_str().map_or(false, |s| s == "active")
+                    p["status"]
+                        .as_str()
+                        .map_or(false, |s| !matches!(s, "empty" | "dead"))
                         || p["pty_active"].as_bool().unwrap_or(false)
                 })
                 .cloned()

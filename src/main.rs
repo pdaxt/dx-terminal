@@ -397,6 +397,8 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("Web dashboard at http://localhost:{}", port);
             dxos_scheduler::start(Arc::clone(&application));
             dxos_supervisor::start(Arc::clone(&application));
+            let _health_monitor =
+                dx_terminal::health_monitor::start(Arc::clone(&application));
             web::run_web_server(application, port).await?;
         }
         Some(Commands::Go(args)) => {
