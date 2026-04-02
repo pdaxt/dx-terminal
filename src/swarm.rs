@@ -121,7 +121,7 @@ pub async fn start(app: Arc<App>, config: SwarmConfig) -> Result<SwarmStatusRepo
         .into_iter()
         .filter(|issue| {
             match crate::claims::is_claimed(&config.repo, issue.number) {
-                Ok(None) => true,  // unclaimed, keep it
+                Ok(None) => true, // unclaimed, keep it
                 Ok(Some(_)) => {
                     tracing::info!(issue = issue.number, "skipping already-claimed issue");
                     false
@@ -467,7 +467,13 @@ async fn refresh_swarm_state(app: &App, state: &Arc<RwLock<SwarmSnapshot>>) -> R
         if matches!(task.status, SwarmTaskStatus::Queued) {
             continue;
         }
-        *task = reconcile_task(app, &updated.base_branch, &updated.config.repo, task.clone()).await?;
+        *task = reconcile_task(
+            app,
+            &updated.base_branch,
+            &updated.config.repo,
+            task.clone(),
+        )
+        .await?;
     }
 
     launch_queued_tasks(app, &mut updated).await?;
@@ -498,7 +504,10 @@ async fn launch_queued_tasks(app: &App, snapshot: &mut SwarmSnapshot) -> Result<
         match crate::claims::try_claim(&snapshot.config.repo, task.issue.number, &swarm_id) {
             Ok(true) => {} // claimed successfully
             Ok(false) => {
-                tracing::info!(issue = task.issue.number, "issue claimed by another agent, skipping");
+                tracing::info!(
+                    issue = task.issue.number,
+                    "issue claimed by another agent, skipping"
+                );
                 task.status = SwarmTaskStatus::Failed {
                     reason: "issue already claimed by another agent".to_string(),
                 };

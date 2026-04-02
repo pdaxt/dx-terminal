@@ -46,7 +46,8 @@ fn open_db() -> Result<Connection> {
     let conn = Connection::open(&path).context("open claims database")?;
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")
         .context("set pragmas")?;
-    conn.execute_batch(SCHEMA).context("initialize claims schema")?;
+    conn.execute_batch(SCHEMA)
+        .context("initialize claims schema")?;
     Ok(conn)
 }
 

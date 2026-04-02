@@ -1,0 +1,17 @@
+[package]
+name = "dx-agent-api"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Multi-provider LLM API client — Anthropic, OpenAI, local models"
+
+
+[dependencies]
+dx-agent-core = { path = "../agent-core" }
+dx-agent-harness = { path = "../agent-harness" }
+reqwest = { version = "0.12", features = ["json", "blocking", "rustls-tls"], default-features = false }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+futures-util = "0.3"

@@ -25,7 +25,7 @@ You're running 16 AI coding runtimes across tmux panes. One needs approval. Anot
 
 ## The Solution
 
-DX Terminal is a **complete AI agent orchestration platform** — a single Rust binary that monitors, coordinates, and tracks teams of AI coding agents. Real-time TUI dashboard, web dashboard with WebSocket streaming, 206-tool MCP server, vision-driven development tracking, file sync, and build environment management. Built in Rust, <5MB RAM.
+DX Terminal is a **complete AI agent orchestration platform** — a single Rust binary that monitors, coordinates, and tracks teams of AI coding agents. Real-time TUI dashboard, web dashboard with WebSocket streaming, built-in operator CLI for external tool servers, 206-tool MCP server, vision-driven development tracking, file sync, and build environment management. Built in Rust, <5MB RAM.
 
 ## Operating Model
 
@@ -71,9 +71,12 @@ git clone https://github.com/pdaxt/dx-terminal.git && cd dx-terminal && cargo in
 ## Usage
 
 ```bash
-dx                          # TUI dashboard + web + MCP
+dx                          # TUI dashboard + web + MCP server support
 dx mcp                      # MCP server mode (stdio, all 206 tools)
 dx mcp core                 # Split MCP server (faster tools/list)
+dx external list            # List imported external tool servers
+dx external inspect playwright
+dx external run playwright click_text --args '{"text":"Login"}'
 dx web --port 3100          # Web dashboard only
 ```
 
@@ -141,6 +144,19 @@ DX Terminal includes a built-in MCP server with 206 tools across 5 domains:
 | `intel` | Analytics, monitoring, quality gates, vision | Intelligence & reporting |
 
 Run as monolith (`dx mcp`) or split servers for faster `tools/list` response.
+
+## External Tool Commands
+
+Use `dx external ...` for imported tool servers from Claude, Codex, or shared dx catalogs. This is the operator-first surface for external integrations; the internal gateway/MCP bridge remains under the hood.
+
+```bash
+dx external list
+dx external discover browser --auto-start
+dx external inspect playwright
+dx external run filesystem read_file --args '{"path":"README.md"}'
+```
+
+`dx tools ...` is a shortcut alias for the same command family.
 
 ## Key Bindings
 

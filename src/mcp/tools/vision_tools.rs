@@ -299,9 +299,8 @@ pub fn vdd_advance(
 /// Get VDD summary for a project (feature counts by phase).
 pub fn vdd_summary(project: Option<&str>) -> String {
     match crate::vdd::summary(project) {
-        Ok(s) => serde_json::to_string(&s).unwrap_or_else(|e| {
-            serde_json::json!({"error": e.to_string()}).to_string()
-        }),
+        Ok(s) => serde_json::to_string(&s)
+            .unwrap_or_else(|e| serde_json::json!({"error": e.to_string()}).to_string()),
         Err(e) => serde_json::json!({"error": e}).to_string(),
     }
 }

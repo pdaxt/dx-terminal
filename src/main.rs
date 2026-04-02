@@ -1,7 +1,8 @@
 use clap::{Parser, Subcommand};
 use dx_terminal::{
-    agent_router, app, config, dxos_scheduler, dxos_supervisor, engine, go, ipc, machine, mcp,
-    queue, swarm, sync, tui, web, workspace,
+    agent_display, agent_prompt, agent_repl, agent_router, agent_setup, app, config,
+    dxos_scheduler, dxos_supervisor, engine, go, ipc, machine, mcp, queue, swarm, sync, tui, web,
+    workspace,
 };
 use serde_json::{json, Value};
 use std::hash::{Hash, Hasher};
@@ -10,7 +11,7 @@ use std::sync::Arc;
 #[derive(Parser)]
 #[command(
     name = "dx",
-    about = "DX Terminal: AI-native terminal multiplexer for AI agent teams"
+    about = "DX Terminal: AI agent OS — code, orchestrate, ship"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -50,10 +51,17 @@ enum Commands {
         #[command(subcommand)]
         command: RouterCommands,
     },
-    /// Use external MCP servers configured outside dx through the gateway bridge
+    /// Run external tool commands imported from Claude, Codex, and other runtimes
+    #[command(visible_alias = "tools")]
+    External {
+        #[command(subcommand)]
+        command: ExternalCommands,
+    },
+    /// Compatibility alias for the older gateway surface
+    #[command(hide = true)]
     Gateway {
         #[command(subcommand)]
-        command: GatewayCommands,
+        command: ExternalCommands,
     },
     /// Run local CI gate (cargo check + test + clippy) — blocks push on failure
     Ci {
@@ -67,6 +75,37 @@ enum Commands {
         #[arg(long)]
         no_fail_fast: bool,
     },
+
+    // ─── Agent commands (merged from dxos) ───
+    /// Interactive AI coding agent chat
+    Chat {
+        #[arg(short, long)]
+        model: Option<String>,
+    },
+    /// Run a single AI agent prompt
+    Run {
+        prompt: Vec<String>,
+        #[arg(short, long)]
+        model: Option<String>,
+        #[arg(short, long, default_value = "workspace-write")]
+        permission: String,
+        #[arg(long, default_value = "16")]
+        max_turns: usize,
+    },
+    /// Find and fix issues automatically
+    Fix,
+    /// Review uncommitted changes
+    Review,
+    /// Explain the current codebase
+    Explain,
+    /// Run tests and fix failures
+    Test,
+    /// Generate commit message and commit
+    Commit,
+    /// Generate PR description and create PR
+    Pr,
+    /// Download and configure a local model
+    Setup,
 }
 
 #[derive(Subcommand)]
@@ -109,23 +148,25 @@ enum RouterCommands {
 }
 
 #[derive(Subcommand)]
-enum GatewayCommands {
-    /// List all registered gateway MCPs
+enum ExternalCommands {
+    /// List imported external tool servers
     List {
         #[arg(long)]
         running_only: bool,
     },
-    /// Discover MCPs by capability keyword
+    /// Discover external servers by capability keyword
     Discover {
         capability: String,
         #[arg(long)]
         auto_start: bool,
     },
-    /// Inspect the tools exposed by one gateway MCP
-    Tools { mcp: String },
-    /// Call a tool on a gateway MCP
-    Call {
-        mcp: String,
+    /// Inspect the tools exposed by one external server
+    #[command(alias = "tools")]
+    Inspect { server: String },
+    /// Run a tool on one external server
+    #[command(alias = "call")]
+    Run {
+        server: String,
         tool: String,
         #[arg(long)]
         args: Option<String>,
@@ -177,17 +218,29 @@ fn runtime_identity(cli: &Cli, default_web_port: u16) -> String {
                 provider, pattern, ..
             } => format!("router-rule-{}-{}-{:x}", provider, pattern, cwd_hash),
         },
-        Some(Commands::Gateway { command }) => match command {
-            GatewayCommands::List { .. } => format!("gateway-list-{:x}", cwd_hash),
-            GatewayCommands::Discover { capability, .. } => {
-                format!("gateway-discover-{}-{:x}", capability, cwd_hash)
+        Some(Commands::External { command }) | Some(Commands::Gateway { command }) => match command
+        {
+            ExternalCommands::List { .. } => format!("external-list-{:x}", cwd_hash),
+            ExternalCommands::Discover { capability, .. } => {
+                format!("external-discover-{}-{:x}", capability, cwd_hash)
             }
-            GatewayCommands::Tools { mcp } => format!("gateway-tools-{}-{:x}", mcp, cwd_hash),
-            GatewayCommands::Call { mcp, tool, .. } => {
-                format!("gateway-call-{}-{}-{:x}", mcp, tool, cwd_hash)
+            ExternalCommands::Inspect { server } => {
+                format!("external-inspect-{}-{:x}", server, cwd_hash)
+            }
+            ExternalCommands::Run { server, tool, .. } => {
+                format!("external-run-{}-{}-{:x}", server, tool, cwd_hash)
             }
         },
         Some(Commands::Ci { .. }) => format!("ci-{:x}", cwd_hash),
+        Some(Commands::Chat { .. }) => format!("agent-chat-{:x}", cwd_hash),
+        Some(Commands::Run { .. }) => format!("agent-run-{:x}", cwd_hash),
+        Some(Commands::Fix) => format!("agent-fix-{:x}", cwd_hash),
+        Some(Commands::Review) => format!("agent-review-{:x}", cwd_hash),
+        Some(Commands::Explain) => format!("agent-explain-{:x}", cwd_hash),
+        Some(Commands::Test) => format!("agent-test-{:x}", cwd_hash),
+        Some(Commands::Commit) => format!("agent-commit-{:x}", cwd_hash),
+        Some(Commands::Pr) => format!("agent-pr-{:x}", cwd_hash),
+        Some(Commands::Setup) => format!("agent-setup-{:x}", cwd_hash),
         None => format!("default-{}-{:x}", default_web_port, cwd_hash),
     }
 }
@@ -276,10 +329,14 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Router { command }) => {
             run_router_cli(command)?;
         }
-        Some(Commands::Gateway { command }) => {
-            run_gateway_cli(application, command).await?;
+        Some(Commands::External { command }) | Some(Commands::Gateway { command }) => {
+            run_external_cli(application, command).await?;
         }
-        Some(Commands::Ci { no_test, no_clippy, no_fail_fast }) => {
+        Some(Commands::Ci {
+            no_test,
+            no_clippy,
+            no_fail_fast,
+        }) => {
             let config = dx_terminal::ci::CiConfig {
                 check: true,
                 test: !no_test,
@@ -293,14 +350,141 @@ async fn main() -> anyhow::Result<()> {
                 std::process::exit(1);
             }
         }
+
+        // ─── Agent commands ───
+        Some(Commands::Chat { model }) => {
+            agent_repl::run_repl(model).map_err(|e| anyhow::anyhow!("{e}"))?;
+        }
+        Some(Commands::Run {
+            prompt,
+            model,
+            permission,
+            max_turns,
+        }) => {
+            run_agent(prompt.join(" "), model, permission, max_turns)?;
+        }
+        Some(Commands::Fix) => {
+            run_agent("Find all bugs, issues, and code smells in this codebase. Fix them. Run tests to verify.".into(), None, "workspace-write".into(), 16)?;
+        }
+        Some(Commands::Review) => {
+            run_agent("Run `git diff` to see uncommitted changes. Review each change for bugs, security issues, and code quality.".into(), None, "read-only".into(), 8)?;
+        }
+        Some(Commands::Explain) => {
+            run_agent("Read the key files in this project. Give a concise explanation of what it does, its architecture, and key design decisions.".into(), None, "read-only".into(), 8)?;
+        }
+        Some(Commands::Test) => {
+            run_agent("Run the test suite. If any tests fail, read the failing test and the code it tests, then fix the issue. Re-run tests to verify.".into(), None, "full-access".into(), 16)?;
+        }
+        Some(Commands::Commit) => {
+            run_agent("Run `git diff --staged`. Generate a conventional commit message. Then run `git add -A && git commit -m \"<message>\"`.".into(), None, "full-access".into(), 4)?;
+        }
+        Some(Commands::Pr) => {
+            run_agent("Run `git log --oneline main..HEAD`. Generate a PR title and description. Run `gh pr create`.".into(), None, "full-access".into(), 4)?;
+        }
+        Some(Commands::Setup) => {
+            agent_setup::auto_setup().map_err(|e| anyhow::anyhow!("{e}"))?;
+        }
     }
 
     Ok(())
 }
 
-async fn run_gateway_cli(app: Arc<app::App>, command: GatewayCommands) -> anyhow::Result<()> {
+fn run_agent(
+    prompt: String,
+    model: Option<String>,
+    permission: String,
+    max_turns: usize,
+) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+
+    let (client, model_name) = match dx_agent_api::ProviderClient::auto_detect(model.as_deref()) {
+        Ok(r) => r,
+        Err(_) => {
+            let id = agent_setup::ensure_ready().map_err(|e| anyhow::anyhow!("{e}"))?;
+            dx_agent_api::ProviderClient::auto_detect(Some(&id))
+                .map_err(|e| anyhow::anyhow!("{e}"))?
+        }
+    };
+
+    let mode = match permission.as_str() {
+        "read-only" => dx_agent_harness::PermissionMode::ReadOnly,
+        "full-access" => dx_agent_harness::PermissionMode::FullAccess,
+        _ => dx_agent_harness::PermissionMode::WorkspaceWrite,
+    };
+
+    let policy = dx_agent_harness::PermissionPolicy::new(mode)
+        .with_tool("read_file", dx_agent_harness::PermissionMode::ReadOnly)
+        .with_tool("glob", dx_agent_harness::PermissionMode::ReadOnly)
+        .with_tool("grep", dx_agent_harness::PermissionMode::ReadOnly)
+        .with_tool("web_fetch", dx_agent_harness::PermissionMode::ReadOnly)
+        .with_tool("repo_map", dx_agent_harness::PermissionMode::ReadOnly)
+        .with_tool(
+            "write_file",
+            dx_agent_harness::PermissionMode::WorkspaceWrite,
+        )
+        .with_tool(
+            "edit_file",
+            dx_agent_harness::PermissionMode::WorkspaceWrite,
+        )
+        .with_tool("git", dx_agent_harness::PermissionMode::WorkspaceWrite)
+        .with_tool("bash", dx_agent_harness::PermissionMode::FullAccess);
+
+    let registry = dx_agent_tools::ToolRegistry::default_cli();
+    let tools = registry.to_api_definitions();
+    let system_prompt = agent_prompt::build_system_prompt(&cwd);
+
+    let mut runtime =
+        dx_agent_harness::ConversationRuntime::new(client, policy, system_prompt, tools, cwd)
+            .with_max_iterations(max_turns);
+
+    eprintln!(
+        "\x1b[2mdx v{} | {model_name} | {permission}\x1b[0m\n",
+        env!("CARGO_PKG_VERSION")
+    );
+
+    let start = std::time::Instant::now();
+    let summary = runtime
+        .run_turn(&prompt, None)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    if !summary.was_streamed && !summary.text.is_empty() {
+        println!("{}", summary.text);
+    }
+
+    agent_display::print_summary(
+        summary.tool_calls,
+        summary.iterations,
+        summary.usage.total_tokens(),
+        start.elapsed().as_secs_f64(),
+    );
+    Ok(())
+}
+
+fn rewrite_external_cli_terms(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            if let Some(server) = map.remove("mcp") {
+                map.insert("server".to_string(), server);
+            }
+            if let Some(servers) = map.remove("mcps") {
+                map.insert("servers".to_string(), servers);
+            }
+            for child in map.values_mut() {
+                rewrite_external_cli_terms(child);
+            }
+        }
+        Value::Array(items) => {
+            for child in items {
+                rewrite_external_cli_terms(child);
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+}
+
+async fn run_external_cli(app: Arc<app::App>, command: ExternalCommands) -> anyhow::Result<()> {
     let output = match command {
-        GatewayCommands::List { running_only } => {
+        ExternalCommands::List { running_only } => {
             mcp::tools::gateway_tools::gateway_list(
                 &app,
                 mcp::types::GatewayListRequest {
@@ -309,7 +493,7 @@ async fn run_gateway_cli(app: Arc<app::App>, command: GatewayCommands) -> anyhow
             )
             .await
         }
-        GatewayCommands::Discover {
+        ExternalCommands::Discover {
             capability,
             auto_start,
         } => {
@@ -322,17 +506,17 @@ async fn run_gateway_cli(app: Arc<app::App>, command: GatewayCommands) -> anyhow
             )
             .await
         }
-        GatewayCommands::Tools { mcp } => {
+        ExternalCommands::Inspect { server } => {
             mcp::tools::gateway_tools::gateway_tools(
                 &app,
                 mcp::types::GatewayToolsRequest {
-                    mcp,
+                    mcp: server,
                     auto_start: Some(true),
                 },
             )
             .await
         }
-        GatewayCommands::Call { mcp, tool, args } => {
+        ExternalCommands::Run { server, tool, args } => {
             let parsed_args = match args {
                 Some(raw) => Some(
                     serde_json::from_str::<Value>(&raw)
@@ -343,7 +527,7 @@ async fn run_gateway_cli(app: Arc<app::App>, command: GatewayCommands) -> anyhow
             mcp::tools::gateway_tools::gateway_call(
                 &app,
                 mcp::types::GatewayCallRequest {
-                    mcp,
+                    mcp: server,
                     tool,
                     arguments: parsed_args,
                 },
@@ -352,7 +536,9 @@ async fn run_gateway_cli(app: Arc<app::App>, command: GatewayCommands) -> anyhow
         }
     };
 
-    let value = serde_json::from_str::<Value>(&output).unwrap_or_else(|_| json!({ "raw": output }));
+    let mut value =
+        serde_json::from_str::<Value>(&output).unwrap_or_else(|_| json!({ "raw": output }));
+    rewrite_external_cli_terms(&mut value);
     println!("{}", serde_json::to_string_pretty(&value)?);
     Ok(())
 }
@@ -403,6 +589,66 @@ fn run_router_cli(command: RouterCommands) -> anyhow::Result<()> {
 
     println!("{}", serde_json::to_string_pretty(&value)?);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_external_command_surface() {
+        let cli = Cli::try_parse_from(["dx", "external", "list"]).expect("parse");
+        match cli.command {
+            Some(Commands::External {
+                command: ExternalCommands::List { running_only },
+            }) => assert!(!running_only),
+            _ => panic!("expected external list"),
+        }
+    }
+
+    #[test]
+    fn parses_tools_alias() {
+        let cli = Cli::try_parse_from(["dx", "tools", "discover", "browser"]).expect("parse");
+        match cli.command {
+            Some(Commands::External {
+                command:
+                    ExternalCommands::Discover {
+                        capability,
+                        auto_start,
+                    },
+            }) => {
+                assert_eq!(capability, "browser");
+                assert!(!auto_start);
+            }
+            _ => panic!("expected tools discover"),
+        }
+    }
+
+    #[test]
+    fn parses_legacy_gateway_alias() {
+        let cli = Cli::try_parse_from(["dx", "gateway", "tools", "playwright"]).expect("parse");
+        match cli.command {
+            Some(Commands::Gateway {
+                command: ExternalCommands::Inspect { server },
+            }) => assert_eq!(server, "playwright"),
+            _ => panic!("expected legacy gateway tools alias"),
+        }
+    }
+
+    #[test]
+    fn rewrites_mcp_terms_for_cli_output() {
+        let mut value = json!({
+            "mcp": "playwright",
+            "mcps": [
+                { "mcp": "filesystem" }
+            ]
+        });
+        rewrite_external_cli_terms(&mut value);
+        assert_eq!(value["server"], "playwright");
+        assert_eq!(value["servers"][0]["server"], "filesystem");
+        assert!(value.get("mcp").is_none());
+        assert!(value.get("mcps").is_none());
+    }
 }
 
 async fn run_mcp_mode(

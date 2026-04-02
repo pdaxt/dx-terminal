@@ -504,7 +504,9 @@ async fn forward_events(mut rx: broadcast::Receiver<StateEvent>, sender: WsSende
                         "seq": seq,
                         "project": project, "data": data,
                     }),
-                    StateEvent::PaneHealthChanged { pane, new_health, .. } => json!({
+                    StateEvent::PaneHealthChanged {
+                        pane, new_health, ..
+                    } => json!({
                         "type": "pane_health",
                         "seq": seq,
                         "pane": pane, "health": new_health.as_str(),

@@ -40,11 +40,26 @@ impl fmt::Display for CiResult {
         writeln!(f, "{}", "-".repeat(40))?;
         for step in &self.steps {
             let icon = if step.passed { "PASS" } else { "FAIL" };
-            writeln!(f, "  {} {} ({:.1}s)", icon, step.name, step.duration.as_secs_f64())?;
+            writeln!(
+                f,
+                "  {} {} ({:.1}s)",
+                icon,
+                step.name,
+                step.duration.as_secs_f64()
+            )?;
         }
         writeln!(f, "{}", "-".repeat(40))?;
-        let status = if self.passed() { "CI passed" } else { "CI FAILED -- push blocked" };
-        writeln!(f, "  {} ({:.1}s total)", status, self.total_duration().as_secs_f64())?;
+        let status = if self.passed() {
+            "CI passed"
+        } else {
+            "CI FAILED -- push blocked"
+        };
+        writeln!(
+            f,
+            "  {} ({:.1}s total)",
+            status,
+            self.total_duration().as_secs_f64()
+        )?;
         Ok(())
     }
 }
@@ -129,7 +144,15 @@ pub fn run(config: &CiConfig) -> CiResult {
     if config.clippy {
         let result = run_cargo_step(
             "cargo clippy",
-            &["clippy", "--workspace", "--", "-D", "clippy::correctness", "-W", "clippy::suspicious"],
+            &[
+                "clippy",
+                "--workspace",
+                "--",
+                "-D",
+                "clippy::correctness",
+                "-W",
+                "clippy::suspicious",
+            ],
             dir,
         );
         let failed = !result.passed;
@@ -146,7 +169,11 @@ pub fn run(config: &CiConfig) -> CiResult {
 pub fn gate() -> i32 {
     let result = run(&CiConfig::default());
     print!("{result}");
-    if result.passed() { 0 } else { 1 }
+    if result.passed() {
+        0
+    } else {
+        1
+    }
 }
 
 #[cfg(test)]
@@ -166,8 +193,18 @@ mod tests {
     fn ci_result_passed_all_true() {
         let result = CiResult {
             steps: vec![
-                StepResult { name: "a", passed: true, duration: Duration::from_secs(1), stderr: String::new() },
-                StepResult { name: "b", passed: true, duration: Duration::from_secs(2), stderr: String::new() },
+                StepResult {
+                    name: "a",
+                    passed: true,
+                    duration: Duration::from_secs(1),
+                    stderr: String::new(),
+                },
+                StepResult {
+                    name: "b",
+                    passed: true,
+                    duration: Duration::from_secs(2),
+                    stderr: String::new(),
+                },
             ],
         };
         assert!(result.passed());
@@ -178,8 +215,18 @@ mod tests {
     fn ci_result_fails_if_any_step_fails() {
         let result = CiResult {
             steps: vec![
-                StepResult { name: "a", passed: true, duration: Duration::from_secs(1), stderr: String::new() },
-                StepResult { name: "b", passed: false, duration: Duration::from_secs(2), stderr: "error".into() },
+                StepResult {
+                    name: "a",
+                    passed: true,
+                    duration: Duration::from_secs(1),
+                    stderr: String::new(),
+                },
+                StepResult {
+                    name: "b",
+                    passed: false,
+                    duration: Duration::from_secs(2),
+                    stderr: "error".into(),
+                },
             ],
         };
         assert!(!result.passed());
@@ -189,8 +236,18 @@ mod tests {
     fn ci_result_display_format() {
         let result = CiResult {
             steps: vec![
-                StepResult { name: "cargo check", passed: true, duration: Duration::from_millis(1500), stderr: String::new() },
-                StepResult { name: "cargo test", passed: false, duration: Duration::from_millis(3200), stderr: "test failed".into() },
+                StepResult {
+                    name: "cargo check",
+                    passed: true,
+                    duration: Duration::from_millis(1500),
+                    stderr: String::new(),
+                },
+                StepResult {
+                    name: "cargo test",
+                    passed: false,
+                    duration: Duration::from_millis(3200),
+                    stderr: "test failed".into(),
+                },
             ],
         };
         let display = format!("{result}");
@@ -204,9 +261,12 @@ mod tests {
     #[test]
     fn ci_result_display_passed() {
         let result = CiResult {
-            steps: vec![
-                StepResult { name: "cargo check", passed: true, duration: Duration::from_millis(500), stderr: String::new() },
-            ],
+            steps: vec![StepResult {
+                name: "cargo check",
+                passed: true,
+                duration: Duration::from_millis(500),
+                stderr: String::new(),
+            }],
         };
         let display = format!("{result}");
         assert!(display.contains("CI passed"));

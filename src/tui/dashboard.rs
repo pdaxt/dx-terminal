@@ -902,12 +902,11 @@ fn collect_coord(_q: &queue::TaskQueue) -> CoordSnapshot {
         .unwrap_or_default();
 
     // Issue claims
-    let claims: Vec<(String, u32, String, String)> =
-        crate::claims::list(None, true)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|c| (c.repo, c.issue, c.agent_id, c.claimed_at))
-            .collect();
+    let claims: Vec<(String, u32, String, String)> = crate::claims::list(None, true)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|c| (c.repo, c.issue, c.agent_id, c.claimed_at))
+        .collect();
 
     CoordSnapshot {
         agents,
@@ -2318,7 +2317,12 @@ fn render_mux_pane(f: &mut Frame, area: Rect, pane: &PaneSnapshot, selected: boo
             .collect::<Vec<_>>()
             .into_iter()
             .rev()
-            .map(|line| Line::from(Span::styled(line.to_string(), Style::default().fg(output_color))))
+            .map(|line| {
+                Line::from(Span::styled(
+                    line.to_string(),
+                    Style::default().fg(output_color),
+                ))
+            })
             .collect()
     };
     lines.extend(body_lines);

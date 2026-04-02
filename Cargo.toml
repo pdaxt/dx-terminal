@@ -6,6 +6,7 @@ resolver = "2"
 name = "dx-terminal"
 version = "0.3.0"
 edition = "2021"
+default-run = "dx"
 description = "DX Terminal: AI-native terminal multiplexer for AI agent teams"
 repository = "https://github.com/pdaxt/dx-terminal"
 
@@ -71,8 +72,23 @@ dx-types = { path = "crates/types" }
 dx-gateway = { path = "crates/gateway" }
 dx-vision = { path = "crates/vision" }
 
+# Agent crates (from dxos merge)
+dx-agent-core = { path = "crates/agent-core" }
+dx-agent-tools = { path = "crates/agent-tools" }
+dx-agent-harness = { path = "crates/agent-harness" }
+dx-agent-api = { path = "crates/agent-api" }
+
 # TOML parsing (for MCP descriptors)
 toml = "0.8"
+
+# Agent dependencies
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls", "blocking"], default-features = false }
+glob = "0.3"
+ignore = "0.4"
+tree-sitter = "0.24"
+rustyline = "15"
+dirs = "6"
+thiserror = "2"
 
 [dev-dependencies]
 tempfile = "3"

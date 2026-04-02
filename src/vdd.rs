@@ -245,10 +245,7 @@ pub fn list_features(project: &str, phase_filter: Option<&str>) -> Result<Vec<Vd
 }
 
 /// Get transition history for a feature.
-pub fn transitions(
-    project: &str,
-    feature_id: &str,
-) -> Result<Vec<VddTransition>, String> {
+pub fn transitions(project: &str, feature_id: &str) -> Result<Vec<VddTransition>, String> {
     let conn = open_db().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
@@ -457,7 +454,6 @@ fn duration_between_iso(from: &str, to: &str) -> Option<i64> {
     Some((to_dt - from_dt).num_seconds())
 }
 
-
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -542,15 +538,7 @@ mod tests {
     #[test]
     fn test_backward_transition_blocked() {
         upsert_feature("back-test", "F3.1", "Feature", "G1").unwrap();
-        advance(
-            "back-test",
-            "F3.1",
-            &FeaturePhase::Build,
-            "user",
-            "",
-            false,
-        )
-        .unwrap();
+        advance("back-test", "F3.1", &FeaturePhase::Build, "user", "", false).unwrap();
 
         let err = advance(
             "back-test",
@@ -601,24 +589,8 @@ mod tests {
             false,
         )
         .unwrap();
-        advance(
-            "hist-test",
-            "F5.1",
-            &FeaturePhase::Design,
-            "b",
-            "",
-            false,
-        )
-        .unwrap();
-        advance(
-            "hist-test",
-            "F5.1",
-            &FeaturePhase::Build,
-            "c",
-            "",
-            false,
-        )
-        .unwrap();
+        advance("hist-test", "F5.1", &FeaturePhase::Design, "b", "", false).unwrap();
+        advance("hist-test", "F5.1", &FeaturePhase::Build, "c", "", false).unwrap();
 
         let txns = transitions("hist-test", "F5.1").unwrap();
         assert_eq!(txns.len(), 3);
@@ -634,15 +606,7 @@ mod tests {
     fn test_summary() {
         upsert_feature("sum-test", "F6.1", "A", "G1").unwrap();
         upsert_feature("sum-test", "F6.2", "B", "G1").unwrap();
-        advance(
-            "sum-test",
-            "F6.2",
-            &FeaturePhase::Build,
-            "x",
-            "",
-            false,
-        )
-        .unwrap();
+        advance("sum-test", "F6.2", &FeaturePhase::Build, "x", "", false).unwrap();
 
         let s = summary(Some("sum-test")).unwrap();
         assert_eq!(s.total, 2);
@@ -656,26 +620,10 @@ mod tests {
     #[test]
     fn test_idempotent_advance() {
         upsert_feature("idem-test", "F7.1", "Feature", "G1").unwrap();
-        advance(
-            "idem-test",
-            "F7.1",
-            &FeaturePhase::Build,
-            "a",
-            "",
-            false,
-        )
-        .unwrap();
+        advance("idem-test", "F7.1", &FeaturePhase::Build, "a", "", false).unwrap();
 
         // Advancing to same phase is a no-op
-        let f = advance(
-            "idem-test",
-            "F7.1",
-            &FeaturePhase::Build,
-            "a",
-            "",
-            false,
-        )
-        .unwrap();
+        let f = advance("idem-test", "F7.1", &FeaturePhase::Build, "a", "", false).unwrap();
         assert_eq!(f.phase, "build");
 
         // Should not create duplicate transition
