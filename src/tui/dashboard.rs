@@ -1,3 +1,10 @@
+#![allow(
+    clippy::double_ended_iterator_last,
+    clippy::if_same_then_else,
+    clippy::manual_clamp,
+    clippy::unnecessary_filter_map
+)]
+
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},

@@ -29,7 +29,7 @@ pub fn write_file(input: WriteInput, cwd: &Path) -> Result<WriteOutput> {
         fs::create_dir_all(parent)?;
     }
 
-    let bytes = input.content.as_bytes().len();
+    let bytes = input.content.len();
     fs::write(&file_path, &input.content)?;
 
     Ok(WriteOutput {

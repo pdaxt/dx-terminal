@@ -44,11 +44,7 @@ pub fn grep_content(input: GrepInput, cwd: &Path) -> Result<GrepOutput> {
             message: format!("invalid regex: {e}"),
         })?;
 
-    let glob_pattern = input
-        .glob
-        .as_ref()
-        .map(|g| glob::Pattern::new(g).ok())
-        .flatten();
+    let glob_pattern = input.glob.as_ref().and_then(|g| glob::Pattern::new(g).ok());
 
     let mut matches = Vec::new();
     let mut truncated = false;

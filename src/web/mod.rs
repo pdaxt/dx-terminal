@@ -3,6 +3,7 @@ pub mod replicator;
 pub mod sse;
 pub mod ws;
 
+use anyhow::Context;
 use axum::{
     routing::{get, post},
     Router,
@@ -228,7 +229,9 @@ pub async fn run_web_server(app: Arc<App>, port: u16) -> anyhow::Result<()> {
     replicator::start(Arc::clone(&app));
 
     let router = build_router(app);
-    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
+    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port))
+        .await
+        .with_context(|| format!("bind web dashboard to 127.0.0.1:{port}"))?;
     tracing::info!("DX Terminal web dashboard: http://localhost:{}", port);
     eprintln!("DX Terminal web dashboard: http://localhost:{}", port);
     axum::serve(listener, router).await?;

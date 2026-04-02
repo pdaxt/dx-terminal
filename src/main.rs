@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 #[command(
     name = "dx",
     about = "DX Terminal: AI agent OS — code, orchestrate, ship"
@@ -18,7 +18,7 @@ struct Cli {
     command: Option<Commands>,
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 enum Commands {
     /// Run as MCP server (stdio transport) — default (all 206 tools)
     Mcp {
@@ -87,9 +87,14 @@ enum Commands {
         prompt: Vec<String>,
         #[arg(short, long)]
         model: Option<String>,
-        #[arg(short, long, default_value = "workspace-write")]
+        #[arg(
+            short,
+            long,
+            default_value = "workspace-write",
+            value_parser = ["read-only", "workspace-write", "full-access"]
+        )]
         permission: String,
-        #[arg(long, default_value = "16")]
+        #[arg(long, default_value_t = 16, value_parser = parse_positive_usize)]
         max_turns: usize,
     },
     /// Find and fix issues automatically
@@ -108,13 +113,13 @@ enum Commands {
     Setup,
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 enum SwarmCommands {
     /// Start a swarm for open GitHub issues in the current repository
     Start {
         #[arg(long)]
         repo: String,
-        #[arg(long, default_value_t = 5)]
+        #[arg(long, default_value_t = 5, value_parser = parse_swarm_agent_count)]
         max_agents: usize,
         #[arg(long = "label")]
         labels: Vec<String>,
@@ -127,7 +132,7 @@ enum SwarmCommands {
     Stop,
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 enum RouterCommands {
     /// Recommend the best provider for a task
     Route {
@@ -147,7 +152,7 @@ enum RouterCommands {
     },
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 enum ExternalCommands {
     /// List imported external tool servers
     List {
@@ -243,6 +248,24 @@ fn runtime_identity(cli: &Cli, default_web_port: u16) -> String {
         Some(Commands::Setup) => format!("agent-setup-{:x}", cwd_hash),
         None => format!("default-{}-{:x}", default_web_port, cwd_hash),
     }
+}
+
+fn parse_positive_usize(value: &str) -> std::result::Result<usize, String> {
+    let parsed = value
+        .parse::<usize>()
+        .map_err(|_| format!("'{value}' is not a valid positive integer"))?;
+    if parsed == 0 {
+        return Err("value must be at least 1".to_string());
+    }
+    Ok(parsed)
+}
+
+fn parse_swarm_agent_count(value: &str) -> std::result::Result<usize, String> {
+    let parsed = parse_positive_usize(value)?;
+    if parsed > 20 {
+        return Err("swarm agent count must be between 1 and 20".to_string());
+    }
+    Ok(parsed)
 }
 
 #[tokio::main]
@@ -562,12 +585,45 @@ async fn run_swarm_cli(app: Arc<app::App>, command: SwarmCommands) -> anyhow::Re
             )
             .await?,
         )?,
-        SwarmCommands::Status => serde_json::to_value(swarm::status(app.as_ref()).await?)?,
-        SwarmCommands::Stop => serde_json::to_value(swarm::stop(app.as_ref()).await?)?,
+        SwarmCommands::Status => match swarm::status(app.as_ref()).await {
+            Ok(report) => serde_json::to_value(report)?,
+            Err(error) if is_missing_swarm_state(&error) => swarm_idle_cli_value(
+                "No saved or active swarm state found. Nothing is currently running.",
+            ),
+            Err(error) => return Err(error),
+        },
+        SwarmCommands::Stop => match swarm::stop(app.as_ref()).await {
+            Ok(report) => serde_json::to_value(report)?,
+            Err(error) if is_missing_swarm_state(&error) => {
+                swarm_idle_cli_value("No saved or active swarm state found. Nothing to stop.")
+            }
+            Err(error) => return Err(error),
+        },
     };
 
     println!("{}", serde_json::to_string_pretty(&value)?);
     Ok(())
+}
+
+fn is_missing_swarm_state(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.to_string().contains("no swarm state found"))
+}
+
+fn swarm_idle_cli_value(message: &str) -> Value {
+    json!({
+        "status": "idle",
+        "message": message,
+        "active": false,
+        "repo": Value::Null,
+        "repo_path": Value::Null,
+        "provider": Value::Null,
+        "max_agents": 0,
+        "started_at": Value::Null,
+        "labels": [],
+        "results": [],
+    })
 }
 
 fn run_router_cli(command: RouterCommands) -> anyhow::Result<()> {
@@ -589,66 +645,6 @@ fn run_router_cli(command: RouterCommands) -> anyhow::Result<()> {
 
     println!("{}", serde_json::to_string_pretty(&value)?);
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_external_command_surface() {
-        let cli = Cli::try_parse_from(["dx", "external", "list"]).expect("parse");
-        match cli.command {
-            Some(Commands::External {
-                command: ExternalCommands::List { running_only },
-            }) => assert!(!running_only),
-            _ => panic!("expected external list"),
-        }
-    }
-
-    #[test]
-    fn parses_tools_alias() {
-        let cli = Cli::try_parse_from(["dx", "tools", "discover", "browser"]).expect("parse");
-        match cli.command {
-            Some(Commands::External {
-                command:
-                    ExternalCommands::Discover {
-                        capability,
-                        auto_start,
-                    },
-            }) => {
-                assert_eq!(capability, "browser");
-                assert!(!auto_start);
-            }
-            _ => panic!("expected tools discover"),
-        }
-    }
-
-    #[test]
-    fn parses_legacy_gateway_alias() {
-        let cli = Cli::try_parse_from(["dx", "gateway", "tools", "playwright"]).expect("parse");
-        match cli.command {
-            Some(Commands::Gateway {
-                command: ExternalCommands::Inspect { server },
-            }) => assert_eq!(server, "playwright"),
-            _ => panic!("expected legacy gateway tools alias"),
-        }
-    }
-
-    #[test]
-    fn rewrites_mcp_terms_for_cli_output() {
-        let mut value = json!({
-            "mcp": "playwright",
-            "mcps": [
-                { "mcp": "filesystem" }
-            ]
-        });
-        rewrite_external_cli_terms(&mut value);
-        assert_eq!(value["server"], "playwright");
-        assert_eq!(value["servers"][0]["server"], "filesystem");
-        assert!(value.get("mcp").is_none());
-        assert!(value.get("mcps").is_none());
-    }
 }
 
 async fn run_mcp_mode(
@@ -795,5 +791,103 @@ impl Drop for ShutdownGuard {
             pty.kill_all();
         }
         machine::deregister_all();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_external_command_surface() {
+        let cli = Cli::try_parse_from(["dx", "external", "list"]).expect("parse");
+        match cli.command {
+            Some(Commands::External {
+                command: ExternalCommands::List { running_only },
+            }) => assert!(!running_only),
+            _ => panic!("expected external list"),
+        }
+    }
+
+    #[test]
+    fn parses_tools_alias() {
+        let cli = Cli::try_parse_from(["dx", "tools", "discover", "browser"]).expect("parse");
+        match cli.command {
+            Some(Commands::External {
+                command:
+                    ExternalCommands::Discover {
+                        capability,
+                        auto_start,
+                    },
+            }) => {
+                assert_eq!(capability, "browser");
+                assert!(!auto_start);
+            }
+            _ => panic!("expected tools discover"),
+        }
+    }
+
+    #[test]
+    fn parses_legacy_gateway_alias() {
+        let cli = Cli::try_parse_from(["dx", "gateway", "tools", "playwright"]).expect("parse");
+        match cli.command {
+            Some(Commands::Gateway {
+                command: ExternalCommands::Inspect { server },
+            }) => assert_eq!(server, "playwright"),
+            _ => panic!("expected legacy gateway tools alias"),
+        }
+    }
+
+    #[test]
+    fn rewrites_mcp_terms_for_cli_output() {
+        let mut value = json!({
+            "mcp": "playwright",
+            "mcps": [
+                { "mcp": "filesystem" }
+            ]
+        });
+        rewrite_external_cli_terms(&mut value);
+        assert_eq!(value["server"], "playwright");
+        assert_eq!(value["servers"][0]["server"], "filesystem");
+        assert!(value.get("mcp").is_none());
+        assert!(value.get("mcps").is_none());
+    }
+
+    #[test]
+    fn rejects_invalid_agent_permission_mode() {
+        let err = Cli::try_parse_from(["dx", "run", "ship", "it", "--permission", "danger-zone"])
+            .expect_err("invalid permission should fail");
+        assert!(err.to_string().contains("possible values"));
+    }
+
+    #[test]
+    fn rejects_zero_agent_turn_budget() {
+        let err = Cli::try_parse_from(["dx", "run", "ship", "it", "--max-turns", "0"])
+            .expect_err("zero max-turns should fail");
+        assert!(err.to_string().contains("at least 1"));
+    }
+
+    #[test]
+    fn swarm_idle_cli_payload_is_stable() {
+        let value = swarm_idle_cli_value("Nothing is currently running.");
+        assert_eq!(value["status"], "idle");
+        assert_eq!(value["active"], false);
+        assert_eq!(value["results"], json!([]));
+        assert!(value["repo"].is_null());
+    }
+
+    #[test]
+    fn rejects_out_of_range_swarm_agent_count() {
+        let err = Cli::try_parse_from([
+            "dx",
+            "swarm",
+            "start",
+            "--repo",
+            "pdaxt/dx-terminal",
+            "--max-agents",
+            "21",
+        ])
+        .expect_err("out-of-range swarm agent count should fail");
+        assert!(err.to_string().contains("between 1 and 20"));
     }
 }

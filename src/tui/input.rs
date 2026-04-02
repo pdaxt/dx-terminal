@@ -433,12 +433,13 @@ pub fn parse_command(input: &str) -> Option<TuiCommand> {
             let project = words[0].to_string();
             let desc_raw = words.get(1).unwrap_or(&"").to_string();
 
-            let (template, description) = if desc_raw.starts_with("--quick ") {
-                (Some("quick".to_string()), desc_raw[8..].to_string())
-            } else if desc_raw.starts_with("--secure ") {
-                (Some("secure".to_string()), desc_raw[9..].to_string())
-            } else if desc_raw.starts_with("--full ") {
-                (Some("full".to_string()), desc_raw[7..].to_string())
+            let (template, description) = if let Some(stripped) = desc_raw.strip_prefix("--quick ")
+            {
+                (Some("quick".to_string()), stripped.to_string())
+            } else if let Some(stripped) = desc_raw.strip_prefix("--secure ") {
+                (Some("secure".to_string()), stripped.to_string())
+            } else if let Some(stripped) = desc_raw.strip_prefix("--full ") {
+                (Some("full".to_string()), stripped.to_string())
             } else {
                 (None, desc_raw)
             };
@@ -511,7 +512,7 @@ fn parse_args(input: &str) -> serde_json::Value {
 
     while chars.peek().is_some() {
         // Skip whitespace
-        while chars.peek().map_or(false, |c| c.is_whitespace()) {
+        while chars.peek().is_some_and(|c| c.is_whitespace()) {
             chars.next();
         }
 
@@ -519,7 +520,7 @@ fn parse_args(input: &str) -> serde_json::Value {
         let mut key = String::new();
         while chars
             .peek()
-            .map_or(false, |c| *c != '=' && !c.is_whitespace())
+            .is_some_and(|c| *c != '=' && !c.is_whitespace())
         {
             key.push(chars.next().unwrap());
         }
@@ -529,12 +530,12 @@ fn parse_args(input: &str) -> serde_json::Value {
             let mut value = String::new();
             if chars.peek() == Some(&'"') {
                 chars.next(); // consume opening quote
-                while chars.peek().map_or(false, |c| *c != '"') {
+                while chars.peek().is_some_and(|c| *c != '"') {
                     value.push(chars.next().unwrap());
                 }
                 chars.next(); // consume closing quote
             } else {
-                while chars.peek().map_or(false, |c| !c.is_whitespace()) {
+                while chars.peek().is_some_and(|c| !c.is_whitespace()) {
                     value.push(chars.next().unwrap());
                 }
             }

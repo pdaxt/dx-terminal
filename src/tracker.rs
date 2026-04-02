@@ -58,7 +58,7 @@ fn next_id(space: &str) -> u32 {
     let mut max_num: u32 = 0;
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for entry in entries.flatten() {
-            if entry.path().extension().map_or(false, |e| e == "json") {
+            if entry.path().extension().is_some_and(|e| e == "json") {
                 if let Ok(content) = std::fs::read_to_string(entry.path()) {
                     if let Ok(v) = serde_json::from_str::<Value>(&content) {
                         if let Some(n) = v.get("number").and_then(|v| v.as_u64()) {
@@ -111,7 +111,7 @@ pub fn load_issues(space: &str) -> Vec<Value> {
     let mut issues = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for entry in entries.flatten() {
-            if entry.path().extension().map_or(false, |e| e == "json") {
+            if entry.path().extension().is_some_and(|e| e == "json") {
                 if let Ok(contents) = std::fs::read_to_string(entry.path()) {
                     if let Ok(v) = serde_json::from_str::<Value>(&contents) {
                         issues.push(v);
@@ -145,7 +145,7 @@ pub fn update_issue(space: &str, issue_id: &str, updates: &Value) -> Result<bool
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "json") {
+            if path.extension().is_some_and(|e| e == "json") {
                 if let Ok(contents) = std::fs::read_to_string(&path) {
                     if let Ok(mut data) = serde_json::from_str::<Value>(&contents) {
                         if data.get("id").and_then(|v| v.as_str()) == Some(issue_id) {
@@ -193,6 +193,7 @@ pub fn load_board_summary() -> std::collections::HashMap<String, usize> {
 
 // === NEW MCP TOOL FUNCTIONS ===
 
+#[allow(clippy::too_many_arguments)]
 pub fn issue_create(
     space: &str,
     title: &str,
@@ -254,6 +255,7 @@ pub fn issue_create(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn issue_update_full(
     space: &str,
     issue_id: &str,
@@ -342,6 +344,7 @@ pub fn issue_update_full(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn issue_list_filtered(
     space: &str,
     status: &str,
@@ -375,7 +378,7 @@ pub fn issue_list_filtered(
             if !label.is_empty() {
                 let has = i["labels"]
                     .as_array()
-                    .map_or(false, |l| l.iter().any(|v| v.as_str() == Some(label)));
+                    .is_some_and(|l| l.iter().any(|v| v.as_str() == Some(label)));
                 if !has {
                     return false;
                 }
@@ -509,7 +512,7 @@ pub fn milestone_list(space: &str) -> Value {
 
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for entry in entries.flatten() {
-            if entry.path().extension().map_or(false, |e| e == "json") {
+            if entry.path().extension().is_some_and(|e| e == "json") {
                 if let Ok(content) = std::fs::read_to_string(entry.path()) {
                     if let Ok(ms) = serde_json::from_str::<Value>(&content) {
                         let ms_name = ms["name"].as_str().unwrap_or("");
@@ -722,7 +725,7 @@ pub fn process_list(space: &str) -> Value {
     let mut results = vec![];
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for entry in entries.flatten() {
-            if entry.path().extension().map_or(false, |e| e == "json") {
+            if entry.path().extension().is_some_and(|e| e == "json") {
                 if let Ok(content) = std::fs::read_to_string(entry.path()) {
                     if let Ok(p) = serde_json::from_str::<Value>(&content) {
                         results.push(json!({

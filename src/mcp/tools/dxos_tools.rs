@@ -381,6 +381,7 @@ pub fn session_status(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn work_delegate(
     project: Option<&str>,
     supervisor_session_id: &str,

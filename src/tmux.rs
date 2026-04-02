@@ -673,6 +673,7 @@ pub fn read_jsonl_cwd(path: &str) -> Option<String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod provider_tests {
     use super::*;
 

@@ -127,6 +127,7 @@ pub fn log_tokens(
     json!({"status": "logged"})
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn log_git_commit(
     pane_id: &str,
     project: &str,

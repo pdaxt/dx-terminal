@@ -270,7 +270,7 @@ fn detect_tech(path: &Path) -> (Vec<String>, Option<String>, Option<String>, Opt
             if let Ok(pkg) = serde_json::from_str::<Value>(&content) {
                 if let Some(scripts) = pkg.get("scripts").and_then(|v| v.as_object()) {
                     if let Some(b) = scripts.get("build").and_then(|v| v.as_str()) {
-                        build_cmd = build_cmd.or(Some(format!("npm run build")));
+                        build_cmd = build_cmd.or(Some("npm run build".to_string()));
                         // If it's next.js
                         if b.contains("next") {
                             tech.push("nextjs".to_string());

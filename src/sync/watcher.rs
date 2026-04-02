@@ -1,5 +1,5 @@
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::sync::mpsc;
 
@@ -77,7 +77,7 @@ pub fn run_watcher(config: SyncConfig, tx: mpsc::Sender<Vec<PathBuf>>) -> anyhow
 }
 
 /// Check if a path should be ignored based on patterns
-fn should_ignore(path: &PathBuf, patterns: &[String]) -> bool {
+fn should_ignore(path: &Path, patterns: &[String]) -> bool {
     let path_str = path.display().to_string();
     for pattern in patterns {
         if pattern.ends_with('/') {

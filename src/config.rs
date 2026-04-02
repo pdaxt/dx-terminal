@@ -426,6 +426,31 @@ pub fn projects_dir() -> PathBuf {
     home_dir().join("Projects")
 }
 
+pub fn resolve_project_path(project: &str) -> String {
+    if project.starts_with('/') {
+        return project.to_string();
+    }
+    // Consult project registry first (exact name match)
+    if let Some(info) = crate::scanner::project_by_name(project) {
+        return info.path;
+    }
+    let p = projects_dir().join(project);
+    if p.exists() {
+        return p.to_string_lossy().to_string();
+    }
+    // Fuzzy: try case-insensitive match
+    if let Ok(entries) = std::fs::read_dir(projects_dir()) {
+        let lower = project.to_lowercase();
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+            if name == lower || name.contains(&lower) {
+                return entry.path().to_string_lossy().to_string();
+            }
+        }
+    }
+    p.to_string_lossy().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -548,29 +573,4 @@ mod tests {
         assert_eq!(loaded.web_port, 9999);
         assert_eq!(loaded.themes.len(), 4);
     }
-}
-
-pub fn resolve_project_path(project: &str) -> String {
-    if project.starts_with('/') {
-        return project.to_string();
-    }
-    // Consult project registry first (exact name match)
-    if let Some(info) = crate::scanner::project_by_name(project) {
-        return info.path;
-    }
-    let p = projects_dir().join(project);
-    if p.exists() {
-        return p.to_string_lossy().to_string();
-    }
-    // Fuzzy: try case-insensitive match
-    if let Ok(entries) = std::fs::read_dir(projects_dir()) {
-        let lower = project.to_lowercase();
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_lowercase();
-            if name == lower || name.contains(&lower) {
-                return entry.path().to_string_lossy().to_string();
-            }
-        }
-    }
-    p.to_string_lossy().to_string()
 }

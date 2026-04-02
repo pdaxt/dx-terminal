@@ -1038,7 +1038,7 @@ pub async fn dispatch_mcp_tool(app: &App, tool: &str, args: Value) -> String {
                 .filter(|p| {
                     r.tech
                         .as_ref()
-                        .map_or(true, |t| p.tech.iter().any(|pt| pt.contains(t)))
+                        .is_none_or(|t| p.tech.iter().any(|pt| pt.contains(t)))
                 })
                 .map(|p| serde_json::json!({"name": p.name, "path": p.path, "tech": p.tech}))
                 .collect();

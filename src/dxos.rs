@@ -797,8 +797,9 @@ fn program_groups(projects: &[Value]) -> Vec<Value> {
 }
 
 fn workspace_groups(projects: &[Value]) -> Vec<Value> {
-    let mut grouped: BTreeMap<String, (Option<String>, Option<String>, String, Vec<Value>)> =
-        BTreeMap::new();
+    type WorkspaceGrouping = (Option<String>, Option<String>, String, Vec<Value>);
+
+    let mut grouped: BTreeMap<String, WorkspaceGrouping> = BTreeMap::new();
     for project in projects {
         let Some(name) = project
             .get("workspace")
@@ -1355,6 +1356,7 @@ fn audit_record_count(project_path: &str) -> usize {
         .max(0) as usize
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn append_audit_record(
     project_path: &str,
     project_name: Option<&str>,
@@ -1965,6 +1967,7 @@ pub fn upsert_program_record(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn upsert_workspace_record(
     project_path: &str,
     project_name: Option<&str>,
@@ -2826,8 +2829,8 @@ fn scheduler_recent_runs(state: &ControlPlaneState) -> Vec<Value> {
                 "run_id": run.id,
                 "actor": run.actor,
                 "outcome": run.outcome,
-                "action": run.result.get("action").cloned().unwrap_or_else(|| json!(null)),
-                "session_id": run.result.get("session_id").cloned().unwrap_or_else(|| json!(null)),
+                "action": run.result.get("action").cloned().unwrap_or(Value::Null),
+                "session_id": run.result.get("session_id").cloned().unwrap_or(Value::Null),
                 "created_at": run.created_at,
                 "updated_at": run.updated_at,
             })
@@ -3912,6 +3915,7 @@ pub fn runtime_launch_context(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn start_project_adoption(
     project_path: &str,
     project_name: Option<&str>,
@@ -3935,6 +3939,7 @@ pub fn start_project_adoption(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn start_project_adoption_with_plan(
     project_path: &str,
     project_name: Option<&str>,
@@ -4333,6 +4338,7 @@ pub fn update_project_adoption_status(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn debate_start(
     project_path: &str,
     project_name: Option<&str>,
@@ -4391,6 +4397,7 @@ pub fn debate_start(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn debate_add_proposal(
     project_path: &str,
     project_name: Option<&str>,
@@ -4530,6 +4537,7 @@ pub fn debate_add_contradiction(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn debate_cast_vote(
     project_path: &str,
     project_name: Option<&str>,
@@ -4711,9 +4719,9 @@ pub fn upsert_session_contract(
     let (normalized_provider, provider_policy, mut policy_violations) =
         validate_provider_selection(role, stage, provider, pane, tmux_target);
     let desired_status = status.unwrap_or("active").trim().to_string();
-    let computed_status = if policy_violations.is_empty() {
-        desired_status.clone()
-    } else if matches!(desired_status.as_str(), "idle" | "completed") {
+    let computed_status = if policy_violations.is_empty()
+        || matches!(desired_status.as_str(), "idle" | "completed")
+    {
         desired_status.clone()
     } else {
         "blocked".to_string()

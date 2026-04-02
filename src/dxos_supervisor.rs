@@ -237,7 +237,7 @@ impl Supervisor {
             .get("scheduler")
             .and_then(|value| value.get("next_launch"))
             .cloned()
-            .unwrap_or_else(|| json!(null));
+            .unwrap_or(Value::Null);
         let ready = next_launch
             .get("ready")
             .and_then(Value::as_bool)

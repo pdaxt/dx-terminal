@@ -1645,6 +1645,7 @@ pub async fn assign_adhoc(app: &App, req: AssignAdhocRequest) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 

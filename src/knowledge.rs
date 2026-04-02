@@ -486,29 +486,27 @@ pub fn kgraph_stats() -> Value {
     let mut stmt = conn
         .prepare("SELECT type, COUNT(*) FROM entities GROUP BY type ORDER BY COUNT(*) DESC")
         .unwrap();
-    let _ = stmt
-        .query_map([], |r| {
-            let t: String = r.get(0)?;
-            let c: i64 = r.get(1)?;
-            by_type.insert(t, json!(c));
-            Ok(())
-        })
-        .unwrap()
-        .for_each(|_| {});
+    stmt.query_map([], |r| {
+        let t: String = r.get(0)?;
+        let c: i64 = r.get(1)?;
+        by_type.insert(t, json!(c));
+        Ok(())
+    })
+    .unwrap()
+    .for_each(|_| {});
 
     let mut by_relation = serde_json::Map::new();
     let mut stmt = conn
         .prepare("SELECT relation, COUNT(*) FROM edges GROUP BY relation ORDER BY COUNT(*) DESC")
         .unwrap();
-    let _ = stmt
-        .query_map([], |r| {
-            let t: String = r.get(0)?;
-            let c: i64 = r.get(1)?;
-            by_relation.insert(t, json!(c));
-            Ok(())
-        })
-        .unwrap()
-        .for_each(|_| {});
+    stmt.query_map([], |r| {
+        let t: String = r.get(0)?;
+        let c: i64 = r.get(1)?;
+        by_relation.insert(t, json!(c));
+        Ok(())
+    })
+    .unwrap()
+    .for_each(|_| {});
 
     json!({"entities": entity_count, "edges": edge_count, "observations": obs_count, "by_type": by_type, "by_relation": by_relation})
 }
@@ -578,7 +576,7 @@ fn discover_sessions(project_filter: &str) -> Vec<(String, String, u64, f64)> {
             }
             if let Ok(files) = std::fs::read_dir(entry.path()) {
                 for f in files.flatten() {
-                    if f.path().extension().map_or(true, |e| e != "jsonl") {
+                    if f.path().extension().is_none_or(|e| e != "jsonl") {
                         continue;
                     }
                     if let Ok(meta) = f.metadata() {
@@ -784,7 +782,7 @@ pub fn replay_index(force: bool, project: &str) -> Value {
             }
         }
         let session = parse_session_jsonl(fpath, 500);
-        if session["turns"].as_array().map_or(true, |a| a.is_empty()) {
+        if session["turns"].as_array().is_none_or(|a| a.is_empty()) {
             stats["skipped"] = json!(stats["skipped"].as_u64().unwrap_or(0) + 1);
             continue;
         }
@@ -1138,14 +1136,14 @@ pub fn fact_add(
     json!({"id": fact_id, "category": category, "key": key, "value": value, "confidence": confidence, "status": "created"})
 }
 
+type FactRow = (String, String, String, String, f64, String, String, String);
+
 pub fn fact_get(fact_id: &str, key: &str, category: &str) -> Value {
     let conn = match tg_db() {
         Ok(c) => c,
         Err(e) => return json!({"error": e}),
     };
-    let row: Option<(String, String, String, String, f64, String, String, String)> = if !fact_id
-        .is_empty()
-    {
+    let row: Option<FactRow> = if !fact_id.is_empty() {
         conn.query_row(
             "SELECT id,category,key,value,confidence,source,aliases,tags FROM facts WHERE id=?1",
             params![fact_id],
@@ -1229,6 +1227,7 @@ pub fn fact_check(claim: &str) -> Value {
     let entities = extract_entities(claim);
     let mut results = vec![];
 
+    let claim_lower = claim.to_lowercase();
     for entity in &entities {
         let ev = entity["value"].as_str().unwrap_or("").to_lowercase();
         if ev.len() < 2 {
@@ -1246,9 +1245,7 @@ pub fn fact_check(claim: &str) -> Value {
 
         for (fid, _cat, fkey, fval, fconf) in &facts {
             let fval_lower = fval.to_lowercase();
-            let verdict = if ev == fval_lower {
-                "match"
-            } else if claim.to_lowercase().contains(&fval_lower) {
+            let verdict = if ev == fval_lower || claim_lower.contains(&fval_lower) {
                 "match"
             } else {
                 "partial_match"
@@ -1296,6 +1293,7 @@ pub fn fact_check_response(response_text: &str) -> Value {
         "total_matches": total_matches, "flagged_sentences": flagged})
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn fact_update(
     fact_id: &str,
     category: &str,

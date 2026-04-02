@@ -52,7 +52,7 @@ pub fn check_pane(pty_mgr: &PtyManager, pane: u8, markers: &[String]) -> PaneHea
                     "agent crashed (only {} output lines, exit={:?})",
                     line_count, exit_code
                 ))
-            } else if !running && exit_code.map_or(false, |c| c != 0 && c != -1) {
+            } else if !running && exit_code.is_some_and(|c| c != 0 && c != -1) {
                 Some(format!("process exited with code {}", exit_code.unwrap()))
             } else {
                 None

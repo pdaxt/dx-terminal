@@ -14,10 +14,10 @@ use crate::{engine, queue, runtime_broker, scanner, web};
 #[derive(Debug, Clone, Args)]
 pub struct GoArgs {
     /// Maximum number of open GitHub issues to pull into the run
-    #[arg(long = "issues", default_value_t = 5)]
+    #[arg(long = "issues", default_value_t = 5, value_parser = parse_positive_usize)]
     pub max_issues: usize,
     /// Number of agent panes to launch
-    #[arg(long = "agents", default_value_t = 3)]
+    #[arg(long = "agents", default_value_t = 3, value_parser = parse_agent_count)]
     pub agents: usize,
     /// Print the detected plan without starting tmux or the dashboard
     #[arg(long)]
@@ -66,25 +66,18 @@ pub async fn go(app: Arc<App>, args: GoArgs) -> Result<()> {
     let agents = args.agents.clamp(1, 9);
     let max_issues = args.max_issues.max(1);
     let project = detect_project()?;
+
+    if args.dry_run {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&dry_run_preview(&project, agents, max_issues))?
+        );
+        return Ok(());
+    }
+
     let session = ensure_tmux_session(&project, agents)?;
     let issues = fetch_github_issues(&project, max_issues)?;
     let planned_count = issues.len().min(agents);
-
-    if args.dry_run {
-        let preview = json!({
-            "project": go_project_value(&project),
-            "session": {
-                "name": session.session_name,
-                "window": session.window_name,
-                "created": session.created,
-                "pane_targets": session.pane_targets,
-            },
-            "issues": issues.iter().map(issue_value).collect::<Vec<_>>(),
-            "spawn_count": planned_count,
-        });
-        println!("{}", serde_json::to_string_pretty(&preview)?);
-        return Ok(());
-    }
 
     engine::start_background_tasks(Some(Arc::clone(&app.state))).await;
     crate::dxos_scheduler::start(Arc::clone(&app));
@@ -146,6 +139,65 @@ pub async fn go(app: Arc<App>, args: GoArgs) -> Result<()> {
     }
 
     result
+}
+
+fn preview_session(project: &GoProject, panes: usize) -> GoSession {
+    let pane_count = panes.clamp(1, 9);
+    let session_name = format!("dx-go-{}", slugify(&project.name));
+    let window_name = "issues".to_string();
+    let pane_targets = (0..pane_count)
+        .map(|pane| format!("{session_name}:{window_name}.{pane}"))
+        .collect();
+
+    GoSession {
+        session_name,
+        window_name,
+        pane_targets,
+        created: false,
+    }
+}
+
+fn dry_run_preview(project: &GoProject, agents: usize, max_issues: usize) -> serde_json::Value {
+    let session = preview_session(project, agents);
+    json!({
+        "dry_run": true,
+        "notes": [
+            "Dry run skips tmux creation, dashboard startup, and live GitHub issue discovery.",
+        ],
+        "project": go_project_value(project),
+        "session": {
+            "name": session.session_name,
+            "window": session.window_name,
+            "created": session.created,
+            "pane_targets": session.pane_targets,
+        },
+        "issue_query": {
+            "repo": project.repo_slug,
+            "limit": max_issues,
+            "source": "gh issue list --state open --json number,title,url,labels",
+            "skipped": true,
+        },
+        "issues": [],
+        "spawn_count": agents.min(max_issues),
+    })
+}
+
+fn parse_positive_usize(value: &str) -> std::result::Result<usize, String> {
+    let parsed = value
+        .parse::<usize>()
+        .map_err(|_| format!("'{value}' is not a valid positive integer"))?;
+    if parsed == 0 {
+        return Err("value must be at least 1".to_string());
+    }
+    Ok(parsed)
+}
+
+fn parse_agent_count(value: &str) -> std::result::Result<usize, String> {
+    let parsed = parse_positive_usize(value)?;
+    if parsed > 9 {
+        return Err("agent count must be between 1 and 9".to_string());
+    }
+    Ok(parsed)
 }
 
 pub fn detect_project() -> Result<GoProject> {
@@ -609,15 +661,6 @@ fn slugify(value: &str) -> String {
     slug.trim_matches('-').to_string()
 }
 
-fn issue_value(issue: &GitHubIssue) -> serde_json::Value {
-    json!({
-        "number": issue.number,
-        "title": issue.title,
-        "url": issue.url,
-        "labels": issue.labels.iter().map(|label| label.name.clone()).collect::<Vec<_>>(),
-    })
-}
-
 fn go_project_value(project: &GoProject) -> serde_json::Value {
     json!({
         "name": project.name,
@@ -683,5 +726,61 @@ mod tests {
         assert!(prompt.contains("Issue URL"));
         assert!(prompt.contains("enhancement"));
         assert!(prompt.contains("AGENTS.md"));
+    }
+
+    #[test]
+    fn preview_session_matches_tmux_targets_without_creating_anything() {
+        let project = GoProject {
+            name: "DX Terminal".to_string(),
+            path: PathBuf::from("/tmp/dx-terminal"),
+            remote_url: None,
+            repo_slug: Some("pdaxt/dx-terminal".to_string()),
+            has_agents_md: true,
+            has_claude_md: true,
+            has_codex_md: false,
+            tech: vec!["rust".to_string()],
+            provider: "claude".to_string(),
+        };
+
+        let session = preview_session(&project, 3);
+        assert_eq!(session.session_name, "dx-go-dx-terminal");
+        assert_eq!(session.window_name, "issues");
+        assert_eq!(
+            session.pane_targets,
+            vec![
+                "dx-go-dx-terminal:issues.0",
+                "dx-go-dx-terminal:issues.1",
+                "dx-go-dx-terminal:issues.2",
+            ]
+        );
+        assert!(!session.created);
+    }
+
+    #[test]
+    fn dry_run_preview_skips_live_issue_fetch() {
+        let project = GoProject {
+            name: "DX Terminal".to_string(),
+            path: PathBuf::from("/tmp/dx-terminal"),
+            remote_url: None,
+            repo_slug: Some("pdaxt/dx-terminal".to_string()),
+            has_agents_md: true,
+            has_claude_md: true,
+            has_codex_md: false,
+            tech: vec!["rust".to_string()],
+            provider: "claude".to_string(),
+        };
+
+        let preview = dry_run_preview(&project, 3, 5);
+        assert_eq!(preview["dry_run"], true);
+        assert_eq!(preview["issues"], json!([]));
+        assert_eq!(preview["spawn_count"], 3);
+        assert_eq!(preview["issue_query"]["skipped"], true);
+    }
+
+    #[test]
+    fn agent_count_parser_rejects_out_of_range_values() {
+        assert_eq!(parse_agent_count("3").unwrap(), 3);
+        assert!(parse_agent_count("0").is_err());
+        assert!(parse_agent_count("10").is_err());
     }
 }

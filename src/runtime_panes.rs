@@ -268,6 +268,7 @@ fn next_unused_pane(used_panes: &BTreeSet<u8>) -> u8 {
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
 

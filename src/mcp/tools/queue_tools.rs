@@ -74,7 +74,7 @@ pub async fn queue_decompose(_app: &App, req: DecomposeRequest) -> String {
         let is_new_item = trimmed.starts_with("- ")
             || trimmed.starts_with("* ")
             || (trimmed.len() > 2
-                && trimmed.chars().next().map_or(false, |c| c.is_ascii_digit())
+                && trimmed.chars().next().is_some_and(|c| c.is_ascii_digit())
                 && trimmed.contains('.'));
 
         if is_new_item {
@@ -89,13 +89,11 @@ pub async fn queue_decompose(_app: &App, req: DecomposeRequest) -> String {
             is_parallel = text.starts_with("||");
             let clean = text.trim_start_matches("||").trim();
             current = clean.to_string();
+        } else if current.is_empty() {
+            current = trimmed.to_string();
         } else {
-            if current.is_empty() {
-                current = trimmed.to_string();
-            } else {
-                current.push(' ');
-                current.push_str(trimmed);
-            }
+            current.push(' ');
+            current.push_str(trimmed);
         }
     }
     if !current.trim().is_empty() {

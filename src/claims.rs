@@ -168,7 +168,7 @@ pub fn is_claimed(repo: &str, issue: u32) -> Result<Option<Claim>> {
         read_claim,
     )
     .ok()
-    .map(|c| Ok(c))
+    .map(Ok)
     .transpose()
 }
 

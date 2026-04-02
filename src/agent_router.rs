@@ -185,10 +185,7 @@ impl AgentRouter {
             .iter()
             .find(|candidate| candidate.name == provider)
             .ok_or_else(|| anyhow!("unknown provider '{}'", provider))?;
-        let stats = self
-            .usage_stats
-            .entry(provider.to_string())
-            .or_insert_with(UsageStats::default);
+        let stats = self.usage_stats.entry(provider.to_string()).or_default();
 
         let completed_before = stats.tasks_completed as f64;
         let completed_after = completed_before + 1.0;
@@ -412,11 +409,14 @@ fn router() -> &'static Mutex<AgentRouter> {
 fn save_router(router: &AgentRouter) -> Result<()> {
     let path = router_path();
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("create router state directory {}", parent.display()))?;
     }
     let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, serde_json::to_vec_pretty(router)?)?;
-    std::fs::rename(&tmp, &path)?;
+    std::fs::write(&tmp, serde_json::to_vec_pretty(router)?)
+        .with_context(|| format!("write temporary router state {}", tmp.display()))?;
+    std::fs::rename(&tmp, &path)
+        .with_context(|| format!("persist router state to {}", path.display()))?;
     Ok(())
 }
 

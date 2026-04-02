@@ -4,11 +4,14 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 use tokio::sync::{watch, Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
+
+static NUMBERED_LIST_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\d+\.\s+").expect("valid regex"));
 
 use crate::agents::AgentType;
 
@@ -356,16 +359,16 @@ fn control_loop_step(watcher: &mut PaneWatcher, hints: &mut LoopHints) -> bool {
             );
         }
         AgentState::ContextLow { pct } => {
-            if *pct < LOW_CONTEXT_THRESHOLD_PCT && !hints.low_context_warned {
-                if send_instruction(
+            if *pct < LOW_CONTEXT_THRESHOLD_PCT
+                && !hints.low_context_warned
+                && send_instruction(
                     &watcher.pane_id,
                     "Context is low. Commit and wrap up with a concise handoff.",
                 )
                 .is_ok()
-                {
-                    watcher.corrections_sent = watcher.corrections_sent.saturating_add(1);
-                    hints.low_context_warned = true;
-                }
+            {
+                watcher.corrections_sent = watcher.corrections_sent.saturating_add(1);
+                hints.low_context_warned = true;
             }
         }
         AgentState::Exited => {
@@ -859,9 +862,7 @@ fn extract_prompt_options(output: &str) -> Vec<String> {
             || lower.starts_with("no,")
             || lower.starts_with("press enter")
             || lower.starts_with("allow")
-            || Regex::new(r"^\d+\.\s+")
-                .expect("valid regex")
-                .is_match(trimmed);
+            || NUMBERED_LIST_RE.is_match(trimmed);
 
         if looks_like_option && !options.iter().any(|existing| existing == trimmed) {
             options.push(trimmed.to_string());

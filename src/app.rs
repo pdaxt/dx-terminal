@@ -16,11 +16,17 @@ pub struct App {
     pub sync_manager: Arc<RwLock<Option<Arc<SyncManager>>>>,
 }
 
+impl Default for App {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl App {
     pub fn new() -> Self {
         let descriptors_dir = config::dx_root().join("mcps");
         let screen_mgr = ScreenManager::new(config::dx_root());
-        screen_mgr.init_default(&config::session_name());
+        screen_mgr.init_default(config::session_name());
         let mut gateway = MCPRegistry::new(descriptors_dir);
         crate::external_mcp::sync_shared_catalog();
         crate::external_mcp::sync_gateway(&mut gateway);

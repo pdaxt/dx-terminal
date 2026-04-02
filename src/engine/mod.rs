@@ -87,13 +87,8 @@ pub async fn start_background_tasks(state: Option<std::sync::Arc<crate::state::S
 /// Run audit_full on registered projects (max 5 per cycle).
 async fn audit_cycle() {
     let reg = crate::scanner::load_registry();
-    let mut audited = 0;
 
-    for proj in &reg.projects {
-        if audited >= 5 {
-            break;
-        }
-
+    for proj in reg.projects.iter().take(5) {
         // Run audit in a blocking task since it does filesystem I/O
         let path = proj.path.clone();
         let name = proj.name.clone();
@@ -112,6 +107,5 @@ async fn audit_cycle() {
                 tracing::warn!("Audit cycle: {} failed: {}", name, e);
             }
         }
-        audited += 1;
     }
 }

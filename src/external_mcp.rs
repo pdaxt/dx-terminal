@@ -141,7 +141,7 @@ fn write_shared_catalog_to(path: &Path, entries: &[ExternalMcpEntry]) -> anyhow:
 
     let tmp = path.with_extension("tmp");
     std::fs::write(&tmp, serde_json::to_string_pretty(&payload)?)?;
-    std::fs::rename(&tmp, &path)?;
+    std::fs::rename(&tmp, path)?;
     Ok(())
 }
 
@@ -470,8 +470,7 @@ fn is_playwright_launcher(name: &str, command: &str) -> bool {
 }
 
 fn generate_keywords(name: &str) -> Vec<String> {
-    name.replace('-', " ")
-        .replace('_', " ")
+    name.replace(['-', '_'], " ")
         .split_whitespace()
         .map(|value| value.to_lowercase())
         .collect()
@@ -567,17 +566,11 @@ mod tests {
             .any(|window| { window[0] == "--port" && window[1] == "46099" }));
         assert!(descriptor.command.windows(2).any(|window| {
             window[0] == "--user-data-dir"
-                && window[1]
-                    == crate::config::pane_browser_profile_root(99)
-                        .to_string_lossy()
-                        .to_string()
+                && window[1] == crate::config::pane_browser_profile_root(99).to_string_lossy()
         }));
         assert!(descriptor.command.windows(2).any(|window| {
             window[0] == "--output-dir"
-                && window[1]
-                    == crate::config::pane_browser_artifacts_root(99)
-                        .to_string_lossy()
-                        .to_string()
+                && window[1] == crate::config::pane_browser_artifacts_root(99).to_string_lossy()
         }));
         assert!(descriptor
             .capabilities
@@ -611,10 +604,7 @@ mod tests {
         }));
         assert!(descriptor.command.windows(2).any(|window| {
             window[0] == "--user-data-dir"
-                && window[1]
-                    == crate::config::pane_browser_profile_root(3)
-                        .to_string_lossy()
-                        .to_string()
+                && window[1] == crate::config::pane_browser_profile_root(3).to_string_lossy()
         }));
     }
 

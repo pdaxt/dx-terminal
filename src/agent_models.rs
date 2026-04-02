@@ -208,8 +208,8 @@ pub fn interactive_setup() -> Result<String> {
     eprintln!("  Available models (sorted by recommendation):");
     eprintln!();
     eprintln!(
-        "  {:>3}  {:<22} {:>7}  {:>7}  {:<10}  {}",
-        "#", "MODEL", "SIZE", "RAM", "TOOL USE", "DESCRIPTION"
+        "  {:>3}  {:<22} {:>7}  {:>7}  {:<10}  DESCRIPTION",
+        "#", "MODEL", "SIZE", "RAM", "TOOL USE"
     );
     eprintln!("  ───  ──────────────────────  ───────  ───────  ──────────  ────────────────────────────────────");
 

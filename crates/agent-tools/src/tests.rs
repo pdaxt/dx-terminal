@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod tests {
+mod tool_tests {
     use std::fs;
 
     fn test_dir() -> tempfile::TempDir {

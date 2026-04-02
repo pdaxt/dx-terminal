@@ -58,7 +58,7 @@ impl MCPRegistry {
 
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "toml") {
+            if path.extension().is_some_and(|ext| ext == "toml") {
                 match std::fs::read_to_string(&path) {
                     Ok(content) => match toml::from_str::<MCPDescriptor>(&content) {
                         Ok(desc) => {
@@ -204,13 +204,7 @@ impl MCPRegistry {
                 let content_text = call_result
                     .content
                     .iter()
-                    .filter_map(|c| {
-                        if let Some(text) = c.raw.as_text() {
-                            Some(text.text.to_string())
-                        } else {
-                            None
-                        }
-                    })
+                    .filter_map(|c| c.raw.as_text().map(|text| text.text.to_string()))
                     .collect::<Vec<_>>()
                     .join("\n");
 

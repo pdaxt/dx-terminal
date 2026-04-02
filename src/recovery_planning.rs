@@ -44,6 +44,7 @@ pub struct AdoptionDefaults {
     pub stage: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn assess(
     project: &str,
     phase_counts: &HashMap<String, usize>,

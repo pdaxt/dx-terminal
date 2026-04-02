@@ -47,20 +47,15 @@ pub struct QueueTask {
     pub tmux_target: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum QueueStatus {
+    #[default]
     Pending,
     Running,
     Done,
     Failed,
     Blocked,
-}
-
-impl Default for QueueStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 /// The full queue file
@@ -295,10 +290,10 @@ pub fn mark_done(task_id: &str, result: &str) -> Result<()> {
         .map(|t| t.id.clone())
         .collect();
     for task in &mut queue.tasks {
-        if task.status == QueueStatus::Blocked {
-            if task.depends_on.iter().all(|dep| done_ids.contains(dep)) {
-                task.status = QueueStatus::Pending;
-            }
+        if task.status == QueueStatus::Blocked
+            && task.depends_on.iter().all(|dep| done_ids.contains(dep))
+        {
+            task.status = QueueStatus::Pending;
         }
     }
     save_queue(&queue)
@@ -325,14 +320,14 @@ pub fn mark_failed(task_id: &str, reason: &str) -> Result<()> {
             .collect();
         let mut changed = false;
         for task in &mut queue.tasks {
-            if task.status == QueueStatus::Pending || task.status == QueueStatus::Blocked {
-                if task.depends_on.iter().any(|dep| failed_ids.contains(dep)) {
-                    task.status = QueueStatus::Failed;
-                    task.completed_at = Some(crate::state::now());
-                    task.result = Some(format!("cascade: dependency {} failed", task_id));
-                    task.last_error = Some(format!("cascade: dependency {} failed", task_id));
-                    changed = true;
-                }
+            if (task.status == QueueStatus::Pending || task.status == QueueStatus::Blocked)
+                && task.depends_on.iter().any(|dep| failed_ids.contains(dep))
+            {
+                task.status = QueueStatus::Failed;
+                task.completed_at = Some(crate::state::now());
+                task.result = Some(format!("cascade: dependency {} failed", task_id));
+                task.last_error = Some(format!("cascade: dependency {} failed", task_id));
+                changed = true;
             }
         }
         if !changed {
@@ -415,12 +410,7 @@ pub fn task_by_id(task_id: &str) -> Option<QueueTask> {
 /// Find available pane (not running, not reserved)
 pub fn find_free_pane(cfg: &AutoConfig, occupied: &[u8]) -> Option<u8> {
     let max = cfg.max_parallel.min(9);
-    for p in 1..=max {
-        if !cfg.reserved_panes.contains(&p) && !occupied.contains(&p) {
-            return Some(p);
-        }
-    }
-    None
+    (1..=max).find(|&p| !cfg.reserved_panes.contains(&p) && !occupied.contains(&p))
 }
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod tests {
+mod runtime_tests {
     use crate::compact::{compact_session, should_compact, CompactionConfig};
     use crate::permissions::{
         PermissionMode, PermissionOutcome, PermissionPolicy, PermissionPrompter,

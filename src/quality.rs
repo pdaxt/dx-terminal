@@ -2,6 +2,7 @@ use crate::multi_agent::{coordination_db, now_iso};
 use rusqlite::params;
 use serde_json::{json, Value};
 
+#[allow(clippy::too_many_arguments)]
 pub fn log_test(
     pane_id: &str,
     project: &str,
@@ -66,6 +67,7 @@ pub fn log_build(
     json!({"status": "logged", "event_type": "build", "success": success})
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn log_lint(
     pane_id: &str,
     project: &str,

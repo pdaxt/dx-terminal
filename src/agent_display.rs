@@ -165,10 +165,10 @@ pub fn format_output(text: &str) -> String {
     for line in text.lines() {
         if line.starts_with("```") {
             result.push_str(&format!("\x1b[2m{line}\x1b[0m\n"));
-        } else if line.starts_with("# ") {
-            result.push_str(&format!("\x1b[1m{}\x1b[0m\n", &line[2..]));
-        } else if line.starts_with("## ") {
-            result.push_str(&format!("\x1b[1m{}\x1b[0m\n", &line[3..]));
+        } else if let Some(stripped) = line.strip_prefix("# ") {
+            result.push_str(&format!("\x1b[1m{stripped}\x1b[0m\n"));
+        } else if let Some(stripped) = line.strip_prefix("## ") {
+            result.push_str(&format!("\x1b[1m{stripped}\x1b[0m\n"));
         } else if line.starts_with("- **") || line.starts_with("* **") {
             // Bold items in lists
             result.push_str(&format!("{line}\n"));

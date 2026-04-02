@@ -27,6 +27,7 @@ pub fn theme_color(hex: &str) -> Color {
 }
 
 /// Pane summary line for the grid
+#[allow(clippy::too_many_arguments)]
 pub fn pane_line<'a>(
     pane_num: u8,
     theme_fg: &str,

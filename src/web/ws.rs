@@ -124,7 +124,7 @@ async fn handle_socket(socket: WebSocket, app: Arc<App>) {
 /// Merges DX Terminal state with auto-discovered live tmux panes.
 async fn build_full_snapshot(app: &App) -> Value {
     let state = app.state.get_state_snapshot().await;
-    let live_panes = tokio::task::spawn_blocking(|| tmux::discover_live_panes())
+    let live_panes = tokio::task::spawn_blocking(tmux::discover_live_panes)
         .await
         .unwrap_or_default();
     let resolved_panes = crate::runtime_panes::resolve_runtime_panes(&state, &live_panes, None);

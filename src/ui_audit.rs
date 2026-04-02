@@ -337,7 +337,7 @@ fn check_font_families(html: &str, root_range: &(usize, usize)) -> Vec<Violation
                 violations.push(Violation {
                     severity: "warning",
                     rule: "raw-font-family",
-                    message: format!("Raw font-family declaration instead of CSS variable"),
+                    message: "Raw font-family declaration instead of CSS variable".to_string(),
                     line: i + 1,
                     snippet: line.trim().to_string(),
                     suggestion: format!("Use {} instead", suggest),

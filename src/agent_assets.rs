@@ -205,7 +205,7 @@ fn collect_command_assets(dir: &Path, provider: &str, scope: &str) -> Vec<Value>
         ));
     }
 
-    assets.sort_by(|left, right| compare_asset_name(left, right));
+    assets.sort_by(compare_asset_name);
     assets
 }
 
@@ -237,7 +237,7 @@ fn collect_skill_assets(dir: &Path, provider: &str, scope: &str) -> Vec<Value> {
         assets.push(asset_json(path, provider, scope, "skill", skill_name));
     }
 
-    assets.sort_by(|left, right| compare_asset_name(left, right));
+    assets.sort_by(compare_asset_name);
     assets
 }
 

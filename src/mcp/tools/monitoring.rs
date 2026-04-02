@@ -815,7 +815,7 @@ pub async fn project_status(app: &App, req: ProjectStatusRequest) -> String {
             let mut counts = std::collections::HashMap::new();
             if let Ok(entries) = std::fs::read_dir(&issues_dir) {
                 for entry in entries.flatten() {
-                    if entry.path().extension().map_or(false, |e| e == "json") {
+                    if entry.path().extension().is_some_and(|e| e == "json") {
                         if let Ok(content) = std::fs::read_to_string(entry.path()) {
                             if let Ok(issue) = serde_json::from_str::<serde_json::Value>(&content) {
                                 let status = issue
@@ -883,7 +883,7 @@ pub async fn project_status(app: &App, req: ProjectStatusRequest) -> String {
         .filter(|e| {
             e.get("space")
                 .and_then(|v| v.as_str())
-                .map_or(false, |s| s.to_lowercase().contains(&project_lower))
+                .is_some_and(|s| s.to_lowercase().contains(&project_lower))
         })
         .filter_map(|e| e.get("acu_spent").and_then(|v| v.as_f64()))
         .sum();

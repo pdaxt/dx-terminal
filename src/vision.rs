@@ -176,21 +176,16 @@ pub enum FeatureStatus {
     Done,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum FeaturePhase {
+    #[default]
     Planned,
     Discovery,
     Design,
     Build,
     Test,
     Done,
-}
-
-impl Default for FeaturePhase {
-    fn default() -> Self {
-        Self::Planned
-    }
 }
 
 impl FeaturePhase {
@@ -230,19 +225,14 @@ impl FeaturePhase {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureState {
+    #[default]
     Planned,
     Active,
     Blocked,
     Complete,
-}
-
-impl Default for FeatureState {
-    fn default() -> Self {
-        Self::Planned
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -263,19 +253,14 @@ pub struct AcceptanceCriterion {
     pub verification_source: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AcceptanceStatus {
+    #[default]
     Draft,
     Mapped,
     Verified,
     Failed,
-}
-
-impl Default for AcceptanceStatus {
-    fn default() -> Self {
-        Self::Draft
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -304,19 +289,14 @@ pub struct DesignOption {
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum DesignOptionStatus {
+    #[default]
     Draft,
     Proposed,
     Approved,
     Rejected,
-}
-
-impl Default for DesignOptionStatus {
-    fn default() -> Self {
-        Self::Draft
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3532,6 +3512,7 @@ fn now() -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 

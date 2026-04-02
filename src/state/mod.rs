@@ -18,6 +18,12 @@ pub struct StateManager {
     pub event_bus: Arc<EventBus>,
 }
 
+impl Default for StateManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StateManager {
     pub fn new() -> Self {
         let state_file = config::state_file();

@@ -57,7 +57,7 @@ async fn run_replicator(app: Arc<App>) {
         let mut state = app.state.get_state_snapshot().await;
 
         // --- Phase 1: Discover live panes (once, shared across all clients) ---
-        let live_panes = match tokio::task::spawn_blocking(|| tmux::discover_live_panes()).await {
+        let live_panes = match tokio::task::spawn_blocking(tmux::discover_live_panes).await {
             Ok(panes) => panes,
             Err(_) => continue,
         };
@@ -650,6 +650,7 @@ fn feature_change_summary(
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
     use crate::state::types::{DxTerminalState, PaneState};

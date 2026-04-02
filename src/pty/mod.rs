@@ -7,15 +7,14 @@ use self::health::PaneHealth;
 use std::collections::HashMap;
 
 /// Manages all PTY-based agent processes
+#[derive(Default)]
 pub struct PtyManager {
     pub agents: HashMap<u8, AgentHandle>,
 }
 
 impl PtyManager {
     pub fn new() -> Self {
-        Self {
-            agents: HashMap::new(),
-        }
+        Self::default()
     }
 
     /// Spawn a new agent in a PTY
@@ -67,7 +66,7 @@ impl PtyManager {
 
     /// Check if a pane has a running agent
     pub fn is_running(&self, pane_num: u8) -> bool {
-        self.agents.get(&pane_num).map_or(false, |h| h.is_running())
+        self.agents.get(&pane_num).is_some_and(|h| h.is_running())
     }
 
     /// Check if a pane has any agent (running or not)

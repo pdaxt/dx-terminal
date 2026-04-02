@@ -1,7 +1,7 @@
 use chrono::Local;
 use rusqlite::{params, Connection};
 use serde_json::{json, Value};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::config;
@@ -374,7 +374,7 @@ fn maybe_migrate_json(conn: &Connection) {
     );
 }
 
-fn read_legacy_json(dir: &PathBuf, name: &str) -> Option<Value> {
+fn read_legacy_json(dir: &Path, name: &str) -> Option<Value> {
     let path = dir.join(name);
     if !path.exists() {
         return None;
@@ -386,7 +386,7 @@ fn read_legacy_json(dir: &PathBuf, name: &str) -> Option<Value> {
     Some(v)
 }
 
-fn migrate_ports(conn: &Connection, dir: &PathBuf) {
+fn migrate_ports(conn: &Connection, dir: &Path) {
     let Some(data) = read_legacy_json(dir, "ports.json") else {
         return;
     };
@@ -404,7 +404,7 @@ fn migrate_ports(conn: &Connection, dir: &PathBuf) {
     }
 }
 
-fn migrate_agents(conn: &Connection, dir: &PathBuf) {
+fn migrate_agents(conn: &Connection, dir: &Path) {
     let Some(data) = read_legacy_json(dir, "agents.json") else {
         return;
     };
@@ -433,7 +433,7 @@ fn migrate_agents(conn: &Connection, dir: &PathBuf) {
     }
 }
 
-fn migrate_git(conn: &Connection, dir: &PathBuf) {
+fn migrate_git(conn: &Connection, dir: &Path) {
     let Some(data) = read_legacy_json(dir, "git.json") else {
         return;
     };
@@ -449,7 +449,7 @@ fn migrate_git(conn: &Connection, dir: &PathBuf) {
     }
 }
 
-fn migrate_builds(conn: &Connection, dir: &PathBuf) {
+fn migrate_builds(conn: &Connection, dir: &Path) {
     let Some(data) = read_legacy_json(dir, "builds.json") else {
         return;
     };
@@ -479,7 +479,7 @@ fn migrate_builds(conn: &Connection, dir: &PathBuf) {
     }
 }
 
-fn migrate_tasks(conn: &Connection, dir: &PathBuf) {
+fn migrate_tasks(conn: &Connection, dir: &Path) {
     let Some(data) = read_legacy_json(dir, "tasks.json") else {
         return;
     };
@@ -506,7 +506,7 @@ fn migrate_tasks(conn: &Connection, dir: &PathBuf) {
     }
 }
 
-fn migrate_knowledge(conn: &Connection, dir: &PathBuf) {
+fn migrate_knowledge(conn: &Connection, dir: &Path) {
     let Some(data) = read_legacy_json(dir, "knowledge.json") else {
         return;
     };
@@ -530,7 +530,7 @@ fn migrate_knowledge(conn: &Connection, dir: &PathBuf) {
     }
 }
 
-fn migrate_messages(conn: &Connection, dir: &PathBuf) {
+fn migrate_messages(conn: &Connection, dir: &Path) {
     let Some(data) = read_legacy_json(dir, "messages.json") else {
         return;
     };

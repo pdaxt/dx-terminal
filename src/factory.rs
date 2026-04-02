@@ -398,7 +398,7 @@ fn build_pipeline_view(id: String, tasks: &[&queue::QueueTask]) -> PipelineView 
         .map(|t| {
             t.task
                 .split(']')
-                .last()
+                .next_back()
                 .unwrap_or(&t.task)
                 .trim()
                 .to_string()
@@ -424,9 +424,9 @@ fn build_pipeline_view(id: String, tasks: &[&queue::QueueTask]) -> PipelineView 
     .to_string();
 
     let stage_names: Vec<&str> = stages.iter().map(|s| s.name.as_str()).collect();
-    let template = if stage_names.iter().any(|n| *n == "pentest") {
+    let template = if stage_names.contains(&"pentest") {
         "secure"
-    } else if stage_names.iter().any(|n| *n == "review") {
+    } else if stage_names.contains(&"review") {
         "full"
     } else if stage_names.len() <= 2 {
         "quick"
@@ -742,7 +742,7 @@ pub fn run_gate(pipeline_id: &str) -> Result<GateResult> {
     }
 
     // Save gate result
-    let gate_path = std::path::PathBuf::from(crate::config::dx_root().join("gates"));
+    let gate_path = crate::config::dx_root().join("gates");
     let _ = std::fs::create_dir_all(&gate_path);
     let gate_file = gate_path.join(format!("{}.json", pipeline_id));
     let _ = std::fs::write(
@@ -1493,7 +1493,7 @@ mod tests {
             .unwrap_or("?");
         assert_eq!(name, "dev");
 
-        let desc = task_text.split(']').last().unwrap_or(task_text).trim();
+        let desc = task_text.split(']').next_back().unwrap_or(task_text).trim();
         assert_eq!(desc, "Add OAuth login");
     }
 

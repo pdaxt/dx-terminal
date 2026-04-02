@@ -17,10 +17,11 @@ use std::process::Command;
 use std::sync::RwLock;
 
 /// Screen layout types
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ScreenLayout {
     /// 3 panes side by side (default)
+    #[default]
     EvenHorizontal,
     /// 3 panes stacked vertically
     EvenVertical,
@@ -32,13 +33,8 @@ pub enum ScreenLayout {
     Split2,
 }
 
-impl Default for ScreenLayout {
-    fn default() -> Self {
-        Self::EvenHorizontal
-    }
-}
-
 impl ScreenLayout {
+    #[allow(clippy::should_implement_trait)]
     pub fn pane_count(&self) -> u8 {
         match self {
             ScreenLayout::Single => 1,
@@ -48,6 +44,7 @@ impl ScreenLayout {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "single" | "1" => Self::Single,

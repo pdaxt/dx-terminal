@@ -49,11 +49,7 @@ pub fn tail_session_events(jsonl_path: &str, max_events: usize) -> Vec<SessionEv
     }
 
     let file_size = path.metadata().map(|m| m.len()).unwrap_or(0);
-    let seek_pos = if file_size > 500_000 {
-        file_size - 500_000
-    } else {
-        0
-    };
+    let seek_pos = file_size.saturating_sub(500_000);
 
     let file2 = match std::fs::File::open(path) {
         Ok(f) => f,
@@ -278,15 +274,14 @@ pub fn tail_session_events(jsonl_path: &str, max_events: usize) -> Vec<SessionEv
 }
 
 /// Track file position for incremental JSONL tailing.
+#[derive(Default)]
 pub struct SessionTailer {
     positions: HashMap<String, u64>,
 }
 
 impl SessionTailer {
     pub fn new() -> Self {
-        Self {
-            positions: HashMap::new(),
-        }
+        Self::default()
     }
 
     /// Get new events since last call for a given JSONL file.

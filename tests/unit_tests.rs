@@ -30,16 +30,16 @@ fn test_truncate_ascii() {
 fn test_truncate_unicode_no_panic() {
     // Emoji: each is 1 char but 4 bytes
     let emoji = "🎉🎊🎈🎁🎂🎄🎅🎆🎇🎃";
-    assert_eq!(truncate_tools(&emoji, 5), "🎉🎊...");
-    assert_eq!(truncate_widgets(&emoji, 5), "🎉🎊🎈🎁…");
+    assert_eq!(truncate_tools(emoji, 5), "🎉🎊...");
+    assert_eq!(truncate_widgets(emoji, 5), "🎉🎊🎈🎁…");
 
     // CJK characters
     let cjk = "你好世界测试数据";
-    assert_eq!(truncate_tools(&cjk, 5), "你好...");
+    assert_eq!(truncate_tools(cjk, 5), "你好...");
 
     // Mixed ASCII + emoji
     let mixed = "hi 🎉 world";
-    let result = truncate_tools(&mixed, 6);
+    let result = truncate_tools(mixed, 6);
     assert!(result.ends_with("..."));
     assert!(!result.is_empty());
 }

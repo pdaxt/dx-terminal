@@ -38,7 +38,7 @@ fn extract_tool_call_from_text(text: &str) -> Option<AssistantEvent> {
                 "Grep",
                 "WebFetch",
             ];
-            if known_tools.iter().any(|t| *t == name) {
+            if known_tools.contains(&name) {
                 return Some(AssistantEvent::ToolUse {
                     id: format!("call_{}", rand_id()),
                     name: name.to_string(),
@@ -61,7 +61,7 @@ fn extract_tool_call_from_text(text: &str) -> Option<AssistantEvent> {
                 "grep",
                 "git",
             ];
-            if known_tools.iter().any(|t| *t == name) {
+            if known_tools.contains(&name) {
                 return Some(AssistantEvent::ToolUse {
                     id: format!("call_{}", rand_id()),
                     name: name.to_string(),
@@ -422,7 +422,7 @@ impl ApiClient for OllamaClient {
                     for tc in tool_calls {
                         tool_call_count += 1;
                         events.push(AssistantEvent::ToolUse {
-                            id: tc["id"].as_str().unwrap_or_else(|| "call_1").to_string(),
+                            id: tc["id"].as_str().unwrap_or("call_1").to_string(),
                             name: tc["function"]["name"].as_str().unwrap_or("").to_string(),
                             input: tc["function"]["arguments"]
                                 .as_str()

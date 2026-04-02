@@ -319,14 +319,14 @@ fn task_is_complete(task: &Value) -> bool {
     )
 }
 
-fn first_incomplete_task<'a>(feature: &'a Value) -> Option<&'a Value> {
+fn first_incomplete_task(feature: &Value) -> Option<&Value> {
     feature
         .get("tasks")
         .and_then(|v| v.as_array())
         .and_then(|tasks| tasks.iter().find(|task| !task_is_complete(task)))
 }
 
-fn first_unverified_acceptance<'a>(feature: &'a Value) -> Option<&'a Value> {
+fn first_unverified_acceptance(feature: &Value) -> Option<&Value> {
     feature
         .get("acceptance_items")
         .and_then(|v| v.as_array())
@@ -1300,7 +1300,7 @@ fn build_dashboard_notify_request(port: u16, body: &str) -> String {
     format!(
         "POST /api/vision/notify HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         port,
-        body.as_bytes().len(),
+        body.len(),
         body,
     )
 }

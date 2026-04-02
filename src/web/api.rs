@@ -1,3 +1,13 @@
+#![allow(
+    clippy::manual_strip,
+    clippy::map_identity,
+    clippy::needless_borrow,
+    clippy::question_mark,
+    clippy::redundant_closure,
+    clippy::too_many_arguments,
+    clippy::unnecessary_map_or
+)]
+
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},

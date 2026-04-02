@@ -118,7 +118,7 @@ pub fn space_list() -> Value {
                     .ok()
                     .map(|e| {
                         e.flatten()
-                            .filter(|f| f.path().extension().map_or(false, |x| x == "md"))
+                            .filter(|f| f.path().extension().is_some_and(|x| x == "md"))
                             .count()
                     })
                     .unwrap_or(0);
@@ -165,7 +165,7 @@ pub fn doc_list(space: &str, status_filter: &str) -> Value {
         if let Ok(entries) = std::fs::read_dir(space_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().map_or(true, |e| e != "md") {
+                if path.extension().is_none_or(|e| e != "md") {
                     continue;
                 }
                 let name = path.file_stem().unwrap().to_string_lossy().to_string();
@@ -185,7 +185,7 @@ pub fn doc_list(space: &str, status_filter: &str) -> Value {
                     .ok()
                     .map(|e| {
                         e.flatten()
-                            .filter(|f| f.path().extension().map_or(false, |x| x == "md"))
+                            .filter(|f| f.path().extension().is_some_and(|x| x == "md"))
                             .count()
                     })
                     .unwrap_or(0);
@@ -224,7 +224,7 @@ pub fn doc_read(space: &str, name: &str, include_meta: bool) -> Value {
             let mut proposals = vec![];
             if let Ok(entries) = std::fs::read_dir(&pdir) {
                 for entry in entries.flatten() {
-                    if entry.path().extension().map_or(true, |e| e != "md") {
+                    if entry.path().extension().is_none_or(|e| e != "md") {
                         continue;
                     }
                     let id = entry
@@ -349,7 +349,7 @@ pub fn doc_approve(space: &str, name: &str, proposal_id: &str) -> Value {
             .ok()
             .map(|e| {
                 e.flatten()
-                    .filter(|f| f.path().extension().map_or(false, |x| x == "md"))
+                    .filter(|f| f.path().extension().is_some_and(|x| x == "md"))
                     .map(|f| f.path())
                     .collect()
             })
@@ -380,9 +380,6 @@ pub fn doc_approve(space: &str, name: &str, proposal_id: &str) -> Value {
     for line in prop_content.lines() {
         if past_header {
             content_lines.push(line);
-        } else if !line.starts_with("<!-- ") && !line.trim().is_empty() {
-            past_header = true;
-            content_lines.push(line);
         } else if !line.starts_with("<!-- ") {
             past_header = true;
             content_lines.push(line);
@@ -398,7 +395,7 @@ pub fn doc_approve(space: &str, name: &str, proposal_id: &str) -> Value {
         .ok()
         .map(|e| {
             e.flatten()
-                .filter(|f| f.path().extension().map_or(false, |x| x == "md"))
+                .filter(|f| f.path().extension().is_some_and(|x| x == "md"))
                 .count()
         })
         .unwrap_or(0);
@@ -426,7 +423,7 @@ pub fn doc_reject(space: &str, name: &str, proposal_id: &str, reason: &str) -> V
         .ok()
         .map(|e| {
             e.flatten()
-                .filter(|f| f.path().extension().map_or(false, |x| x == "md"))
+                .filter(|f| f.path().extension().is_some_and(|x| x == "md"))
                 .count()
         })
         .unwrap_or(0);
@@ -541,7 +538,7 @@ pub fn doc_search(query: &str, space: &str) -> Value {
         let sp = space_dir.file_name().unwrap().to_string_lossy().to_string();
         if let Ok(entries) = std::fs::read_dir(space_dir) {
             for entry in entries.flatten() {
-                if entry.path().extension().map_or(true, |e| e != "md") {
+                if entry.path().extension().is_none_or(|e| e != "md") {
                     continue;
                 }
                 let content = std::fs::read_to_string(entry.path()).unwrap_or_default();
@@ -599,7 +596,7 @@ pub fn doc_directives(space: &str) -> Value {
         let sp = space_dir.file_name().unwrap().to_string_lossy().to_string();
         if let Ok(entries) = std::fs::read_dir(space_dir) {
             for entry in entries.flatten() {
-                if entry.path().extension().map_or(true, |e| e != "md") {
+                if entry.path().extension().is_none_or(|e| e != "md") {
                     continue;
                 }
                 let content = std::fs::read_to_string(entry.path()).unwrap_or_default();

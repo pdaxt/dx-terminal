@@ -260,10 +260,8 @@ async fn auto_cycle_timer(_app: Arc<App>, cmd_tx: mpsc::Sender<TuiCommand>) {
             .iter()
             .any(|t| t.status == queue::QueueStatus::Running);
 
-        if has_pending || has_running {
-            if cmd_tx.send(TuiCommand::AutoCycle).is_err() {
-                break; // TUI shut down
-            }
+        if (has_pending || has_running) && cmd_tx.send(TuiCommand::AutoCycle).is_err() {
+            break; // TUI shut down
         }
     }
 }
@@ -698,9 +696,7 @@ fn run_loop(
                                 true
                             }
                             KeyCode::Char('k') | KeyCode::Up => {
-                                if feature_cursor > 0 {
-                                    feature_cursor -= 1;
-                                }
+                                feature_cursor = feature_cursor.saturating_sub(1);
                                 true
                             }
                             KeyCode::Char('n') => {

@@ -22,6 +22,7 @@ pub enum RuntimeProvider {
 }
 
 impl RuntimeProvider {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(value: &str) -> Self {
         match value.trim().to_lowercase().as_str() {
             "codex" | "openai" => Self::Codex,
@@ -101,6 +102,7 @@ pub enum RuntimeAdapter {
 }
 
 impl RuntimeAdapter {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(value: &str) -> Self {
         match value.trim().to_lowercase().as_str() {
             "pty" | "pty_native" | "pty_native_adapter" | "dx_pty" => Self::PtyNative,

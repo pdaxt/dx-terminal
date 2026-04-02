@@ -168,7 +168,7 @@ fn style_build(session: &str, window: &str, build_num: u8) -> usize {
 
 /// Create a build window in all dx-build sessions (or restyle if exists)
 pub fn create_build(build_num: u8) -> Result<Vec<String>, String> {
-    if build_num < 1 || build_num > MAX_BUILDS {
+    if !(1..=MAX_BUILDS).contains(&build_num) {
         return Err(format!(
             "Build number must be 1-{}. Got: {}",
             MAX_BUILDS, build_num
@@ -287,7 +287,7 @@ pub fn restyle_all() -> Result<Vec<String>, String> {
             .strip_prefix("build-")
             .and_then(|n| n.parse().ok())
             .unwrap_or(0);
-        if num < 1 || num > MAX_BUILDS {
+        if !(1..=MAX_BUILDS).contains(&num) {
             continue;
         }
 

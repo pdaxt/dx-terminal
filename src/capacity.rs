@@ -113,7 +113,7 @@ fn list_sprints() -> Vec<Value> {
     let mut sprints = vec![];
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for entry in entries.flatten() {
-            if entry.path().extension().map_or(false, |e| e == "json") {
+            if entry.path().extension().is_some_and(|e| e == "json") {
                 if let Ok(content) = std::fs::read_to_string(entry.path()) {
                     if let Ok(v) = serde_json::from_str::<Value>(&content) {
                         sprints.push(v);
@@ -152,7 +152,7 @@ pub fn load_capacity() -> CapacityData {
         .filter(|e| {
             e["logged_at"]
                 .as_str()
-                .map_or(false, |s| s.starts_with(&today))
+                .is_some_and(|s| s.starts_with(&today))
         })
         .collect();
 
@@ -535,7 +535,7 @@ pub fn cap_dashboard(space: &str, sprint_id: &str) -> Value {
         .filter(|e| {
             e["logged_at"]
                 .as_str()
-                .map_or(false, |s| s.starts_with(&today))
+                .is_some_and(|s| s.starts_with(&today))
                 && (space.is_empty() || e["space"].as_str() == Some(space))
         })
         .collect();
@@ -584,7 +584,7 @@ pub fn cap_dashboard(space: &str, sprint_id: &str) -> Value {
             .filter(|e| {
                 e["logged_at"]
                     .as_str()
-                    .map_or(false, |s| s >= sp["start_date"].as_str().unwrap_or(""))
+                    .is_some_and(|s| s >= sp["start_date"].as_str().unwrap_or(""))
             })
             .collect();
         let sprint_acu: f64 = sprint_entries
@@ -789,7 +789,7 @@ pub fn cap_roles() -> Value {
                     e["role"].as_str() == Some(key)
                         && e["logged_at"]
                             .as_str()
-                            .map_or(false, |s| s.starts_with(&today))
+                            .is_some_and(|s| s.starts_with(&today))
                 })
                 .collect();
             let today_acu: f64 = today_entries

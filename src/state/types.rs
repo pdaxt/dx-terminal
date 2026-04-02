@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 
 /// Real-time health classification for an agent pane.
 /// Determined by polling tmux output every 2s.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum PaneHealthStatus {
     /// Agent is actively producing output / spinner is turning
@@ -21,13 +21,8 @@ pub enum PaneHealthStatus {
     /// Waiting for user approval (permission prompt detected)
     AwaitingApproval,
     /// No agent detected on this pane
+    #[default]
     Empty,
-}
-
-impl Default for PaneHealthStatus {
-    fn default() -> Self {
-        Self::Empty
-    }
 }
 
 impl PaneHealthStatus {
@@ -71,7 +66,7 @@ impl PaneHealthStatus {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DxTerminalState {
     #[serde(default)]
     pub panes: HashMap<String, PaneState>,
@@ -83,18 +78,6 @@ pub struct DxTerminalState {
     pub activity_log: VecDeque<LogEntry>,
     #[serde(default)]
     pub config: DxTerminalConfig,
-}
-
-impl Default for DxTerminalState {
-    fn default() -> Self {
-        Self {
-            panes: HashMap::new(),
-            project_mcps: HashMap::new(),
-            space_project_map: HashMap::new(),
-            activity_log: VecDeque::new(),
-            config: DxTerminalConfig::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
