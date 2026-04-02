@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
 use dx_terminal::{
     agent_display, agent_prompt, agent_repl, agent_router, agent_setup, app, config,
-    dxos_scheduler, dxos_supervisor, engine, go, ipc, machine, mcp, queue, swarm, sync, tui, web,
-    workspace,
+    dxos_scheduler, dxos_supervisor, engine, go, ipc, machine, mcp, queue, services, swarm, sync,
+    tui, web, workspace,
 };
 use serde_json::{json, Value};
 use std::hash::{Hash, Hasher};
@@ -56,6 +56,12 @@ enum Commands {
     External {
         #[command(subcommand)]
         command: ExternalCommands,
+    },
+    /// CLI-first service catalog for internal and external microservices
+    #[command(visible_alias = "svc")]
+    Services {
+        #[command(subcommand)]
+        command: ServiceCommands,
     },
     /// Compatibility alias for the older gateway surface
     #[command(hide = true)]
@@ -178,6 +184,41 @@ enum ExternalCommands {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum ServiceCommands {
+    /// List internal and external services in the CLI microservices architecture
+    List {
+        #[arg(long, default_value = "all", value_parser = ["all", "internal", "external"])]
+        kind: String,
+        #[arg(long)]
+        running_only: bool,
+    },
+    /// Inspect one service and show its CLI contract
+    Inspect { service: String },
+    /// Print the static service topology for the CLI-first architecture
+    Topology,
+    /// Serve one internal service directly from the CLI
+    Serve {
+        service: String,
+        /// Port for `web`
+        #[arg(long)]
+        port: Option<u16>,
+        /// Companion dashboard port for MCP services
+        #[arg(long)]
+        web_port: Option<u16>,
+        /// Disable the companion dashboard for MCP services
+        #[arg(long)]
+        no_web: bool,
+    },
+    /// Call a tool on one external microservice
+    Call {
+        service: String,
+        tool: String,
+        #[arg(long)]
+        args: Option<String>,
+    },
+}
+
 fn runtime_identity(cli: &Cli, default_web_port: u16) -> String {
     let cwd = std::env::current_dir()
         .unwrap_or_default()
@@ -234,6 +275,21 @@ fn runtime_identity(cli: &Cli, default_web_port: u16) -> String {
             }
             ExternalCommands::Run { server, tool, .. } => {
                 format!("external-run-{}-{}-{:x}", server, tool, cwd_hash)
+            }
+        },
+        Some(Commands::Services { command }) => match command {
+            ServiceCommands::List { kind, running_only } => {
+                format!("services-list-{}-{}-{:x}", kind, running_only, cwd_hash)
+            }
+            ServiceCommands::Inspect { service } => {
+                format!("services-inspect-{}-{:x}", service, cwd_hash)
+            }
+            ServiceCommands::Topology => format!("services-topology-{:x}", cwd_hash),
+            ServiceCommands::Serve { service, .. } => {
+                format!("services-serve-{}-{:x}", service, cwd_hash)
+            }
+            ServiceCommands::Call { service, tool, .. } => {
+                format!("services-call-{}-{}-{:x}", service, tool, cwd_hash)
             }
         },
         Some(Commands::Ci { .. }) => format!("ci-{:x}", cwd_hash),
@@ -315,6 +371,7 @@ async fn main() -> anyhow::Result<()> {
             engine::start_background_tasks(Some(Arc::clone(&application.state))).await;
             dxos_scheduler::start(Arc::clone(&application));
             dxos_supervisor::start(Arc::clone(&application));
+            let _health_monitor = dx_terminal::health_monitor::start(Arc::clone(&application));
 
             let tui_app = application;
             let handle = std::thread::spawn(move || tui::run_tui(tui_app));
@@ -327,6 +384,7 @@ async fn main() -> anyhow::Result<()> {
             // Spawn on a dedicated OS thread outside the runtime.
             dxos_scheduler::start(Arc::clone(&application));
             dxos_supervisor::start(Arc::clone(&application));
+            let _health_monitor = dx_terminal::health_monitor::start(Arc::clone(&application));
             let tui_app = application;
             let handle = std::thread::spawn(move || tui::run_tui(tui_app));
             handle
@@ -354,6 +412,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::External { command }) | Some(Commands::Gateway { command }) => {
             run_external_cli(application, command).await?;
+        }
+        Some(Commands::Services { command }) => {
+            run_services_cli(application, command, cfg.web_port).await?;
         }
         Some(Commands::Ci {
             no_test,
@@ -564,6 +625,76 @@ async fn run_external_cli(app: Arc<app::App>, command: ExternalCommands) -> anyh
     rewrite_external_cli_terms(&mut value);
     println!("{}", serde_json::to_string_pretty(&value)?);
     Ok(())
+}
+
+async fn run_services_cli(
+    app: Arc<app::App>,
+    command: ServiceCommands,
+    default_web_port: u16,
+) -> anyhow::Result<()> {
+    match command {
+        ServiceCommands::List { kind, running_only } => {
+            let value = services::list_services(app.as_ref(), &kind, running_only).await?;
+            println!("{}", serde_json::to_string_pretty(&value)?);
+            Ok(())
+        }
+        ServiceCommands::Inspect { service } => {
+            let value = services::inspect_service(app.as_ref(), &service).await?;
+            println!("{}", serde_json::to_string_pretty(&value)?);
+            Ok(())
+        }
+        ServiceCommands::Topology => {
+            println!("{}", serde_json::to_string_pretty(&services::topology())?);
+            Ok(())
+        }
+        ServiceCommands::Call {
+            service,
+            tool,
+            args,
+        } => {
+            let value = services::call_service(app.as_ref(), &service, &tool, args).await?;
+            println!("{}", serde_json::to_string_pretty(&value)?);
+            Ok(())
+        }
+        ServiceCommands::Serve {
+            service,
+            port,
+            web_port,
+            no_web,
+        } => {
+            let normalized = services::normalize_internal_service_name(&service).to_string();
+            match normalized.as_str() {
+                "web" => {
+                    if web_port.is_some() {
+                        anyhow::bail!("use --port with `dx services serve web`");
+                    }
+                    web::run_web_server(app, port.unwrap_or(default_web_port)).await
+                }
+                "mcp" => {
+                    if port.is_some() {
+                        anyhow::bail!("use --web-port with MCP services; --port is only for `web`");
+                    }
+                    run_mcp_mode(app, web_port.unwrap_or(default_web_port), no_web, None).await
+                }
+                "core" | "queue" | "tracker" | "coord" | "intel" => {
+                    if port.is_some() {
+                        anyhow::bail!("use --web-port with MCP services; --port is only for `web`");
+                    }
+                    run_mcp_mode(
+                        app,
+                        web_port.unwrap_or(default_web_port),
+                        no_web,
+                        Some(normalized),
+                    )
+                    .await
+                }
+                "gateway" => anyhow::bail!(
+                    "`gateway` is an embedded service; use `dx services list --kind external` and `dx services inspect <service>`"
+                ),
+                _ => anyhow::bail!("unknown internal service '{}'", service),
+            }
+        }
+    }
 }
 
 async fn run_swarm_cli(app: Arc<app::App>, command: SwarmCommands) -> anyhow::Result<()> {
@@ -824,6 +955,20 @@ mod tests {
                 assert!(!auto_start);
             }
             _ => panic!("expected tools discover"),
+        }
+    }
+
+    #[test]
+    fn parses_services_alias() {
+        let cli = Cli::try_parse_from(["dx", "svc", "list", "--kind", "internal"]).expect("parse");
+        match cli.command {
+            Some(Commands::Services {
+                command: ServiceCommands::List { kind, running_only },
+            }) => {
+                assert_eq!(kind, "internal");
+                assert!(!running_only);
+            }
+            _ => panic!("expected services list alias"),
         }
     }
 
