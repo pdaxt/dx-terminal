@@ -451,10 +451,10 @@ async fn main() -> anyhow::Result<()> {
             run_agent("Find all bugs, issues, and code smells in this codebase. Fix them. Run tests to verify.".into(), None, "workspace-write".into(), 16)?;
         }
         Some(Commands::Review) => {
-            run_agent("Run `git diff` to see uncommitted changes. Review each change for bugs, security issues, and code quality.".into(), None, "read-only".into(), 8)?;
+            run_agent("Run `git diff` to see uncommitted changes. Review each change for bugs, security issues, and code quality. Do not modify any files.".into(), None, "workspace-write".into(), 8)?;
         }
         Some(Commands::Explain) => {
-            run_agent("Read the key files in this project. Give a concise explanation of what it does, its architecture, and key design decisions.".into(), None, "read-only".into(), 8)?;
+            run_agent("Read the key files in this project. Give a concise explanation of what it does, its architecture, and key design decisions. Do not modify any files.".into(), None, "workspace-write".into(), 8)?;
         }
         Some(Commands::Test) => {
             run_agent("Run the test suite. If any tests fail, read the failing test and the code it tests, then fix the issue. Re-run tests to verify.".into(), None, "full-access".into(), 16)?;

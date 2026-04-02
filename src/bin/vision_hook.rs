@@ -848,12 +848,12 @@ fn classify_prompt(prompt: &str, visions: &[Value]) -> Option<Classification> {
 
             if total_score > best_score {
                 best_score = total_score;
-                best_match = Some(if matched_feature.is_some() {
+                best_match = Some(if let Some(feature) = matched_feature {
                     Classification::ExistingFeature {
                         project: project.to_string(),
                         project_path: project_path.to_string(),
                         goal: goal.clone(),
-                        feature: matched_feature.unwrap(),
+                        feature,
                     }
                 } else {
                     Classification::ExistingGoal {

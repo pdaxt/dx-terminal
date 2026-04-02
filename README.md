@@ -2,7 +2,7 @@
 
 # DX Terminal
 
-**The AI-native terminal multiplexer. Orchestrate teams of AI coding agents from one screen.**
+**AI agent OS — code, orchestrate, ship. One binary to rule them all.**
 
 [![CI](https://github.com/pdaxt/dx-terminal/actions/workflows/ci.yml/badge.svg)](https://github.com/pdaxt/dx-terminal/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -11,21 +11,19 @@
 
 Single binary. No login. No telemetry. Open source.
 
+`dx` merges two products into one: an **AI coding agent** (chat, fix, review, commit) and an **agent orchestration platform** (MCP server, TUI dashboard, swarm, router). Use it standalone to code, or at scale to run 16+ agents from one screen.
+
 <img src="demo/demo-screenshot.png" alt="DX Terminal showing 16 AI agents with real-time dashboard, task queue, vision tracking, and sync status" width="800">
 
-[Quick Start](#install) · [Operating Model](#operating-model) · [Web Dashboard](#web-dashboard) · [MCP Server](#mcp-server) · [Architecture](#architecture) · [DXOS Master Architecture](docs/DXOS_MASTER_ARCHITECTURE.md) · [Operator Guide](docs/OPERATOR_SYSTEM_GUIDE.md) · [Experience Blueprint](docs/EXPERIENCE_BLUEPRINT.md) · [Hosted Sync Model](docs/HOSTED_SYNC_MODEL.md) · [Contributing](#contributing)
+[Quick Start](#install) · [Agent Commands](#agent-commands) · [Orchestration](#orchestration) · [Web Dashboard](#web-dashboard) · [MCP Server](#mcp-server) · [Microservices](#cli-microservices-architecture) · [Architecture](#architecture) · [Contributing](#contributing)
 
 </div>
 
 ---
 
-## The Problem
+## Why
 
-You're running 16 AI coding runtimes across tmux panes. One needs approval. Another is stuck. A third finished but nobody noticed. You're alt-tabbing constantly, losing context every time, with no idea what's actually getting done.
-
-## The Solution
-
-DX Terminal is a **complete AI agent orchestration platform** — a single Rust binary that monitors, coordinates, and tracks teams of AI coding agents. Real-time TUI dashboard, web dashboard with WebSocket streaming, built-in operator CLI for external tool servers, 206-tool MCP server, vision-driven development tracking, file sync, and build environment management. Built in Rust, <5MB RAM.
+Most AI coding tools do one thing: either they're an agent that writes code, or they're a dashboard that watches agents. `dx` does both. Use `dx chat` to pair-program with a local model, `dx fix` to auto-repair your codebase, or `dx go` to launch a full fleet of agents on your open issues — all from the same binary, with the same state, the same MCP server, the same dashboard.
 
 ## Operating Model
 
@@ -70,17 +68,98 @@ git clone https://github.com/pdaxt/dx-terminal.git && cd dx-terminal && cargo in
 
 ## Usage
 
+### Code with AI
+
 ```bash
-dx                          # TUI dashboard + web + MCP server support
-dx mcp                      # MCP server mode (stdio, all 206 tools)
-dx mcp core                 # Split MCP server (faster tools/list)
-dx external list            # List imported external tool servers
-dx external inspect playwright
-dx external run playwright click_text --args '{"text":"Login"}'
-dx web --port 3100          # Web dashboard only
+dx chat                     # Interactive AI coding REPL (local Ollama models)
+dx fix                      # Find and fix issues automatically
+dx review                   # Review uncommitted changes (read-only)
+dx explain                  # Explain the current codebase
+dx test                     # Run tests and fix failures
+dx commit                   # Generate commit message and commit
+dx pr                       # Generate PR description and create PR
+dx run "add error handling" # Single-prompt agent run
+dx setup                    # Download and configure a local model
 ```
 
-See [docs/OPERATOR_SYSTEM_GUIDE.md](docs/OPERATOR_SYSTEM_GUIDE.md) for the full operator workflow, architecture diagrams, and documentation contract.
+### Orchestrate agents
+
+```bash
+dx go                       # Zero-config launch: tmux + agents + dashboard
+dx swarm start --repo .     # Assign agents to open GitHub issues
+dx swarm status             # Check swarm progress
+dx tui                      # TUI dashboard (standalone operator console)
+dx web --port 3100          # Web dashboard only
+dx mcp                      # MCP server (stdio, all 206 tools)
+dx ci                       # Local CI gate (check + test + clippy)
+```
+
+### Route and discover
+
+```bash
+dx router route "fix rust bug"    # Best provider for this task
+dx router stats                   # Provider usage + cost history
+dx services list                  # 8 internal + 39 external services
+dx services topology              # Service dependency graph
+dx external list                  # Imported tool servers from Claude/Codex
+dx external run playwright click_text --args '{"text":"Login"}'
+```
+
+See [docs/OPERATOR_SYSTEM_GUIDE.md](docs/OPERATOR_SYSTEM_GUIDE.md) for the full operator workflow.
+
+## Agent Commands
+
+`dx` ships a built-in AI coding agent powered by local models (Ollama). No API keys, no cloud — runs entirely on your machine.
+
+| Command | Permission | What it does |
+|---------|-----------|--------------|
+| `dx chat` | workspace-write | Interactive REPL — pair-program with AI |
+| `dx run "<prompt>"` | workspace-write | Single-prompt agent run (configurable: `--permission`, `--max-turns`) |
+| `dx fix` | workspace-write | Scan codebase, find issues, fix them |
+| `dx review` | read-only | Review uncommitted changes without modifying anything |
+| `dx explain` | read-only | Explain what the codebase does |
+| `dx test` | full-access | Run tests, analyze failures, fix them |
+| `dx commit` | full-access | Generate a commit message from the diff and commit |
+| `dx pr` | full-access | Generate PR description and create a pull request |
+| `dx setup` | — | Detect system capabilities and download a local model |
+
+Permission levels: `read-only` (can only read files), `workspace-write` (can edit project files), `full-access` (can run any command).
+
+## Orchestration
+
+### Swarm — Issue-to-PR at scale
+
+```bash
+dx swarm start --repo pdaxt/dx-terminal --max-agents 5 --label bug
+dx swarm status
+dx swarm stop
+```
+
+Assigns agents to open GitHub issues, creates worktrees, and drives each issue to a PR. One command to parallelize your backlog.
+
+### Router — Provider-neutral agent routing
+
+```bash
+dx router route "fix a bug in rust"
+# → {"provider": "claude", "score": 89.0, "reasons": ["matched strength 'rust'"]}
+
+dx router stats    # Usage per provider
+dx router cost     # Cost-per-provider breakdown
+dx router add-rule "(?i)\\bpython\\b" aider "Python defaults to aider"
+```
+
+Routes tasks to the best provider (Claude, Codex, Gemini, Aider) based on language, task type, cost, and historical success rate. Regex rules for custom routing.
+
+### Go — Zero-config project launch
+
+```bash
+dx go                                    # Launch with defaults
+dx go --agents 5 --issues 10            # Customize fleet size
+dx go --dry-run                          # Preview the plan
+dx go --auto-approve                     # Auto-approve permission prompts
+```
+
+Detects your project, pulls open issues, launches a tmux session with agent panes and a dashboard — one command from clone to shipping.
 
 ## Features
 
@@ -145,6 +224,26 @@ DX Terminal includes a built-in MCP server with 206 tools across 5 domains:
 
 Run as monolith (`dx mcp`) or split servers for faster `tools/list` response.
 
+## CLI Microservices Architecture
+
+DX Terminal now exposes its service architecture directly through the CLI. The CLI is the control plane: internal split MCP domains are treated as services, and external micro-MCPs are managed through the embedded gateway.
+
+```bash
+dx services list --kind internal
+dx services topology
+dx services inspect core
+dx services serve intel --no-web
+dx services inspect pqvault
+dx services call pqvault vault_status
+```
+
+Internal services:
+
+- `mcp` is the API facade over the split domains.
+- `core`, `queue`, `tracker`, `coord`, and `intel` are the internal microservices.
+- `web` is the HTTP edge service.
+- `gateway` is the embedded integration gateway for external microservices.
+
 ## External Tool Commands
 
 Use `dx external ...` for imported tool servers from Claude, Codex, or shared dx catalogs. This is the operator-first surface for external integrations; the internal gateway/MCP bridge remains under the hood.
@@ -177,26 +276,28 @@ dx external run filesystem read_file --args '{"path":"README.md"}'
 Detailed diagrams and operating notes live in [docs/OPERATOR_SYSTEM_GUIDE.md](docs/OPERATOR_SYSTEM_GUIDE.md).
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│                       DX Terminal                           │
-│                                                             │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐  │
-│  │ TUI      │ │ Web      │ │ MCP      │ │ Sync         │  │
-│  │ Ratatui  │ │ Axum+WS  │ │ Server   │ │ notify+git   │  │
-│  │ 60fps    │ │ REST+SSE │ │ 206 tools│ │ auto-push    │  │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └──────┬───────┘  │
-│       │             │            │               │          │
-│  ┌────┴─────────────┴────────────┴───────────────┴───────┐ │
-│  │                    App Core                            │ │
-│  │  StateManager · PTY Manager · Queue · Vision · Screen │ │
-│  └────────────────────────────────────────────────────────┘ │
-│                                                             │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │  PTY (portable-pty) · Agent Detection · Analytics      │ │
-│  │  Knowledge Base · Build Environments · Quality Gates   │ │
-│  │  Capacity Planning · Multi-Agent Coordination          │ │
-│  └────────────────────────────────────────────────────────┘ │
-└────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                          dx (single binary)                       │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │  Agent Layer (chat, fix, review, test, commit, pr, run)     │ │
+│  │  Ollama · Provider Router · Swarm · Permission Sandbox      │ │
+│  └──────────────────────────┬──────────────────────────────────┘ │
+│                              │                                    │
+│  ┌──────────┐ ┌──────────┐ ┌┴─────────┐ ┌──────────┐ ┌───────┐ │
+│  │ TUI      │ │ Web      │ │ MCP      │ │ Sync     │ │ CI    │ │
+│  │ Ratatui  │ │ Axum+WS  │ │ Server   │ │ notify   │ │ Gate  │ │
+│  │ 60fps    │ │ REST+SSE │ │ 206 tools│ │ +git     │ │       │ │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └───┬───┘ │
+│       └─────────────┴────────────┴────────────┴───────────┘     │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │  App Core: StateManager · PTY · Queue · Vision · Screen    │ │
+│  ├─────────────────────────────────────────────────────────────┤ │
+│  │  Services: core · queue · tracker · coord · intel · gateway│ │
+│  ├─────────────────────────────────────────────────────────────┤ │
+│  │  External: 39 micro-MCPs (playwright, pqvault, mailforge…) │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 All Rust. Single binary. No external runtime dependencies.
@@ -209,25 +310,33 @@ Documentation and hosted UI should not invent their own state. They should consu
 
 ## Comparison
 
-| Feature | DX Terminal | claude-squad | tmux |
-|---------|:-----------:|:------------:|:----:|
-| Language | Rust | Go | C |
-| Agents monitored | 16+ | 1 | Manual |
-| Dashboard views | TUI + Web | 1 | 0 |
-| MCP tools | 206 | 0 | 0 |
-| Task queue | Priority-based | No | No |
-| Vision/VDD tracking | Built-in | No | No |
-| File sync | Rust-native | No | No |
-| Build environments | Themed multi-pane | No | No |
-| Wiki generation | Auto from vision | No | No |
-| Memory usage | <5MB | ~20MB | ~3MB |
-| Agent types | 4+ | Claude only | N/A |
+| Feature | DX Terminal | Claude Code | Codex CLI | claude-squad | tmux |
+|---------|:-----------:|:-----------:|:---------:|:------------:|:----:|
+| Language | Rust | TypeScript | TypeScript | Go | C |
+| Built-in AI agent | Local models | Cloud API | Cloud API | No | No |
+| Agent orchestration | 16+ agents | 1 | 1 | 1 | Manual |
+| Dashboard | TUI + Web | No | No | TUI | No |
+| MCP server | 206 tools | N/A | N/A | No | No |
+| Swarm (issue→PR) | Built-in | No | No | No | No |
+| Provider routing | 4 providers | Claude only | OpenAI only | Claude only | N/A |
+| Task queue | Priority-based | No | No | No | No |
+| CI gate | Built-in | No | No | No | No |
+| Service catalog | 8 internal + 39 ext | No | No | No | No |
+| Memory usage | <5MB | ~100MB | ~50MB | ~20MB | ~3MB |
+| Requires API key | No (local) | Yes | Yes | Yes | N/A |
 
-## Configuration
+## Local CI Gate
 
 ```bash
-dx --init-config          # Generate default config
+dx ci                     # Full gate: cargo check + test + clippy
+dx ci --no-clippy          # Skip clippy
+dx ci --no-test            # Skip tests
+dx ci --no-fail-fast       # Run all steps even if one fails
 ```
+
+Blocks `git push` on failure when used as a pre-push hook. Live output streaming shows each step's progress.
+
+## Configuration
 
 Config at `~/.config/dx-terminal/config.json`:
 ```json
@@ -259,6 +368,6 @@ MIT — see [LICENSE](LICENSE).
 
 <div align="center">
 
-**Built for developers who orchestrate AI agents at scale.**
+**One binary. Code with AI, orchestrate agents, ship faster.**
 
 </div>

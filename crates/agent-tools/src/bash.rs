@@ -1,10 +1,8 @@
 use std::path::Path;
-use std::process::Stdio;
-use std::time::Duration;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tokio::process::Command;
-use tokio::time::timeout;
 
 use dx_agent_core::Result;
 
@@ -25,34 +23,43 @@ pub struct BashOutput {
 
 pub fn execute_bash(input: BashInput, cwd: &Path) -> Result<BashOutput> {
     let timeout_ms = input.timeout.unwrap_or(120_000);
+    let timeout_dur = Duration::from_millis(timeout_ms);
 
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
+    let mut child = Command::new("sh")
+        .arg("-lc")
+        .arg(&input.command)
+        .current_dir(cwd)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
 
-    rt.block_on(async {
-        let child = Command::new("sh")
-            .arg("-lc")
-            .arg(&input.command)
-            .current_dir(cwd)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+    let start = Instant::now();
 
-        match timeout(Duration::from_millis(timeout_ms), child.wait_with_output()).await {
-            Ok(Ok(output)) => Ok(BashOutput {
-                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-                exit_code: output.status.code(),
-                timed_out: false,
-            }),
-            Ok(Err(e)) => Err(dx_agent_core::DxosError::Io(e)),
-            Err(_) => Ok(BashOutput {
-                stdout: String::new(),
-                stderr: format!("command timed out after {timeout_ms}ms"),
-                exit_code: None,
-                timed_out: true,
-            }),
+    // Poll for completion with timeout
+    loop {
+        match child.try_wait()? {
+            Some(status) => {
+                let output = child.wait_with_output()?;
+                return Ok(BashOutput {
+                    stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+                    stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                    exit_code: status.code(),
+                    timed_out: false,
+                });
+            }
+            None => {
+                if start.elapsed() > timeout_dur {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Ok(BashOutput {
+                        stdout: String::new(),
+                        stderr: format!("command timed out after {timeout_ms}ms"),
+                        exit_code: None,
+                        timed_out: true,
+                    });
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
         }
-    })
+    }
 }
