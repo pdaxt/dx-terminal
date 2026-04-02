@@ -92,7 +92,10 @@ const INTERNAL_SERVICES: &[InternalServiceDefinition] = &[
         interface: "in_process",
         purpose: "Embedded registry and lifecycle manager for external micro-MCP services.",
         domain: "integration",
-        cli: &["dx services list --kind external", "dx services inspect <service>"],
+        cli: &[
+            "dx services list --kind external",
+            "dx services inspect <service>",
+        ],
         depends_on: &[],
         servable: false,
     },
@@ -100,20 +103,15 @@ const INTERNAL_SERVICES: &[InternalServiceDefinition] = &[
 
 pub fn internal_service(name: &str) -> Option<&'static InternalServiceDefinition> {
     let normalized = normalize_internal_service_name(name);
-    INTERNAL_SERVICES.iter().find(|service| service.name == normalized)
+    INTERNAL_SERVICES
+        .iter()
+        .find(|service| service.name == normalized.as_str())
 }
 
-pub fn normalize_internal_service_name(name: &str) -> &str {
+pub fn normalize_internal_service_name(name: &str) -> String {
     match name.trim().to_ascii_lowercase().as_str() {
-        "all" => "mcp",
-        other => {
-            if other.is_empty() {
-                ""
-            } else {
-                // The owned string can't be returned directly; only aliases are rewritten.
-                name.trim()
-            }
-        }
+        "all" => "mcp".to_string(),
+        other => other.to_string(),
     }
 }
 
@@ -124,7 +122,7 @@ pub async fn list_services(app: &App, kind: &str, running_only: bool) -> Result<
     let internal = if matches!(kind, "all" | "internal") && !running_only {
         INTERNAL_SERVICES
             .iter()
-            .map(|service| internal_service_value(service))
+            .map(internal_service_value)
             .collect::<Vec<_>>()
     } else {
         Vec::new()
@@ -136,9 +134,7 @@ pub async fn list_services(app: &App, kind: &str, running_only: bool) -> Result<
         descriptors.sort_by(|left, right| left.name.cmp(&right.name));
         let services = descriptors
             .into_iter()
-            .filter(|descriptor| {
-                !running_only || gateway.get_tools(&descriptor.name).is_some()
-            })
+            .filter(|descriptor| !running_only || gateway.get_tools(&descriptor.name).is_some())
             .map(|descriptor| {
                 json!({
                     "name": descriptor.name,
@@ -158,16 +154,21 @@ pub async fn list_services(app: &App, kind: &str, running_only: bool) -> Result<
                 })
             })
             .collect::<Vec<_>>();
-        (services, gateway.running_count(), gateway.descriptor_count())
+        (
+            services,
+            gateway.running_count(),
+            gateway.descriptor_count(),
+        )
     } else {
         (Vec::new(), 0, 0)
     };
 
+    let all_services = [internal, external].concat();
     Ok(json!({
         "architecture": "cli_microservices",
         "kind_filter": kind,
         "running_only": running_only,
-        "services": [internal, external].concat(),
+        "services": all_services,
         "counts": {
             "internal": INTERNAL_SERVICES.len(),
             "external_registered": registered_external,
@@ -216,9 +217,12 @@ pub async fn inspect_service(app: &App, service_name: &str) -> Result<Value> {
         .await
         .with_context(|| format!("start external service '{}'", service_name))?;
 
-    let tools = gateway
-        .get_tools(service_name)
-        .ok_or_else(|| anyhow!("service '{}' did not report tools after startup", service_name))?;
+    let tools = gateway.get_tools(service_name).ok_or_else(|| {
+        anyhow!(
+            "service '{}' did not report tools after startup",
+            service_name
+        )
+    })?;
     let tool_rows = tools
         .iter()
         .map(|tool| {
@@ -262,7 +266,11 @@ pub async fn call_service(
         bail!(
             "internal service '{}' is CLI-served only; use `{}`",
             service.name,
-            service.cli.first().copied().unwrap_or("dx services serve <service>")
+            service
+                .cli
+                .first()
+                .copied()
+                .unwrap_or("dx services serve <service>")
         );
     }
 
@@ -282,7 +290,7 @@ pub async fn call_service(
         None => None,
     };
 
-    let mut gateway = app.gateway.lock().await;
+    let gateway = app.gateway.lock().await;
     let arguments = parsed_args.and_then(|value| match value {
         Value::Object(map) => Some(map),
         _ => None,
@@ -379,7 +387,10 @@ fn normalize_kind(kind: &str) -> Result<&str> {
         "all" => Ok("all"),
         "internal" => Ok("internal"),
         "external" => Ok("external"),
-        other => bail!("unknown service kind '{}'; expected all, internal, or external", other),
+        other => bail!(
+            "unknown service kind '{}'; expected all, internal, or external",
+            other
+        ),
     }
 }
 

@@ -47,6 +47,23 @@ impl fmt::Display for CiResult {
                 step.name,
                 step.duration.as_secs_f64()
             )?;
+            // Show last 10 lines of stderr on failure to help debugging
+            if !step.passed && !step.stderr.is_empty() {
+                for line in step
+                    .stderr
+                    .lines()
+                    .rev()
+                    .take(10)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        writeln!(f, "    | {trimmed}")?;
+                    }
+                }
+            }
         }
         writeln!(f, "{}", "-".repeat(40))?;
         let status = if self.passed() {
