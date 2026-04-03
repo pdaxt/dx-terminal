@@ -148,7 +148,7 @@ impl PtyPool {
         let parser = Arc::new(Mutex::new(vt100::Parser::new(
             config.rows,
             config.cols,
-            self.scrollback_lines,
+            self.scrollback_lines as usize,
         )));
 
         // Spawn reader thread
