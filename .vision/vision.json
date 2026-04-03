@@ -127,6 +127,85 @@
         "Zero placeholder sections",
         "Git changes \u2192 dashboard < 1s"
       ]
+    },
+    {
+      "id": "G10",
+      "title": "Native Terminal Multiplexer (Kill tmux)",
+      "status": "in_progress",
+      "priority": 1,
+      "milestone": "M4",
+      "description": "Replace tmux with Rust-native PTY management. dx-terminal owns the terminal \u2014 pane splitting, rendering, input routing, resize. No tmux binary needed. Uses portable-pty for PTY allocation, vt100 for terminal parsing, ratatui for rendering.",
+      "linked_issues": [],
+      "metrics": [
+        "16 concurrent PTYs without tmux",
+        "Pane split/resize/navigate via keybindings",
+        "Full VT100 terminal emulation per pane",
+        "Scrollback buffer per pane",
+        "tmux dependency removed from Cargo.toml"
+      ]
+    },
+    {
+      "id": "G11",
+      "title": "Microservices Crate Architecture",
+      "status": "planned",
+      "priority": 1,
+      "milestone": "M4",
+      "description": "Extract each service (core, queue, tracker, coord, intel) into its own workspace crate. Clean dependency boundaries. Each compiles and tests independently. Inter-service communication via typed channels.",
+      "linked_issues": [],
+      "metrics": [
+        "5 service crates compile independently",
+        "No circular dependencies",
+        "cargo test -p dx-core runs in <2s",
+        "Message passing between services, no shared Arc<Mutex>",
+        ">80% test coverage per service"
+      ]
+    },
+    {
+      "id": "G12",
+      "title": "Enterprise Web Dashboard",
+      "status": "planned",
+      "priority": 1,
+      "milestone": "M5",
+      "description": "Production-grade web dashboard for 50+ person eng teams. Real-time agent grid with ANSI terminal rendering, project switcher, team roles, deployment status.",
+      "linked_issues": [],
+      "metrics": [
+        "Terminal output renders with ANSI colors in browser",
+        "Status updates within 2s",
+        "Handles 50+ agents without lag",
+        "OAuth login + team roles",
+        "Project switcher dropdown"
+      ]
+    },
+    {
+      "id": "G13",
+      "title": "Cloud Model + Provider Integration",
+      "status": "planned",
+      "priority": 2,
+      "milestone": "M5",
+      "description": "Support cloud models (Anthropic API, OpenAI API) alongside local Ollama. API key management via PQVault. Cost tracking per agent per task. Provider routing by task type.",
+      "linked_issues": [],
+      "metrics": [
+        "Claude, GPT, Gemini APIs work as providers",
+        "Cost tracked per agent per task",
+        "Router picks optimal provider automatically",
+        "API keys managed securely (not in env vars)"
+      ]
+    },
+    {
+      "id": "G14",
+      "title": "One-Command Experience for Everyone",
+      "status": "planned",
+      "priority": 1,
+      "milestone": "M6",
+      "description": "A non-coder should be able to run dx go in any git repo and have agents working on issues within 60 seconds. brew install, guided first-run, progressive disclosure. The product that makes AI agent orchestration accessible.",
+      "linked_issues": [],
+      "metrics": [
+        "brew install pdaxt/tap/dx-terminal works",
+        "cargo install dx-terminal works",
+        "First-run detects system and downloads model",
+        "dx go works in any git repo with GitHub remote",
+        "No config file needed for default experience"
+      ]
     }
   ],
   "milestones": [
