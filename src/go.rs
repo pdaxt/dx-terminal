@@ -87,22 +87,12 @@ pub async fn go(app: Arc<App>, args: GoArgs) -> Result<()> {
 
     let port = find_free_port(3001)?;
 
-    // Launch dx web as a visible tmux pane in a "dashboard" window
-    // so it's part of the session — survives detach, visible when switching windows.
+    // Launch dx web as a visible tmux pane in a "dashboard" window.
+    // Survives detach, visible when switching windows with Ctrl-B n.
     let dx_bin = std::env::current_exe().unwrap_or_else(|_| "dx".into());
     let dash_cmd = format!("{} web --port {}", dx_bin.to_string_lossy(), port);
     let _ = Command::new("tmux")
-        .args([
-            "new-window",
-            "-t",
-            &session.session_name,
-            "-n",
-            "dashboard",
-            "-d",
-            "sh",
-            "-c",
-            &dash_cmd,
-        ])
+        .args(["new-window", "-t", &session.session_name, "-n", "dashboard", "-d", &dash_cmd])
         .status();
 
     // Also run the web server in-process for the API/SSE that agents use
