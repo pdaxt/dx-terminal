@@ -3,14 +3,15 @@
 //! This is the F3 component of G10 (Kill tmux). It bridges the PTY pool's
 //! vt100 terminal state into ratatui widgets for both the grid pane cards
 //! (small preview) and the focused pane view (full terminal rendering).
+//!
+//! All public functions take `&vt100::Screen` directly — the pool handles
+//! locking and provides convenience methods that call into this module.
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use super::pool::{PaneId, PtyPool};
-
 /// Convert a vt100 color to a ratatui color.
-/// Maps the 16 standard colors by index, passes through 256-color and RGB.
+/// Maps the 16 standard ANSI colors by index, passes through 256-color and RGB.
 fn vt100_to_ratatui_color(color: vt100::Color) -> Option<Color> {
     match color {
         vt100::Color::Default => None,
@@ -23,7 +24,6 @@ fn vt100_to_ratatui_color(color: vt100::Color) -> Option<Color> {
             5 => Color::Magenta,
             6 => Color::Cyan,
             7 => Color::White,
-            // Bright/bold variants (8-15)
             8 => Color::DarkGray,
             9 => Color::LightRed,
             10 => Color::LightGreen,
@@ -32,7 +32,6 @@ fn vt100_to_ratatui_color(color: vt100::Color) -> Option<Color> {
             13 => Color::LightMagenta,
             14 => Color::LightCyan,
             15 => Color::White,
-            // 256-color palette (16-255)
             n => Color::Indexed(n),
         }),
         vt100::Color::Rgb(r, g, b) => Some(Color::Rgb(r, g, b)),
@@ -77,7 +76,7 @@ fn cell_style(cell: &vt100::Cell) -> Style {
 ///
 /// Coalesces adjacent cells with the same style into a single `Span`
 /// to minimize the number of spans per line.
-fn render_row(screen: &vt100::Screen, row: u16) -> Line<'static> {
+pub fn render_row(screen: &vt100::Screen, row: u16) -> Line<'static> {
     let (_, cols) = screen.size();
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut current_text = String::new();
@@ -89,14 +88,13 @@ fn render_row(screen: &vt100::Screen, row: u16) -> Line<'static> {
             continue;
         };
 
-        // Skip wide-char continuation cells
+        // Skip wide-char continuation cells (the second half of a CJK char)
         if cell.is_wide_continuation() {
             continue;
         }
 
         let style = cell_style(cell);
         let contents = cell.contents();
-        // Empty cell = space
         let text = if contents.is_empty() { " " } else { contents };
 
         if first {
@@ -106,7 +104,6 @@ fn render_row(screen: &vt100::Screen, row: u16) -> Line<'static> {
         } else if style == current_style {
             current_text.push_str(text);
         } else {
-            // Flush previous span
             spans.push(Span::styled(
                 std::mem::take(&mut current_text),
                 current_style,
@@ -116,7 +113,6 @@ fn render_row(screen: &vt100::Screen, row: u16) -> Line<'static> {
         }
     }
 
-    // Flush last span
     if !current_text.is_empty() {
         spans.push(Span::styled(current_text, current_style));
     }
@@ -124,64 +120,46 @@ fn render_row(screen: &vt100::Screen, row: u16) -> Line<'static> {
     Line::from(spans)
 }
 
-/// Render the full visible screen of a pane into ratatui `Line`s.
-///
-/// Returns `None` if the pane doesn't exist.
-/// Lines are trimmed of trailing whitespace-only spans for cleaner rendering.
-pub fn render_screen(pool: &PtyPool, pane: PaneId) -> Option<Vec<Line<'static>>> {
-    let parser_lock = pool.panes_internal()?.get(&pane)?.parser.lock();
-    let parser = match parser_lock {
-        Ok(p) => p,
-        Err(e) => e.into_inner(),
-    };
-    let screen = parser.screen();
+/// Render the full visible screen into ratatui `Line`s.
+pub fn render_screen(screen: &vt100::Screen) -> Vec<Line<'static>> {
     let (rows, _) = screen.size();
-
-    let lines: Vec<Line<'static>> = (0..rows).map(|row| render_row(screen, row)).collect();
-    Some(lines)
+    (0..rows).map(|row| render_row(screen, row)).collect()
 }
 
-/// Render the last N visible lines of a pane (for grid preview cards).
-///
-/// Returns only the last `max_lines` non-empty lines from the screen.
-pub fn render_tail(pool: &PtyPool, pane: PaneId, max_lines: usize) -> Option<Vec<Line<'static>>> {
-    let parser_lock = pool.panes_internal()?.get(&pane)?.parser.lock();
-    let parser = match parser_lock {
-        Ok(p) => p,
-        Err(e) => e.into_inner(),
-    };
-    let screen = parser.screen();
+/// Render the last N non-empty lines (for grid preview cards).
+pub fn render_tail(screen: &vt100::Screen, max_lines: usize) -> Vec<Line<'static>> {
     let (rows, _) = screen.size();
 
     // Find last non-empty row
-    let mut last_nonempty = 0;
+    let mut last_nonempty: usize = 0;
     for row in (0..rows).rev() {
-        let line_text = screen.contents_between(row, 0, row + 1, 0);
-        if !line_text.trim().is_empty() {
-            last_nonempty = row as usize + 1;
-            break;
+        if let Some(cell) = screen.cell(row, 0) {
+            // Check if entire row has content by checking the row text
+            let row_text = screen.contents_between(row, 0, row + 1, 0);
+            if !row_text.trim().is_empty() {
+                last_nonempty = row as usize + 1;
+                break;
+            }
+            // Also check if the first cell has content (fast path)
+            if cell.has_contents() {
+                last_nonempty = row as usize + 1;
+                break;
+            }
         }
     }
 
     let start = last_nonempty.saturating_sub(max_lines);
-    let lines: Vec<Line<'static>> = (start..last_nonempty)
+    (start..last_nonempty)
         .map(|row| render_row(screen, row as u16))
-        .collect();
-    Some(lines)
+        .collect()
 }
 
-/// Get the cursor position for overlay rendering.
-/// Returns (row, col) if the cursor is visible, None if hidden.
-pub fn cursor_position(pool: &PtyPool, pane: PaneId) -> Option<(u16, u16)> {
-    let parser_lock = pool.panes_internal()?.get(&pane)?.parser.lock();
-    let parser = match parser_lock {
-        Ok(p) => p,
-        Err(e) => e.into_inner(),
-    };
-    if parser.screen().hide_cursor() {
+/// Get cursor position if visible, None if hidden.
+pub fn cursor_visible(screen: &vt100::Screen) -> Option<(u16, u16)> {
+    if screen.hide_cursor() {
         None
     } else {
-        Some(parser.screen().cursor_position())
+        Some(screen.cursor_position())
     }
 }
 
@@ -212,11 +190,9 @@ mod tests {
 
     #[test]
     fn test_cell_style_default() {
-        // Create a parser, get a default cell
         let parser = vt100::Parser::new(24, 80, 0);
         let cell = parser.screen().cell(0, 0).unwrap();
         let style = cell_style(cell);
-        // Default cell should have no fg/bg/modifiers set
         assert_eq!(style, Style::default());
     }
 
@@ -224,7 +200,6 @@ mod tests {
     fn test_render_row_empty() {
         let parser = vt100::Parser::new(24, 80, 0);
         let line = render_row(parser.screen(), 0);
-        // Empty row should produce spaces
         assert!(!line.spans.is_empty());
     }
 
@@ -245,9 +220,13 @@ mod tests {
         let line = render_row(parser.screen(), 0);
 
         // Should have at least 2 spans: red "RED" and default " NORMAL..."
-        assert!(line.spans.len() >= 2);
+        assert!(
+            line.spans.len() >= 2,
+            "Expected >= 2 spans, got {}: {:?}",
+            line.spans.len(),
+            line.spans.iter().map(|s| &s.content).collect::<Vec<_>>()
+        );
 
-        // First span should be red
         let first = &line.spans[0];
         assert_eq!(first.content.as_ref(), "RED");
         assert_eq!(first.style.fg, Some(Color::Red));
@@ -256,7 +235,6 @@ mod tests {
     #[test]
     fn test_render_row_with_bold() {
         let mut parser = vt100::Parser::new(24, 80, 0);
-        // ESC[1m = bold, ESC[0m = reset
         parser.process(b"\x1b[1mBOLD\x1b[0m normal");
         let line = render_row(parser.screen(), 0);
 
@@ -268,7 +246,6 @@ mod tests {
     #[test]
     fn test_render_row_with_rgb() {
         let mut parser = vt100::Parser::new(24, 80, 0);
-        // ESC[38;2;255;128;0m = RGB foreground
         parser.process(b"\x1b[38;2;255;128;0mORANGE\x1b[0m");
         let line = render_row(parser.screen(), 0);
 
@@ -280,10 +257,9 @@ mod tests {
     #[test]
     fn test_render_row_style_coalescing() {
         let mut parser = vt100::Parser::new(24, 80, 0);
-        // All same style — should be one span (plus trailing spaces)
         parser.process(b"AAAAABBBBB");
         let line = render_row(parser.screen(), 0);
-        // First span should contain the full text since it's all default style
+        // All same style — first span should contain the full text + trailing spaces
         let first_content: String = line.spans[0].content.to_string();
         assert!(first_content.starts_with("AAAAABBBBB"));
     }
@@ -291,12 +267,97 @@ mod tests {
     #[test]
     fn test_render_row_inverse() {
         let mut parser = vt100::Parser::new(24, 80, 0);
-        // ESC[7m = inverse
         parser.process(b"\x1b[7mINVERSE\x1b[0m");
         let line = render_row(parser.screen(), 0);
 
         let first = &line.spans[0];
         assert_eq!(first.content.as_ref(), "INVERSE");
         assert!(first.style.add_modifier.contains(Modifier::REVERSED));
+    }
+
+    #[test]
+    fn test_render_screen() {
+        let mut parser = vt100::Parser::new(5, 40, 0);
+        parser.process(b"Line 1\r\nLine 2\r\nLine 3");
+        let lines = render_screen(parser.screen());
+        assert_eq!(lines.len(), 5); // All 5 rows rendered
+
+        let row0: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(row0.starts_with("Line 1"));
+
+        let row1: String = lines[1].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(row1.starts_with("Line 2"));
+    }
+
+    #[test]
+    fn test_render_tail() {
+        let mut parser = vt100::Parser::new(10, 40, 0);
+        parser.process(b"A\r\nB\r\nC\r\nD\r\nE");
+        let tail = render_tail(parser.screen(), 3);
+        assert_eq!(tail.len(), 3);
+
+        let texts: Vec<String> = tail
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+                    .trim()
+                    .to_string()
+            })
+            .collect();
+        assert_eq!(texts, vec!["C", "D", "E"]);
+    }
+
+    #[test]
+    fn test_render_tail_empty_screen() {
+        let parser = vt100::Parser::new(10, 40, 0);
+        let tail = render_tail(parser.screen(), 5);
+        assert!(tail.is_empty());
+    }
+
+    #[test]
+    fn test_cursor_visible() {
+        let parser = vt100::Parser::new(24, 80, 0);
+        // By default, cursor should be visible at (0, 0)
+        let pos = cursor_visible(parser.screen());
+        assert_eq!(pos, Some((0, 0)));
+    }
+
+    #[test]
+    fn test_cursor_hidden() {
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        // ESC[?25l = hide cursor
+        parser.process(b"\x1b[?25l");
+        let pos = cursor_visible(parser.screen());
+        assert_eq!(pos, None);
+    }
+
+    #[test]
+    fn test_render_mixed_attributes() {
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        // Bold red on blue background, underlined
+        parser.process(b"\x1b[1;31;44;4mSTYLED\x1b[0m plain");
+        let line = render_row(parser.screen(), 0);
+
+        let first = &line.spans[0];
+        assert_eq!(first.content.as_ref(), "STYLED");
+        assert_eq!(first.style.fg, Some(Color::Red));
+        assert_eq!(first.style.bg, Some(Color::Blue));
+        assert!(first.style.add_modifier.contains(Modifier::BOLD));
+        assert!(first.style.add_modifier.contains(Modifier::UNDERLINED));
+    }
+
+    #[test]
+    fn test_render_256_color() {
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        // ESC[38;5;196m = 256-color foreground (bright red, index 196)
+        parser.process(b"\x1b[38;5;196mCOLOR\x1b[0m");
+        let line = render_row(parser.screen(), 0);
+
+        let first = &line.spans[0];
+        assert_eq!(first.content.as_ref(), "COLOR");
+        assert_eq!(first.style.fg, Some(Color::Indexed(196)));
     }
 }
