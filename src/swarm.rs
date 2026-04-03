@@ -402,13 +402,42 @@ pub fn create_pr(worktree: &Path, issue: &SwarmIssue) -> Result<String> {
     Ok(url)
 }
 
+fn push_branch(worktree: &Path, branch: &str) -> Result<()> {
+    let output = Command::new("git")
+        .current_dir(worktree)
+        .args(["push", "-u", "origin", branch])
+        .output()
+        .with_context(|| format!("push branch {} to origin", branch))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        bail!(
+            "git push failed for branch {}: {}",
+            branch,
+            if stderr.is_empty() {
+                "unknown error"
+            } else {
+                stderr.as_str()
+            }
+        );
+    }
+    Ok(())
+}
+
 pub fn cleanup_worktree(path: &Path) -> Result<()> {
     if !path.exists() {
         return Ok(());
     }
 
+    // Determine the repo root so we don't run git from inside the worktree
+    // being removed. The worktree lives under <repo>/.worktrees/<name>.
+    let repo_root = path
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap_or(path);
+
     let output = Command::new("git")
-        .current_dir(path)
+        .current_dir(repo_root)
         .args(["worktree", "remove", "--force"])
         .arg(path)
         .output()
@@ -419,7 +448,7 @@ pub fn cleanup_worktree(path: &Path) -> Result<()> {
     }
 
     let _ = Command::new("git")
-        .current_dir(path.parent().unwrap_or(path))
+        .current_dir(repo_root)
         .args(["worktree", "prune"])
         .output();
 

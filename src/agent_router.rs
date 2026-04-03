@@ -19,6 +19,8 @@ pub struct ProviderConfig {
     pub command: String,
     pub cost_per_hour: f64,
     pub strengths: Vec<String>,
+    #[serde(default)]
+    pub available: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,80 +45,109 @@ pub struct RouteRecommendation {
     pub score: f64,
     pub reasons: Vec<String>,
     pub language: Option<String>,
+    pub available: bool,
+}
+
+/// Optional config-file section that users can add to
+/// `~/.config/dx-terminal/config.json` under the key `"router"`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RouterConfig {
+    #[serde(default)]
+    pub providers: Vec<ProviderConfig>,
+    #[serde(default)]
+    pub rules: Vec<RoutingRule>,
 }
 
 static ROUTER: OnceLock<Mutex<AgentRouter>> = OnceLock::new();
 
+fn builtin_providers() -> Vec<ProviderConfig> {
+    vec![
+        ProviderConfig {
+            name: "claude".into(),
+            command: "claude".into(),
+            cost_per_hour: 18.0,
+            strengths: vec!["rust".into(), "debugging".into(), "architecture".into()],
+            available: None,
+        },
+        ProviderConfig {
+            name: "codex".into(),
+            command: "codex".into(),
+            cost_per_hour: 12.0,
+            strengths: vec![
+                "typescript".into(),
+                "javascript".into(),
+                "docs".into(),
+                "refactoring".into(),
+            ],
+            available: None,
+        },
+        ProviderConfig {
+            name: "gemini".into(),
+            command: "gemini".into(),
+            cost_per_hour: 10.0,
+            strengths: vec!["analysis".into(), "research".into(), "docs".into()],
+            available: None,
+        },
+        ProviderConfig {
+            name: "aider".into(),
+            command: "aider".into(),
+            cost_per_hour: 8.0,
+            strengths: vec!["python".into(), "editing".into(), "git".into()],
+            available: None,
+        },
+    ]
+}
+
+fn builtin_rules() -> Vec<RoutingRule> {
+    vec![
+        RoutingRule {
+            task_pattern: r"(?i)\brust\b".into(),
+            prefer_provider: "claude".into(),
+            reason: "Rust work defaults to Claude for stronger systems-language performance.".into(),
+        },
+        RoutingRule {
+            task_pattern: r"(?i)\b(type\s*script|typescript|ts|react|next\.?js)\b".into(),
+            prefer_provider: "codex".into(),
+            reason: "TypeScript and frontend work defaults to Codex.".into(),
+        },
+        RoutingRule {
+            task_pattern: r"(?i)\b(debug|debugging|panic|traceback|regression|failing test)\b"
+                .into(),
+            prefer_provider: "claude".into(),
+            reason: "Debug-heavy tasks default to Claude.".into(),
+        },
+        RoutingRule {
+            task_pattern: r"(?i)\b(doc|docs|documentation|readme|guide)\b".into(),
+            prefer_provider: "codex".into(),
+            reason: "Documentation work defaults to Codex.".into(),
+        },
+    ]
+}
+
 impl Default for AgentRouter {
     fn default() -> Self {
-        let providers = vec![
-            ProviderConfig {
-                name: "claude".to_string(),
-                command: "claude".to_string(),
-                cost_per_hour: 18.0,
-                strengths: vec![
-                    "rust".to_string(),
-                    "debugging".to_string(),
-                    "architecture".to_string(),
-                ],
-            },
-            ProviderConfig {
-                name: "codex".to_string(),
-                command: "codex".to_string(),
-                cost_per_hour: 12.0,
-                strengths: vec![
-                    "typescript".to_string(),
-                    "javascript".to_string(),
-                    "docs".to_string(),
-                    "refactoring".to_string(),
-                ],
-            },
-            ProviderConfig {
-                name: "gemini".to_string(),
-                command: "gemini".to_string(),
-                cost_per_hour: 10.0,
-                strengths: vec![
-                    "analysis".to_string(),
-                    "research".to_string(),
-                    "docs".to_string(),
-                ],
-            },
-            ProviderConfig {
-                name: "aider".to_string(),
-                command: "aider".to_string(),
-                cost_per_hour: 8.0,
-                strengths: vec![
-                    "python".to_string(),
-                    "editing".to_string(),
-                    "git".to_string(),
-                ],
-            },
-        ];
+        Self::with_config(RouterConfig::default())
+    }
+}
 
-        let routing_rules = vec![
-            RoutingRule {
-                task_pattern: r"(?i)\brust\b".to_string(),
-                prefer_provider: "claude".to_string(),
-                reason: "Rust work defaults to Claude for stronger systems-language performance."
-                    .to_string(),
-            },
-            RoutingRule {
-                task_pattern: r"(?i)\b(type\s*script|typescript|ts|react|next\.?js)\b".to_string(),
-                prefer_provider: "codex".to_string(),
-                reason: "TypeScript and frontend work defaults to Codex.".to_string(),
-            },
-            RoutingRule {
-                task_pattern: r"(?i)\b(debug|debugging|panic|traceback|regression|failing test)\b"
-                    .to_string(),
-                prefer_provider: "claude".to_string(),
-                reason: "Debug-heavy tasks default to Claude.".to_string(),
-            },
-            RoutingRule {
-                task_pattern: r"(?i)\b(doc|docs|documentation|readme|guide)\b".to_string(),
-                prefer_provider: "codex".to_string(),
-                reason: "Documentation work defaults to Codex.".to_string(),
-            },
-        ];
+impl AgentRouter {
+    /// Build a router by merging builtins with user-supplied config.
+    /// Config providers with the same `name` as a builtin replace the builtin;
+    /// others are appended. Config rules always append after builtins.
+    pub fn with_config(config: RouterConfig) -> Self {
+        let mut providers = builtin_providers();
+        for cfg_provider in config.providers {
+            if let Some(existing) = providers.iter_mut().find(|p| p.name == cfg_provider.name) {
+                *existing = cfg_provider;
+            } else {
+                providers.push(cfg_provider);
+            }
+        }
+
+        let mut routing_rules = builtin_rules();
+        for cfg_rule in config.rules {
+            routing_rules.push(cfg_rule);
+        }
 
         let usage_stats = providers
             .iter()
@@ -129,9 +160,28 @@ impl Default for AgentRouter {
             usage_stats,
         }
     }
-}
 
-impl AgentRouter {
+    /// Check which providers have their CLI available on `$PATH`.
+    pub fn check_availability(&mut self) {
+        for provider in &mut self.providers {
+            provider.available = Some(command_exists(&provider.command));
+        }
+    }
+
+    pub fn is_available(&self, provider_name: &str) -> bool {
+        self.providers
+            .iter()
+            .find(|p| p.name == provider_name)
+            .and_then(|p| p.available)
+            .unwrap_or_else(|| {
+                self.providers
+                    .iter()
+                    .find(|p| p.name == provider_name)
+                    .map(|p| command_exists(&p.command))
+                    .unwrap_or(false)
+            })
+    }
+
     pub fn route_task(
         &self,
         description: &str,
@@ -156,12 +206,16 @@ impl AgentRouter {
         for provider in &self.providers {
             let (score, reasons) =
                 self.provider_score(provider, &lower_text, language.as_deref())?;
+            let available = provider
+                .available
+                .unwrap_or_else(|| command_exists(&provider.command));
             let recommendation = RouteRecommendation {
                 provider: provider.name.clone(),
                 command: provider.command.clone(),
                 score,
                 reasons,
                 language: language.clone(),
+                available,
             };
             match &best {
                 Some((_, best_score)) if *best_score >= score => {}
@@ -180,22 +234,27 @@ impl AgentRouter {
         duration_secs: f64,
         success: bool,
     ) -> Result<()> {
-        let provider_cfg = self
+        if !self.providers.iter().any(|p| p.name == provider) {
+            bail!("unknown provider '{}'", provider);
+        }
+        let stats = self.usage_stats.entry(provider.to_string()).or_default();
+        let cost_per_hour = self
             .providers
             .iter()
-            .find(|candidate| candidate.name == provider)
-            .ok_or_else(|| anyhow!("unknown provider '{}'", provider))?;
-        let stats = self.usage_stats.entry(provider.to_string()).or_default();
+            .find(|p| p.name == provider)
+            .map(|p| p.cost_per_hour)
+            .unwrap_or(0.0);
 
         let completed_before = stats.tasks_completed as f64;
         let completed_after = completed_before + 1.0;
         let success_value = if success { 1.0 } else { 0.0 };
+        let clamped_duration = duration_secs.max(0.0);
 
         stats.avg_time_secs =
-            ((stats.avg_time_secs * completed_before) + duration_secs.max(0.0)) / completed_after;
+            ((stats.avg_time_secs * completed_before) + clamped_duration) / completed_after;
         stats.success_rate =
             ((stats.success_rate * completed_before) + success_value) / completed_after;
-        stats.total_cost += provider_cfg.cost_per_hour * duration_secs.max(0.0) / 3600.0;
+        stats.total_cost += cost_per_hour * clamped_duration / 3600.0;
         stats.tasks_completed += 1;
         Ok(())
     }
@@ -207,11 +266,7 @@ impl AgentRouter {
         reason: &str,
     ) -> Result<RoutingRule> {
         Regex::new(pattern).with_context(|| format!("invalid regex '{}'", pattern))?;
-        if !self
-            .providers
-            .iter()
-            .any(|candidate| candidate.name == provider)
-        {
+        if !self.providers.iter().any(|p| p.name == provider) {
             bail!("unknown provider '{}'", provider);
         }
         let rule = RoutingRule {
@@ -221,6 +276,15 @@ impl AgentRouter {
         };
         self.routing_rules.push(rule.clone());
         Ok(rule)
+    }
+
+    /// Remove routing rules whose pattern matches `pattern` exactly.
+    /// Returns the number of rules removed.
+    pub fn remove_routing_rule(&mut self, pattern: &str) -> usize {
+        let before = self.routing_rules.len();
+        self.routing_rules
+            .retain(|rule| rule.task_pattern != pattern);
+        before - self.routing_rules.len()
     }
 
     pub fn cost_report(&self) -> Value {
@@ -272,11 +336,15 @@ impl AgentRouter {
                     .get(&provider.name)
                     .cloned()
                     .unwrap_or_default();
+                let available = provider
+                    .available
+                    .unwrap_or_else(|| command_exists(&provider.command));
                 json!({
                     "provider": provider.name,
                     "command": provider.command,
                     "cost_per_hour": provider.cost_per_hour,
                     "strengths": provider.strengths,
+                    "available": available,
                     "stats": stats,
                 })
             })
@@ -349,6 +417,10 @@ impl AgentRouter {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Module-level functions (global singleton interface)
+// ---------------------------------------------------------------------------
+
 pub fn route_task(description: &str, language: Option<&str>) -> Result<RouteRecommendation> {
     let guard = router()
         .lock()
@@ -392,12 +464,27 @@ pub fn add_routing_rule(pattern: &str, provider: &str, reason: &str) -> Result<R
     Ok(rule)
 }
 
+pub fn remove_routing_rule(pattern: &str) -> Result<usize> {
+    let mut guard = router()
+        .lock()
+        .map_err(|_| anyhow!("agent router lock poisoned"))?;
+    let removed = guard.remove_routing_rule(pattern);
+    if removed > 0 {
+        save_router(&guard)?;
+    }
+    Ok(removed)
+}
+
 pub fn current_router() -> Result<AgentRouter> {
     let guard = router()
         .lock()
         .map_err(|_| anyhow!("agent router lock poisoned"))?;
     Ok(guard.clone())
 }
+
+// ---------------------------------------------------------------------------
+// Initialization & persistence
+// ---------------------------------------------------------------------------
 
 fn router() -> &'static Mutex<AgentRouter> {
     ROUTER.get_or_init(|| {
@@ -420,17 +507,69 @@ fn save_router(router: &AgentRouter) -> Result<()> {
     Ok(())
 }
 
+/// Load router state, merging config-file overrides with builtins.
+/// Persisted usage_stats are restored on top of the merged provider set.
 fn load_router() -> Result<AgentRouter> {
-    let path = router_path();
-    if !path.exists() {
-        return Ok(AgentRouter::default());
+    let config = load_router_config();
+    let state_path = router_path();
+
+    if state_path.exists() {
+        let contents =
+            std::fs::read(&state_path).with_context(|| format!("read {}", state_path.display()))?;
+        let persisted: AgentRouter =
+            serde_json::from_slice(&contents).context("parse agent router state")?;
+
+        // Re-merge config on top of builtins, then restore persisted stats.
+        let mut router = AgentRouter::with_config(config);
+        for (provider_name, stats) in persisted.usage_stats {
+            if router.providers.iter().any(|p| p.name == provider_name) {
+                router.usage_stats.insert(provider_name, stats);
+            }
+        }
+        // Restore any custom rules that were persisted beyond builtins+config.
+        for rule in &persisted.routing_rules {
+            let already_exists = router
+                .routing_rules
+                .iter()
+                .any(|r| r.task_pattern == rule.task_pattern);
+            if !already_exists {
+                router.routing_rules.push(rule.clone());
+            }
+        }
+        Ok(router)
+    } else {
+        Ok(AgentRouter::with_config(config))
     }
-    let contents = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
-    serde_json::from_slice(&contents).context("parse agent router state")
+}
+
+fn load_router_config() -> RouterConfig {
+    let config_path = crate::config::dx_root().join("config.json");
+    if !config_path.exists() {
+        return RouterConfig::default();
+    }
+    let Ok(bytes) = std::fs::read(&config_path) else {
+        return RouterConfig::default();
+    };
+    let Ok(root) = serde_json::from_slice::<Value>(&bytes) else {
+        return RouterConfig::default();
+    };
+    root.get("router")
+        .and_then(|v| serde_json::from_value::<RouterConfig>(v.clone()).ok())
+        .unwrap_or_default()
 }
 
 fn router_path() -> PathBuf {
     crate::config::dx_root().join("agent_router.json")
+}
+
+fn command_exists(cmd: &str) -> bool {
+    std::process::Command::new("which")
+        .arg(cmd)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -484,5 +623,129 @@ mod tests {
             .route_task("Security review for auth flow", Some("rust"))
             .unwrap();
         assert_eq!(recommendation.provider, "gemini");
+    }
+
+    #[test]
+    fn empty_description_is_rejected() {
+        let router = AgentRouter::default();
+        assert!(router.route_task("", None).is_err());
+        assert!(router.route_task("   ", None).is_err());
+    }
+
+    #[test]
+    fn unknown_provider_completion_is_rejected() {
+        let mut router = AgentRouter::default();
+        assert!(router
+            .record_completion("nonexistent", "task", 10.0, true)
+            .is_err());
+    }
+
+    #[test]
+    fn negative_duration_clamped_to_zero() {
+        let mut router = AgentRouter::default();
+        router
+            .record_completion("claude", "task", -500.0, true)
+            .unwrap();
+        let stats = router.usage_stats.get("claude").unwrap();
+        assert_eq!(stats.avg_time_secs, 0.0);
+        assert_eq!(stats.total_cost, 0.0);
+    }
+
+    #[test]
+    fn remove_routing_rule_by_pattern() {
+        let mut router = AgentRouter::default();
+        let pattern = r"(?i)\brust\b";
+        let removed = router.remove_routing_rule(pattern);
+        assert_eq!(removed, 1);
+        assert!(!router
+            .routing_rules
+            .iter()
+            .any(|r| r.task_pattern == pattern));
+    }
+
+    #[test]
+    fn remove_nonexistent_rule_returns_zero() {
+        let mut router = AgentRouter::default();
+        assert_eq!(router.remove_routing_rule("no-such-pattern"), 0);
+    }
+
+    #[test]
+    fn config_providers_merge_with_builtins() {
+        let config = RouterConfig {
+            providers: vec![
+                // Override builtin claude with different cost
+                ProviderConfig {
+                    name: "claude".into(),
+                    command: "claude".into(),
+                    cost_per_hour: 25.0,
+                    strengths: vec!["rust".into()],
+                    available: None,
+                },
+                // Add a brand-new provider
+                ProviderConfig {
+                    name: "gpt".into(),
+                    command: "gpt-cli".into(),
+                    cost_per_hour: 15.0,
+                    strengths: vec!["general".into()],
+                    available: None,
+                },
+            ],
+            rules: vec![RoutingRule {
+                task_pattern: r"(?i)\bml\b".into(),
+                prefer_provider: "gpt".into(),
+                reason: "ML tasks prefer GPT.".into(),
+            }],
+        };
+        let router = AgentRouter::with_config(config);
+
+        // Claude cost overridden
+        let claude = router.providers.iter().find(|p| p.name == "claude").unwrap();
+        assert_eq!(claude.cost_per_hour, 25.0);
+
+        // GPT added
+        assert!(router.providers.iter().any(|p| p.name == "gpt"));
+
+        // Builtin codex still present
+        assert!(router.providers.iter().any(|p| p.name == "codex"));
+
+        // Config rule appended after builtins
+        assert!(router
+            .routing_rules
+            .iter()
+            .any(|r| r.prefer_provider == "gpt"));
+    }
+
+    #[test]
+    fn route_recommendation_includes_available_field() {
+        let router = AgentRouter::default();
+        let rec = router
+            .route_task("Fix a Rust bug", Some("rust"))
+            .unwrap();
+        // `available` is a bool — we just verify the field exists and is populated
+        let _ = rec.available;
+    }
+
+    #[test]
+    fn cost_report_shape() {
+        let router = AgentRouter::default();
+        let report = router.cost_report();
+        assert!(report.get("providers").unwrap().is_array());
+        assert!(report.get("total_cost").unwrap().is_number());
+    }
+
+    #[test]
+    fn add_rule_rejects_invalid_regex() {
+        let mut router = AgentRouter::default();
+        assert!(router
+            .add_routing_rule("[invalid", "claude", "bad regex")
+            .is_err());
+    }
+
+    #[test]
+    fn add_rule_rejects_unknown_provider() {
+        let mut router = AgentRouter::default();
+        assert!(router
+            .add_routing_rule(r"\btest\b", "nonexistent", "no such provider")
+            .is_err());
     }
 }
