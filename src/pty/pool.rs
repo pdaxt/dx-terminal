@@ -270,15 +270,13 @@ impl PtyPool {
         })
     }
 
-    /// Get the terminal screen as rows of cells (for TUI rendering with colors)
-    pub fn screen_rows(&self, id: PaneId) -> Option<Vec<String>> {
+    /// Get the terminal screen as formatted rows (for TUI rendering with ANSI colors)
+    pub fn screen_rows_formatted(&self, id: PaneId) -> Option<Vec<Vec<u8>>> {
         self.panes.get(&id).and_then(|p| {
             p.parser.lock().ok().map(|parser| {
                 let screen = parser.screen();
-                (0..screen.size().0)
-                    .map(|row| screen.rows_formatted(row, row + 1))
-                    .map(|bytes| String::from_utf8_lossy(&bytes).to_string())
-                    .collect()
+                let (_, cols) = screen.size();
+                screen.rows_formatted(0, cols).collect()
             })
         })
     }
