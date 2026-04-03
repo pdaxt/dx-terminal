@@ -134,13 +134,9 @@
       "id": "M1",
       "title": "Core Platform",
       "description": "Single Rust binary with MCP server, TUI, web dashboard, and tmux integration",
-      "status": "complete",
+      "status": "achieved",
       "target_date": "2026-03-01",
-      "goals": [
-        "G1",
-        "G2",
-        "G4"
-      ],
+      "goals": ["G1", "G2", "G4"],
       "github_milestone": null,
       "progress_pct": 100
     },
@@ -148,12 +144,9 @@
       "id": "M2",
       "title": "Intelligence Layer",
       "description": "Vision framework, build verification, smart project detection, JSONL analytics",
-      "status": "complete",
+      "status": "achieved",
       "target_date": "2026-03-15",
-      "goals": [
-        "G3",
-        "G5"
-      ],
+      "goals": ["G3", "G5"],
       "github_milestone": null,
       "progress_pct": 100
     },
@@ -161,24 +154,49 @@
       "id": "M2.5",
       "title": "Enterprise QA & Documentation",
       "description": "Confluence-style wiki, 8-framework QA engine, VDD pipeline automation",
-      "status": "in_progress",
+      "status": "achieved",
       "target_date": "2026-03-15",
-      "goals": [
-        "G7",
-        "G9"
-      ],
+      "goals": ["G7", "G9"],
       "github_milestone": null,
-      "progress_pct": 85
+      "progress_pct": 100
     },
     {
       "id": "M3",
-      "title": "Public Launch",
-      "description": "Open source release on GitHub with docs, CI/CD, and community engagement",
-      "status": "upcoming",
-      "target_date": "2026-04-01",
-      "goals": [
-        "G6"
-      ],
+      "title": "v0.3 \u2014 Merged Product + Public Launch",
+      "description": "Merge dxos agent into dx-terminal. 18 commands, one binary. Honest health status. README rewrite.",
+      "status": "achieved",
+      "target_date": "2026-04-03",
+      "goals": ["G6"],
+      "github_milestone": null,
+      "progress_pct": 100
+    },
+    {
+      "id": "M4",
+      "title": "v0.4 \u2014 Kill tmux, native terminal multiplexer",
+      "description": "Replace tmux with Rust-native PTY multiplexer. dx IS the terminal. No external dependencies.",
+      "status": "in_progress",
+      "target_date": "2026-05-01",
+      "goals": ["G10", "G11"],
+      "github_milestone": null,
+      "progress_pct": 0
+    },
+    {
+      "id": "M5",
+      "title": "v0.5 \u2014 Enterprise Dashboard + Teams",
+      "description": "Production-grade web dashboard with auth, project switching, team management, cloud model support.",
+      "status": "planned",
+      "target_date": "2026-06-01",
+      "goals": ["G12", "G13"],
+      "github_milestone": null,
+      "progress_pct": 0
+    },
+    {
+      "id": "M6",
+      "title": "v1.0 \u2014 The One Tool",
+      "description": "Replace tmux + claude-squad + cursor + windsurf for AI-native teams. Homebrew install, works out of the box.",
+      "status": "planned",
+      "target_date": "2026-08-01",
+      "goals": ["G14"],
       "github_milestone": null,
       "progress_pct": 0
     }
