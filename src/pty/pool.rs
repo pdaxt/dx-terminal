@@ -9,15 +9,16 @@
 //! - Input routing: one "focused" pane receives keyboard input (broadcast optional)
 //! - Output: background reader thread per pane feeds vt100 parser + scrollback
 //! - Events flow out via `tokio::sync::mpsc` channel
-//! - All pane state behind `Arc<Mutex<>>` for thread-safe access from TUI + web
+//! - Parser behind `Arc<Mutex<>>` for thread-safe access from reader + main thread
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
-use portable_pty::{native_pty_system, Child, CommandBuilder, PtySize};
+use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use tokio::sync::mpsc;
 
 /// Unique identifier for a pane (u8 allows 0-255, more than enough)
@@ -50,7 +51,7 @@ impl Default for PaneConfig {
         Self {
             command: "zsh".into(),
             args: vec![],
-            cwd: PathBuf::from("."),
+            cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/tmp")),
             env: vec![],
             rows: 24,
             cols: 80,
@@ -58,21 +59,25 @@ impl Default for PaneConfig {
     }
 }
 
-/// Per-pane state: PTY handles + terminal parser + scrollback
+/// Per-pane state: PTY handles + terminal parser
 struct Pane {
-    /// vt100 parser — full terminal screen state (colors, cursor, content)
+    /// vt100 parser — full terminal screen state (colors, cursor, content).
+    /// Shared with reader thread via Arc.
     parser: Arc<Mutex<vt100::Parser>>,
-    /// Writer to send input to the PTY
-    writer: Arc<Mutex<Box<dyn Write + Send>>>,
-    /// Child process handle
-    child: Arc<Mutex<Box<dyn Child + Send + Sync>>>,
+    /// Writer to send input to the PTY (owned exclusively by pool)
+    writer: Box<dyn Write + Send>,
+    /// Master PTY handle — must stay alive for the PTY to remain open.
+    /// Also used for resize via TIOCSWINSZ.
+    master: Box<dyn MasterPty + Send>,
+    /// Child process handle (owned exclusively by pool)
+    child: Box<dyn portable_pty::Child + Send + Sync>,
     /// Reader thread join handle
     reader_handle: Option<std::thread::JoinHandle<()>>,
     /// Current terminal size
     rows: u16,
     cols: u16,
     /// Config used to spawn
-    config: PaneConfig,
+    _config: PaneConfig,
 }
 
 /// The PTY Pool — owns all terminal sessions with input routing
@@ -85,12 +90,12 @@ pub struct PtyPool {
     /// Event channel sender (clone per reader thread)
     event_tx: mpsc::Sender<PoolEvent>,
     /// Max scrollback lines per pane's vt100 parser
-    scrollback_lines: u32,
+    scrollback_lines: usize,
 }
 
 impl PtyPool {
     /// Create a new pool. Returns the pool and a receiver for events.
-    pub fn new(scrollback_lines: u32) -> (Self, mpsc::Receiver<PoolEvent>) {
+    pub fn new(scrollback_lines: usize) -> (Self, mpsc::Receiver<PoolEvent>) {
         let (tx, rx) = mpsc::channel(512);
         (
             Self {
@@ -141,14 +146,10 @@ impl PtyPool {
         let writer = pair.master.take_writer()?;
         let mut reader = pair.master.try_clone_reader()?;
 
-        // Keep master alive — dropping it closes the PTY
-        // We leak it intentionally; the child/reader will detect EOF when killed
-        let _master = pair.master;
-
         let parser = Arc::new(Mutex::new(vt100::Parser::new(
             config.rows,
             config.cols,
-            self.scrollback_lines as usize,
+            self.scrollback_lines,
         )));
 
         // Spawn reader thread
@@ -162,10 +163,12 @@ impl PtyPool {
                     Ok(0) => break,
                     Ok(n) => {
                         let data = &buf[..n];
-                        // Feed into vt100 parser
-                        if let Ok(mut p) = parser_clone.lock() {
-                            p.process(data);
-                        }
+                        // Feed into vt100 parser — recover from poison
+                        let mut p = parser_clone
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner());
+                        p.process(data);
+                        drop(p); // Release lock before channel send
                         // Emit output event
                         let _ = event_tx.blocking_send(PoolEvent::Output {
                             pane: pane_id,
@@ -180,12 +183,13 @@ impl PtyPool {
 
         let pane = Pane {
             parser,
-            writer: Arc::new(Mutex::new(writer)),
-            child: Arc::new(Mutex::new(child)),
+            writer,
+            master: pair.master,
+            child,
             reader_handle: Some(reader_handle),
             rows: config.rows,
             cols: config.cols,
-            config,
+            _config: config,
         };
 
         self.panes.insert(id, pane);
@@ -199,12 +203,11 @@ impl PtyPool {
     }
 
     /// Send raw bytes to the focused pane (keyboard input routing)
-    pub fn send_input(&self, data: &[u8]) -> Result<()> {
+    pub fn send_input(&mut self, data: &[u8]) -> Result<()> {
         if self.broadcast {
-            for pane in self.panes.values() {
-                let mut w = pane.writer.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
-                w.write_all(data)?;
-                w.flush()?;
+            for pane in self.panes.values_mut() {
+                pane.writer.write_all(data)?;
+                pane.writer.flush()?;
             }
             Ok(())
         } else if let Some(id) = self.focused {
@@ -215,23 +218,22 @@ impl PtyPool {
     }
 
     /// Send raw bytes to a specific pane
-    pub fn send_to(&self, id: PaneId, data: &[u8]) -> Result<()> {
-        let pane = self.panes.get(&id).context("Pane not found")?;
-        let mut w = pane.writer.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
-        w.write_all(data)?;
-        w.flush()?;
+    pub fn send_to(&mut self, id: PaneId, data: &[u8]) -> Result<()> {
+        let pane = self.panes.get_mut(&id).context("Pane not found")?;
+        pane.writer.write_all(data)?;
+        pane.writer.flush()?;
         Ok(())
     }
 
-    /// Send a line of text (appends \r) to the focused pane
-    pub fn send_line(&self, text: &str) -> Result<()> {
+    /// Send a line of text (appends CR for PTY line discipline) to the focused pane
+    pub fn send_line(&mut self, text: &str) -> Result<()> {
         let mut data = text.as_bytes().to_vec();
         data.push(b'\r');
         self.send_input(&data)
     }
 
     /// Send a line to a specific pane
-    pub fn send_line_to(&self, id: PaneId, text: &str) -> Result<()> {
+    pub fn send_line_to(&mut self, id: PaneId, text: &str) -> Result<()> {
         let mut data = text.as_bytes().to_vec();
         data.push(b'\r');
         self.send_to(id, &data)
@@ -263,29 +265,25 @@ impl PtyPool {
 
     /// Get the full terminal screen contents for a pane (what you'd see on screen)
     pub fn screen_contents(&self, id: PaneId) -> Option<String> {
-        self.panes.get(&id).and_then(|p| {
-            p.parser.lock().ok().map(|parser| {
-                parser.screen().contents()
-            })
-        })
+        let pane = self.panes.get(&id)?;
+        let parser = pane.parser.lock().unwrap_or_else(|e| e.into_inner());
+        Some(parser.screen().contents())
     }
 
     /// Get the terminal screen as formatted rows (for TUI rendering with ANSI colors)
     pub fn screen_rows_formatted(&self, id: PaneId) -> Option<Vec<Vec<u8>>> {
-        self.panes.get(&id).and_then(|p| {
-            p.parser.lock().ok().map(|parser| {
-                let screen = parser.screen();
-                let (_, cols) = screen.size();
-                screen.rows_formatted(0, cols).collect()
-            })
-        })
+        let pane = self.panes.get(&id)?;
+        let parser = pane.parser.lock().unwrap_or_else(|e| e.into_inner());
+        let screen = parser.screen();
+        let (_, cols) = screen.size();
+        Some(screen.rows_formatted(0, cols).collect())
     }
 
     /// Get cursor position for a pane
     pub fn cursor_position(&self, id: PaneId) -> Option<(u16, u16)> {
-        self.panes.get(&id).and_then(|p| {
-            p.parser.lock().ok().map(|parser| parser.screen().cursor_position())
-        })
+        let pane = self.panes.get(&id)?;
+        let parser = pane.parser.lock().unwrap_or_else(|e| e.into_inner());
+        Some(parser.screen().cursor_position())
     }
 
     /// Get the terminal size for a pane
@@ -293,31 +291,51 @@ impl PtyPool {
         self.panes.get(&id).map(|p| (p.rows, p.cols))
     }
 
-    /// Resize a pane's terminal
+    /// Resize a pane's terminal (both PTY kernel window and vt100 parser)
     pub fn resize(&mut self, id: PaneId, rows: u16, cols: u16) -> Result<()> {
         let pane = self.panes.get_mut(&id).context("Pane not found")?;
-        if let Ok(mut parser) = pane.parser.lock() {
+        // Resize the actual PTY (sends TIOCSWINSZ to kernel)
+        pane.master.resize(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        }).context("PTY resize failed")?;
+        // Update vt100 parser to match
+        {
+            let mut parser = pane.parser.lock().unwrap_or_else(|e| e.into_inner());
             parser.screen_mut().set_size(rows, cols);
         }
         pane.rows = rows;
         pane.cols = cols;
-        // Note: portable-pty resize requires the master handle, which we
-        // currently don't retain. This will be addressed when we add the
-        // layout engine (F2). For now, vt100 parser tracks the logical size.
         Ok(())
     }
 
-    /// Kill a pane's process
+    /// Kill a pane's process.
+    /// Kills the child, then joins the reader thread with a timeout.
     pub fn kill(&mut self, id: PaneId) -> Result<()> {
         if let Some(mut pane) = self.panes.remove(&id) {
-            // Kill the child process
-            if let Ok(mut child) = pane.child.lock() {
-                let _ = child.kill();
-            }
-            // Join reader thread
+            // Kill the child process — this closes the PTY slave side,
+            // causing the reader to get EOF and exit.
+            let _ = pane.child.kill();
+            // Join reader thread with timeout to prevent blocking forever.
+            // After child.kill(), the reader should see EOF quickly.
             if let Some(handle) = pane.reader_handle.take() {
-                let _ = handle.join();
+                // Give the reader thread 500ms to finish after the child is killed
+                let start = std::time::Instant::now();
+                while !handle.is_finished() {
+                    if start.elapsed() > Duration::from_millis(500) {
+                        // Reader thread is stuck — drop it (will be cleaned up on thread exit)
+                        tracing::warn!("Reader thread for pane {} did not exit in time, detaching", id);
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                if handle.is_finished() {
+                    let _ = handle.join();
+                }
             }
+            // Drop pane — master handle is dropped here, ensuring PTY cleanup
             // Update focus if we killed the focused pane
             if self.focused == Some(id) {
                 self.focused = self.panes.keys().copied().min();
@@ -353,13 +371,9 @@ impl PtyPool {
 
     /// Check if a pane's process is still running
     pub fn is_running(&self, id: PaneId) -> bool {
-        self.panes.get(&id).is_some_and(|p| {
-            p.child
-                .lock()
-                .ok()
-                .and_then(|mut c| c.try_wait().ok())
-                .map_or(true, |status| status.is_none())
-        })
+        self.panes
+            .get(&id)
+            .is_some_and(|p| p.reader_handle.as_ref().is_some_and(|h| !h.is_finished()))
     }
 
     /// Check if a specific pane exists
@@ -377,7 +391,6 @@ impl Drop for PtyPool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
 
     fn test_config(cmd: &str) -> PaneConfig {
         PaneConfig {
@@ -422,7 +435,6 @@ mod tests {
         pool.spawn(3, test_config("/bin/sh")).unwrap();
 
         assert_eq!(pool.len(), 3);
-        // First pane stays focused
         assert_eq!(pool.focused(), Some(1));
         assert_eq!(pool.pane_ids(), vec![1, 2, 3]);
     }
@@ -439,7 +451,6 @@ mod tests {
         pool.focus(2).unwrap();
         assert_eq!(pool.focused(), Some(2));
 
-        // Focus non-existent pane should error
         assert!(pool.focus(99).is_err());
     }
 
@@ -454,7 +465,6 @@ mod tests {
         pool.focus(2).unwrap();
         pool.kill(2).unwrap();
 
-        // Focus should move to lowest remaining pane
         assert_eq!(pool.focused(), Some(1));
         assert_eq!(pool.len(), 2);
         assert!(!pool.has_pane(2));
@@ -477,7 +487,6 @@ mod tests {
     fn test_send_input_to_focused() {
         let (mut pool, _rx) = PtyPool::new(1000);
 
-        // Spawn a shell that stays alive
         let config = PaneConfig {
             command: "/bin/sh".into(),
             args: vec![],
@@ -488,14 +497,12 @@ mod tests {
         };
         pool.spawn(1, config).unwrap();
 
-        // Should succeed — we have a focused pane
         assert!(pool.send_input(b"echo test\r").is_ok());
     }
 
     #[test]
     fn test_send_input_no_focus() {
-        let (pool, _rx) = PtyPool::new(1000);
-        // No panes, no focus — should error
+        let (mut pool, _rx) = PtyPool::new(1000);
         assert!(pool.send_input(b"hello").is_err());
     }
 
@@ -514,9 +521,7 @@ mod tests {
         pool.spawn(1, config.clone()).unwrap();
         pool.spawn(2, config).unwrap();
 
-        // Send to pane 2 (not focused)
         assert!(pool.send_to(2, b"echo pane2\r").is_ok());
-        // Non-existent pane
         assert!(pool.send_to(99, b"nope").is_err());
     }
 
@@ -534,17 +539,19 @@ mod tests {
         };
         pool.spawn(1, config).unwrap();
 
-        // Give the process time to produce output
-        std::thread::sleep(Duration::from_millis(200));
-
-        let contents = pool.screen_contents(1);
-        assert!(contents.is_some());
-        let text = contents.unwrap();
-        assert!(
-            text.contains("HELLO_PTY_POOL"),
-            "Expected screen to contain 'HELLO_PTY_POOL', got: {:?}",
-            text.lines().take(5).collect::<Vec<_>>()
-        );
+        // Poll for output instead of fixed sleep
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let mut found = false;
+        while std::time::Instant::now() < deadline {
+            if let Some(text) = pool.screen_contents(1) {
+                if text.contains("HELLO_PTY_POOL") {
+                    found = true;
+                    break;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(found, "Expected screen to contain 'HELLO_PTY_POOL'");
     }
 
     #[test]
@@ -570,7 +577,6 @@ mod tests {
         pool.resize(1, 40, 120).unwrap();
         assert_eq!(pool.pane_size(1), Some((40, 120)));
 
-        // Resize non-existent pane should error
         assert!(pool.resize(99, 40, 120).is_err());
     }
 
@@ -590,7 +596,6 @@ mod tests {
         pool.spawn(2, config).unwrap();
 
         pool.set_broadcast(true);
-        // Should send to both panes without error
         assert!(pool.send_input(b"echo broadcast\r").is_ok());
     }
 
@@ -601,7 +606,6 @@ mod tests {
         pool.spawn(1, test_config("/bin/sh")).unwrap();
         assert_eq!(pool.len(), 1);
 
-        // Spawning same ID should kill old and replace
         pool.spawn(1, test_config("/bin/sh")).unwrap();
         assert_eq!(pool.len(), 1);
     }
@@ -611,11 +615,9 @@ mod tests {
         let (mut pool, _rx) = PtyPool::new(1000);
         pool.spawn(1, test_config("/bin/sh")).unwrap();
 
-        // Cursor position should be available
         let pos = pool.cursor_position(1);
         assert!(pos.is_some());
 
-        // Non-existent pane
         assert!(pool.cursor_position(99).is_none());
     }
 
@@ -623,7 +625,6 @@ mod tests {
     fn test_is_running() {
         let (mut pool, _rx) = PtyPool::new(1000);
 
-        // Spawn a long-running process
         let config = PaneConfig {
             command: "/bin/sh".into(),
             args: vec!["-c".into(), "sleep 10".into()],
@@ -635,9 +636,9 @@ mod tests {
         pool.spawn(1, config).unwrap();
 
         assert!(pool.is_running(1));
-        assert!(!pool.is_running(99)); // non-existent
+        assert!(!pool.is_running(99));
 
-        // Spawn a short-lived process
+        // Spawn a short-lived process and poll for exit
         let short = PaneConfig {
             command: "/bin/sh".into(),
             args: vec!["-c".into(), "true".into()],
@@ -647,7 +648,10 @@ mod tests {
             cols: 80,
         };
         pool.spawn(2, short).unwrap();
-        std::thread::sleep(Duration::from_millis(200));
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while pool.is_running(2) && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(50));
+        }
         assert!(!pool.is_running(2));
     }
 
