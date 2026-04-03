@@ -297,7 +297,7 @@ impl PtyPool {
     pub fn resize(&mut self, id: PaneId, rows: u16, cols: u16) -> Result<()> {
         let pane = self.panes.get_mut(&id).context("Pane not found")?;
         if let Ok(mut parser) = pane.parser.lock() {
-            parser.set_size(rows, cols);
+            parser.screen_mut().set_size(rows, cols);
         }
         pane.rows = rows;
         pane.cols = cols;
