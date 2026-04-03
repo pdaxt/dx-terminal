@@ -380,6 +380,33 @@ impl PtyPool {
     pub fn has_pane(&self, id: PaneId) -> bool {
         self.panes.contains_key(&id)
     }
+
+    // ── Render helpers (delegate to pty::render) ──────────────────
+
+    /// Render the full visible screen of a pane into styled ratatui Lines.
+    pub fn render_screen(&self, id: PaneId) -> Option<Vec<ratatui::text::Line<'static>>> {
+        let pane = self.panes.get(&id)?;
+        let parser = pane.parser.lock().unwrap_or_else(|e| e.into_inner());
+        Some(super::render::render_screen(parser.screen()))
+    }
+
+    /// Render the last N non-empty lines of a pane (for grid preview cards).
+    pub fn render_tail(
+        &self,
+        id: PaneId,
+        max_lines: usize,
+    ) -> Option<Vec<ratatui::text::Line<'static>>> {
+        let pane = self.panes.get(&id)?;
+        let parser = pane.parser.lock().unwrap_or_else(|e| e.into_inner());
+        Some(super::render::render_tail(parser.screen(), max_lines))
+    }
+
+    /// Get cursor position if visible for a pane.
+    pub fn render_cursor(&self, id: PaneId) -> Option<(u16, u16)> {
+        let pane = self.panes.get(&id)?;
+        let parser = pane.parser.lock().unwrap_or_else(|e| e.into_inner());
+        super::render::cursor_visible(parser.screen())
+    }
 }
 
 impl Drop for PtyPool {

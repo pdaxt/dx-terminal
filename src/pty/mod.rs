@@ -2,6 +2,7 @@ pub mod agent;
 pub mod health;
 pub mod output;
 pub mod pool;
+pub mod render;
 
 use self::agent::AgentHandle;
 use self::health::PaneHealth;
