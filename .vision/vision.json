@@ -1,6 +1,6 @@
 {
   "project": "dx-terminal",
-  "mission": "Build the worlds most powerful AI-native terminal multiplexer \u2014 a single Rust binary that orchestrates teams of AI coding runtimes across tmux panes with real-time dashboards, smart task routing, deterministic browser lanes, and zero-config GitHub integration",
+  "mission": "Replace tmux and every AI agent tool with one Rust binary. DX Terminal IS the terminal \u2014 it owns the PTY, the panes, the rendering, the agent lifecycle, and the dashboard. One command to go from zero to a fleet of AI agents shipping code. Enterprise-grade, user-friendly, open source.",
   "principles": [
     "Everything in Rust",
     "MCP-first architecture",
