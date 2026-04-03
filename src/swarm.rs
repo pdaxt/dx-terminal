@@ -593,9 +593,10 @@ async fn reconcile_task(
 }
 
 fn finalize_task(task: &mut SwarmTaskRecord, base_branch: &str, repo: &str) -> Result<()> {
-    task.commits = collect_commits(Path::new(&task.worktree_path), base_branch)?;
+    let worktree = Path::new(&task.worktree_path);
+    task.commits = collect_commits(worktree, base_branch)?;
     if task.commits.is_empty() {
-        let dirty = git_status(Path::new(&task.worktree_path))?;
+        let dirty = git_status(worktree)?;
         let reason = if dirty.trim().is_empty() {
             "agent reported completion without code changes".to_string()
         } else {
@@ -606,7 +607,10 @@ fn finalize_task(task: &mut SwarmTaskRecord, base_branch: &str, repo: &str) -> R
         return Ok(());
     }
 
-    match create_pr(Path::new(&task.worktree_path), &task.issue) {
+    // Push the branch to origin so `gh pr create` can find it
+    push_branch(worktree, &task.branch)?;
+
+    match create_pr(worktree, &task.issue) {
         Ok(pr_url) => {
             task.pr_url = Some(pr_url.clone());
             task.status = SwarmTaskStatus::Complete { pr_url };
@@ -619,6 +623,9 @@ fn finalize_task(task: &mut SwarmTaskRecord, base_branch: &str, repo: &str) -> R
             let _ = crate::claims::release(repo, task.issue.number, "failed");
         }
     }
+
+    // Clean up the worktree after PR is created (or failed)
+    let _ = cleanup_worktree(worktree);
     Ok(())
 }
 
