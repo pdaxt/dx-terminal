@@ -21,6 +21,38 @@ Single binary. No login. No telemetry. Open source.
 
 ---
 
+## Quick Start
+
+Get from zero to running agents in under 60 seconds:
+
+```bash
+# 1. Clone and build
+git clone https://github.com/pdaxt/dx-terminal.git
+cd dx-terminal
+cargo install --path .
+
+# 2. Launch everything — agents, dashboard, task queue
+dx go
+
+# 3. Or start with a single AI coding session
+dx chat
+```
+
+`dx go` detects your project, pulls open GitHub issues, launches a tmux session with agent panes, and opens the web dashboard at `localhost:3100`. One command from clone to shipping.
+
+**Explore further:**
+
+```bash
+dx --help          # See all commands
+dx tui             # Standalone TUI dashboard
+dx swarm start     # Assign agents to GitHub issues
+dx mcp             # Start the MCP server (206 tools)
+```
+
+> **Prerequisites:** [Rust toolchain](https://rustup.rs/) and [tmux](https://github.com/tmux/tmux) (for `dx go`). Optional: [Ollama](https://ollama.com/) for local AI models.
+
+---
+
 ## Why
 
 Most AI coding tools do one thing: either they're an agent that writes code, or they're a dashboard that watches agents. `dx` does both. Use `dx chat` to pair-program with a local model, `dx fix` to auto-repair your codebase, or `dx go` to launch a full fleet of agents on your open issues — all from the same binary, with the same state, the same MCP server, the same dashboard.
@@ -53,18 +85,14 @@ The system should keep these artifacts in sync:
 ## Install
 
 ```bash
-# Homebrew (macOS & Linux)
-brew install pdaxt/tap/dx-terminal
-
-# Cargo
-cargo install dx-terminal
+# From source (recommended)
+git clone https://github.com/pdaxt/dx-terminal.git && cd dx-terminal && cargo install --path .
 
 # Shell script
 curl -fsSL https://raw.githubusercontent.com/pdaxt/dx-terminal/main/install.sh | bash
-
-# From source
-git clone https://github.com/pdaxt/dx-terminal.git && cd dx-terminal && cargo install --path .
 ```
+
+<!-- Coming soon: brew install pdaxt/tap/dx-terminal and cargo install dx-terminal -->
 
 ## Usage
 
