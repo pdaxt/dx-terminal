@@ -13,9 +13,9 @@ Single binary. No login. No telemetry. Open source.
 
 `dx` merges two products into one: an **AI coding agent** (chat, fix, review, commit) and an **agent orchestration platform** (MCP server, TUI dashboard, swarm, router). Use it standalone to code, or at scale to run 16+ agents from one screen.
 
-<img src="demo/demo-screenshot.png" alt="DX Terminal showing 16 AI agents with real-time dashboard, task queue, vision tracking, and sync status" width="800">
+<img src="demo/demo.gif" alt="DX Terminal — dx go launching agents, dashboard, and task queue in a single command" width="800">
 
-[Quick Start](#install) · [Agent Commands](#agent-commands) · [Orchestration](#orchestration) · [Web Dashboard](#web-dashboard) · [MCP Server](#mcp-server) · [Microservices](#cli-microservices-architecture) · [Architecture](#architecture) · [Contributing](#contributing)
+[Quick Start](#quick-start) · [Install](#install) · [Agent Commands](#agent-commands) · [Orchestration](#orchestration) · [Web Dashboard](#web-dashboard) · [MCP Server](#mcp-server) · [Microservices](#cli-microservices-architecture) · [Architecture](#architecture) · [Contributing](#contributing)
 
 </div>
 
