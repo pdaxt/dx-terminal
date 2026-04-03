@@ -332,6 +332,36 @@
       ],
       "linked_pr": null,
       "status": "active"
+    },
+    {
+      "id": "ADR5",
+      "title": "Replace tmux, don't wrap it",
+      "decision": "Build native PTY multiplexing using portable-pty + vt100 + ratatui. Remove the tmux dependency entirely.",
+      "rationale": "tmux is a runtime dependency users must install separately. It has its own learning curve. By owning the terminal, we control the entire UX and can detect agent status natively.",
+      "date": "2026-04-03",
+      "alternatives_considered": ["Keep tmux as backend (current: works but fragile)", "Use zellij as backend (rejected: another dependency)"],
+      "linked_pr": null,
+      "status": "active"
+    },
+    {
+      "id": "ADR6",
+      "title": "Health monitor as source of truth for agent status",
+      "decision": "Poll pane output every 2s, classify as idle/working/stuck/dead/rate_limited. This drives dashboard status, not pane existence.",
+      "rationale": "Fixed the '44 ACTIVE' lie. Users need honest status to make decisions. Shipped in commit 03a48ed.",
+      "date": "2026-04-03",
+      "alternatives_considered": ["Trust tmux pane existence (rejected: lies)", "Agent self-reporting (rejected: agents can crash)"],
+      "linked_pr": null,
+      "status": "active"
+    },
+    {
+      "id": "ADR7",
+      "title": "CLI-first microservices, not HTTP microservices",
+      "decision": "Services composed within one process via typed tokio channels. Can also run as split MCP servers. No container orchestration.",
+      "rationale": "Developer tools must be instant. Container startup latency is unacceptable. Each crate is a service boundary.",
+      "date": "2026-04-03",
+      "alternatives_considered": ["gRPC between services (rejected: overkill)", "HTTP REST between services (rejected: latency)"],
+      "linked_pr": null,
+      "status": "active"
     }
   ],
   "changes": [
