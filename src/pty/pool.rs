@@ -442,8 +442,9 @@ impl PtyPool {
     }
 
     /// Get cursor position if visible for a pane.
+    /// Returns `None` if the pane doesn't exist or the cursor is hidden.
     pub fn render_cursor(&self, id: PaneId) -> Option<(u16, u16)> {
-        self.with_screen(id, super::render::cursor_visible)
+        self.with_screen(id, super::render::cursor_visible)?
     }
 }
 

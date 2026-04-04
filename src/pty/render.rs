@@ -347,12 +347,123 @@ mod tests {
     #[test]
     fn test_render_256_color() {
         let mut parser = vt100::Parser::new(24, 80, 0);
-        // ESC[38;5;196m = 256-color foreground (bright red, index 196)
         parser.process(b"\x1b[38;5;196mCOLOR\x1b[0m");
         let line = render_row(parser.screen(), 0);
 
         let first = &line.spans[0];
         assert_eq!(first.content.as_ref(), "COLOR");
         assert_eq!(first.style.fg, Some(Color::Indexed(196)));
+    }
+
+    #[test]
+    fn test_render_dim() {
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        // ESC[2m = dim/faint
+        parser.process(b"\x1b[2mDIM\x1b[0m");
+        let line = render_row(parser.screen(), 0);
+
+        let first = &line.spans[0];
+        assert_eq!(first.content.as_ref(), "DIM");
+        assert!(first.style.add_modifier.contains(Modifier::DIM));
+    }
+
+    #[test]
+    fn test_render_background_color() {
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        // ESC[42m = green background
+        parser.process(b"\x1b[42mBG\x1b[0m");
+        let line = render_row(parser.screen(), 0);
+
+        let first = &line.spans[0];
+        assert_eq!(first.content.as_ref(), "BG");
+        assert_eq!(first.style.bg, Some(Color::Green));
+    }
+
+    #[test]
+    fn test_render_cursor_after_text() {
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        parser.process(b"Hello");
+        let pos = cursor_visible(parser.screen());
+        // Cursor should be at (0, 5) — after "Hello"
+        assert_eq!(pos, Some((0, 5)));
+    }
+
+    #[test]
+    fn test_render_cursor_after_newline() {
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        parser.process(b"Line1\r\nLine2");
+        let pos = cursor_visible(parser.screen());
+        // Cursor should be at row 1, col 5
+        assert_eq!(pos, Some((1, 5)));
+    }
+
+    #[test]
+    fn test_render_wide_char() {
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        // CJK character (漢) occupies 2 cells
+        parser.process("漢字".as_bytes());
+        let line = render_row(parser.screen(), 0);
+
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        // Should contain the wide chars without doubling
+        assert!(text.contains("漢字"), "Wide chars not found: {:?}", text);
+    }
+
+    #[test]
+    fn test_render_tail_more_than_content() {
+        let mut parser = vt100::Parser::new(10, 40, 0);
+        parser.process(b"Only one line");
+        let tail = render_tail(parser.screen(), 5);
+        // Should return just 1 line, not 5
+        assert_eq!(tail.len(), 1);
+    }
+
+    #[test]
+    fn test_render_screen_preserves_row_count() {
+        let parser = vt100::Parser::new(3, 20, 0);
+        let lines = render_screen(parser.screen());
+        // Empty screen should still return all rows
+        assert_eq!(lines.len(), 3);
+    }
+
+    #[test]
+    fn test_render_italic() {
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        // ESC[3m = italic
+        parser.process(b"\x1b[3mITALIC\x1b[0m");
+        let line = render_row(parser.screen(), 0);
+
+        let first = &line.spans[0];
+        assert_eq!(first.content.as_ref(), "ITALIC");
+        assert!(first.style.add_modifier.contains(Modifier::ITALIC));
+    }
+
+    #[test]
+    fn test_render_rgb_background() {
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        // ESC[48;2;0;255;0m = RGB green background
+        parser.process(b"\x1b[48;2;0;255;0mBG_RGB\x1b[0m");
+        let line = render_row(parser.screen(), 0);
+
+        let first = &line.spans[0];
+        assert_eq!(first.content.as_ref(), "BG_RGB");
+        assert_eq!(first.style.bg, Some(Color::Rgb(0, 255, 0)));
+    }
+
+    #[test]
+    fn test_multiple_style_transitions() {
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        // Red, then green, then blue — 3 distinct style spans
+        parser.process(b"\x1b[31mR\x1b[32mG\x1b[34mB\x1b[0m");
+        let line = render_row(parser.screen(), 0);
+
+        assert!(
+            line.spans.len() >= 3,
+            "Expected >= 3 style transitions, got {}",
+            line.spans.len()
+        );
+        assert_eq!(line.spans[0].style.fg, Some(Color::Red));
+        assert_eq!(line.spans[1].style.fg, Some(Color::Green));
+        assert_eq!(line.spans[2].style.fg, Some(Color::Blue));
     }
 }
