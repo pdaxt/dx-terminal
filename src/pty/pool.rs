@@ -239,6 +239,36 @@ impl PtyPool {
         self.send_to(id, &data)
     }
 
+    /// Send Ctrl+C (SIGINT) to the focused pane
+    pub fn interrupt(&mut self) -> Result<()> {
+        self.send_input(&[0x03]) // ETX = Ctrl+C
+    }
+
+    /// Send Ctrl+C to a specific pane
+    pub fn interrupt_pane(&mut self, id: PaneId) -> Result<()> {
+        self.send_to(id, &[0x03])
+    }
+
+    /// Send bracketed paste to the focused pane.
+    /// Programs that support bracketed paste mode will receive the text
+    /// as a paste event rather than typed input.
+    pub fn paste(&mut self, text: &str) -> Result<()> {
+        let mut data = Vec::with_capacity(text.len() + 12);
+        data.extend_from_slice(b"\x1b[200~");
+        data.extend_from_slice(text.as_bytes());
+        data.extend_from_slice(b"\x1b[201~");
+        self.send_input(&data)
+    }
+
+    /// Send bracketed paste to a specific pane
+    pub fn paste_to(&mut self, id: PaneId, text: &str) -> Result<()> {
+        let mut data = Vec::with_capacity(text.len() + 12);
+        data.extend_from_slice(b"\x1b[200~");
+        data.extend_from_slice(text.as_bytes());
+        data.extend_from_slice(b"\x1b[201~");
+        self.send_to(id, &data)
+    }
+
     /// Set the focused pane
     pub fn focus(&mut self, id: PaneId) -> Result<()> {
         if !self.panes.contains_key(&id) {
@@ -381,13 +411,25 @@ impl PtyPool {
         self.panes.contains_key(&id)
     }
 
+    // ── Screen access ─────────────────────────────────────────────
+
+    /// Run a closure with access to a pane's vt100 screen.
+    /// Acquires the parser lock, calls `f`, and releases it.
+    /// Returns `None` if the pane doesn't exist.
+    pub fn with_screen<F, R>(&self, id: PaneId, f: F) -> Option<R>
+    where
+        F: FnOnce(&vt100::Screen) -> R,
+    {
+        let pane = self.panes.get(&id)?;
+        let parser = pane.parser.lock().unwrap_or_else(|e| e.into_inner());
+        Some(f(parser.screen()))
+    }
+
     // ── Render helpers (delegate to pty::render) ──────────────────
 
     /// Render the full visible screen of a pane into styled ratatui Lines.
     pub fn render_screen(&self, id: PaneId) -> Option<Vec<ratatui::text::Line<'static>>> {
-        let pane = self.panes.get(&id)?;
-        let parser = pane.parser.lock().unwrap_or_else(|e| e.into_inner());
-        Some(super::render::render_screen(parser.screen()))
+        self.with_screen(id, super::render::render_screen)
     }
 
     /// Render the last N non-empty lines of a pane (for grid preview cards).
@@ -396,16 +438,13 @@ impl PtyPool {
         id: PaneId,
         max_lines: usize,
     ) -> Option<Vec<ratatui::text::Line<'static>>> {
-        let pane = self.panes.get(&id)?;
-        let parser = pane.parser.lock().unwrap_or_else(|e| e.into_inner());
-        Some(super::render::render_tail(parser.screen(), max_lines))
+        self.with_screen(id, |screen| super::render::render_tail(screen, max_lines))
     }
 
     /// Get cursor position if visible for a pane.
+    /// Returns `None` if the pane doesn't exist or the cursor is hidden.
     pub fn render_cursor(&self, id: PaneId) -> Option<(u16, u16)> {
-        let pane = self.panes.get(&id)?;
-        let parser = pane.parser.lock().unwrap_or_else(|e| e.into_inner());
-        super::render::cursor_visible(parser.screen())
+        self.with_screen(id, super::render::cursor_visible)?
     }
 }
 
@@ -699,5 +738,175 @@ mod tests {
         assert!(pool.send_line("echo hello").is_ok());
         assert!(pool.send_line_to(1, "echo world").is_ok());
         assert!(pool.send_line_to(99, "nope").is_err());
+    }
+
+    #[test]
+    fn test_interrupt() {
+        let (mut pool, _rx) = PtyPool::new(1000);
+        let config = PaneConfig {
+            command: "/bin/sh".into(),
+            args: vec![],
+            cwd: PathBuf::from("/tmp"),
+            env: vec![],
+            rows: 24,
+            cols: 80,
+        };
+        pool.spawn(1, config).unwrap();
+
+        assert!(pool.interrupt().is_ok());
+        assert!(pool.interrupt_pane(1).is_ok());
+        assert!(pool.interrupt_pane(99).is_err());
+    }
+
+    #[test]
+    fn test_paste() {
+        let (mut pool, _rx) = PtyPool::new(1000);
+        let config = PaneConfig {
+            command: "/bin/sh".into(),
+            args: vec![],
+            cwd: PathBuf::from("/tmp"),
+            env: vec![],
+            rows: 24,
+            cols: 80,
+        };
+        pool.spawn(1, config).unwrap();
+
+        assert!(pool.paste("echo hello").is_ok());
+        assert!(pool.paste_to(1, "echo world").is_ok());
+        assert!(pool.paste_to(99, "nope").is_err());
+    }
+
+    #[test]
+    fn test_with_screen() {
+        let (mut pool, _rx) = PtyPool::new(1000);
+
+        let config = PaneConfig {
+            command: "/bin/sh".into(),
+            args: vec!["-c".into(), "echo 'SCREEN_ACCESS'".into()],
+            cwd: PathBuf::from("/tmp"),
+            env: vec![],
+            rows: 24,
+            cols: 80,
+        };
+        pool.spawn(1, config).unwrap();
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let mut found = false;
+        while std::time::Instant::now() < deadline {
+            if let Some(text) = pool.with_screen(1, |screen| screen.contents()) {
+                if text.contains("SCREEN_ACCESS") {
+                    found = true;
+                    break;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(found);
+
+        // Non-existent pane returns None
+        assert!(pool.with_screen(99, |_| ()).is_none());
+    }
+
+    #[test]
+    fn test_render_screen_integration() {
+        let (mut pool, _rx) = PtyPool::new(1000);
+
+        let config = PaneConfig {
+            command: "/bin/sh".into(),
+            args: vec!["-c".into(), "printf '\\x1b[31mRED\\x1b[0m'".into()],
+            cwd: PathBuf::from("/tmp"),
+            env: vec![],
+            rows: 24,
+            cols: 80,
+        };
+        pool.spawn(1, config).unwrap();
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let mut found = false;
+        while std::time::Instant::now() < deadline {
+            if let Some(lines) = pool.render_screen(1) {
+                let first_text: String = lines[0]
+                    .spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect();
+                if first_text.contains("RED") {
+                    // Verify the RED span has red color
+                    let red_span = lines[0].spans.iter().find(|s| s.content.as_ref() == "RED");
+                    if let Some(span) = red_span {
+                        assert_eq!(span.style.fg, Some(ratatui::style::Color::Red));
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(found, "Expected rendered RED span with red color");
+    }
+
+    #[test]
+    fn test_render_tail_integration() {
+        let (mut pool, _rx) = PtyPool::new(1000);
+
+        let config = PaneConfig {
+            command: "/bin/sh".into(),
+            args: vec!["-c".into(), "echo A; echo B; echo C".into()],
+            cwd: PathBuf::from("/tmp"),
+            env: vec![],
+            rows: 24,
+            cols: 80,
+        };
+        pool.spawn(1, config).unwrap();
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let mut got_c = false;
+        while std::time::Instant::now() < deadline {
+            if let Some(lines) = pool.render_tail(1, 2) {
+                if !lines.is_empty() {
+                    let last_text: String = lines
+                        .last()
+                        .unwrap()
+                        .spans
+                        .iter()
+                        .map(|s| s.content.as_ref())
+                        .collect();
+                    if last_text.trim() == "C" {
+                        got_c = true;
+                        break;
+                    }
+                }
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(got_c, "Expected last tail line to be 'C'");
+    }
+
+    #[test]
+    fn test_env_vars_passed() {
+        let (mut pool, _rx) = PtyPool::new(1000);
+
+        let config = PaneConfig {
+            command: "/bin/sh".into(),
+            args: vec!["-c".into(), "echo $MY_VAR".into()],
+            cwd: PathBuf::from("/tmp"),
+            env: vec![("MY_VAR".into(), "POOL_TEST_42".into())],
+            rows: 24,
+            cols: 80,
+        };
+        pool.spawn(1, config).unwrap();
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let mut found = false;
+        while std::time::Instant::now() < deadline {
+            if let Some(text) = pool.screen_contents(1) {
+                if text.contains("POOL_TEST_42") {
+                    found = true;
+                    break;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(found, "Expected env var POOL_TEST_42 in output");
     }
 }
