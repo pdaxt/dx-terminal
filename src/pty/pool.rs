@@ -239,6 +239,36 @@ impl PtyPool {
         self.send_to(id, &data)
     }
 
+    /// Send Ctrl+C (SIGINT) to the focused pane
+    pub fn interrupt(&mut self) -> Result<()> {
+        self.send_input(&[0x03]) // ETX = Ctrl+C
+    }
+
+    /// Send Ctrl+C to a specific pane
+    pub fn interrupt_pane(&mut self, id: PaneId) -> Result<()> {
+        self.send_to(id, &[0x03])
+    }
+
+    /// Send bracketed paste to the focused pane.
+    /// Programs that support bracketed paste mode will receive the text
+    /// as a paste event rather than typed input.
+    pub fn paste(&mut self, text: &str) -> Result<()> {
+        let mut data = Vec::with_capacity(text.len() + 12);
+        data.extend_from_slice(b"\x1b[200~");
+        data.extend_from_slice(text.as_bytes());
+        data.extend_from_slice(b"\x1b[201~");
+        self.send_input(&data)
+    }
+
+    /// Send bracketed paste to a specific pane
+    pub fn paste_to(&mut self, id: PaneId, text: &str) -> Result<()> {
+        let mut data = Vec::with_capacity(text.len() + 12);
+        data.extend_from_slice(b"\x1b[200~");
+        data.extend_from_slice(text.as_bytes());
+        data.extend_from_slice(b"\x1b[201~");
+        self.send_to(id, &data)
+    }
+
     /// Set the focused pane
     pub fn focus(&mut self, id: PaneId) -> Result<()> {
         if !self.panes.contains_key(&id) {
