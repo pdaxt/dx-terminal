@@ -127,24 +127,19 @@ pub fn render_screen(screen: &vt100::Screen) -> Vec<Line<'static>> {
 }
 
 /// Render the last N non-empty lines (for grid preview cards).
+///
+/// Scans backwards from the bottom of the screen to find the last row with
+/// content, then returns up to `max_lines` rendered rows ending at that point.
 pub fn render_tail(screen: &vt100::Screen, max_lines: usize) -> Vec<Line<'static>> {
     let (rows, _) = screen.size();
 
-    // Find last non-empty row
+    // Find last non-empty row by checking row contents (most reliable)
     let mut last_nonempty: usize = 0;
     for row in (0..rows).rev() {
-        if let Some(cell) = screen.cell(row, 0) {
-            // Check if entire row has content by checking the row text
-            let row_text = screen.contents_between(row, 0, row + 1, 0);
-            if !row_text.trim().is_empty() {
-                last_nonempty = row as usize + 1;
-                break;
-            }
-            // Also check if the first cell has content (fast path)
-            if cell.has_contents() {
-                last_nonempty = row as usize + 1;
-                break;
-            }
+        let row_text = screen.contents_between(row, 0, row + 1, 0);
+        if !row_text.trim().is_empty() {
+            last_nonempty = row as usize + 1;
+            break;
         }
     }
 
