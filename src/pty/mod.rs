@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod health;
+pub mod layout;
 pub mod output;
 pub mod pool;
 pub mod render;
